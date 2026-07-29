@@ -79,8 +79,12 @@ body:has(.app)::after {
   transition: margin-left 0.25s ease;
 }
 
-.app.sidebar-collapsed .sidebar-nav {
-  margin-left: -260px;
+/* Desktop-only: .sidebar-hidden always means "collapsed off-screen".
+   Scoped to min-width so it never fights the mobile .mobile-menu-open rules below. */
+@media (min-width: 769px) {
+  .app.sidebar-hidden .sidebar-nav {
+    margin-left: -260px;
+  }
 }
 
 .nav-link {
@@ -274,15 +278,15 @@ body:has(.app)::after {
     z-index: 35;
   }
 
-  .app.sidebar-collapsed .nav-backdrop {
+  .app.mobile-menu-open .nav-backdrop {
     display: block;
   }
 
-  .app.sidebar-collapsed .topbar {
+  .app.mobile-menu-open .topbar {
     display: none;
   }
 
-  .app.sidebar-collapsed .sidebar-nav {
+  .app.mobile-menu-open .sidebar-nav {
     margin-left: 0;
     transform: translateX(0);
   }

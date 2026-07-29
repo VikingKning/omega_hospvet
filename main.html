@@ -84,11 +84,13 @@
   const navBackdrop = document.getElementById('navBackdrop');
 
   sidebarToggle.addEventListener('click', () => {
-    app.classList.toggle('sidebar-collapsed');
+    app.classList.toggle('sidebar-hidden');
+    app.classList.toggle('mobile-menu-open');
   });
 
   navBackdrop.addEventListener('click', () => {
-    app.classList.remove('sidebar-collapsed');
+    app.classList.remove('sidebar-hidden');
+    app.classList.remove('mobile-menu-open');
   });
 
   document.querySelectorAll('.nav-toggle').forEach((toggle) => {
