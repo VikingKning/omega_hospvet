@@ -1,0 +1,293 @@
+/* ---------- App shell / sidebar (CSS Grid) ---------- */
+
+body:has(.app) {
+  display: block;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body:has(.app)::before,
+body:has(.app)::after {
+  display: none;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg-base);
+}
+
+.top-row {
+  flex-shrink: 0;
+  display: flex;
+  height: 68px;
+}
+
+.body-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar-header {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  background: var(--primary-active);
+  color: #fff;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-header img {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  padding: 3px;
+}
+
+.sidebar-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.sidebar-nav {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--primary-active);
+  color: #fff;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: margin-left 0.25s ease;
+}
+
+.app.sidebar-collapsed .sidebar-nav {
+  margin-left: -260px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-family: inherit;
+  text-decoration: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.nav-link.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.nav-logout {
+  margin-top: auto;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.nav-logout:hover {
+  background: rgba(240, 15, 53, 0.15);
+  color: #fff;
+}
+
+.nav-link svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.nav-toggle .chevron {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.nav-toggle.active .chevron {
+  transform: rotate(180deg);
+}
+
+.submenu {
+  max-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-left: 30px;
+  transition: max-height 0.25s ease;
+}
+
+.submenu-link {
+  display: block;
+  padding: 9px 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  text-decoration: none;
+  border-radius: 8px;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.submenu-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.topbar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.sidebar-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.sidebar-toggle-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.topbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-dark);
+  white-space: nowrap;
+}
+
+.main-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 24px;
+  color: var(--text-dark);
+  overflow-y: auto;
+}
+
+.main-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("assets/imgs/icon_black.png") no-repeat center center;
+  background-size: 45% auto;
+  opacity: 0.05;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.main-content > * {
+  position: relative;
+  z-index: 1;
+}
+
+.nav-backdrop {
+  display: none;
+}
+
+/* ---------- Mobile ---------- */
+
+@media (max-width: 768px) {
+  .top-row {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .sidebar-header,
+  .topbar {
+    width: 100%;
+    height: 56px;
+  }
+
+  .body-row {
+    position: relative;
+  }
+
+  .sidebar-nav {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 95vw;
+    margin-left: 0;
+    transform: translateX(-100%);
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.25);
+    z-index: 40;
+    transition: transform 0.25s ease;
+  }
+
+  .nav-backdrop {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 35;
+  }
+
+  .app.sidebar-collapsed .nav-backdrop {
+    display: block;
+  }
+
+  .app.sidebar-collapsed .topbar {
+    display: none;
+  }
+
+  .app.sidebar-collapsed .sidebar-nav {
+    margin-left: 0;
+    transform: translateX(0);
+  }
+
+  .main-content {
+    width: 100%;
+  }
+}
