@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Panel | Omega Veterinaria & Estética</title>
+<title>Agenda | Omega Veterinaria & Estética</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="main.css">
@@ -21,7 +21,8 @@
       </div>
 
       <header class="topbar">
-        <h1 class="topbar-title">Panel administrativo</h1>
+        <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>
+        <h1 class="topbar-title">Agenda Consultas y Cirugías</h1>
       </header>
     </div>
 
@@ -29,13 +30,13 @@
     <div class="nav-backdrop" id="navBackdrop"></div>
     <nav class="sidebar-nav" id="sidebar">
       <div class="nav-group">
-          <button class="nav-link nav-toggle" type="button" data-target="agenda-menu">
+          <button class="nav-link nav-toggle active" type="button" data-target="agenda-menu">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
             <span>Agenda</span>
             <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
           </button>
-          <div class="submenu" id="agenda-menu">
-            <a href="agenda.html" class="submenu-link">
+          <div class="submenu open" id="agenda-menu">
+            <a href="agenda.html" class="submenu-link current">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>
               <span>Consultas y cirugías</span>
             </a>
@@ -78,7 +79,53 @@
     </nav>
 
     <main class="main-content">
-      <p>Bienvenido al panel de Omega Veterinaria & Estética.</p>
+      <div class="agenda-layout">
+        <div class="agenda-stats">
+          <div class="stats-group">
+            <h3 class="stats-group-title">Citas de hoy</h3>
+
+            <div class="stat-card">
+              <span class="stat-label">Programadas</span>
+              <span class="stat-value">5</span>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-label">Atendidas</span>
+              <span class="stat-value">2</span>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-label">Pendientes</span>
+              <span class="stat-value">3</span>
+            </div>
+          </div>
+
+          <div class="next-appt-card">
+            <h3 class="stats-group-title">Próxima cita</h3>
+            <div class="next-appt-time-row">
+              <span class="next-appt-time" id="nextApptTime" data-appt-time="12:30">12:30 pm</span>
+              <span class="semaforo-dot" id="semaforoDot" aria-label="Estado de la cita"></span>
+            </div>
+            <p class="next-appt-detail">Cirugía: <strong>Mastositoma</strong>. Max, Pitbull</p>
+          </div>
+        </div>
+
+        <div class="gcal-embed">
+          <!--
+            Reemplaza CALENDAR_ID por el ID de tu Google Calendar:
+            Google Calendar > Configuración > (elige el calendario) > "Integrar calendario" > "ID de calendario".
+            Ajusta ctz si tu zona horaria no es America/Mexico_City.
+          -->
+          <iframe
+            src="https://calendar.google.com/calendar/embed?src=CALENDAR_ID%40group.calendar.google.com&ctz=America%2FMexico_City&mode=WEEK&showTitle=0&showPrint=0&showCalendars=0&showTabs=0&showDate=1&showNav=0"
+            width="100%"
+            height="100%"
+            frameborder="0"
+            scrolling="no"
+            title="Google Calendar - Consultas y cirugías">
+          </iframe>
+        </div>
+      </div>
     </main>
     </div>
   </div>
@@ -100,8 +147,12 @@
   });
 
   document.querySelectorAll('.nav-toggle').forEach((toggle) => {
+    const submenu = document.getElementById(toggle.dataset.target);
+    if (submenu.classList.contains('open')) {
+      submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+    }
+
     toggle.addEventListener('click', () => {
-      const submenu = document.getElementById(toggle.dataset.target);
       const isOpen = submenu.classList.contains('open');
 
       document.querySelectorAll('.submenu.open').forEach((open) => {
@@ -117,6 +168,34 @@
       submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
     });
   });
+
+  // Semáforo de la próxima cita: verde antes de la hora, amarillo hasta 10 min
+  // después, rojo pasados 10 min y 1 segundo.
+  const GRACE_PERIOD_MS = 10 * 60 * 1000;
+
+  function updateSemaforo() {
+    const timeEl = document.getElementById('nextApptTime');
+    const dot = document.getElementById('semaforoDot');
+    if (!timeEl || !dot) return;
+
+    const [hours, minutes] = timeEl.dataset.apptTime.split(':').map(Number);
+    const now = new Date();
+    const apptTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
+    const diffMs = now - apptTime;
+
+    dot.classList.remove('semaforo-green', 'semaforo-yellow', 'semaforo-red');
+
+    if (diffMs <= 0) {
+      dot.classList.add('semaforo-green');
+    } else if (diffMs <= GRACE_PERIOD_MS) {
+      dot.classList.add('semaforo-yellow');
+    } else {
+      dot.classList.add('semaforo-red');
+    }
+  }
+
+  updateSemaforo();
+  setInterval(updateSemaforo, 1000);
 </script>
 
 </body>
