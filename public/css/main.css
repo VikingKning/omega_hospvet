@@ -251,7 +251,7 @@ body:has(.app)::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: url("assets/imgs/icon_black.png") no-repeat center center;
+  background: url("../assets/imgs/icon_black.png") no-repeat center center;
   background-size: 45% auto;
   opacity: 0.05;
   pointer-events: none;

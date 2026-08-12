@@ -1,0 +1,5 @@
+node_modules
+public
+coverage
+pnpm-lock.yaml
+src/views/*.ejs

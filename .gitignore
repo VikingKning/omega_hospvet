@@ -1,1 +1,19 @@
 .claude/settings.local.json
+
+# Backend
+node_modules/
+.env*
+!.env.example
+logs/
+*.log
+pnpm-debug.log*
+coverage/
+*.pid
+
+# Archivos de resultados de laboratorio: nunca viven en el repo (Decisión 8
+# de la bitácora técnica; datos clínicos de pacientes)
+public/uploads/
+
+# Sistema operativo
+.DS_Store
+
