@@ -12,9 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # La versión de pnpm se toma de "packageManager" en package.json, no se
+      # fija aquí: pnpm/action-setup@v4 falla si se declara en ambos lugares.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - uses: actions/setup-node@v4
         with:
