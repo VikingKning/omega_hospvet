@@ -41,7 +41,7 @@ El frontend (HTML + CSS + JavaScript vanilla, sin frameworks de cliente ni proce
 
 ## Prerequisitos para ejecución
 
-- [Node.js](https://nodejs.org/) 20+ y [pnpm](https://pnpm.io/) (gestor de paquetes decidido en la bitácora técnica; `npm install -g pnpm` o `corepack enable` si tu instalación de Node lo soporta).
+- [Node.js](https://nodejs.org/) 22.13+ (requerido por pnpm 11) y [pnpm](https://pnpm.io/) (gestor de paquetes decidido en la bitácora técnica; `npm install -g pnpm` o `corepack enable` si tu instalación de Node lo soporta).
 - Una instancia de [PostgreSQL](https://www.postgresql.org/) accesible (local o remota).
 - [Git](https://git-scm.com/) para clonar el repositorio.
 

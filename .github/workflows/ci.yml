@@ -16,9 +16,11 @@ jobs:
       # fija aquí: pnpm/action-setup@v4 falla si se declara en ambos lugares.
       - uses: pnpm/action-setup@v4
 
+      # pnpm 11 requiere Node.js >= 22.13; con Node 20 crashea al iniciar
+      # (usa el módulo interno node:sqlite, no disponible antes de esa versión).
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Instalar dependencias
