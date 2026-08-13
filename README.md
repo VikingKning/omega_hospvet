@@ -203,17 +203,17 @@ OmegaVet_AdminSite/
 
 ### Rutas
 
-| Ruta                | Protección                                             | Descripción                                                            |
-| ------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `/` y `/index.html` | Pública (redirige a `/main.html` si ya hay sesión)     | Inicio de sesión (antes `login.html`; ahora es la página raíz)         |
-| `POST /login`       | CSRF + Joi                                             | Valida credenciales, crea sesión, resuelve permisos (US-101)           |
-| `GET /logout`       | —                                                      | Destruye la sesión y redirige a `/`                                    |
-| `/main.html`        | `requireAuth`                                          | Panel administrativo (landing tras iniciar sesión)                     |
-| `/agenda.html`      | `requireAuth` + `requirePermission('agenda.ver')`      | Agenda de Consultas y Cirugías                                         |
-| `/grooming.html`    | `requireAuth` + `requirePermission('grooming.ver')`    | Agenda de Grooming                                                     |
-| `/laboratorio.html` | `requireAuth` + `requirePermission('laboratorio.ver')` | Órdenes de laboratorio, filtros y alta de estudios                     |
-| `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores listado, búsqueda y paginación (US-606) |
-| `/health`           | Pública                                                | Health check del servidor Express                                      |
+| Ruta                | Protección                                             | Descripción                                                    |
+| ------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
+| `/` y `/index.html` | Pública (redirige a `/main.html` si ya hay sesión)     | Inicio de sesión (antes `login.html`; ahora es la página raíz) |
+| `POST /login`       | CSRF + Joi                                             | Valida credenciales, crea sesión, resuelve permisos (US-101)   |
+| `GET /logout`       | —                                                      | Destruye la sesión y redirige a `/`                            |
+| `/main.html`        | `requireAuth`                                          | Panel administrativo (landing tras iniciar sesión)             |
+| `/agenda.html`      | `requireAuth` + `requirePermission('agenda.ver')`      | Agenda de Consultas y Cirugías                                 |
+| `/grooming.html`    | `requireAuth` + `requirePermission('grooming.ver')`    | Agenda de Grooming                                             |
+| `/laboratorio.html` | `requireAuth` + `requirePermission('laboratorio.ver')` | Órdenes de laboratorio, filtros y alta de estudios             |
+| `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores listado, búsqueda y paginación (US-606)   |
+| `/health`           | Pública                                                | Health check del servidor Express                              |
 
 Las 6 páginas del panel se sirven vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `css/`, `js/` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
 
