@@ -131,30 +131,47 @@ describe('flujo de login (US-101)', () => {
 });
 
 describe('cerrar sesión (US-107)', () => {
+  // El sid real (la primary key que guarda connect-pg-simple) va cifrado
+  // dentro del valor de la cookie que manda `Set-Cookie` en el login:
+  // "omega.sid=s%3A<sid>.<firma>". Parsearlo de ahí identifica CON CERTEZA
+  // la fila de ESTE agente específico — a diferencia de comparar un conteo
+  // global de `session` (racy: la tabla es compartida por todos los
+  // archivos de test, que Jest corre en paralelo, y otras suites hacen
+  // login decenas de veces en la misma ventana) o de intentar adivinar
+  // "la fila nueva que apareció" (ambiguo si más de un login concurrente
+  // crea una fila nueva en el mismo instante — eso fue lo que hizo fallar
+  // el primer intento de arreglo de este test).
+  function extractSid(setCookieHeader) {
+    const cookieValue = decodeURIComponent(setCookieHeader.split(';')[0].split('=')[1]);
+    return cookieValue.replace(/^s:/, '').split('.')[0];
+  }
+
   async function loginAgent() {
     const agent = request.agent(app);
     const csrfToken = await getCsrfToken(agent);
-    await agent
+    const res = await agent
       .post('/login')
       .set('x-csrf-token', csrfToken)
       .send({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
-    return agent;
+    const sid = extractSid(res.headers['set-cookie'][0]);
+    return { agent, sid };
   }
 
   it('AC1: invalida la sesión en el servidor (borra la fila en session) y redirige al login', async () => {
-    const agent = await loginAgent();
-    const before = await db('session').count('* as count').first();
+    const { agent, sid } = await loginAgent();
+    const sessionRowBefore = await db('session').where({ sid }).first();
+    expect(sessionRowBefore).toBeDefined();
 
     const res = await agent.get('/logout');
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/');
-    const after = await db('session').count('* as count').first();
-    expect(Number(after.count)).toBe(Number(before.count) - 1);
+    const sessionRowAfter = await db('session').where({ sid }).first();
+    expect(sessionRowAfter).toBeUndefined();
   });
 
   it('AC2: tras cerrar sesión, la pantalla protegida ya no es accesible con la misma cookie (simula "Atrás")', async () => {
-    const agent = await loginAgent();
+    const { agent } = await loginAgent();
 
     const beforeLogout = await agent.get('/main.html');
     expect(beforeLogout.status).toBe(200);
@@ -170,12 +187,20 @@ describe('cerrar sesión (US-107)', () => {
   });
 
   it('AC3: cerrar sesión no modifica datos del usuario', async () => {
-    const agent = await loginAgent();
+    const { agent } = await loginAgent();
+    // ultimo_login_en se excluye del comparativo a propósito: lo toca el
+    // LOGIN, no el logout, y "admin" es el usuario fijo que usan TODAS las
+    // suites — otro archivo de test corriendo en paralelo (Jest corre los
+    // archivos concurrentemente) puede loguearse como admin en este mismo
+    // instante y adelantar ese timestamp legítimamente. Comparar la fila
+    // completa haría flaky un assert que no tiene nada que ver con logout.
     const before = await db('usuarios').where({ username: ADMIN_USERNAME }).first();
+    delete before.ultimo_login_en;
 
     await agent.get('/logout');
 
     const after = await db('usuarios').where({ username: ADMIN_USERNAME }).first();
+    delete after.ultimo_login_en;
     expect(after).toEqual(before);
   });
 });
