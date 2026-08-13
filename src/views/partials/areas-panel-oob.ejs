@@ -1,0 +1,11 @@
+<%
+// US-610: envoltura para el swap "out-of-band" del panel tras un alta/
+// edición exitosa desde el modal. El <form>/modal no vive dentro de
+// #areas-panel, así que la respuesta normal de crear()/editar() no podría
+// refrescar la tabla por sí sola — hx-swap-oob="true" le dice a HTMX que
+// reemplace este elemento por su id, sin importar cuál sea el hx-target
+// "normal" de la petición (ver areas.controller.js: renderExito()).
+%>
+<main class="main-content" id="areas-panel" hx-swap-oob="true">
+  <%- include('areas-panel', { areas, total, catalogoVacio, page, totalPages, pageSize, q, estado, sort, dir, user, csrfToken }) %>
+</main>

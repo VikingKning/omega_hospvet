@@ -802,6 +802,27 @@ body:has(.app)::after {
   color: var(--text-dark);
 }
 
+.modal-form input:read-only,
+.modal-form input:disabled {
+  background: var(--bg-base);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.form-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: rgba(240, 15, 53, 0.08);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
 .combobox {
   position: relative;
 }

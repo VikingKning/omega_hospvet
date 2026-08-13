@@ -50,4 +50,85 @@ async function existsAny() {
   return Boolean(row);
 }
 
-module.exports = { count, findPage, existsAny };
+// US-611: baja lógica, nunca DELETE físico — se conservan las citas
+// históricas que referencian esta área.
+async function desactivar(id, usuarioId) {
+  await db('areas').where({ id }).update({
+    activo: false,
+    desactivado_por: usuarioId,
+    desactivado_en: db.fn.now(),
+  });
+}
+
+// US-610: para precargar el formulario de edición (nombre + slug read-only).
+async function findById(id) {
+  return db('areas').where({ id }).first();
+}
+
+// Trae todas las filas (menos la propia, en edición) para que el service
+// compare nombres normalizados (sin acentos/mayúsculas/espacios) en JS — el
+// catálogo es chico, así que no vale la pena pelear con collations o
+// instalar la extensión `unaccent` de Postgres (que además sería tocar el
+// schema del cliente) solo para este chequeo.
+async function findAllExcept(excludeId) {
+  return db('areas')
+    .modify((builder) => {
+      if (excludeId) builder.whereNot('id', excludeId);
+    })
+    .select('id', 'nombre', 'activo');
+}
+
+// El slug SÍ es único de verdad para siempre, sin importar el estado — así
+// nunca se reutiliza uno ya usado por un área desactivada, para no romper
+// vistas/enlaces históricos que lo hayan referenciado.
+async function existsBySlug(slug) {
+  const row = await db('areas').where({ slug }).first();
+  return Boolean(row);
+}
+
+async function create({ nombre, slug, usuarioId }) {
+  const [row] = await db('areas')
+    .insert({ nombre, slug, creado_por: usuarioId, creado_en: db.fn.now() })
+    .returning('id');
+  return row.id;
+}
+
+// El slug nunca se toca aquí — a propósito, así lo pide la historia.
+async function updateNombre(id, nombre, usuarioId) {
+  await db('areas').where({ id }).update({
+    nombre,
+    actualizado_por: usuarioId,
+    actualizado_en: db.fn.now(),
+  });
+}
+
+// US-610 (alta con nombre reutilizado): en vez de un INSERT que chocaría
+// con el UNIQUE de `nombre` del script original, se reactiva el registro
+// desactivado que ya tenía ese nombre — conserva su slug de siempre (nunca
+// se regenera) y limpia desactivado_por/desactivado_en. `nombre` se
+// reescribe con lo que el usuario acaba de escribir (mismo valor salvo
+// mayúsculas/espacios, por si acaso).
+async function reactivar(id, nombre, usuarioId) {
+  await db('areas').where({ id }).update({
+    nombre,
+    activo: true,
+    // null explícito para limpiar la columna — undefined la deja intacta.
+    desactivado_por: null,
+    desactivado_en: null,
+    actualizado_por: usuarioId,
+    actualizado_en: db.fn.now(),
+  });
+}
+
+module.exports = {
+  count,
+  findPage,
+  existsAny,
+  desactivar,
+  findById,
+  findAllExcept,
+  existsBySlug,
+  create,
+  updateNombre,
+  reactivar,
+};

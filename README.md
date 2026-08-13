@@ -121,7 +121,7 @@ Deberías ver en consola: `Omega Vet AdminSite escuchando en el puerto 3000 (dev
 
 - `http://localhost:3000/` → debe cargar la pantalla de inicio de sesión (`index.html`, servida por Express).
 - `http://localhost:3000/health` → debe responder `{"status":"ok"}`.
-- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html`, `areas.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). `doctores.html`/`areas.html` arrancan vacíos (sin datos sembrados) — verás el estado vacío con el botón de alta correspondiente hasta que se dé de alta el primer registro (historia futura; por ahora esos botones son decorativos).
+- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html`, `areas.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). `doctores.html`/`areas.html` arrancan vacíos (sin datos sembrados) — verás el estado vacío con el botón de alta correspondiente hasta que se dé de alta el primer registro. En `areas.html` ese botón ya funciona (US-610); en `doctores.html` sigue siendo decorativo (el alta real de doctores es una historia futura).
 - "Cerrar sesión" en el sidebar destruye la sesión de verdad.
 - Para confirmar que el seed del admin quedó bien, puedes consultarlo directo en la base: `psql -U omega_hospvet -d omega_hospvet -c "select username, correo, ultimo_login_en from usuarios;"` (ajusta usuario/base a los de tu `.env.localhost`; `ultimo_login_en` se actualiza en cada login exitoso).
 
@@ -177,11 +177,13 @@ OmegaVet_AdminSite/
 │   ├── modules/
 │   │   ├── auth/                                   # auth.routes/controller/service/repository/schema.js (US-101)
 │   │   ├── doctores/                                # doctores.routes/controller/service/repository.js (US-606/608, filtro + baja vía HTMX)
-│   │   └── areas/                                   # areas.routes/controller/service/repository.js (US-609, mismo patrón que doctores/)
+│   │   └── areas/                                   # areas.routes/controller/service/repository.js (US-609/610/611)
 │   ├── views/
 │   │   ├── partials/sidebar.ejs                    # Sidebar compartido, filtrado por permisos (AC6 de US-101)
 │   │   ├── partials/doctores-panel.ejs             # Fragmento HTMX de /doctores.html (toolbar+tabla+paginación)
 │   │   ├── partials/areas-panel.ejs                # Fragmento HTMX de /areas.html (mismo patrón)
+│   │   ├── partials/area-form.ejs                  # Formulario de alta/edición de áreas (US-610), un solo template para las dos acciones
+│   │   ├── partials/areas-panel-oob.ejs             # Envoltura hx-swap-oob para refrescar la tabla tras un alta/edición desde el modal
 │   │   └── index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs, doctores.ejs, areas.ejs
 │   ├── app.js                                      # App Express (view engine EJS, helmet, compression, logging, sesión, rutas)
 │   └── server.js                                   # Punto de entrada (graceful shutdown)
@@ -194,7 +196,7 @@ OmegaVet_AdminSite/
 │       ├── app.test.js                             # Rutas públicas, 404, páginas protegidas sin sesión
 │       ├── auth.test.js                            # Flujo de login completo (AC1-AC6 de US-101)
 │       ├── doctores.test.js                        # Catálogo de doctores: poblado, búsqueda, permisos, orden, baja (US-606/608)
-│       └── areas.test.js                            # Catálogo de áreas: poblado, búsqueda, permisos, orden (US-609)
+│       └── areas.test.js                            # Catálogo de áreas: poblado, búsqueda, permisos, orden, alta, edición, baja (US-609/610/611)
 ├── eslint.config.js
 ├── .prettierrc, .prettierignore
 ├── jest.config.js                                  # setupFiles carga .env.test para los tests
@@ -207,18 +209,18 @@ OmegaVet_AdminSite/
 
 ### Rutas
 
-| Ruta                | Protección                                             | Descripción                                                                    |
-| ------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `/` y `/index.html` | Pública (redirige a `/main.html` si ya hay sesión)     | Inicio de sesión (antes `login.html`; ahora es la página raíz)                 |
-| `POST /login`       | CSRF + Joi                                             | Valida credenciales, crea sesión, resuelve permisos (US-101)                   |
-| `GET /logout`       | —                                                      | Destruye la sesión y redirige a `/`                                            |
-| `/main.html`        | `requireAuth`                                          | Panel administrativo (landing tras iniciar sesión)                             |
-| `/agenda.html`      | `requireAuth` + `requirePermission('agenda.ver')`      | Agenda de Consultas y Cirugías                                                 |
-| `/grooming.html`    | `requireAuth` + `requirePermission('grooming.ver')`    | Agenda de Grooming                                                             |
-| `/laboratorio.html` | `requireAuth` + `requirePermission('laboratorio.ver')` | Órdenes de laboratorio, filtros y alta de estudios                             |
-| `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores: listado, búsqueda, orden, paginación y baja (US-606/608) |
-| `/areas.html`       | `requireAuth` + `requirePermission('areas.ver')`       | Catálogo de áreas: listado, búsqueda, orden y paginación (US-609)              |
-| `/health`           | Pública                                                | Health check del servidor Express                                              |
+| Ruta                | Protección                                             | Descripción                                                                                    |
+| ------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `/` y `/index.html` | Pública (redirige a `/main.html` si ya hay sesión)     | Inicio de sesión (antes `login.html`; ahora es la página raíz)                                 |
+| `POST /login`       | CSRF + Joi                                             | Valida credenciales, crea sesión, resuelve permisos (US-101)                                   |
+| `GET /logout`       | —                                                      | Destruye la sesión y redirige a `/`                                                            |
+| `/main.html`        | `requireAuth`                                          | Panel administrativo (landing tras iniciar sesión)                                             |
+| `/agenda.html`      | `requireAuth` + `requirePermission('agenda.ver')`      | Agenda de Consultas y Cirugías                                                                 |
+| `/grooming.html`    | `requireAuth` + `requirePermission('grooming.ver')`    | Agenda de Grooming                                                                             |
+| `/laboratorio.html` | `requireAuth` + `requirePermission('laboratorio.ver')` | Órdenes de laboratorio, filtros y alta de estudios                                             |
+| `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores: listado, búsqueda, orden, paginación y baja (US-606/608)                 |
+| `/areas.html`       | `requireAuth` + `requirePermission('areas.ver')`       | Catálogo de áreas: listado, búsqueda, orden, paginación, alta, edición y baja (US-609/610/611) |
+| `/health`           | Pública                                                | Health check del servidor Express                                                              |
 
 Las páginas del panel se sirven vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `css/`, `js/` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
 
@@ -232,7 +234,9 @@ El orden se resuelve contra una whitelist fija de expresiones SQL en el reposito
 
 En **doctores**, el botón "Nuevo doctor" y el ícono de editar son decorativos (`doctores.crear`/`doctores.editar`, sin funcionalidad todavía), pero **el ícono de eliminar sí funciona (US-608)**: pide confirmación vía un modal propio (no el `confirm()` nativo del navegador — patrón `htmx:confirm` + `evt.detail.issueRequest`, ver `doctores.ejs`) y ejecuta `DELETE /doctores/:id`, que hace una baja lógica (`activo=false` + `desactivado_por`/`desactivado_en`) — nunca un `DELETE` físico, para no perder el historial de citas/laboratorio que referencia al doctor. El ícono de eliminar solo aparece en filas activas.
 
-En **áreas**, los tres botones (crear/editar/eliminar, condicionados a `areas.crear`/`areas.editar`/`areas.eliminar`) son **decorativos por ahora** — el alta/edición/baja real de áreas es de una historia futura (misma convención que doctores tuvo entre US-606 y US-608).
+En **áreas**, además de la baja (US-611, mismo mecanismo que doctores), **el alta y la edición también son reales (US-610)** — a diferencia de doctores, que sigue teniendo esos dos botones decorativos. Un solo formulario (`src/views/partials/area-form.ejs`) sirve para las dos acciones, en un modal propio (distinto del de confirmación): "+ Nueva área" abre el formulario vacío (`GET /areas/nuevo`); el ícono de editar lo abre precargado con el nombre y el **slug en modo solo lectura** — nunca se regenera al editar, para no romper vistas/enlaces que ya lo referencien (`GET /areas/:id/editar`). Al guardar, `POST /areas` (alta) genera el slug a partir del nombre (sin acentos, minúsculas, guiones); `PUT /areas/:id` (edición) actualiza solo el nombre (+ `actualizado_por`/`actualizado_en`).
+
+`nombre` y `slug` siguen siendo `UNIQUE` a secas, exactamente como en `assets/sql/Omega-Database.sql` — no se tocó el schema para esta historia. "El nombre de un área dada de baja queda libre" **no** se resuelve con un índice parcial ni permitiendo dos filas con el mismo nombre: al dar de alta con un nombre que ya pertenece a un registro **inactivo**, el alta **reactiva ese mismo registro** (`activo=true`, limpia `desactivado_por`/`desactivado_en`, actualiza `actualizado_por`/`actualizado_en`) en vez de insertar una fila nueva — conserva su `id` y su `slug` originales, así que cualquier enlace viejo que lo haya referenciado sigue siendo válido. Si el nombre pertenece a un registro **activo**, se rechaza igual (AC de duplicados). Editar, en cambio, rechaza el nombre si pertenece a CUALQUIER otro registro (activo o no) — no hay "reactivar" al editar, sería fusionar la identidad de dos filas distintas, algo que la historia nunca pidió. El chequeo de duplicados es **insensible a acentos, mayúsculas y espacios** ("Neurología", "neurologia" y "Neuro Logia" cuentan como el mismo nombre) — se normaliza en JS (`areas.service.js#normalizeNombre`) comparando contra todas las áreas, no con SQL/una extensión de Postgres (el catálogo es chico y así tampoco se toca el schema). Lo que se guarda y se muestra es siempre el texto tal cual lo escribió el usuario (solo recortado), la normalización es solo para decidir si es un duplicado. Un nombre duplicado responde con el mismo fragmento del formulario más el mensaje "El nombre del Área ya esta registrada" — el modal no se cierra y no se guarda nada. Al guardar con éxito, la respuesta no reemplaza el formulario: hace un swap **out-of-band** (`hx-swap-oob`) de la tabla completa y manda el header `HX-Trigger: closeAreaModal`, que el JS del cliente traduce en cerrar el modal (ver `areas.ejs`).
 
 **Pendiente para una migración "completa" según la bitácora de decisiones técnicas**: `index.ejs`/`main.ejs`/`agenda.ejs`/`grooming.ejs`/`laboratorio.ejs` siguen siendo mayormente el HTML/JS del PoC copiado tal cual (el sidebar ya es la excepción: se extrajo a un partial con variables reales, ver arriba), y los datos de Agenda/Laboratorio siguen siendo arreglos de ejemplo en el `<script>` de cada página. Eso se resuelve historia por historia, conforme cada módulo se conecte a datos reales de la base.
 
@@ -242,7 +246,9 @@ En **áreas**, los tres botones (crear/editar/eliminar, condicionados a `areas.c
 - `GET /logout` — destruye la sesión, `302` a `/`.
 - `GET /doctores.html` / `GET /areas.html` — página completa, siempre con el estado por defecto (ignora cualquier query string). HTML renderizado server-side (no JSON), `200`. `302` a `/main.html` si falta el permiso correspondiente (`HX-Redirect` en vez de `302` si la petición viene de HTMX).
 - `POST /doctores.html` / `POST /areas.html` — fragmento HTML del panel (`q`/`estado`/`sort`/`dir`/`page` en el body, `application/x-www-form-urlencoded`), disparado por HTMX, nunca visitado directo por el usuario. Requiere CSRF (`x-csrf-token`) y el mismo permiso de lectura del módulo.
-- `DELETE /doctores/:id` — baja lógica de un doctor (US-608), disparado por HTMX tras confirmar en el modal. Body con el filtro/orden/página actual — HTMX manda estos valores como **query string** en un `DELETE` (`methodsThatUseUrlParams` de HTMX incluye "delete", no solo "get" — gotcha real, ver `doctores.controller.js`), no como body. Requiere CSRF y el permiso `doctores.eliminar`.
+- `DELETE /doctores/:id` / `DELETE /areas/:id` — baja lógica (US-608/611), disparado por HTMX tras confirmar en el modal. HTMX manda el filtro/orden/página actual como **query string** en el `DELETE` (`methodsThatUseUrlParams` de HTMX incluye "delete", no solo "get" — gotcha real, ver `doctores.controller.js`/`areas.controller.js`), no como body. Requiere CSRF y el permiso `doctores.eliminar`/`areas.eliminar` según corresponda.
+- `GET /areas/nuevo` / `GET /areas/:id/editar` (US-610) — fragmento HTML del formulario de alta/edición (vacío o precargado), swapeado dentro del modal correspondiente. Requiere `areas.crear`/`areas.editar` según corresponda.
+- `POST /areas` (alta) / `PUT /areas/:id` (edición) (US-610) — `{ nombre }` en el body. Éxito: `200` con un swap out-of-band (`hx-swap-oob`) de la tabla completa + header `HX-Trigger: closeAreaModal`. Nombre vacío/duplicado (entre áreas activas): `200` con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger` (el modal no se cierra). Requiere CSRF y `areas.crear`/`areas.editar` según corresponda.
 - `GET /health` — `200 { status: "ok" }`.
 
 El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc.) se documentará conforme se implementen sus historias de usuario correspondientes.

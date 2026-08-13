@@ -19,7 +19,8 @@ function sortVals(column) {
       <p class="empty-state-title">Todavía no hay áreas registradas</p>
       <p class="empty-state-description">Da de alta la primera área de la clínica para que empiece a estar disponible al asignar doctores y agendar citas.</p>
       <% if (has('areas.crear')) { %>
-        <button class="btn-primary" type="button">
+        <button class="btn-primary" type="button"
+                hx-get="areas/nuevo" hx-target="#areaFormModalBody" hx-swap="innerHTML">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Registrar primera área
         </button>
@@ -53,7 +54,8 @@ function sortVals(column) {
         </div>
       </div>
       <% if (has('areas.crear')) { %>
-        <button class="btn-primary" type="button">
+        <button class="btn-primary" type="button"
+                hx-get="areas/nuevo" hx-target="#areaFormModalBody" hx-swap="innerHTML">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Nueva área
         </button>
@@ -94,14 +96,19 @@ function sortVals(column) {
               <td class="text-right">
                 <div class="row-actions">
                   <% if (has('areas.editar') && area.activo) { %>
-                    <button class="row-action-btn row-action-edit" type="button" aria-label="Editar área">
+                    <button class="row-action-btn row-action-edit" type="button" aria-label="Editar área <%= area.nombre %>"
+                            hx-get="areas/<%= area.id %>/editar" hx-target="#areaFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
                       </svg>
                     </button>
                   <% } %>
                   <% if (has('areas.eliminar') && area.activo) { %>
-                    <button class="row-action-btn row-action-delete" type="button" aria-label="Eliminar área">
+                    <button class="row-action-btn row-action-delete" type="button"
+                            aria-label="Dar de baja el área <%= area.nombre %>"
+                            hx-delete="areas/<%= area.id %>" hx-include="#areas-filters"
+                            hx-target="#areas-panel" hx-swap="innerHTML"
+                            hx-confirm="¿Dar de baja el área <%= area.nombre %>? Las citas históricas asociadas se conservan, solo deja de aparecer como área activa.">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
                       </svg>

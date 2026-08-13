@@ -1,6 +1,13 @@
 jest.mock('../../src/modules/areas/areas.repository');
 const repository = require('../../src/modules/areas/areas.repository');
-const { list } = require('../../src/modules/areas/areas.service');
+const {
+  list,
+  desactivar,
+  crear,
+  editar,
+  AreaValidationError,
+  DuplicateNombreError,
+} = require('../../src/modules/areas/areas.service');
 const db = require('../../src/config/database');
 
 afterAll(() => db.destroy());
@@ -80,5 +87,143 @@ describe('areas.service.list', () => {
   it('una dirección desconocida cae a "asc"', async () => {
     const result = await list({ dir: 'algo-raro' });
     expect(result.dir).toBe('asc');
+  });
+});
+
+describe('areas.service.desactivar (US-611)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('delega en el repository con el id ya parseado y el usuario que ejecuta la baja', async () => {
+    await desactivar('7', 42);
+    expect(repository.desactivar).toHaveBeenCalledWith(7, 42);
+  });
+
+  it('un id inválido no truena y no llega al repository', async () => {
+    await desactivar('no-es-un-numero', 42);
+    expect(repository.desactivar).not.toHaveBeenCalled();
+  });
+});
+
+describe('areas.service.crear (US-610)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findAllExcept.mockResolvedValue([]);
+    repository.existsBySlug.mockResolvedValue(false);
+    repository.create.mockResolvedValue(99);
+    repository.reactivar.mockResolvedValue();
+  });
+
+  it('genera el slug a partir del nombre, sin acentos y en minúsculas', async () => {
+    await crear({ nombre: 'Cardiología', usuarioId: 1 });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ nombre: 'Cardiología', slug: 'cardiologia', usuarioId: 1 }),
+    );
+  });
+
+  it('si el slug base ya existe (dos nombres distintos que normalizan igual), le agrega un sufijo', async () => {
+    repository.existsBySlug
+      .mockResolvedValueOnce(true) // "cardiologia" ocupado
+      .mockResolvedValueOnce(true) // "cardiologia-2" ocupado
+      .mockResolvedValueOnce(false); // "cardiologia-3" libre
+
+    await crear({ nombre: 'Cardiología', usuarioId: 1 });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'cardiologia-3' }),
+    );
+  });
+
+  it('recorta espacios del nombre antes de guardar', async () => {
+    await crear({ nombre: '  Nutrición  ', usuarioId: 1 });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ nombre: 'Nutrición' }),
+    );
+  });
+
+  it('rechaza un nombre vacío sin llegar al repository', async () => {
+    await expect(crear({ nombre: '   ', usuarioId: 1 })).rejects.toThrow(AreaValidationError);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un nombre de más de 100 caracteres', async () => {
+    await expect(crear({ nombre: 'a'.repeat(101), usuarioId: 1 })).rejects.toThrow(
+      AreaValidationError,
+    );
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un nombre ya usado por un área activa (AC de duplicados)', async () => {
+    repository.findAllExcept.mockResolvedValue([{ id: 7, nombre: 'Cardiología', activo: true }]);
+    await expect(crear({ nombre: 'Cardiología', usuarioId: 1 })).rejects.toThrow(
+      DuplicateNombreError,
+    );
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('reactiva (no crea una fila nueva) si el nombre pertenece a un área ya dada de baja', async () => {
+    repository.findAllExcept.mockResolvedValue([{ id: 7, nombre: 'Cardiología', activo: false }]);
+
+    const id = await crear({ nombre: 'Cardiología', usuarioId: 1 });
+
+    expect(repository.reactivar).toHaveBeenCalledWith(7, 'Cardiología', 1);
+    expect(repository.create).not.toHaveBeenCalled();
+    expect(id).toBe(7); // el id del registro reactivado, no uno nuevo
+  });
+
+  it('detecta un duplicado aunque difiera en acentos, mayúsculas o espacios', async () => {
+    repository.findAllExcept.mockResolvedValue([{ id: 7, nombre: 'Neurología', activo: true }]);
+    await expect(crear({ nombre: '  neuro logia  ', usuarioId: 1 })).rejects.toThrow(
+      DuplicateNombreError,
+    );
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('areas.service.editar (US-610)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findAllExcept.mockResolvedValue([]);
+    repository.updateNombre.mockResolvedValue();
+  });
+
+  it('actualiza el nombre sin tocar el slug', async () => {
+    await editar({ id: 5, nombre: 'Nuevo Nombre', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Nuevo Nombre', 2);
+    expect(repository.existsBySlug).not.toHaveBeenCalled();
+  });
+
+  it('excluye el propio id al chequear duplicados', async () => {
+    await editar({ id: 5, nombre: 'Cardiología', usuarioId: 2 });
+    expect(repository.findAllExcept).toHaveBeenCalledWith(5);
+  });
+
+  it('rechaza un nombre ya usado por otra área activa', async () => {
+    repository.findAllExcept.mockResolvedValue([{ id: 7, nombre: 'Cardiología', activo: true }]);
+    await expect(editar({ id: 5, nombre: 'Cardiología', usuarioId: 2 })).rejects.toThrow(
+      DuplicateNombreError,
+    );
+    expect(repository.updateNombre).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un nombre ya usado por otra área INACTIVA también (no hay reactivar al editar)', async () => {
+    repository.findAllExcept.mockResolvedValue([{ id: 7, nombre: 'Cardiología', activo: false }]);
+    await expect(editar({ id: 5, nombre: 'Cardiología', usuarioId: 2 })).rejects.toThrow(
+      DuplicateNombreError,
+    );
+    expect(repository.updateNombre).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un nombre que solo difiere en acentos/mayúsculas/espacios de otra área', async () => {
+    repository.findAllExcept.mockResolvedValue([{ id: 7, nombre: 'Neurología', activo: true }]);
+    await expect(editar({ id: 5, nombre: 'neurologia', usuarioId: 2 })).rejects.toThrow(
+      DuplicateNombreError,
+    );
+    expect(repository.updateNombre).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un nombre vacío', async () => {
+    await expect(editar({ id: 5, nombre: '', usuarioId: 2 })).rejects.toThrow(AreaValidationError);
   });
 });

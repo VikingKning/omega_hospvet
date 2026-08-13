@@ -1,0 +1,41 @@
+<%
+// US-610: mismo formulario para alta y edición — el modo se decide por si
+// `area` viene o no (edición trae el registro completo, alta viene null).
+// Este partial se usa tanto para el primer render (GET /areas/nuevo o
+// GET /areas/:id/editar) como para el re-render con error (POST/PUT
+// fallidos, ver areas.controller.js) — por eso `nombre` viaja aparte de
+// `area`: en un re-render por error es lo que el usuario acababa de
+// escribir, no necesariamente lo que ya está guardado.
+const esEdicion = Boolean(area);
+%>
+<div class="modal-header">
+  <h2><%= esEdicion ? 'Editar área' : 'Nueva área' %></h2>
+  <button class="modal-close-btn" type="button" id="areaFormClose" aria-label="Cerrar">&times;</button>
+</div>
+
+<% if (error) { %>
+  <div class="form-error-banner">
+    <span><%= error %></span>
+    <button type="button" class="modal-close-btn" id="areaFormErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
+  </div>
+<% } %>
+
+<form class="modal-form"
+      hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `areas/${area.id}` : 'areas' %>"
+      hx-target="#areaFormModalBody" hx-swap="innerHTML"
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+  <label>
+    Nombre
+    <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100" autofocus>
+  </label>
+  <% if (esEdicion) { %>
+    <label>
+      Slug
+      <input type="text" value="<%= area.slug %>" readonly disabled>
+    </label>
+  <% } %>
+  <div class="modal-actions">
+    <button type="button" class="btn-secondary" id="areaFormCancel">Cancelar</button>
+    <button type="submit" class="btn-primary">Guardar</button>
+  </div>
+</form>
