@@ -20,4 +20,14 @@ router.post(
   controller.filter,
 );
 
+// US-608: baja lógica de un doctor, disparada por HTMX desde el ícono de
+// eliminar del listado (con confirmación previa vía hx-confirm).
+router.delete(
+  '/doctores/:id',
+  requireAuth,
+  requirePermission('doctores.eliminar'),
+  doubleCsrfProtection,
+  controller.desactivar,
+);
+
 module.exports = router;

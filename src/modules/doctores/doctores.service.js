@@ -16,6 +16,11 @@ function parseDir(rawDir) {
   return rawDir === 'desc' ? 'desc' : 'asc';
 }
 
+function parseId(rawId) {
+  const id = Number.parseInt(rawId, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 // Query params de un listado GET: se sanean con valores por defecto en vez
 // de rechazarse con un error — a diferencia de un formulario que modifica
 // estado, un parámetro de página/búsqueda/orden raro no amerita un 400,
@@ -52,4 +57,14 @@ async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
   };
 }
 
-module.exports = { list };
+// US-608: baja lógica (activo=false + desactivado_por/desactivado_en), nunca
+// un DELETE físico — el historial de citas/laboratorio sigue referenciando
+// este doctor. Un id inválido/inexistente no truena, simplemente no hace
+// nada (mismo criterio permisivo que el resto del módulo).
+async function desactivar(rawId, usuarioId) {
+  const id = parseId(rawId);
+  if (id === null) return;
+  await repository.desactivar(id, usuarioId);
+}
+
+module.exports = { list, desactivar };

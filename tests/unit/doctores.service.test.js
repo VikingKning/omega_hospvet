@@ -1,6 +1,6 @@
 jest.mock('../../src/modules/doctores/doctores.repository');
 const repository = require('../../src/modules/doctores/doctores.repository');
-const { list } = require('../../src/modules/doctores/doctores.service');
+const { list, desactivar } = require('../../src/modules/doctores/doctores.service');
 const db = require('../../src/config/database');
 
 afterAll(() => db.destroy());
@@ -80,5 +80,21 @@ describe('doctores.service.list', () => {
   it('una dirección desconocida cae a "asc"', async () => {
     const result = await list({ dir: 'algo-raro' });
     expect(result.dir).toBe('asc');
+  });
+});
+
+describe('doctores.service.desactivar (US-608)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('delega en el repository con el id ya parseado y el usuario que ejecuta la baja', async () => {
+    await desactivar('7', 42);
+    expect(repository.desactivar).toHaveBeenCalledWith(7, 42);
+  });
+
+  it('un id inválido no truena y no llega al repository', async () => {
+    await desactivar('no-es-un-numero', 42);
+    expect(repository.desactivar).not.toHaveBeenCalled();
   });
 });

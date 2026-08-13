@@ -78,4 +78,14 @@ async function existsAny() {
   return Boolean(row);
 }
 
-module.exports = { count, findPage, existsAny };
+// US-608: baja lógica, nunca DELETE físico — se conserva el historial de
+// citas/laboratorio que referencia este doctor.
+async function desactivar(id, usuarioId) {
+  await db('doctores').where({ id }).update({
+    activo: false,
+    desactivado_por: usuarioId,
+    desactivado_en: db.fn.now(),
+  });
+}
+
+module.exports = { count, findPage, existsAny, desactivar };

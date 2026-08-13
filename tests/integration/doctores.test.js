@@ -286,3 +286,103 @@ describe('GET /doctores.html con catálogo poblado', () => {
     });
   });
 });
+
+describe('DELETE /doctores/:id (US-608 — baja lógica)', () => {
+  let doctorId;
+  let doctorId2;
+
+  // Dos doctores que comparten substring de búsqueda ("Baja") — necesario
+  // para el test de abajo que reproduce el bug real reportado: HTMX manda
+  // los valores incluidos vía hx-include como QUERY STRING en un DELETE
+  // (`methodsThatUseUrlParams` trae "delete" por default, igual que "get"),
+  // no como body. Un test que solo mande el body (como aquí antes) no
+  // detecta esto — hay que usar `.query()` para simular lo que HTMX manda
+  // de verdad.
+  beforeAll(async () => {
+    const [doctor] = await db('doctores')
+      .insert({
+        nombre: 'Sofía',
+        apellidos: `Baja ${SUFFIX}`,
+        activo: true,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    doctorId = doctor.id;
+
+    const [doctor2] = await db('doctores')
+      .insert({
+        nombre: 'Carlos',
+        apellidos: `Bajado ${SUFFIX}`,
+        activo: true,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    doctorId2 = doctor2.id;
+  });
+
+  // Los tests de este describe dependen del orden (Jest corre los `it` de un
+  // mismo archivo en orden, sin paralelizar): el primero desactiva al
+  // doctor, el segundo confirma que sigue existiendo con estado=todos —
+  // exactamente el flujo AC1/AC2 de la historia, no dos casos aislados.
+  it('AC1/AC2: desactiva (activo=false, desactivado_por/desactivado_en), sin DELETE físico, y el fragmento respeta el filtro/búsqueda activos (bug real: HTMX manda estos valores por query string, no por body)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getDoctoresCsrfToken(agent);
+
+    const res = await agent
+      .delete(`/doctores/${doctorId}`)
+      .query({ estado: 'activos', q: 'Baja' })
+      .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(`Baja ${SUFFIX}`); // recién desactivado, ya no aparece
+    expect(res.text).toContain(`Bajado ${SUFFIX}`); // el otro match de "Baja" sigue activo
+    // "1 resultados" es el assert que realmente distingue el bug: si el
+    // fragmento hubiera vuelto al estado por defecto (req.body vacío en vez
+    // de req.query), aparecerían TODOS los demás doctores activos de la
+    // base (más de 1), no solo el que matchea q=Baja.
+    expect(res.text).toContain('1 resultados');
+
+    const row = await db('doctores').where({ id: doctorId }).first();
+    expect(row.activo).toBe(false);
+    expect(row.desactivado_por).not.toBeNull();
+    expect(row.desactivado_en).not.toBeNull();
+  });
+
+  it('el registro sigue existiendo (no fue un DELETE físico) y aparece con estado=todos', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarDoctores(agent, { estado: 'todos' });
+
+    expect(res.text).toContain(`Baja ${SUFFIX}`);
+    expect(res.text).toContain('Inactivo');
+  });
+
+  it('sin token CSRF es rechazado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.delete(`/doctores/${doctorId2}`).query({ estado: 'todos' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('un usuario con doctores.ver pero sin doctores.eliminar es rebotado a /main.html', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.delete(`/doctores/${doctorId2}`).query({ estado: 'todos' });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('un id inválido no truena, responde 200 sin tronar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getDoctoresCsrfToken(agent);
+
+    const res = await agent
+      .delete('/doctores/no-es-un-id')
+      .query({ estado: 'todos' })
+      .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(200);
+  });
+});
