@@ -13,6 +13,7 @@ const requirePermission = require('./middlewares/requirePermission');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const authRoutes = require('./modules/auth/auth.routes');
 const doctoresRoutes = require('./modules/doctores/doctores.routes');
+const areasRoutes = require('./modules/areas/areas.routes');
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
@@ -88,6 +89,7 @@ for (const { route, view, permission } of modulePages) {
 
 app.use('/', authRoutes);
 app.use('/', doctoresRoutes);
+app.use('/', areasRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

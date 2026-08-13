@@ -28,6 +28,11 @@ const permissions = [
   ['doctores', 'editar', 'Editar un doctor existente'],
   ['doctores', 'eliminar', 'Eliminar (dar de baja) un doctor'],
 
+  ['areas', 'ver', 'Ver el catálogo de áreas'],
+  ['areas', 'crear', 'Crear un área nueva'],
+  ['areas', 'editar', 'Editar un área existente'],
+  ['areas', 'eliminar', 'Eliminar (dar de baja) un área'],
+
   ['plantillas_whatsapp', 'ver', 'Ver las plantillas de respuesta de WhatsApp'],
   ['plantillas_whatsapp', 'crear', 'Crear una plantilla de respuesta de WhatsApp'],
   ['plantillas_whatsapp', 'editar', 'Editar una plantilla de respuesta de WhatsApp'],

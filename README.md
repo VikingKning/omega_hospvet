@@ -37,7 +37,7 @@
 
 Panel administrativo para **Omega Veterinaria & Estética**: una interfaz web para el personal de la clínica que cubre inicio de sesión real (contraseñas con bcrypt, sesión persistida en PostgreSQL, permisos por usuario), un dashboard principal con menú lateral colapsable que solo muestra los módulos a los que el usuario tiene acceso, un módulo de **Agenda** (Consultas y Cirugías, Grooming) con calendario de Google embebido y semáforo de puntualidad de citas, y un módulo de **Laboratorio** con alta de órdenes multi-estudio (catálogo por categoría/estudio/zona anatómica), filtros de búsqueda y carga simulada de resultados.
 
-El frontend (HTML + CSS + JavaScript vanilla, sin frameworks de cliente ni proceso de build) se renderiza server-side con Express + EJS, sobre el backend (Node.js + Express + PostgreSQL vía Knex) que se está construyendo por historias de usuario a partir de la Fase 0 de infraestructura (US-000). El HTML/JS/CSS de cada página no cambió respecto al PoC original — solo cambió quién lo sirve. Única excepción: `/doctores.html` usa [HTMX](https://htmx.org/) (vendored en `public/js/`, sin CDN externo, sin build step) para actualizar el panel de filtros/tabla sin recargar la página y sin exponer lo que se busca/filtra en la URL — ver la sección de esa vista más abajo.
+El frontend (HTML + CSS + JavaScript vanilla, sin frameworks de cliente ni proceso de build) se renderiza server-side con Express + EJS, sobre el backend (Node.js + Express + PostgreSQL vía Knex) que se está construyendo por historias de usuario a partir de la Fase 0 de infraestructura (US-000). El HTML/JS/CSS de cada página no cambió respecto al PoC original — solo cambió quién lo sirve. Única excepción: `/doctores.html` y `/areas.html` usan [HTMX](https://htmx.org/) (vendored en `public/js/`, sin CDN externo, sin build step) para actualizar el panel de filtros/tabla sin recargar la página y sin exponer lo que se busca/filtra en la URL — mismo patrón en ambas, es el estándar del sistema para listados con filtro/orden/paginación; ver la sección de doctores más abajo.
 
 ## Prerequisitos para ejecución
 
@@ -107,7 +107,7 @@ pnpm run migrate:localhost   # o: pnpm run migrate, si usas .env
 pnpm run seed:localhost      # o: pnpm run seed
 ```
 
-Esto crea las 20 tablas del Modelo de Datos v4 más sus foreign keys, y siembra `permissions` (29 permisos), los catálogos de laboratorio (categorías/estudios/zonas anatómicas) y el usuario administrador de arranque con `ADMIN_USERNAME`/`ADMIN_PASSWORD` del archivo de entorno usado.
+Esto crea las 20 tablas del Modelo de Datos v4 más sus foreign keys, y siembra `permissions` (33 permisos), los catálogos de laboratorio (categorías/estudios/zonas anatómicas) y el usuario administrador de arranque con `ADMIN_USERNAME`/`ADMIN_PASSWORD` del archivo de entorno usado.
 
 ### 6. Levantar el servidor
 
@@ -121,7 +121,7 @@ Deberías ver en consola: `Omega Vet AdminSite escuchando en el puerto 3000 (dev
 
 - `http://localhost:3000/` → debe cargar la pantalla de inicio de sesión (`index.html`, servida por Express).
 - `http://localhost:3000/health` → debe responder `{"status":"ok"}`.
-- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). `doctores.html` arranca vacío (no hay doctores sembrados) — verás el estado vacío con el botón "Registrar primer doctor" hasta que se dé de alta el primero (historia futura; por ahora esos botones son decorativos).
+- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html`, `areas.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). `doctores.html`/`areas.html` arrancan vacíos (sin datos sembrados) — verás el estado vacío con el botón de alta correspondiente hasta que se dé de alta el primer registro (historia futura; por ahora esos botones son decorativos).
 - "Cerrar sesión" en el sidebar destruye la sesión de verdad.
 - Para confirmar que el seed del admin quedó bien, puedes consultarlo directo en la base: `psql -U omega_hospvet -d omega_hospvet -c "select username, correo, ultimo_login_en from usuarios;"` (ajusta usuario/base a los de tu `.env.localhost`; `ultimo_login_en` se actualiza en cada login exitoso).
 
@@ -141,20 +141,20 @@ Debe reemplazarse `CALENDAR_ID` por el ID real de cada calendario (Google Calend
 
 ### Stack tecnológico
 
-| Tecnología                          | Uso                                                                                                                                      |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Node.js + Express                   | Servidor de la aplicación web                                                                                                            |
-| EJS                                 | Motor de vistas server-side (`src/views/*.ejs` + `src/views/partials/`)                                                                  |
-| CSS3 (vanilla)                      | Sistema de diseño propio, sin frameworks (`public/css/styles.css` + `public/css/main.css`)                                               |
-| JavaScript (ES6+)                   | Interactividad de cliente: menú, filtros, modales, semáforo, combobox de búsqueda (embebido en cada vista, sin cambios respecto al PoC)  |
-| PostgreSQL + Knex                   | Base de datos y migraciones/seeds versionados                                                                                            |
-| bcrypt                              | Hash de contraseñas (`usuarios.password_hash`)                                                                                           |
-| express-session + connect-pg-simple | Sesiones persistidas en PostgreSQL, sin Redis (Decisión 4 de la bitácora)                                                                |
-| csrf-csrf                           | Protección CSRF en formularios que modifican estado (login por ahora)                                                                    |
-| Joi                                 | Validación de entrada en endpoints (`auth.schema.js` + `validate.js`)                                                                    |
-| PM2                                 | Gestión del proceso en producción (`ecosystem.config.js`)                                                                                |
-| Google Calendar Embed               | Visualización de citas en Agenda/Grooming                                                                                                |
-| HTMX (vendored, sin CDN)            | Único uso: `/doctores.html`, actualización parcial del panel sin exponer filtros en la URL (single-file, sin build step ni dependencias) |
+| Tecnología                          | Uso                                                                                                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js + Express                   | Servidor de la aplicación web                                                                                                                 |
+| EJS                                 | Motor de vistas server-side (`src/views/*.ejs` + `src/views/partials/`)                                                                       |
+| CSS3 (vanilla)                      | Sistema de diseño propio, sin frameworks (`public/css/styles.css` + `public/css/main.css`)                                                    |
+| JavaScript (ES6+)                   | Interactividad de cliente: menú, filtros, modales, semáforo, combobox de búsqueda (embebido en cada vista, sin cambios respecto al PoC)       |
+| PostgreSQL + Knex                   | Base de datos y migraciones/seeds versionados                                                                                                 |
+| bcrypt                              | Hash de contraseñas (`usuarios.password_hash`)                                                                                                |
+| express-session + connect-pg-simple | Sesiones persistidas en PostgreSQL, sin Redis (Decisión 4 de la bitácora)                                                                     |
+| csrf-csrf                           | Protección CSRF en formularios que modifican estado (login por ahora)                                                                         |
+| Joi                                 | Validación de entrada en endpoints (`auth.schema.js` + `validate.js`)                                                                         |
+| PM2                                 | Gestión del proceso en producción (`ecosystem.config.js`)                                                                                     |
+| Google Calendar Embed               | Visualización de citas en Agenda/Grooming                                                                                                     |
+| HTMX (vendored, sin CDN)            | `/doctores.html` y `/areas.html`: actualización parcial del panel sin exponer filtros en la URL (single-file, sin build step ni dependencias) |
 
 ### Estructura del proyecto
 
@@ -176,21 +176,25 @@ OmegaVet_AdminSite/
 │   ├── middlewares/                                # errorHandler.js, requireAuth.js, requirePermission.js, validate.js, hxRedirect.js
 │   ├── modules/
 │   │   ├── auth/                                   # auth.routes/controller/service/repository/schema.js (US-101)
-│   │   └── doctores/                                # doctores.routes/controller/service/repository.js (US-606, filtro vía HTMX)
+│   │   ├── doctores/                                # doctores.routes/controller/service/repository.js (US-606/608, filtro + baja vía HTMX)
+│   │   └── areas/                                   # areas.routes/controller/service/repository.js (US-609, mismo patrón que doctores/)
 │   ├── views/
 │   │   ├── partials/sidebar.ejs                    # Sidebar compartido, filtrado por permisos (AC6 de US-101)
 │   │   ├── partials/doctores-panel.ejs             # Fragmento HTMX de /doctores.html (toolbar+tabla+paginación)
-│   │   └── index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs, doctores.ejs
+│   │   ├── partials/areas-panel.ejs                # Fragmento HTMX de /areas.html (mismo patrón)
+│   │   └── index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs, doctores.ejs, areas.ejs
 │   ├── app.js                                      # App Express (view engine EJS, helmet, compression, logging, sesión, rutas)
 │   └── server.js                                   # Punto de entrada (graceful shutdown)
 ├── tests/
 │   ├── unit/                                       # Jest — lógica de negocio, mockeando el repository (sin BD)
 │   │   ├── auth.service.test.js
-│   │   └── doctores.service.test.js
+│   │   ├── doctores.service.test.js
+│   │   └── areas.service.test.js
 │   └── integration/                                # Jest + Supertest — app Express completa contra BD real
 │       ├── app.test.js                             # Rutas públicas, 404, páginas protegidas sin sesión
 │       ├── auth.test.js                            # Flujo de login completo (AC1-AC6 de US-101)
-│       └── doctores.test.js                        # Catálogo de doctores: vacío, poblado, búsqueda, permisos (US-606)
+│       ├── doctores.test.js                        # Catálogo de doctores: poblado, búsqueda, permisos, orden, baja (US-606/608)
+│       └── areas.test.js                            # Catálogo de áreas: poblado, búsqueda, permisos, orden (US-609)
 ├── eslint.config.js
 ├── .prettierrc, .prettierignore
 ├── jest.config.js                                  # setupFiles carga .env.test para los tests
@@ -203,27 +207,32 @@ OmegaVet_AdminSite/
 
 ### Rutas
 
-| Ruta                | Protección                                             | Descripción                                                    |
-| ------------------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| `/` y `/index.html` | Pública (redirige a `/main.html` si ya hay sesión)     | Inicio de sesión (antes `login.html`; ahora es la página raíz) |
-| `POST /login`       | CSRF + Joi                                             | Valida credenciales, crea sesión, resuelve permisos (US-101)   |
-| `GET /logout`       | —                                                      | Destruye la sesión y redirige a `/`                            |
-| `/main.html`        | `requireAuth`                                          | Panel administrativo (landing tras iniciar sesión)             |
-| `/agenda.html`      | `requireAuth` + `requirePermission('agenda.ver')`      | Agenda de Consultas y Cirugías                                 |
-| `/grooming.html`    | `requireAuth` + `requirePermission('grooming.ver')`    | Agenda de Grooming                                             |
-| `/laboratorio.html` | `requireAuth` + `requirePermission('laboratorio.ver')` | Órdenes de laboratorio, filtros y alta de estudios             |
-| `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores listado, búsqueda y paginación (US-606)   |
-| `/health`           | Pública                                                | Health check del servidor Express                              |
+| Ruta                | Protección                                             | Descripción                                                                    |
+| ------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `/` y `/index.html` | Pública (redirige a `/main.html` si ya hay sesión)     | Inicio de sesión (antes `login.html`; ahora es la página raíz)                 |
+| `POST /login`       | CSRF + Joi                                             | Valida credenciales, crea sesión, resuelve permisos (US-101)                   |
+| `GET /logout`       | —                                                      | Destruye la sesión y redirige a `/`                                            |
+| `/main.html`        | `requireAuth`                                          | Panel administrativo (landing tras iniciar sesión)                             |
+| `/agenda.html`      | `requireAuth` + `requirePermission('agenda.ver')`      | Agenda de Consultas y Cirugías                                                 |
+| `/grooming.html`    | `requireAuth` + `requirePermission('grooming.ver')`    | Agenda de Grooming                                                             |
+| `/laboratorio.html` | `requireAuth` + `requirePermission('laboratorio.ver')` | Órdenes de laboratorio, filtros y alta de estudios                             |
+| `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores: listado, búsqueda, orden, paginación y baja (US-606/608) |
+| `/areas.html`       | `requireAuth` + `requirePermission('areas.ver')`       | Catálogo de áreas: listado, búsqueda, orden y paginación (US-609)              |
+| `/health`           | Pública                                                | Health check del servidor Express                                              |
 
-Las 6 páginas del panel se sirven vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `css/`, `js/` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
+Las páginas del panel se sirven vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `css/`, `js/` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
 
-Desde US-101, `main.html`/`agenda.html`/`grooming.html`/`laboratorio.html`/`doctores.html` requieren sesión activa (`requireAuth`, redirige a `/` si no hay sesión o si superó el tope absoluto de 8-12h) y, salvo `main.html`, el permiso exacto del módulo (`requirePermission`, redirige a `/main.html` si falta — nunca un 403 crudo). El sidebar (`src/views/partials/sidebar.ejs`, compartido por las 5 vistas) filtra cada ítem por el mismo permiso: un módulo sin acceso ni se ve en el menú ni es alcanzable por URL directa (AC6 de US-101).
+Desde US-101, `main.html`/`agenda.html`/`grooming.html`/`laboratorio.html`/`doctores.html`/`areas.html` requieren sesión activa (`requireAuth`, redirige a `/` si no hay sesión o si superó el tope absoluto de 8-12h) y, salvo `main.html`, el permiso exacto del módulo (`requirePermission`, redirige a `/main.html` si falta — nunca un 403 crudo). El sidebar (`src/views/partials/sidebar.ejs`, compartido por todas las vistas) filtra cada ítem por el mismo permiso: un módulo sin acceso ni se ve en el menú ni es alcanzable por URL directa (AC6 de US-101).
 
-**`/doctores.html` (US-606)** es la primera pantalla del panel que sigue el patrón completo `routes → controller → service → repository` del documento de Arquitectura y Buenas Prácticas, en vez de servir HTML estático del PoC. Es solo lectura por ahora: búsqueda (por nombre de doctor o de área — sin ocultar las demás áreas del doctor que hizo match), filtro Activos/Todos, paginación y orden por columna (clic en el header Doctor/Áreas/Estado — invierte la dirección si ya se está ordenando por esa columna, vuelve a la página 1). La columna Acciones está justificada a la derecha.
+**`/doctores.html` (US-606) y `/areas.html` (US-609)** siguen el mismo patrón — la tabla estándar del sistema, decidida explícitamente así por el cliente para cualquier catálogo nuevo: `routes → controller → service → repository` del documento de Arquitectura y Buenas Prácticas, en vez de servir HTML estático del PoC. Cada una tiene búsqueda (doctores: por nombre o área, sin ocultar las demás áreas del doctor que hizo match; áreas: por nombre o slug), filtro Activos/Todos, paginación y orden por columna (clic en el header — invierte la dirección si ya se está ordenando por esa columna, vuelve a la página 1). La columna Acciones está justificada a la derecha.
 
-A diferencia del resto del panel, **este filtrado NO viaja por query string**: por pedido explícito del cliente (privacidad — no quiere el texto buscado en el historial del navegador ni en logs de acceso), `GET /doctores.html` siempre sirve la página con el estado por defecto (ignora cualquier query string, ni la lee ni la refleja) y todo el filtro/orden/paginación se dispara vía **HTMX** contra `POST /doctores.html`, que devuelve solo el fragmento del panel (`src/views/partials/doctores-panel.ejs`) y lo intercambia en el DOM sin recargar ni tocar la URL/historial. El estado (búsqueda/filtro/orden/página) vive en un `<form>` con inputs ocultos que cada interacción reenvía completo — no en la URL ni en la sesión del servidor. El POST lleva el mismo CSRF (`csrf-csrf`) que `POST /login`. Si la sesión expira o falta el permiso durante una interacción HTMX, el servidor responde con el header `HX-Redirect` en vez de un `302` normal, para forzar una navegación real de página completa en vez de insertar el login dentro de la tabla (`src/middlewares/hxRedirect.js`, usado por `requireAuth`/`requirePermission`, sin afectar a las demás vistas que no usan HTMX). Consecuencia aceptada: sin JavaScript habilitado estos controles no funcionan (a diferencia del resto del panel).
+A diferencia del resto del panel, **este filtrado NO viaja por query string**: por pedido explícito del cliente (privacidad — no quiere el texto buscado en el historial del navegador ni en logs de acceso), el `GET` de cada una siempre sirve la página con el estado por defecto (ignora cualquier query string, ni la lee ni la refleja) y todo el filtro/orden/paginación se dispara vía **HTMX** contra el `POST` del mismo path, que devuelve solo el fragmento del panel (`src/views/partials/doctores-panel.ejs` / `areas-panel.ejs`) y lo intercambia en el DOM sin recargar ni tocar la URL/historial. El estado (búsqueda/filtro/orden/página) vive en un `<form>` con inputs ocultos que cada interacción reenvía completo — no en la URL ni en la sesión del servidor. El POST lleva el mismo CSRF (`csrf-csrf`) que `POST /login`. Si la sesión expira o falta el permiso durante una interacción HTMX, el servidor responde con el header `HX-Redirect` en vez de un `302` normal, para forzar una navegación real de página completa en vez de insertar el login dentro de la tabla (`src/middlewares/hxRedirect.js`, usado por `requireAuth`/`requirePermission`, sin afectar a las demás vistas que no usan HTMX). Consecuencia aceptada: sin JavaScript habilitado estos controles no funcionan (a diferencia del resto del panel).
 
-El orden se resuelve contra una whitelist fija de expresiones SQL en el repository (nunca se concatena `sort`/`dir` directo al `ORDER BY`); "areas" ordena por el mismo `string_agg` que se muestra en la columna. Los botones "Nuevo doctor"/editar/eliminar aparecen condicionados a `doctores.crear`/`doctores.editar`/`doctores.eliminar` pero **no tienen funcionalidad todavía** (a propósito, así lo pide la historia — el alta/edición/baja real es de historias futuras). Cuando el catálogo no tiene ningún doctor (sin importar filtros), se oculta la barra de herramientas y se muestra un estado vacío con CTA "Registrar primer doctor"; si el catálogo tiene datos pero la búsqueda actual no encuentra nada, se mantiene la barra y solo la tabla muestra "No hay resultados para tu búsqueda".
+El orden se resuelve contra una whitelist fija de expresiones SQL en el repository de cada módulo (nunca se concatena `sort`/`dir` directo al `ORDER BY`); en doctores, "areas" ordena por el mismo `string_agg` que se muestra en la columna. Cuando el catálogo no tiene ningún registro (sin importar filtros), se oculta la barra de herramientas y se muestra un estado vacío con CTA de alta; si el catálogo tiene datos pero la búsqueda actual no encuentra nada, se mantiene la barra y solo la tabla muestra "No hay resultados para tu búsqueda".
+
+En **doctores**, el botón "Nuevo doctor" y el ícono de editar son decorativos (`doctores.crear`/`doctores.editar`, sin funcionalidad todavía), pero **el ícono de eliminar sí funciona (US-608)**: pide confirmación vía un modal propio (no el `confirm()` nativo del navegador — patrón `htmx:confirm` + `evt.detail.issueRequest`, ver `doctores.ejs`) y ejecuta `DELETE /doctores/:id`, que hace una baja lógica (`activo=false` + `desactivado_por`/`desactivado_en`) — nunca un `DELETE` físico, para no perder el historial de citas/laboratorio que referencia al doctor. El ícono de eliminar solo aparece en filas activas.
+
+En **áreas**, los tres botones (crear/editar/eliminar, condicionados a `areas.crear`/`areas.editar`/`areas.eliminar`) son **decorativos por ahora** — el alta/edición/baja real de áreas es de una historia futura (misma convención que doctores tuvo entre US-606 y US-608).
 
 **Pendiente para una migración "completa" según la bitácora de decisiones técnicas**: `index.ejs`/`main.ejs`/`agenda.ejs`/`grooming.ejs`/`laboratorio.ejs` siguen siendo mayormente el HTML/JS del PoC copiado tal cual (el sidebar ya es la excepción: se extrajo a un partial con variables reales, ver arriba), y los datos de Agenda/Laboratorio siguen siendo arreglos de ejemplo en el `<script>` de cada página. Eso se resuelve historia por historia, conforme cada módulo se conecte a datos reales de la base.
 
@@ -231,8 +240,9 @@ El orden se resuelve contra una whitelist fija de expresiones SQL en el reposito
 
 - `POST /login` — `{ username, password }` → `200 { redirectTo }` | `400` (Joi) | `401` credenciales inválidas (mensaje genérico, no revela si el usuario existe) | `403` cuenta desactivada o token CSRF inválido/ausente.
 - `GET /logout` — destruye la sesión, `302` a `/`.
-- `GET /doctores.html` — página completa, siempre con el estado por defecto (ignora cualquier query string). HTML renderizado server-side (no JSON), `200`. `302` a `/main.html` si falta el permiso `doctores.ver` (`HX-Redirect` en vez de `302` si la petición viene de HTMX).
-- `POST /doctores.html` — fragmento HTML del panel (`q`/`estado`/`sort`/`dir`/`page` en el body, `application/x-www-form-urlencoded`), disparado por HTMX, nunca visitado directo por el usuario. Requiere CSRF (`x-csrf-token`) y el mismo permiso `doctores.ver`.
+- `GET /doctores.html` / `GET /areas.html` — página completa, siempre con el estado por defecto (ignora cualquier query string). HTML renderizado server-side (no JSON), `200`. `302` a `/main.html` si falta el permiso correspondiente (`HX-Redirect` en vez de `302` si la petición viene de HTMX).
+- `POST /doctores.html` / `POST /areas.html` — fragmento HTML del panel (`q`/`estado`/`sort`/`dir`/`page` en el body, `application/x-www-form-urlencoded`), disparado por HTMX, nunca visitado directo por el usuario. Requiere CSRF (`x-csrf-token`) y el mismo permiso de lectura del módulo.
+- `DELETE /doctores/:id` — baja lógica de un doctor (US-608), disparado por HTMX tras confirmar en el modal. Body con el filtro/orden/página actual — HTMX manda estos valores como **query string** en un `DELETE` (`methodsThatUseUrlParams` de HTMX incluye "delete", no solo "get" — gotcha real, ver `doctores.controller.js`), no como body. Requiere CSRF y el permiso `doctores.eliminar`.
 - `GET /health` — `200 { status: "ok" }`.
 
 El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc.) se documentará conforme se implementen sus historias de usuario correspondientes.
