@@ -2,10 +2,17 @@ const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
 const compression = require('compression');
+const cookieParser = require('cookie-parser');
 const pinoHttp = require('pino-http');
 
 const logger = require('./config/logger');
+const { middleware: sessionMiddleware } = require('./config/session');
+const { generateCsrfToken } = require('./config/csrf');
+const requireAuth = require('./middlewares/requireAuth');
+const requirePermission = require('./middlewares/requirePermission');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
+const authRoutes = require('./modules/auth/auth.routes');
+const doctoresRoutes = require('./modules/doctores/doctores.routes');
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
@@ -39,13 +46,44 @@ app.use(
 app.use(compression());
 app.use(express.json());
 app.use(express.static(path.join(rootDir, 'public')));
+app.use(cookieParser());
+app.use(sessionMiddleware);
 
-app.get(['/', '/index.html'], (req, res) => res.render('index'));
+app.get(['/', '/index.html'], (req, res) => {
+  if (req.session.user) {
+    return res.redirect('/main.html');
+  }
 
-const pages = ['main', 'agenda', 'grooming', 'laboratorio'];
-for (const page of pages) {
-  app.get(`/${page}.html`, (req, res) => res.render(page));
+  // Se toca la sesión para forzar que se guarde (saveUninitialized:false no
+  // la persiste sola) y así el id de sesión usado para firmar el token CSRF
+  // en este GET sea el mismo que llegue de vuelta en el POST /login.
+  req.session.csrfInitialized = true;
+  const csrfToken = generateCsrfToken(req, res);
+  res.render('index', { csrfToken, expired: req.query.expired === '1' });
+});
+
+app.get('/main.html', requireAuth, (req, res) => {
+  res.render('main', { user: req.session.user });
+});
+
+// Cada módulo del sidebar se protege con requireAuth (sesión válida) y
+// requirePermission (el permiso sembrado exactamente para este módulo en
+// US-000) — así una URL directa no puede saltarse lo que el menú ya oculta
+// (AC6 de US-101: nunca confiar en que el frontend oculte el acceso).
+const modulePages = [
+  { route: 'agenda', view: 'agenda', permission: 'agenda.ver' },
+  { route: 'grooming', view: 'grooming', permission: 'grooming.ver' },
+  { route: 'laboratorio', view: 'laboratorio', permission: 'laboratorio.ver' },
+];
+
+for (const { route, view, permission } of modulePages) {
+  app.get(`/${route}.html`, requireAuth, requirePermission(permission), (req, res) =>
+    res.render(view, { user: req.session.user }),
+  );
 }
+
+app.use('/', authRoutes);
+app.use('/', doctoresRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

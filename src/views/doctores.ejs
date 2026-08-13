@@ -1,0 +1,233 @@
+<%
+// US-606: catálogo de doctores (solo listado — alta/edición/baja llegan en
+// historias posteriores, los botones de esta pantalla son intencionalmente
+// decorativos por ahora).
+const permissions = user?.permissions ?? [];
+const has = (code) => permissions.includes(code);
+
+function buildUrl(overrides) {
+  const params = new URLSearchParams();
+  const next = { q, estado, page, sort, dir, ...overrides };
+  if (next.q) params.set('q', next.q);
+  if (next.estado && next.estado !== 'activos') params.set('estado', next.estado);
+  if (next.page && next.page !== 1) params.set('page', next.page);
+  if (next.sort && next.sort !== 'doctor') params.set('sort', next.sort);
+  if (next.dir && next.dir !== 'asc') params.set('dir', next.dir);
+  const qs = params.toString();
+  return qs ? `doctores.html?${qs}` : 'doctores.html';
+}
+
+// Clic en un header ordenable: si ya se está ordenando por esa columna,
+// invierte la dirección; si no, empieza en ascendente. Cambiar el orden
+// regresa a la página 1 (el resultado es otro, la página actual ya no
+// necesariamente tiene sentido).
+function sortUrl(column) {
+  const nextDir = sort === column && dir === 'asc' ? 'desc' : 'asc';
+  return buildUrl({ sort: column, dir: nextDir, page: 1 });
+}
+
+function initials(nombre, apellidos) {
+  return `${nombre.charAt(0)}${apellidos.charAt(0)}`.toUpperCase();
+}
+%>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doctores y áreas | Omega Veterinaria & Estética</title>
+<link rel="icon" type="image/png" href="assets/imgs/icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <div class="app" id="app">
+    <div class="top-row">
+      <div class="sidebar-header">
+        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <span class="sidebar-title">Omega Vet</span>
+        <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+
+      <header class="topbar">
+        <span class="topbar-icon-badge">
+          <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </span>
+        <h1 class="topbar-title">Doctores y áreas</h1>
+      </header>
+    </div>
+
+    <div class="body-row">
+    <div class="nav-backdrop" id="navBackdrop"></div>
+    <%- include('partials/sidebar', { user, currentPage: 'doctores' }) %>
+
+    <main class="main-content">
+      <% if (catalogoVacio) { %>
+        <div class="lab-table-wrap">
+          <div class="empty-state-panel">
+            <span class="empty-state-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <p class="empty-state-title">Todavía no hay doctores registrados</p>
+            <p class="empty-state-description">Da de alta al primer doctor de la clínica y asígnale una o más áreas para que empiece a aparecer como doctor solicitante en Agenda y en Laboratorio.</p>
+            <% if (has('doctores.crear')) { %>
+              <button class="btn-primary" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Registrar primer doctor
+              </button>
+            <% } %>
+          </div>
+        </div>
+      <% } else { %>
+        <div class="lab-toolbar">
+          <div class="lab-toolbar-filters">
+            <form class="lab-search" method="GET" action="doctores.html">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input type="text" name="q" value="<%= q %>" placeholder="Buscar por doctor o área...">
+              <% if (estado !== 'activos') { %><input type="hidden" name="estado" value="<%= estado %>"><% } %>
+            </form>
+            <div class="toggle-group">
+              <a class="toggle-btn<%= estado === 'activos' ? ' active' : '' %>" href="<%= buildUrl({ estado: 'activos', page: 1 }) %>">Activos</a>
+              <a class="toggle-btn<%= estado === 'todos' ? ' active' : '' %>" href="<%= buildUrl({ estado: 'todos', page: 1 }) %>">Todos</a>
+            </div>
+          </div>
+          <% if (has('doctores.crear')) { %>
+            <button class="btn-primary" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Nuevo doctor
+            </button>
+          <% } %>
+        </div>
+
+        <div class="lab-table-wrap">
+          <table class="lab-table">
+            <thead>
+              <tr>
+                <% ['doctor', 'areas', 'estado'].forEach((column) => { %>
+                  <th class="sortable-th">
+                    <a href="<%= sortUrl(column) %>" class="sortable-th-link">
+                      <%= { doctor: 'Doctor', areas: 'Áreas', estado: 'Estado' }[column] %>
+                      <svg class="sort-arrow<%= sort === column ? ' active' : '' %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <% if (sort === column && dir === 'desc') { %>
+                          <path d="M6 9l6 6 6-6"/>
+                        <% } else { %>
+                          <path d="M18 15l-6-6-6 6"/>
+                        <% } %>
+                      </svg>
+                    </a>
+                  </th>
+                <% }) %>
+                <th class="text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% doctores.forEach((doctor) => { %>
+                <tr>
+                  <td>
+                    <div class="person-cell">
+                      <span class="avatar-circle"><%= initials(doctor.nombre, doctor.apellidos) %></span>
+                      <div>
+                        <div class="person-cell-name"><%= doctor.nombre %> <%= doctor.apellidos %></div>
+                        <div class="person-cell-subtitle">Dr(a). solicitante</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <% if (doctor.areas) { %>
+                      <% doctor.areas.split(', ').forEach((area) => { %><span class="area-tag"><%= area %></span><% }) %>
+                    <% } else { %>
+                      <span class="area-tag-empty">Sin área asignada</span>
+                    <% } %>
+                  </td>
+                  <td>
+                    <span class="status-badge<%= doctor.activo ? ' is-active' : '' %>"><%= doctor.activo ? 'Activo' : 'Inactivo' %></span>
+                  </td>
+                  <td class="text-right">
+                    <div class="row-actions">
+                      <% if (has('doctores.editar')) { %>
+                        <button class="row-action-btn row-action-edit" type="button" aria-label="Editar doctor">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        </button>
+                      <% } %>
+                      <% if (has('doctores.eliminar')) { %>
+                        <button class="row-action-btn row-action-delete" type="button" aria-label="Eliminar doctor">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+                        </button>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+          <% if (doctores.length === 0) { %>
+            <p class="lab-empty">No hay resultados para tu búsqueda.</p>
+          <% } %>
+
+          <div class="table-footer">
+            <span><%= doctores.length %> resultados · <%= total %> doctores en total</span>
+            <% if (totalPages > 1) { %>
+              <nav class="pagination" aria-label="Paginación">
+                <a class="pagination-btn" aria-disabled="<%= page <= 1 %>" href="<%= buildUrl({ page: Math.max(1, page - 1) }) %>" aria-label="Página anterior">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </a>
+                <% for (let p = 1; p <= totalPages; p++) { %>
+                  <a class="pagination-page<%= p === page ? ' current' : '' %>" href="<%= buildUrl({ page: p }) %>"><%= p %></a>
+                <% } %>
+                <a class="pagination-btn" aria-disabled="<%= page >= totalPages %>" href="<%= buildUrl({ page: Math.min(totalPages, page + 1) }) %>" aria-label="Página siguiente">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                </a>
+              </nav>
+            <% } %>
+          </div>
+        </div>
+      <% } %>
+    </main>
+    </div>
+  </div>
+
+<script>
+  const sidebar = document.getElementById('sidebar');
+  const app = document.querySelector('.app');
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const navBackdrop = document.getElementById('navBackdrop');
+
+  sidebarToggle.addEventListener('click', () => {
+    app.classList.toggle('sidebar-hidden');
+    app.classList.toggle('mobile-menu-open');
+  });
+
+  navBackdrop.addEventListener('click', () => {
+    app.classList.remove('sidebar-hidden');
+    app.classList.remove('mobile-menu-open');
+  });
+
+  document.querySelectorAll('.nav-toggle').forEach((toggle) => {
+    const submenu = document.getElementById(toggle.dataset.target);
+    if (submenu.classList.contains('open')) {
+      submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+    }
+
+    toggle.addEventListener('click', () => {
+      const isOpen = submenu.classList.contains('open');
+
+      document.querySelectorAll('.submenu.open').forEach((open) => {
+        if (open !== submenu) {
+          open.classList.remove('open');
+          open.style.maxHeight = null;
+          open.previousElementSibling?.classList.remove('active');
+        }
+      });
+
+      submenu.classList.toggle('open', !isOpen);
+      toggle.classList.toggle('active', !isOpen);
+      submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
+    });
+  });
+</script>
+
+</body>
+</html>

@@ -35,7 +35,7 @@
 
 ## Descripción
 
-Panel administrativo para **Omega Veterinaria & Estética**: una interfaz web para el personal de la clínica que cubre inicio de sesión, un dashboard principal con menú lateral colapsable, un módulo de **Agenda** (Consultas y Cirugías, Grooming) con calendario de Google embebido y semáforo de puntualidad de citas, y un módulo de **Laboratorio** con alta de órdenes multi-estudio (catálogo por categoría/estudio/zona anatómica), filtros de búsqueda y carga simulada de resultados.
+Panel administrativo para **Omega Veterinaria & Estética**: una interfaz web para el personal de la clínica que cubre inicio de sesión real (contraseñas con bcrypt, sesión persistida en PostgreSQL, permisos por usuario), un dashboard principal con menú lateral colapsable que solo muestra los módulos a los que el usuario tiene acceso, un módulo de **Agenda** (Consultas y Cirugías, Grooming) con calendario de Google embebido y semáforo de puntualidad de citas, y un módulo de **Laboratorio** con alta de órdenes multi-estudio (catálogo por categoría/estudio/zona anatómica), filtros de búsqueda y carga simulada de resultados.
 
 El frontend (HTML + CSS + JavaScript vanilla, sin frameworks de cliente ni proceso de build) se renderiza server-side con Express + EJS, sobre el backend (Node.js + Express + PostgreSQL vía Knex) que se está construyendo por historias de usuario a partir de la Fase 0 de infraestructura (US-000). El HTML/JS/CSS de cada página no cambió respecto al PoC original — solo cambió quién lo sirve.
 
@@ -121,14 +121,15 @@ Deberías ver en consola: `Omega Vet AdminSite escuchando en el puerto 3000 (dev
 
 - `http://localhost:3000/` → debe cargar la pantalla de inicio de sesión (`index.html`, servida por Express).
 - `http://localhost:3000/health` → debe responder `{"status":"ok"}`.
-- El formulario de login todavía solo valida en el cliente (no hay autenticación real conectada al backend): cualquier usuario/contraseña no vacíos te llevan a `main.html`. Desde ahí puedes navegar todo el panel (`agenda.html`, `grooming.html`, `laboratorio.html`) — las 5 páginas ya se sirven vía Express (ver [Rutas](#rutas)).
-- Para confirmar que el seed del admin quedó bien, puedes consultarlo directo en la base: `psql -U omega_hospvet -d omega_hospvet -c "select username, correo from usuarios;"` (ajusta usuario/base a los de tu `.env.localhost`).
+- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). `doctores.html` arranca vacío (no hay doctores sembrados) — verás el estado vacío con el botón "Registrar primer doctor" hasta que se dé de alta el primero (historia futura; por ahora esos botones son decorativos).
+- "Cerrar sesión" en el sidebar destruye la sesión de verdad.
+- Para confirmar que el seed del admin quedó bien, puedes consultarlo directo en la base: `psql -U omega_hospvet -d omega_hospvet -c "select username, correo, ultimo_login_en from usuarios;"` (ajusta usuario/base a los de tu `.env.localhost`; `ultimo_login_en` se actualiza en cada login exitoso).
 
 ## Arquitectura
 
 ### Configuración de entorno
 
-Las credenciales y configuración sensible viven en `.env` (excluido de control de versiones). `.env.example` documenta las variables requeridas: conexión a PostgreSQL, `SESSION_SECRET` y los datos del usuario administrador de arranque (`ADMIN_*`, consumidos por el seed `05_admin_usuario.js`).
+Las credenciales y configuración sensible viven en `.env` (excluido de control de versiones). `.env.example` documenta las variables requeridas: conexión a PostgreSQL, `SESSION_SECRET` (firma las cookies de sesión y, reutilizado, los tokens CSRF) y los datos del usuario administrador de arranque (`ADMIN_*`, consumidos por el seed `05_admin_usuario.js`). `.env.test` es la excepción: son credenciales dummy para una base de datos descartable, sin secretos reales, por eso sí está versionado (usado por `pnpm test` y por el job de CI).
 
 Además, el **ID del calendario de Google** se embebe manualmente en `src/views/agenda.ejs` y `src/views/grooming.ejs`:
 
@@ -140,15 +141,19 @@ Debe reemplazarse `CALENDAR_ID` por el ID real de cada calendario (Google Calend
 
 ### Stack tecnológico
 
-| Tecnología            | Uso                                                                                                                                     |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Node.js + Express     | Servidor de la aplicación web                                                                                                           |
-| EJS                   | Motor de vistas server-side (`src/views/*.ejs`)                                                                                         |
-| CSS3 (vanilla)        | Sistema de diseño propio, sin frameworks (`public/css/styles.css` + `public/css/main.css`)                                              |
-| JavaScript (ES6+)     | Interactividad de cliente: menú, filtros, modales, semáforo, combobox de búsqueda (embebido en cada vista, sin cambios respecto al PoC) |
-| PostgreSQL + Knex     | Base de datos y migraciones/seeds versionados                                                                                           |
-| PM2                   | Gestión del proceso en producción (`ecosystem.config.js`)                                                                               |
-| Google Calendar Embed | Visualización de citas en Agenda/Grooming                                                                                               |
+| Tecnología                          | Uso                                                                                                                                     |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js + Express                   | Servidor de la aplicación web                                                                                                           |
+| EJS                                 | Motor de vistas server-side (`src/views/*.ejs` + `src/views/partials/`)                                                                 |
+| CSS3 (vanilla)                      | Sistema de diseño propio, sin frameworks (`public/css/styles.css` + `public/css/main.css`)                                              |
+| JavaScript (ES6+)                   | Interactividad de cliente: menú, filtros, modales, semáforo, combobox de búsqueda (embebido en cada vista, sin cambios respecto al PoC) |
+| PostgreSQL + Knex                   | Base de datos y migraciones/seeds versionados                                                                                           |
+| bcrypt                              | Hash de contraseñas (`usuarios.password_hash`)                                                                                          |
+| express-session + connect-pg-simple | Sesiones persistidas en PostgreSQL, sin Redis (Decisión 4 de la bitácora)                                                               |
+| csrf-csrf                           | Protección CSRF en formularios que modifican estado (login por ahora)                                                                   |
+| Joi                                 | Validación de entrada en endpoints (`auth.schema.js` + `validate.js`)                                                                   |
+| PM2                                 | Gestión del proceso en producción (`ecosystem.config.js`)                                                                               |
+| Google Calendar Embed               | Visualización de citas en Agenda/Grooming                                                                                               |
 
 ### Estructura del proyecto
 
@@ -162,46 +167,68 @@ OmegaVet_AdminSite/
 │   ├── js/                                        # (pendiente: JS de cada vista aún vive inline en el .ejs, no aquí)
 │   └── assets/imgs/                               # Logotipos e íconos de la marca
 ├── src/
-│   ├── config/                                    # env.js, database.js (Knex), logger.js (Pino)
+│   ├── config/                                    # env.js, database.js (Knex), logger.js (Pino), session.js, csrf.js
 │   ├── db/
-│   │   ├── migrations/                            # Una migración por tabla + FKs
+│   │   ├── migrations/                            # Una migración por tabla + FKs + tabla session
 │   │   ├── seeds/                                 # Catálogos base y usuario admin de arranque
 │   │   └── knexfile.js                            # Config real de Knex (migrations/seeds relativas a esta carpeta)
-│   ├── middlewares/                                # errorHandler.js (404 + errores centralizados)
-│   ├── modules/                                    # auth, agenda, grooming, laboratorio, usuarios, ...
-│   ├── views/                                       # index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs
-│   ├── app.js                                      # App Express (view engine EJS, helmet, compression, logging, rutas)
+│   ├── middlewares/                                # errorHandler.js, requireAuth.js, requirePermission.js, validate.js
+│   ├── modules/
+│   │   ├── auth/                                   # auth.routes/controller/service/repository/schema.js (US-101)
+│   │   └── doctores/                                # doctores.routes/controller/service/repository.js (US-606)
+│   ├── views/
+│   │   ├── partials/sidebar.ejs                    # Sidebar compartido, filtrado por permisos (AC6 de US-101)
+│   │   └── index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs, doctores.ejs
+│   ├── app.js                                      # App Express (view engine EJS, helmet, compression, logging, sesión, rutas)
 │   └── server.js                                   # Punto de entrada (graceful shutdown)
 ├── tests/
-│   ├── unit/                                       # Jest — lógica de negocio (aún vacío: no hay services/repositories todavía)
-│   └── integration/app.test.js                     # Jest + Supertest — app Express completa
+│   ├── unit/                                       # Jest — lógica de negocio, mockeando el repository (sin BD)
+│   │   ├── auth.service.test.js
+│   │   └── doctores.service.test.js
+│   └── integration/                                # Jest + Supertest — app Express completa contra BD real
+│       ├── app.test.js                             # Rutas públicas, 404, páginas protegidas sin sesión
+│       ├── auth.test.js                            # Flujo de login completo (AC1-AC6 de US-101)
+│       └── doctores.test.js                        # Catálogo de doctores: vacío, poblado, búsqueda, permisos (US-606)
 ├── eslint.config.js
 ├── .prettierrc, .prettierignore
-├── jest.config.js
+├── jest.config.js                                  # setupFiles carga .env.test para los tests
 ├── .editorconfig
 ├── knexfile.js                                     # Re-export delgado de src/db/knexfile.js (para `knex` sin --knexfile)
 ├── ecosystem.config.js                             # Configuración de PM2
-└── .env.example
+├── .env.example
+└── .env.test                                        # Credenciales dummy para pnpm test / CI (sin secretos reales)
 ```
 
 ### Rutas
 
-| Ruta                | Vista renderizada           | Descripción                                                        |
-| ------------------- | --------------------------- | ------------------------------------------------------------------ |
-| `/` y `/index.html` | `src/views/index.ejs`       | Inicio de sesión (antes `login.html`; ahora es la página raíz)     |
-| `/main.html`        | `src/views/main.ejs`        | Panel administrativo (landing tras iniciar sesión)                 |
-| `/agenda.html`      | `src/views/agenda.ejs`      | Agenda de Consultas y Cirugías (calendario + estadísticas del día) |
-| `/grooming.html`    | `src/views/grooming.ejs`    | Agenda de Grooming (calendario + estadísticas del día)             |
-| `/laboratorio.html` | `src/views/laboratorio.ejs` | Órdenes de laboratorio, filtros y alta de estudios                 |
-| `/health`           | —                           | Health check del servidor Express                                  |
+| Ruta                | Protección                                             | Descripción                                                            |
+| ------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `/` y `/index.html` | Pública (redirige a `/main.html` si ya hay sesión)     | Inicio de sesión (antes `login.html`; ahora es la página raíz)         |
+| `POST /login`       | CSRF + Joi                                             | Valida credenciales, crea sesión, resuelve permisos (US-101)           |
+| `GET /logout`       | —                                                      | Destruye la sesión y redirige a `/`                                    |
+| `/main.html`        | `requireAuth`                                          | Panel administrativo (landing tras iniciar sesión)                     |
+| `/agenda.html`      | `requireAuth` + `requirePermission('agenda.ver')`      | Agenda de Consultas y Cirugías                                         |
+| `/grooming.html`    | `requireAuth` + `requirePermission('grooming.ver')`    | Agenda de Grooming                                                     |
+| `/laboratorio.html` | `requireAuth` + `requirePermission('laboratorio.ver')` | Órdenes de laboratorio, filtros y alta de estudios                     |
+| `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores y áreas — listado, búsqueda y paginación (US-606) |
+| `/health`           | Pública                                                | Health check del servidor Express                                      |
 
-Las 5 páginas del panel ya se sirven completamente vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `styles.css`, `main.css` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
+Las 6 páginas del panel se sirven vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `css/`, `js/` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
 
-**Pendiente para una migración "completa" según la bitácora de decisiones técnicas**: hoy las vistas son el mismo HTML/JS del PoC copiado tal cual a `.ejs` (sin usar variables ni partials de EJS todavía) y los datos de Agenda/Laboratorio siguen siendo arreglos de ejemplo en el `<script>` de cada página. Eso se resuelve historia por historia, conforme cada módulo se conecte a datos reales de la base.
+Desde US-101, `main.html`/`agenda.html`/`grooming.html`/`laboratorio.html`/`doctores.html` requieren sesión activa (`requireAuth`, redirige a `/` si no hay sesión o si superó el tope absoluto de 8-12h) y, salvo `main.html`, el permiso exacto del módulo (`requirePermission`, redirige a `/main.html` si falta — nunca un 403 crudo). El sidebar (`src/views/partials/sidebar.ejs`, compartido por las 5 vistas) filtra cada ítem por el mismo permiso: un módulo sin acceso ni se ve en el menú ni es alcanzable por URL directa (AC6 de US-101).
+
+**`/doctores.html` (US-606)** es la primera pantalla del panel que sigue el patrón completo `routes → controller → service → repository` del documento de Arquitectura y Buenas Prácticas, en vez de servir HTML estático del PoC. Es solo lectura por ahora: búsqueda (`?q=`, por nombre de doctor o de área — sin ocultar las demás áreas del doctor que hizo match), filtro Activos/Todos (`?estado=`), paginación (`?page=`) y orden por columna (`?sort=doctor|areas|estado&dir=asc|desc`, clic en el header correspondiente — invierte la dirección si ya se está ordenando por esa columna, vuelve a la página 1), todo vía GET/query params (sin JS de cliente, recarga la página). La columna Acciones está justificada a la derecha. El orden se resuelve contra una whitelist fija de expresiones SQL en el repository (nunca se concatena `sort`/`dir` directo al `ORDER BY`); "areas" ordena por el mismo `string_agg` que se muestra en la columna. Los botones "Nuevo doctor"/editar/eliminar aparecen condicionados a `doctores.crear`/`doctores.editar`/`doctores.eliminar` pero **no tienen funcionalidad todavía** (a propósito, así lo pide la historia — el alta/edición/baja real es de historias futuras). Cuando el catálogo no tiene ningún doctor (sin importar filtros), se oculta la barra de herramientas y se muestra un estado vacío con CTA "Registrar primer doctor"; si el catálogo tiene datos pero la búsqueda actual no encuentra nada, se mantiene la barra y solo la tabla muestra "No hay resultados para tu búsqueda".
+
+**Pendiente para una migración "completa" según la bitácora de decisiones técnicas**: `index.ejs`/`main.ejs`/`agenda.ejs`/`grooming.ejs`/`laboratorio.ejs` siguen siendo mayormente el HTML/JS del PoC copiado tal cual (el sidebar ya es la excepción: se extrajo a un partial con variables reales, ver arriba), y los datos de Agenda/Laboratorio siguen siendo arreglos de ejemplo en el `<script>` de cada página. Eso se resuelve historia por historia, conforme cada módulo se conecte a datos reales de la base.
 
 ### API
 
-_En construcción._ Por ahora el servidor Express solo expone `/health` y sirve estáticos. Los endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc.) se documentarán conforme se implementen sus historias de usuario correspondientes.
+- `POST /login` — `{ username, password }` → `200 { redirectTo }` | `400` (Joi) | `401` credenciales inválidas (mensaje genérico, no revela si el usuario existe) | `403` cuenta desactivada o token CSRF inválido/ausente.
+- `GET /logout` — destruye la sesión, `302` a `/`.
+- `GET /doctores.html?q=&estado=activos|todos&page=1&sort=doctor|areas|estado&dir=asc|desc` — HTML renderizado server-side (no JSON), `200`. `302` a `/main.html` si falta el permiso `doctores.ver`.
+- `GET /health` — `200 { status: "ok" }`.
+
+El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc.) se documentará conforme se implementen sus historias de usuario correspondientes.
 
 ### Scripts disponibles
 
@@ -227,9 +254,10 @@ Los scripts `*:localhost` usan [`dotenv-cli`](https://github.com/entropitor/dote
 ### Calidad y CI
 
 - **Lint + formato**: ESLint (`eslint.config.js`, flat config, con `eslint-config-prettier` para no pelear reglas de estilo) sobre todo `src/` y `tests/`, y Prettier (`.prettierrc`) como formateador único — decisión cerrada en el documento de Arquitectura y Buenas Prácticas.
-- **Tests**: Jest + Supertest, separados en `tests/unit/` (lógica de negocio mockeando el repository — aún vacío, no existen `services`/`repositories` todavía) y `tests/integration/app.test.js` (levanta la app Express completa: smoke tests de las 5 rutas del panel, `/health`, manejo de 404 y que `assets/sql/` nunca se exponga). Se ampliará por historia conforme exista lógica de negocio real que probar (Decisión 19 de la bitácora técnica).
-- **CI**: GitHub Actions (`.github/workflows/ci.yml`) corre lint + formato (`format:check`) + tests en cada push/PR a `main`; un push que no pasa alguno no debería fusionarse. Sin despliegue continuo (Decisión 20 de la bitácora — el deploy es manual vía PM2).
-- **Seguridad de base**: `helmet` (cabeceras HTTP) y `compression` (gzip) activos en `src/app.js`. El _Content-Security-Policy_ de helmet está desactivado a propósito: las vistas EJS migradas del PoC usan `<script>` inline sin nonces (menú, combobox de laboratorio, semáforo de citas); se habilitará un CSP real cuando ese JS se extraiga a `public/js/`. `express-rate-limit` y `csrf-csrf` (Decisión 5 de la bitácora) se agregarán cuando exista un endpoint de login real que proteger.
+- **Tests**: Jest + Supertest, separados en `tests/unit/` (lógica de negocio mockeando el repository — `auth.service.test.js` cubre las 6 combinaciones de credenciales/estado de cuenta del login sin tocar la base de datos) y `tests/integration/` (levanta la app Express completa: `app.test.js` cubre rutas públicas/404/páginas protegidas sin sesión sin necesitar BD; `auth.test.js` corre el flujo de login de punta a punta —AC1-AC6 de US-101— contra una base de datos real, sembrada de antemano). Se ampliará por historia conforme exista más lógica de negocio que probar (Decisión 19 de la bitácora técnica).
+- **CI**: GitHub Actions (`.github/workflows/ci.yml`) corre lint + formato (`format:check`) + tests en cada push/PR a `main`, contra un contenedor de PostgreSQL efímero (migrado y sembrado con `.env.test` antes de los tests) — necesario desde que `auth.test.js` requiere una base real. Un push que no pasa alguno no debería fusionarse. Sin despliegue continuo (Decisión 20 de la bitácora — el deploy es manual vía PM2).
+- **Seguridad de base**: `helmet` (cabeceras HTTP) y `compression` (gzip) activos en `src/app.js`. El _Content-Security-Policy_ de helmet está desactivado a propósito: las vistas EJS migradas del PoC usan `<script>` inline sin nonces (menú, combobox de laboratorio, semáforo de citas); se habilitará un CSP real cuando ese JS se extraiga a `public/js/`. `csrf-csrf` ya protege `POST /login` (Decisión 5 de la bitácora; `csurf` se descartó por estar deprecado). `express-rate-limit` sobre el login queda para US-106 (bloqueo por intentos fallidos) — AC4 de US-101 ya usa un mensaje de error genérico, pero el conteo/bloqueo de intentos es historia aparte.
+- **Autenticación y sesiones (US-101)**: contraseñas con `bcrypt` (costo 12), comparadas con tiempo constante incluso cuando el usuario no existe (hash señuelo, evita filtrar por timing quién está registrado). Sesión con `express-session` + `connect-pg-simple` (tabla `session`, migración dedicada): expira a los 30 min de inactividad con renovación por actividad (`rolling: true`), más un tope absoluto de 10h validado aparte en `requireAuth.js` (Decisión 4 de la bitácora, corregida v4 — express-session no impone ese máximo por sí solo). El id de sesión se regenera al iniciar sesión (previene session fixation). Los permisos se resuelven una sola vez al hacer login y quedan cacheados en sesión (Decisión 5), consumidos por `requirePermission.js` y por el partial del sidebar.
 - **Logging**: estructurado con Pino (`src/config/logger.js` + `pino-http` en `src/app.js`) — formato legible en desarrollo (`pino-pretty`), JSON en producción, silenciado en tests. `pino-http` está recortado a propósito para **solo loguear fallos** (4xx como `warn`, 5xx/errores como `error`); las peticiones exitosas no generan ningún log, para no gastar disco de más en el servidor de recursos limitados de la clínica. Reemplaza los `console.log` sueltos.
 - **Manejo de errores**: 404 y errores no controlados centralizados en `src/middlewares/errorHandler.js`, devuelven JSON consistente en vez de la página de error por defecto de Express.
 - **Apagado ordenado**: `src/server.js` cierra el servidor HTTP y el pool de PostgreSQL ante `SIGTERM`/`SIGINT` (necesario para que PM2 reinicie sin dejar conexiones colgadas), y registra `unhandledRejection`/`uncaughtException` en vez de fallar en silencio.

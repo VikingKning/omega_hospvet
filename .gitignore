@@ -4,6 +4,7 @@
 node_modules/
 .env*
 !.env.example
+!.env.test
 logs/
 *.log
 pnpm-debug.log*

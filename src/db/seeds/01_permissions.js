@@ -23,10 +23,10 @@ const permissions = [
   ['usuarios', 'desactivar', 'Desactivar un usuario del panel'],
   ['usuarios', 'permisos', 'Otorgar o revocar permisos de un usuario'],
 
-  ['doctores_areas', 'ver', 'Ver el catálogo de doctores y áreas'],
-  ['doctores_areas', 'crear', 'Crear un doctor o área nueva'],
-  ['doctores_areas', 'editar', 'Editar un doctor o área existente'],
-  ['doctores_areas', 'desactivar', 'Desactivar un doctor o área'],
+  ['doctores', 'ver', 'Ver el catálogo de doctores y áreas'],
+  ['doctores', 'crear', 'Crear un doctor nuevo'],
+  ['doctores', 'editar', 'Editar un doctor existente'],
+  ['doctores', 'eliminar', 'Eliminar (dar de baja) un doctor'],
 
   ['plantillas_whatsapp', 'ver', 'Ver las plantillas de respuesta de WhatsApp'],
   ['plantillas_whatsapp', 'crear', 'Crear una plantilla de respuesta de WhatsApp'],

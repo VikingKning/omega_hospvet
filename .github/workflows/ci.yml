@@ -9,6 +9,25 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+
+    # Los tests de integración de login (US-101) levantan la app completa
+    # contra una base de datos real (documento de Arquitectura y Buenas
+    # Prácticas, sección 6). Las credenciales coinciden con .env.test.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: omega_test
+          POSTGRES_PASSWORD: omega_test
+          POSTGRES_DB: omega_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -32,5 +51,16 @@ jobs:
       - name: Formato (Prettier)
         run: pnpm run format:check
 
+      # `knex` (a diferencia de `jest`) no carga .env.test solo: no tiene el
+      # setupFiles que sí tiene jest.config.js, así que aquí sí hace falta
+      # dotenv-cli explícito (ver scripts migrate:test/seed:test — usan
+      # -o --no-expand para que .env.test siempre gane sobre cualquier
+      # variable ya presente en el entorno).
+      - name: Migrar y sembrar base de datos de pruebas
+        run: |
+          pnpm run migrate:test
+          pnpm run seed:test
+
+      # jest.config.js ya carga .env.test vía setupFiles (tests/setup-env.js).
       - name: Tests
         run: pnpm test

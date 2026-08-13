@@ -1,6 +1,7 @@
 const env = require('./config/env');
 const logger = require('./config/logger');
 const db = require('./config/database');
+const { store: sessionStore } = require('./config/session');
 const app = require('./app');
 
 const server = app.listen(env.port, () => {
@@ -10,8 +11,8 @@ const server = app.listen(env.port, () => {
 async function shutdown(signal) {
   logger.info(`Señal ${signal} recibida, cerrando servidor...`);
   server.close(async () => {
-    await db.destroy();
-    logger.info('Servidor y conexión a base de datos cerrados.');
+    await Promise.all([db.destroy(), sessionStore.close()]);
+    logger.info('Servidor y conexiones a base de datos cerrados.');
     process.exit(0);
   });
 }

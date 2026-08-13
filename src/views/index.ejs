@@ -10,11 +10,18 @@
 <body>
 
   <form class="login-card" novalidate>
+    <input type="hidden" id="csrfToken" value="<%= csrfToken %>">
+
     <div class="login-brand">
       <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
       <h1>Omega Veterinaria & Estética</h1>
       <p>Panel administrativo</p>
     </div>
+
+    <% if (expired) { %>
+      <span class="error-msg show" id="form-notice">Tu sesión expiró. Inicia sesión de nuevo.</span>
+    <% } %>
+    <span class="error-msg" id="form-error"></span>
 
     <div class="field">
       <label for="username">Usuario</label>
@@ -70,12 +77,42 @@
     input.addEventListener('input', () => validateField(input, `${input.id}-error`));
   });
 
-  form.addEventListener('submit', (e) => {
+  const formError = document.getElementById('form-error');
+  const submitBtn = form.querySelector('.btn-submit');
+  const csrfToken = document.getElementById('csrfToken').value;
+
+  function showFormError(message) {
+    formError.textContent = message;
+    formError.classList.add('show');
+  }
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    formError.classList.remove('show');
+
     const validUser = validateField(username, 'username-error');
     const validPass = validateField(password, 'password-error');
-    if (validUser && validPass) {
-      window.location.href = 'main.html';
+    if (!validUser || !validPass) return;
+
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+        body: JSON.stringify({ username: username.value, password: password.value }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showFormError(data.error || 'No se pudo iniciar sesión.');
+        return;
+      }
+
+      window.location.href = data.redirectTo;
+    } catch (err) {
+      showFormError('No se pudo conectar con el servidor. Intenta de nuevo.');
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 
