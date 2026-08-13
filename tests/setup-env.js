@@ -3,4 +3,4 @@
 // traer esas variables puestas antes de que Node arranque; sin override,
 // dotenv nunca las reemplaza y los tests terminan usando credenciales de
 // otro proyecto en vez de las de .env.test.
-require('dotenv').config({ path: '.env.test', override: true });
+require('dotenv').config({ path: '.env.test', override: true, quiet: true });
