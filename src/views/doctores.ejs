@@ -60,6 +60,18 @@
     </div>
   </div>
 
+  <!--
+    Modal de alta/edición (US-607): mismo formulario para las dos acciones,
+    el contenido real lo llena HTMX (partials/doctor-form.ejs) al hacer
+    clic en el botón de alta del toolbar o en el ícono de editar de una
+    fila — ver doctores-panel.ejs. Vive fuera de #doctores-panel por la
+    misma razón que el modal de confirmación (mismo patrón que
+    areaFormModalBackdrop en areas.ejs).
+  -->
+  <div class="modal-backdrop" id="doctorFormModalBackdrop">
+    <div class="modal-card" id="doctorFormModalBody"></div>
+  </div>
+
 <script>
   const sidebar = document.getElementById('sidebar');
   const app = document.querySelector('.app');
@@ -136,6 +148,115 @@
       if (confirmed) event.detail.issueRequest(true);
     });
   });
+
+  // Modal de alta/edición (US-607). El contenido de #doctorFormModalBody lo
+  // reemplaza HTMX en cada apertura/reintento, así que los botones de
+  // adentro (cerrar, cancelar, cerrar el mensaje de error) y el picker de
+  // especialidades se manejan por delegación en el contenedor — un
+  // addEventListener directo sobre esos elementos se perdería en cuanto
+  // HTMX los vuelva a crear. Mismo patrón que areaFormModalBody en
+  // areas.ejs.
+  const doctorFormModalBackdrop = document.getElementById('doctorFormModalBackdrop');
+  const doctorFormModalBody = document.getElementById('doctorFormModalBody');
+
+  function openDoctorFormModal() {
+    doctorFormModalBackdrop.classList.add('open');
+  }
+
+  function closeDoctorFormModal() {
+    doctorFormModalBackdrop.classList.remove('open');
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Estado del picker de especialidades: vive en JS, no en el DOM, para no
+  // depender de que HTMX re-ejecute scripts al hacer swap (ver el
+  // <script type="application/json"> inerte en doctor-form.ejs). Se
+  // reinicia en cada apertura/reintento del formulario, leyendo esa isla
+  // de datos.
+  let doctorFormAreas = { disponibles: [], seleccionadas: [] };
+
+  function renderAreaPicker() {
+    const select = document.getElementById('areaPickerSelect');
+    if (!select) return;
+    const yaAsignadas = new Set(doctorFormAreas.seleccionadas.map((area) => area.id));
+    const opciones = doctorFormAreas.disponibles.filter((area) => !yaAsignadas.has(area.id));
+    select.innerHTML =
+      '<option value="">Selecciona un área...</option>' +
+      opciones.map((area) => `<option value="${area.id}">${escapeHtml(area.nombre)}</option>`).join('');
+  }
+
+  function renderDoctorAreas() {
+    const body = document.getElementById('doctorAreasBody');
+    const empty = document.getElementById('doctorAreasEmpty');
+    if (!body || !empty) return;
+    empty.hidden = doctorFormAreas.seleccionadas.length !== 0;
+    body.innerHTML = doctorFormAreas.seleccionadas
+      .map(
+        (area) => `
+          <tr>
+            <td>${escapeHtml(area.nombre)}<input type="hidden" name="areaIds" value="${area.id}"></td>
+            <td><button type="button" class="mini-remove" data-id="${area.id}" aria-label="Quitar ${escapeHtml(area.nombre)}">&times;</button></td>
+          </tr>
+        `,
+      )
+      .join('');
+  }
+
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target !== doctorFormModalBody) return;
+    // Si el fragmento trae un <form> (carga inicial, o reintento tras un
+    // error de validación) el modal debe quedar/seguir abierto. La
+    // respuesta de éxito no trae form (solo el swap out-of-band de la
+    // tabla) — en ese caso no hay nada que abrir, el evento
+    // closeDoctorModal de abajo se encarga de cerrarlo.
+    if (!doctorFormModalBody.querySelector('form')) return;
+
+    const datosEl = document.getElementById('doctorFormAreasData');
+    const datos = datosEl ? JSON.parse(datosEl.textContent) : { disponibles: [], seleccionadas: [] };
+    doctorFormAreas = { disponibles: datos.disponibles, seleccionadas: datos.seleccionadas.slice() };
+    renderAreaPicker();
+    renderDoctorAreas();
+    openDoctorFormModal();
+  });
+
+  doctorFormModalBody.addEventListener('click', (event) => {
+    if (event.target.closest('#doctorFormClose, #doctorFormCancel')) {
+      closeDoctorFormModal();
+    }
+    if (event.target.closest('#doctorFormErrorDismiss')) {
+      event.target.closest('.form-error-banner')?.remove();
+    }
+    if (event.target.closest('#areaPickerAdd')) {
+      const select = document.getElementById('areaPickerSelect');
+      const id = Number(select.value);
+      if (!id) return;
+      const area = doctorFormAreas.disponibles.find((a) => a.id === id);
+      if (!area) return;
+      doctorFormAreas.seleccionadas.push(area);
+      renderAreaPicker();
+      renderDoctorAreas();
+    }
+    const removeBtn = event.target.closest('.mini-remove');
+    if (removeBtn) {
+      const id = Number(removeBtn.dataset.id);
+      doctorFormAreas.seleccionadas = doctorFormAreas.seleccionadas.filter((a) => a.id !== id);
+      renderAreaPicker();
+      renderDoctorAreas();
+    }
+  });
+
+  doctorFormModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === doctorFormModalBackdrop) closeDoctorFormModal();
+  });
+
+  // HX-Trigger: closeDoctorModal (ver doctores.controller.js, renderExito())
+  // — htmx traduce ese header en este evento personalizado.
+  document.body.addEventListener('closeDoctorModal', closeDoctorFormModal);
 </script>
 
 </body>

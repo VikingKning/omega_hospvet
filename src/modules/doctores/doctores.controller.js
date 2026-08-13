@@ -51,4 +51,151 @@ async function desactivar(req, res, next) {
   }
 }
 
-module.exports = { list, filter, desactivar };
+// US-607: fragmento HTMX con el formulario vacío ("Nuevo doctor"), con el
+// checkbox de Activo marcado por defecto y sin especialidades.
+async function nuevoForm(req, res, next) {
+  try {
+    const areasDisponibles = await service.listAreasDisponibles();
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/doctor-form', {
+      doctor: null,
+      nombre: '',
+      apellidos: '',
+      activo: true,
+      areasDisponibles,
+      areasSeleccionadas: [],
+      error: null,
+      csrfToken,
+      user: req.session.user,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// US-607: fragmento HTMX con el formulario precargado ("Editar doctor"),
+// incluida su selección actual de especialidades.
+async function editarForm(req, res, next) {
+  try {
+    const doctor = await service.obtener(req.params.id);
+    if (!doctor) {
+      return res.status(404).send('Doctor no encontrado');
+    }
+    const areasDisponibles = await service.listAreasDisponibles();
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/doctor-form', {
+      doctor,
+      nombre: doctor.nombre,
+      apellidos: doctor.apellidos,
+      activo: doctor.activo,
+      areasDisponibles,
+      areasSeleccionadas: doctor.areas,
+      error: null,
+      csrfToken,
+      user: req.session.user,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Tras un alta/edición exitosa: la tabla se refresca vía un swap
+// "out-of-band" (el formulario no vive dentro de #doctores-panel, sino en
+// el modal) y el header HX-Trigger le avisa al JS del cliente que cierre
+// el modal — ver doctores.ejs.
+async function renderExito(req, res, next, csrfToken) {
+  try {
+    const data = await service.list({});
+    res.set('HX-Trigger', 'closeDoctorModal');
+    res.render('partials/doctores-panel-oob', { ...data, user: req.session.user, csrfToken });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// US-607 AC: alta sin id. Un error de validación no truena: re-renderiza
+// el mismo formulario con el mensaje, conservando lo que el usuario había
+// escrito y las especialidades que ya había armado en la tabla (no lo que
+// ya está en la base, que para un alta ni siquiera existe todavía).
+async function crear(req, res, next) {
+  const csrfToken = generateCsrfToken(req, res);
+  try {
+    await service.crear({
+      nombre: req.body.nombre,
+      apellidos: req.body.apellidos,
+      activo: req.body.activo,
+      areaIds: req.body.areaIds,
+      usuarioId: req.session.user.id,
+    });
+  } catch (err) {
+    if (err.status) {
+      const [areasDisponibles, areasSeleccionadas] = await Promise.all([
+        service.listAreasDisponibles(),
+        service.resolverAreas(req.body.areaIds),
+      ]);
+      return res.render('partials/doctor-form', {
+        doctor: null,
+        nombre: req.body.nombre ?? '',
+        apellidos: req.body.apellidos ?? '',
+        activo: req.body.activo === 'true',
+        areasDisponibles,
+        areasSeleccionadas,
+        error: err.message,
+        csrfToken,
+        user: req.session.user,
+      });
+    }
+    return next(err);
+  }
+  return renderExito(req, res, next, csrfToken);
+}
+
+// US-607 AC: edición con id — actualiza doctores y sustituye la selección
+// de especialidades. Mismo manejo de error que crear(), pero conservando
+// el doctor original en el formulario re-renderizado (sigue en modo
+// "Editar doctor").
+async function editar(req, res, next) {
+  const csrfToken = generateCsrfToken(req, res);
+  try {
+    const existing = await service.obtener(req.params.id);
+    if (!existing) {
+      return res.status(404).send('Doctor no encontrado');
+    }
+
+    try {
+      await service.editar({
+        id: req.params.id,
+        nombre: req.body.nombre,
+        apellidos: req.body.apellidos,
+        activo: req.body.activo,
+        areaIds: req.body.areaIds,
+        usuarioId: req.session.user.id,
+      });
+    } catch (err) {
+      if (err.status) {
+        const [areasDisponibles, areasSeleccionadas] = await Promise.all([
+          service.listAreasDisponibles(),
+          service.resolverAreas(req.body.areaIds),
+        ]);
+        return res.render('partials/doctor-form', {
+          doctor: existing,
+          nombre: req.body.nombre ?? '',
+          apellidos: req.body.apellidos ?? '',
+          activo: req.body.activo === 'true',
+          areasDisponibles,
+          areasSeleccionadas,
+          error: err.message,
+          csrfToken,
+          user: req.session.user,
+        });
+      }
+      throw err;
+    }
+
+    return renderExito(req, res, next, csrfToken);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { list, filter, desactivar, nuevoForm, editarForm, crear, editar };

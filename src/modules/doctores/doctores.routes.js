@@ -30,4 +30,37 @@ router.delete(
   controller.desactivar,
 );
 
+// US-607: alta y edición, mismo formulario en un modal (mismo patrón que
+// areas.routes.js/US-610). Los GET solo arman el fragmento del formulario
+// (vacío o precargado); los POST/PUT hacen el alta/edición real. Cada ruta
+// exige el permiso específico de la acción (crear ≠ editar) — así un
+// usuario con uno solo de los dos nunca puede ejecutar el otro, aunque el
+// formulario sea visualmente el mismo.
+router.get(
+  '/doctores/nuevo',
+  requireAuth,
+  requirePermission('doctores.crear'),
+  controller.nuevoForm,
+);
+router.get(
+  '/doctores/:id/editar',
+  requireAuth,
+  requirePermission('doctores.editar'),
+  controller.editarForm,
+);
+router.post(
+  '/doctores',
+  requireAuth,
+  requirePermission('doctores.crear'),
+  doubleCsrfProtection,
+  controller.crear,
+);
+router.put(
+  '/doctores/:id',
+  requireAuth,
+  requirePermission('doctores.editar'),
+  doubleCsrfProtection,
+  controller.editar,
+);
+
 module.exports = router;

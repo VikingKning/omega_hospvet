@@ -1,0 +1,77 @@
+<%
+// US-607: mismo formulario para alta y edición — el modo se decide por si
+// `doctor` viene o no (edición trae el registro completo, alta viene
+// null). Este partial se usa tanto para el primer render (GET
+// /doctores/nuevo o GET /doctores/:id/editar) como para el re-render con
+// error (POST/PUT fallidos, ver doctores.controller.js) — por eso
+// nombre/apellidos/activo viajan aparte de `doctor`: en un re-render por
+// error son lo que el usuario acababa de escribir, no necesariamente lo
+// que ya está guardado.
+const esEdicion = Boolean(doctor);
+%>
+<div class="modal-header">
+  <h2><%= esEdicion ? 'Editar doctor' : 'Nuevo doctor' %></h2>
+  <button class="modal-close-btn" type="button" id="doctorFormClose" aria-label="Cerrar">&times;</button>
+</div>
+
+<% if (error) { %>
+  <div class="form-error-banner">
+    <span><%= error %></span>
+    <button type="button" class="modal-close-btn" id="doctorFormErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
+  </div>
+<% } %>
+
+<form class="modal-form"
+      hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `doctores/${doctor.id}` : 'doctores' %>"
+      hx-target="#doctorFormModalBody" hx-swap="innerHTML"
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+  <label>
+    Nombre(s)
+    <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100" autofocus>
+  </label>
+  <label>
+    Apellidos
+    <input type="text" name="apellidos" value="<%= apellidos %>" required maxlength="100">
+  </label>
+  <label class="checkbox-field">
+    <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %>>
+    Activo
+  </label>
+
+  <label>
+    Especialidades
+    <div class="area-picker-row">
+      <select id="areaPickerSelect"></select>
+      <button type="button" class="btn-secondary" id="areaPickerAdd">Agregar</button>
+    </div>
+  </label>
+
+  <div class="mini-table-wrap">
+    <table class="mini-table">
+      <thead>
+        <tr><th>Área</th><th>Quitar</th></tr>
+      </thead>
+      <tbody id="doctorAreasBody"></tbody>
+    </table>
+    <p class="mini-table-empty" id="doctorAreasEmpty">Sin especialidades asignadas.</p>
+  </div>
+
+  <div class="modal-actions">
+    <button type="button" class="btn-secondary" id="doctorFormCancel">Cancelar</button>
+    <button type="submit" class="btn-primary">Guardar</button>
+  </div>
+</form>
+
+<%
+// Datos para el picker de especialidades (JS de doctores.ejs): una isla de
+// datos inerte, no un <script> ejecutable — así funciona igual sin importar
+// si HTMX re-ejecuta scripts en el contenido swapeado o no (el resto del
+// proyecto no depende de eso, y este partial tampoco necesita empezar a
+// hacerlo). El JS que la lee vive en el <script> persistente de
+// doctores.ejs, delegado sobre #doctorFormModalBody (sobrevive a que HTMX
+// reemplace este contenido en cada apertura/reintento).
+%>
+<script type="application/json" id="doctorFormAreasData"><%- JSON.stringify({
+  disponibles: areasDisponibles,
+  seleccionadas: areasSeleccionadas,
+}) %></script>

@@ -1,0 +1,19 @@
+<%
+// US-607: envoltura para el swap "out-of-band" del panel tras un alta/
+// edición exitosa desde el modal — mismo patrón que
+// partials/areas-panel-oob.ejs (US-610). El <form>/modal no vive dentro de
+// #doctores-panel, así que la respuesta normal de crear()/editar() no
+// podría refrescar la tabla por sí sola — hx-swap-oob="true" le dice a
+// HTMX que reemplace este elemento por su id, sin importar cuál sea el
+// hx-target "normal" de la petición (ver doctores.controller.js:
+// renderExito()).
+//
+// class="main-content" es a propósito, no decorativo: HTMX reemplaza el
+// <main> COMPLETO (con sus atributos) en un swap out-of-band, así que si
+// esta clase faltara aquí (como pasó la primera vez en
+// areas-panel-oob.ejs) el layout pierde el flex:1 que le da su ancho y el
+// área de trabajo se ve "encogida" hasta el siguiente reload completo.
+%>
+<main class="main-content" id="doctores-panel" hx-swap-oob="true">
+  <%- include('doctores-panel', { doctores, total, catalogoVacio, page, totalPages, pageSize, q, estado, sort, dir, user, csrfToken }) %>
+</main>

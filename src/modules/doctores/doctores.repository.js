@@ -88,4 +88,111 @@ async function desactivar(id, usuarioId) {
   });
 }
 
-module.exports = { count, findPage, existsAny, desactivar };
+// US-607: para precargar el formulario de edición.
+async function findById(id) {
+  return db('doctores').where({ id }).first();
+}
+
+// Especialidades YA asignadas a un doctor — se muestran en la tabla del
+// formulario aunque el área haya sido desactivada después de la asignación
+// (a diferencia del picker de abajo, que solo ofrece áreas activas para
+// agregar; una ya asignada no desaparece de la tabla solo porque el área en
+// sí se dio de baja después).
+async function findAreasByDoctorId(doctorId) {
+  return db('doctor_area as da')
+    .join('areas as a', 'a.id', 'da.area_id')
+    .where('da.doctor_id', doctorId)
+    .orderBy('a.nombre')
+    .select('a.id', 'a.nombre');
+}
+
+// Catálogo para el <select> de "Especialidades" del formulario — solo
+// áreas activas, mismo criterio que el resto del sistema para no ofrecer
+// asignar algo dado de baja.
+async function listAreasActivas() {
+  return db('areas').where({ activo: true }).orderBy('nombre').select('id', 'nombre');
+}
+
+// Resuelve id -> nombre para volver a pintar la tabla de especialidades en
+// un re-render por error (el usuario ya había armado su selección, no hay
+// que perderla) — sin filtrar por activo, por la misma razón que
+// findAreasByDoctorId.
+async function findAreasByIds(ids) {
+  if (!ids.length) return [];
+  return db('areas').whereIn('id', ids).orderBy('nombre').select('id', 'nombre');
+}
+
+// US-607 AC: alta — inserta el doctor y una fila en doctor_area por cada
+// área seleccionada (puede ser ninguna), todo en una sola transacción: si
+// el insert de doctor_area fallara (p.ej. un id de área que ya no existe),
+// el doctor tampoco debe quedar creado a medias.
+async function crear({ nombre, apellidos, activo, areaIds, usuarioId }) {
+  return db.transaction(async (trx) => {
+    const [row] = await trx('doctores')
+      .insert({ nombre, apellidos, activo, creado_por: usuarioId, creado_en: trx.fn.now() })
+      .returning('id');
+
+    if (areaIds.length) {
+      await trx('doctor_area').insert(
+        areaIds.map((areaId) => ({ doctor_id: row.id, area_id: areaId })),
+      );
+    }
+
+    return row.id;
+  });
+}
+
+// US-607 AC: edición — actualiza doctores (nombre/apellidos/activo +
+// actualizado_por/actualizado_en) y sustituye por completo las filas de
+// doctor_area por la selección actual (borra todas e inserta las
+// seleccionadas) — logra el mismo resultado que "agregar las nuevas y
+// quitar las que ya no están" sin necesidad de diffear fila por fila,
+// porque doctor_area no tiene columnas propias que valga la pena
+// preservar. El activo se compara contra el valor actual DENTRO de la
+// misma transacción (no el que el controller pudo haber leído antes) para
+// decidir si hay que fijar/limpiar desactivado_por/desactivado_en — mismo
+// criterio que activar/desactivar en el resto del sistema: esas columnas
+// solo se tocan en una transición real, no en cada guardado.
+async function editar({ id, nombre, apellidos, activo, areaIds, usuarioId }) {
+  await db.transaction(async (trx) => {
+    const actual = await trx('doctores').where({ id }).first('activo');
+
+    const update = {
+      nombre,
+      apellidos,
+      activo,
+      actualizado_por: usuarioId,
+      actualizado_en: trx.fn.now(),
+    };
+
+    if (actual.activo && !activo) {
+      update.desactivado_por = usuarioId;
+      update.desactivado_en = trx.fn.now();
+    } else if (!actual.activo && activo) {
+      update.desactivado_por = null;
+      update.desactivado_en = null;
+    }
+
+    await trx('doctores').where({ id }).update(update);
+
+    await trx('doctor_area').where({ doctor_id: id }).del();
+    if (areaIds.length) {
+      await trx('doctor_area').insert(
+        areaIds.map((areaId) => ({ doctor_id: id, area_id: areaId })),
+      );
+    }
+  });
+}
+
+module.exports = {
+  count,
+  findPage,
+  existsAny,
+  desactivar,
+  findById,
+  findAreasByDoctorId,
+  listAreasActivas,
+  findAreasByIds,
+  crear,
+  editar,
+};
