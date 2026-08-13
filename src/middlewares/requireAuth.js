@@ -1,3 +1,5 @@
+const hxRedirect = require('./hxRedirect');
+
 // Tope absoluto de sesión (Decisión 4 de la bitácora, corregida v4): 8-12
 // horas independientemente de la actividad. express-session solo resuelve el
 // rolling de 30 min (ver config/session.js); este máximo se valida aquí.
@@ -13,13 +15,13 @@ function requireAuth(req, res, next) {
   const { user, loginAt } = req.session;
 
   if (!user || !loginAt) {
-    return res.redirect('/');
+    return hxRedirect(req, res, '/');
   }
 
   if (Date.now() - loginAt > ABSOLUTE_SESSION_MAX_MS) {
     return req.session.destroy(() => {
       res.clearCookie('omega.sid');
-      res.redirect('/?expired=1');
+      hxRedirect(req, res, '/?expired=1');
     });
   }
 

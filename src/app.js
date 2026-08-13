@@ -45,6 +45,10 @@ app.use(
 );
 app.use(compression());
 app.use(express.json());
+// HTMX manda el <form> del panel de doctores con la codificación por
+// defecto de un form HTML (application/x-www-form-urlencoded), no JSON —
+// express.json() no lo parsea, hace falta este middleware aparte.
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(rootDir, 'public')));
 app.use(cookieParser());
 app.use(sessionMiddleware);

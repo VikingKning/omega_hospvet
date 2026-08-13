@@ -1,5 +1,11 @@
 // US-606: catálogo de doctores. Requiere una base de datos real migrada y
 // sembrada (ver tests/integration/auth.test.js para el porqué).
+//
+// Filtro/orden/paginación ya no viajan por query string (se ocultaron de la
+// URL/historial por privacidad, vía HTMX): el GET siempre devuelve la
+// página con el estado por defecto, y las variantes de filtro se prueban
+// contra el POST que HTMX dispara, leyendo el token CSRF del hx-headers que
+// el propio HTML ya renderizado expone (ver getDoctoresCsrfToken).
 const bcrypt = require('bcrypt');
 const request = require('supertest');
 const app = require('../../src/app');
@@ -26,6 +32,24 @@ async function loginAs(credentials) {
   const csrfToken = await getCsrfToken(agent);
   await agent.post('/login').set('x-csrf-token', csrfToken).send(credentials);
   return agent;
+}
+
+// El token para el POST de filtrado vive en el hx-headers del <form>
+// renderizado por el GET (distinto del hidden #csrfToken de la pantalla de
+// login) — hay que leerlo de una carga de /doctores.html ya autenticada.
+async function getDoctoresCsrfToken(agent) {
+  const res = await agent.get('/doctores.html');
+  const match = res.text.match(/x-csrf-token":\s*"([^"]+)"/);
+  return match[1];
+}
+
+// HTMX manda el <form> con la codificación por defecto de un form HTML
+// (application/x-www-form-urlencoded), no JSON — .type('form') replica
+// exactamente eso en vez de dejar que supertest mande JSON por default,
+// para que el test ejercite la misma ruta de parseo que el navegador real.
+async function filtrarDoctores(agent, body) {
+  const csrfToken = await getDoctoresCsrfToken(agent);
+  return agent.post('/doctores.html').type('form').set('x-csrf-token', csrfToken).send(body);
 }
 
 // Limpia únicamente lo que este archivo va a crear, identificado por un
@@ -130,7 +154,7 @@ describe('GET /doctores.html con catálogo poblado', () => {
     await db('doctor_area').insert({ doctor_id: activoConArea.id, area_id: areaCardio.id });
   });
 
-  it('AC2: lista activos por defecto, con áreas separadas por coma, y "Sin área asignada" cuando no tiene', async () => {
+  it('AC2: la carga inicial lista activos, con áreas separadas por coma, y "Sin área asignada" cuando no tiene', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await agent.get('/doctores.html');
@@ -143,21 +167,38 @@ describe('GET /doctores.html con catálogo poblado', () => {
     expect(res.text).not.toContain(`Vieja ${SUFFIX}`); // inactivo, no debe aparecer por defecto
   });
 
-  it('?estado=todos incluye también a los inactivos', async () => {
+  it('un GET con query string a mano se ignora por completo (privacidad: nunca se lee ni se refleja)', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-    const res = await agent.get('/doctores.html?estado=todos');
+    const res = await agent.get('/doctores.html?estado=todos&q=Cardiolog');
 
+    expect(res.text).not.toContain(`Vieja ${SUFFIX}`); // si leyera estado=todos, aparecería
+  });
+
+  it('POST con estado=todos incluye también a los inactivos', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarDoctores(agent, { estado: 'todos' });
+
+    expect(res.status).toBe(200);
     expect(res.text).toContain(`Vieja ${SUFFIX}`);
   });
 
-  it('la búsqueda por área encuentra al doctor y muestra todas sus áreas, no solo la que coincidió', async () => {
+  it('POST con q=Cardiolog encuentra al doctor por su área y muestra todas sus áreas, no solo la que coincidió', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-    const res = await agent.get(`/doctores.html?q=Cardiolog`);
+    const res = await filtrarDoctores(agent, { q: 'Cardiolog' });
 
     expect(res.text).toContain(`Gutiérrez ${SUFFIX}`);
     expect(res.text).not.toContain(`Aguilar ${SUFFIX}`);
+  });
+
+  it('POST sin token CSRF es rechazado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.post('/doctores.html').send({ estado: 'todos' });
+
+    expect(res.status).toBe(403);
   });
 
   it('AC4/AC5/AC6: un usuario con solo doctores.ver no ve los botones de crear/editar/eliminar', async () => {
@@ -180,11 +221,26 @@ describe('GET /doctores.html con catálogo poblado', () => {
     expect(res.headers.location).toBe('/main.html');
   });
 
-  describe('orden de la tabla por header (?sort=&dir=)', () => {
+  it('un usuario sin doctores.ver recibe HX-Redirect (no un 302 normal) cuando la petición viene de HTMX', async () => {
+    const agent = request.agent(app);
+    const csrfToken = await getCsrfToken(agent);
+    await agent.post('/login').set('x-csrf-token', csrfToken).send(SIN_PERMISOS_USER);
+
+    const res = await agent
+      .post('/doctores.html')
+      .set('HX-Request', 'true')
+      .set('x-csrf-token', 'no-importa-porque-el-permiso-falla-antes')
+      .send({ estado: 'todos' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['hx-redirect']).toBe('/main.html');
+  });
+
+  describe('orden de la tabla por header (POST sort=&dir=)', () => {
     it('sort=doctor&dir=asc (por defecto) ordena por apellido ascendente', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const res = await agent.get('/doctores.html?estado=todos&sort=doctor&dir=asc');
+      const res = await filtrarDoctores(agent, { estado: 'todos', sort: 'doctor', dir: 'asc' });
 
       const idxAguilar = res.text.indexOf(`Aguilar ${SUFFIX}`);
       const idxGutierrez = res.text.indexOf(`Gutiérrez ${SUFFIX}`);
@@ -196,7 +252,7 @@ describe('GET /doctores.html con catálogo poblado', () => {
     it('sort=doctor&dir=desc invierte el orden por apellido', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const res = await agent.get('/doctores.html?estado=todos&sort=doctor&dir=desc');
+      const res = await filtrarDoctores(agent, { estado: 'todos', sort: 'doctor', dir: 'desc' });
 
       const idxAguilar = res.text.indexOf(`Aguilar ${SUFFIX}`);
       const idxGutierrez = res.text.indexOf(`Gutiérrez ${SUFFIX}`);
@@ -208,8 +264,8 @@ describe('GET /doctores.html con catálogo poblado', () => {
     it('sort=estado agrupa por activo/inactivo respetando la dirección', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const asc = await agent.get('/doctores.html?estado=todos&sort=estado&dir=asc');
-      const desc = await agent.get('/doctores.html?estado=todos&sort=estado&dir=desc');
+      const asc = await filtrarDoctores(agent, { estado: 'todos', sort: 'estado', dir: 'asc' });
+      const desc = await filtrarDoctores(agent, { estado: 'todos', sort: 'estado', dir: 'desc' });
 
       // activo=false ordena antes que activo=true en ascendente, y al revés en descendente.
       expect(asc.text.indexOf(`Vieja ${SUFFIX}`)).toBeLessThan(
@@ -223,7 +279,7 @@ describe('GET /doctores.html con catálogo poblado', () => {
     it('una columna de orden desconocida no truena, cae al orden por doctor', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const res = await agent.get('/doctores.html?estado=todos&sort=algo-invalido');
+      const res = await filtrarDoctores(agent, { estado: 'todos', sort: 'algo-invalido' });
 
       expect(res.status).toBe(200);
       expect(res.text).toContain(`Aguilar ${SUFFIX}`);

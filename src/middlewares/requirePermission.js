@@ -1,3 +1,5 @@
+const hxRedirect = require('./hxRedirect');
+
 // Los permisos se verifican en el middleware de la ruta, nunca dentro del
 // controller ni del service (documento de Arquitectura y Buenas Prácticas,
 // sección 4.2) — así la regla de acceso vive en un solo lugar, auditable de
@@ -11,7 +13,7 @@ function requirePermission(code) {
     if (!permissions.includes(code)) {
       // Sin página de acceso denegado todavía: se regresa al shell del panel
       // en vez de mostrar el módulo al que no tiene acceso.
-      return res.redirect('/main.html');
+      return hxRedirect(req, res, '/main.html');
     }
 
     next();
