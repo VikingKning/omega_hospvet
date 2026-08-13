@@ -71,7 +71,7 @@ function sortVals(column) {
                 <button type="button" class="sortable-th-link"
                         hx-post="areas.html" hx-include="#areas-filters" hx-target="#areas-panel"
                         hx-vals='<%- sortVals(column) %>'>
-                  <%= { nombre: 'Nombre', slug: 'Nombre de Agenda', estado: 'Estado' }[column] %>
+                  <%= { nombre: 'Nombre', slug: 'Agenda URL', estado: 'Estado' }[column] %>
                   <svg class="sort-arrow<%= sort === column ? ' active' : '' %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <% if (sort === column && dir === 'desc') { %>
                       <path d="M6 9l6 6 6-6"/>
