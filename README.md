@@ -37,7 +37,7 @@
 
 Panel administrativo para **Omega Veterinaria & Estética**: una interfaz web para el personal de la clínica que cubre inicio de sesión real (contraseñas con bcrypt, sesión persistida en PostgreSQL, permisos por usuario), un dashboard principal con menú lateral colapsable que solo muestra los módulos a los que el usuario tiene acceso, un módulo de **Agenda** (Consultas y Cirugías, Grooming) con calendario de Google embebido y semáforo de puntualidad de citas, y un módulo de **Laboratorio** con alta de órdenes multi-estudio (catálogo por categoría/estudio/zona anatómica), filtros de búsqueda y carga simulada de resultados.
 
-El frontend (HTML + CSS + JavaScript vanilla, sin frameworks de cliente ni proceso de build) se renderiza server-side con Express + EJS, sobre el backend (Node.js + Express + PostgreSQL vía Knex) que se está construyendo por historias de usuario a partir de la Fase 0 de infraestructura (US-000). El HTML/JS/CSS de cada página no cambió respecto al PoC original — solo cambió quién lo sirve. Única excepción: `/doctores.html`, `/areas.html` y `/plantillas.html` usan [HTMX](https://htmx.org/) (vendored en `public/js/`, sin CDN externo, sin build step) para actualizar el panel de filtros/tabla sin recargar la página y sin exponer lo que se busca/filtra en la URL — mismo patrón en las tres, es el estándar del sistema para listados con filtro/orden/paginación; ver la sección de doctores más abajo.
+El frontend (HTML + CSS + JavaScript vanilla, sin frameworks de cliente ni proceso de build) se renderiza server-side con Express + EJS, sobre el backend (Node.js + Express + PostgreSQL vía Knex) que se está construyendo por historias de usuario a partir de la Fase 0 de infraestructura (US-000). El HTML/JS/CSS de cada página no cambió respecto al PoC original — solo cambió quién lo sirve. Única excepción: `/doctores.html`, `/areas.html`, `/plantillas.html` y `/usuarios.html` usan [HTMX](https://htmx.org/) (vendored en `public/js/`, sin CDN externo, sin build step) para actualizar el panel de filtros/tabla sin recargar la página y sin exponer lo que se busca/filtra en la URL — mismo patrón en las cuatro, es el estándar del sistema para listados con filtro/orden/paginación; ver la sección de doctores más abajo.
 
 ## Prerequisitos para ejecución
 
@@ -107,7 +107,7 @@ pnpm run migrate:localhost   # o: pnpm run migrate, si usas .env
 pnpm run seed:localhost      # o: pnpm run seed
 ```
 
-Esto crea las 20 tablas del Modelo de Datos v4 más sus foreign keys, y siembra `permissions` (33 permisos), los catálogos de laboratorio (categorías/estudios/zonas anatómicas) y el usuario administrador de arranque con `ADMIN_USERNAME`/`ADMIN_PASSWORD` del archivo de entorno usado.
+Esto crea las 20 tablas del Modelo de Datos v4 más sus foreign keys, y siembra `permissions` (34 permisos), los catálogos de laboratorio (categorías/estudios/zonas anatómicas) y el usuario administrador de arranque con `ADMIN_USERNAME`/`ADMIN_PASSWORD` del archivo de entorno usado.
 
 ### 6. Levantar el servidor
 
@@ -121,7 +121,7 @@ Deberías ver en consola: `Omega Vet AdminSite escuchando en el puerto 3000 (dev
 
 - `http://localhost:3000/` → debe cargar la pantalla de inicio de sesión (`index.html`, servida por Express).
 - `http://localhost:3000/health` → debe responder `{"status":"ok"}`.
-- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html`, `areas.html`, `plantillas.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). Las tres arrancan vacías (sin datos sembrados) — verás el estado vacío con el botón de alta correspondiente hasta que se dé de alta el primer registro. En las tres ese botón ya funciona (doctores: US-607, áreas: US-610, plantillas: US-613).
+- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html`, `areas.html`, `plantillas.html`, `usuarios.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). `doctores.html`/`areas.html`/`plantillas.html` arrancan vacíos (sin datos sembrados) — verás el estado vacío con el botón de alta correspondiente hasta que se dé de alta el primer registro; en los tres ese botón ya funciona (doctores: US-607, áreas: US-610, plantillas: US-613). `usuarios.html` nunca arranca vacío (siempre existe al menos el admin sembrado) y su botón de alta sigue siendo decorativo (US-602, historia futura).
 - "Cerrar sesión" en el sidebar destruye la sesión de verdad.
 - Para confirmar que el seed del admin quedó bien, puedes consultarlo directo en la base: `psql -U omega_hospvet -d omega_hospvet -c "select username, correo, ultimo_login_en from usuarios;"` (ajusta usuario/base a los de tu `.env.localhost`; `ultimo_login_en` se actualiza en cada login exitoso).
 
@@ -178,18 +178,20 @@ OmegaVet_AdminSite/
 │   │   ├── auth/                                   # auth.routes/controller/service/repository/schema.js (US-101)
 │   │   ├── doctores/                                # doctores.routes/controller/service/repository.js (US-606/607/608)
 │   │   ├── areas/                                   # areas.routes/controller/service/repository.js (US-609/610/611)
-│   │   └── plantillas_whatsapp/                     # plantillas_whatsapp.routes/controller/service/repository.js (US-612/613/614)
+│   │   ├── plantillas_whatsapp/                     # plantillas_whatsapp.routes/controller/service/repository.js (US-612/613/614)
+│   │   └── usuarios/                                 # usuarios.routes/controller/service/repository.js (US-601, solo listado)
 │   ├── views/
 │   │   ├── partials/sidebar.ejs                    # Sidebar compartido, filtrado por permisos (AC6 de US-101)
 │   │   ├── partials/doctores-panel.ejs             # Fragmento HTMX de /doctores.html (toolbar+tabla+paginación)
 │   │   ├── partials/areas-panel.ejs                # Fragmento HTMX de /areas.html (mismo patrón)
 │   │   ├── partials/plantillas-panel.ejs           # Fragmento HTMX de /plantillas.html (mismo patrón)
+│   │   ├── partials/usuarios-panel.ejs             # Fragmento HTMX de /usuarios.html (mismo patrón; filtro de estatus es un <select>, no un toggle Activos/Todos)
 │   │   ├── partials/plantilla-form.ejs             # Formulario de alta/edición de plantillas (US-613), un solo template para las dos acciones
 │   │   ├── partials/plantillas-panel-oob.ejs        # Envoltura hx-swap-oob para refrescar la tabla tras un alta/edición desde el modal
 │   │   ├── partials/doctor-form.ejs                # Formulario de alta/edición de doctores (US-607), un solo template para las dos acciones
 │   │   ├── partials/area-form.ejs                  # Formulario de alta/edición de áreas (US-610), un solo template para las dos acciones
 │   │   ├── partials/areas-panel-oob.ejs             # Envoltura hx-swap-oob para refrescar la tabla tras un alta/edición desde el modal
-│   │   └── index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs, doctores.ejs, areas.ejs, plantillas.ejs
+│   │   └── index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs, doctores.ejs, areas.ejs, plantillas.ejs, usuarios.ejs
 │   ├── app.js                                      # App Express (view engine EJS, helmet, compression, logging, sesión, rutas)
 │   └── server.js                                   # Punto de entrada (graceful shutdown)
 ├── tests/
@@ -197,13 +199,15 @@ OmegaVet_AdminSite/
 │   │   ├── auth.service.test.js
 │   │   ├── doctores.service.test.js
 │   │   ├── areas.service.test.js
-│   │   └── plantillas_whatsapp.service.test.js
+│   │   ├── plantillas_whatsapp.service.test.js
+│   │   └── usuarios.service.test.js
 │   └── integration/                                # Jest + Supertest — app Express completa contra BD real
 │       ├── app.test.js                             # Rutas públicas, 404, páginas protegidas sin sesión
 │       ├── auth.test.js                            # Flujo de login completo (AC1-AC6 de US-101) + bloqueo escalonado por intentos fallidos (US-106)
 │       ├── doctores.test.js                        # Catálogo de doctores: poblado, búsqueda, permisos, orden, baja, alta, edición (US-606/607/608)
 │       ├── areas.test.js                            # Catálogo de áreas: poblado, búsqueda, permisos, orden, alta, edición, baja (US-609/610/611)
-│       └── plantillas_whatsapp.test.js              # Catálogo de plantillas: poblado, búsqueda, permisos, orden, filtro "Todos" por defecto, alta, edición, baja (US-612/613/614)
+│       ├── plantillas_whatsapp.test.js              # Catálogo de plantillas: poblado, búsqueda, permisos, orden, filtro "Todos" por defecto, alta, edición, baja (US-612/613/614)
+│       └── usuarios.test.js                          # Gestión de usuarios: poblado, búsqueda, filtro de estatus (5 valores), permisos, orden (US-601)
 ├── eslint.config.js
 ├── .prettierrc, .prettierignore
 ├── jest.config.js                                  # setupFiles carga .env.test para los tests
@@ -228,11 +232,12 @@ OmegaVet_AdminSite/
 | `/doctores.html`    | `requireAuth` + `requirePermission('doctores.ver')`    | Catálogo de doctores: listado, búsqueda, orden, paginación, alta, edición y baja (US-606/607/608)               |
 | `/areas.html`       | `requireAuth` + `requirePermission('areas.ver')`       | Catálogo de áreas: listado, búsqueda, orden, paginación, alta, edición y baja (US-609/610/611)                  |
 | `/plantillas.html`  | `requireAuth` + `requirePermission('plantillas.ver')`  | Catálogo de plantillas de WhatsApp: listado, búsqueda, orden, paginación, alta, edición y baja (US-612/613/614) |
+| `/usuarios.html`    | `requireAuth` + `requirePermission('usuarios.ver')`    | Gestión de usuarios: listado, búsqueda, filtro por estatus, orden, paginación (US-601, solo lectura por ahora)  |
 | `/health`           | Pública                                                | Health check del servidor Express                                                                               |
 
 Las páginas del panel se sirven vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `css/`, `js/` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
 
-Desde US-101, `main.html`/`agenda.html`/`grooming.html`/`laboratorio.html`/`doctores.html`/`areas.html`/`plantillas.html` requieren sesión activa (`requireAuth`, redirige a `/` si no hay sesión o si superó el tope absoluto de 8-12h) y, salvo `main.html`, el permiso exacto del módulo (`requirePermission`, redirige a `/main.html` si falta — nunca un 403 crudo). El sidebar (`src/views/partials/sidebar.ejs`, compartido por todas las vistas) filtra cada ítem por el mismo permiso: un módulo sin acceso ni se ve en el menú ni es alcanzable por URL directa (AC6 de US-101).
+Desde US-101, `main.html`/`agenda.html`/`grooming.html`/`laboratorio.html`/`doctores.html`/`areas.html`/`plantillas.html`/`usuarios.html` requieren sesión activa (`requireAuth`, redirige a `/` si no hay sesión o si superó el tope absoluto de 8-12h) y, salvo `main.html`, el permiso exacto del módulo (`requirePermission`, redirige a `/main.html` si falta — nunca un 403 crudo). El sidebar (`src/views/partials/sidebar.ejs`, compartido por todas las vistas) filtra cada ítem por el mismo permiso: un módulo sin acceso ni se ve en el menú ni es alcanzable por URL directa (AC6 de US-101).
 
 **`/doctores.html` (US-606), `/areas.html` (US-609) y `/plantillas.html` (US-612)** siguen el mismo patrón — la tabla estándar del sistema, decidida explícitamente así por el cliente para cualquier catálogo nuevo: `routes → controller → service → repository` del documento de Arquitectura y Buenas Prácticas, en vez de servir HTML estático del PoC. Cada una tiene búsqueda (doctores: por nombre o área, sin ocultar las demás áreas del doctor que hizo match; áreas: por nombre o slug; plantillas: por intención), filtro Activos/Todos, paginación y orden por columna (clic en el header — invierte la dirección si ya se está ordenando por esa columna, vuelve a la página 1). La columna Acciones está justificada a la derecha. **Plantillas es la única de las tres donde "Todos" es el filtro por defecto** (`plantillas_whatsapp.service.js#list`: `activoOnly = estado === 'activos'`, invertido respecto a doctores/áreas) — así lo pide el AC de esta historia.
 
@@ -254,6 +259,8 @@ En **áreas**, además de la baja (US-611, mismo mecanismo que doctores), **el a
 
 `nombre` y `slug` siguen siendo `UNIQUE` a secas, exactamente como en `assets/sql/Omega-Database.sql` — no se tocó el schema para esta historia. "El nombre de un área dada de baja queda libre" **no** se resuelve con un índice parcial ni permitiendo dos filas con el mismo nombre: al dar de alta con un nombre que ya pertenece a un registro **inactivo**, el alta **reactiva ese mismo registro** (`activo=true`, limpia `desactivado_por`/`desactivado_en`, actualiza `actualizado_por`/`actualizado_en`) en vez de insertar una fila nueva — conserva su `id` y su `slug` originales, así que cualquier enlace viejo que lo haya referenciado sigue siendo válido. Si el nombre pertenece a un registro **activo**, se rechaza igual (AC de duplicados). Editar, en cambio, rechaza el nombre si pertenece a CUALQUIER otro registro (activo o no) — no hay "reactivar" al editar, sería fusionar la identidad de dos filas distintas, algo que la historia nunca pidió. El chequeo de duplicados es **insensible a acentos, mayúsculas y espacios** ("Neurología", "neurologia" y "Neuro Logia" cuentan como el mismo nombre) — se normaliza en JS (`areas.service.js#normalizeNombre`) comparando contra todas las áreas, no con SQL/una extensión de Postgres (el catálogo es chico y así tampoco se toca el schema). Lo que se guarda y se muestra es siempre el texto tal cual lo escribió el usuario (solo recortado), la normalización es solo para decidir si es un duplicado. Un nombre duplicado responde con el mismo fragmento del formulario más el mensaje "El nombre del Área ya esta registrada" — el modal no se cierra y no se guarda nada. Al guardar con éxito, la respuesta no reemplaza el formulario: hace un swap **out-of-band** (`hx-swap-oob`) de la tabla completa y manda el header `HX-Trigger: closeAreaModal`, que el JS del cliente traduce en cerrar el modal (ver `areas.ejs`).
 
+**`/usuarios.html` (US-601)** sigue el mismo patrón, pero es solo listado: alta (US-602), edición (US-602), permisos (US-604), reseteo de contraseña (US-605) y baja (US-603) son todas historias futuras — los botones/íconos correspondientes ya se muestran u ocultan según el permiso exacto (`usuarios.crear`/`.editar`/`.permisos`/`.resetear_password`/`.eliminar`), pero ninguno tiene todavía una ruta real detrás (mismo criterio que tuvo el listado de plantillas en US-612, antes de que le llegaran US-613/614). Dos diferencias reales frente a doctores/áreas/plantillas: (1) el filtro no es un toggle de 2 estados sino un `<select>` con 5 valores (`usuarios.estatus`: activo/bloqueo_temp/bloqueado/inactivo, más "Todos") — por defecto muestra solo `activo` (decisión confirmada explícitamente con el cliente, ya que el AC no lo especificaba); (2) la tabla incluye una columna "Doctor vinculado" (LEFT JOIN a `doctores` vía `usuarios.doctor_id`, no sortable ni parte de la búsqueda — el AC solo pide poder ordenar/buscar por Nombre, Username, Correo y Estatus) que muestra el nombre completo del doctor o "Sin vínculo" si el usuario no tiene uno asociado. El badge de Estatus usa tres colores (`is-active` verde para activo, `is-warning` ámbar para bloqueo_temp, `is-danger` rojo para bloqueado, gris por defecto para inactivo). Se corrigieron también los permisos sembrados: US-000 había creado `usuarios.desactivar` sin `usuarios.resetear_password`; ahora es `usuarios.eliminar` (mismo naming que doctores/áreas/plantillas) y se agregó `usuarios.resetear_password` que faltaba por completo — mismo tipo de ajuste ya hecho dos veces antes (US-606, US-612).
+
 **Pendiente para una migración "completa" según la bitácora de decisiones técnicas**: `index.ejs`/`main.ejs`/`agenda.ejs`/`grooming.ejs`/`laboratorio.ejs` siguen siendo mayormente el HTML/JS del PoC copiado tal cual (el sidebar ya es la excepción: se extrajo a un partial con variables reales, ver arriba), y los datos de Agenda/Laboratorio siguen siendo arreglos de ejemplo en el `<script>` de cada página. Eso se resuelve historia por historia, conforme cada módulo se conecte a datos reales de la base.
 
 ### API
@@ -269,6 +276,8 @@ En **áreas**, además de la baja (US-611, mismo mecanismo que doctores), **el a
 - `POST /doctores` (alta) / `PUT /doctores/:id` (edición) (US-607) — `{ nombre, apellidos, activo, areaIds }` en el body (`areaIds` puede venir ausente, un solo valor, o varios). Éxito: `200` con un swap out-of-band de la tabla completa + header `HX-Trigger: closeDoctorModal`. Nombre/apellidos vacío: `200` con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger`. Requiere CSRF y `doctores.crear`/`doctores.editar` según corresponda.
 - `GET /plantillas/nuevo` / `GET /plantillas/:id/editar` (US-613) — fragmento HTML del formulario de alta/edición (vacío o precargado), swapeado dentro del modal correspondiente. Requiere `plantillas.crear`/`plantillas.editar` según corresponda.
 - `POST /plantillas` (alta) — `{ intencion, texto_respuesta }` en el body. `PUT /plantillas/:id` (edición) — además `activo` (el switch del formulario; ausente = desactiva). Éxito: `200` con un swap out-of-band de la tabla completa + header `HX-Trigger: closePlantillaModal`. Campo vacío/intención duplicada (entre plantillas activas): `200` con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger`. Requiere CSRF y `plantillas.crear`/`plantillas.editar` según corresponda.
+- `GET /usuarios.html` — página completa, siempre con el estado por defecto (`estatus=activo`, ignora cualquier query string). `200`. `302` a `/main.html` si falta `usuarios.ver` (`HX-Redirect` si la petición viene de HTMX).
+- `POST /usuarios.html` (US-601) — fragmento HTML del panel (`q`/`estatus`/`sort`/`dir`/`page` en el body), disparado por HTMX. Requiere CSRF y `usuarios.ver`. Sin rutas de escritura todavía — llegan en US-602/603/604/605.
 - `GET /health` — `200 { status: "ok" }`.
 
 El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc.) se documentará conforme se implementen sus historias de usuario correspondientes.

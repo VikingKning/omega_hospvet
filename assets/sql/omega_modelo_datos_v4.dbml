@@ -1,19 +1,18 @@
-// Omega Hospital Estética Veterinaria — Modelo de Datos v4
-// Fuente: Omega_Documentacion_Funcional_Modulos (última versión) + Bitácora de Decisiones Técnicas v3
-// Sin concepto de "rol": permisos asignados directamente por usuario (usuario_permisos)
-// v3: módulo de Tutores y Pacientes (propietarios/mascotas); citas y registros_laboratorio referencian mascota_id
-// v4: sin QVET (se elimina tipo_flujo); estados de cita registrada/confirmada/cancelada; archivo_id+estado en estudios_solicitados; consolidado en archivos_laboratorio; índice en hash_contenido
+// Omega Hospital Estética Veterinaria — Modelo de Datos v5
+// Fuente: Omega_Documentacion_Funcional_Modulos + Bitácora de Decisiones Técnicas
+// v5: tabla usuarios — bloqueo temporal por intentos fallidos (US-106) y cambio de
+//     contraseña forzado en el siguiente login (US-606)
 // Pegar en https://dbdiagram.io para visualizar el ERD
-
+ 
 Project omega_hospvet {
   database_type: 'PostgreSQL'
   Note: 'Sistema administrativo con integración WhatsApp para Omega Hospital Estética Veterinaria'
 }
-
+ 
 //////////////////////////////////////////////
 // 1. Autenticación y Accesos
 //////////////////////////////////////////////
-
+ 
 Table usuarios {
   id serial [pk]
   nombre varchar(100) [not null]
@@ -23,7 +22,7 @@ Table usuarios {
   username varchar(50) [not null, unique]
   password_hash varchar(255) [not null]
   doctor_id integer [ref: > doctores.id]
-  estatus varchar(20) [not null, default: 'activo', note: 'activo | bloqueo_temp | bloqueado | inactivo (US-106)']
+  estatus varchar(20) [not null, default: 'activo', note: 'v5 — activo | bloqueo_temp | bloqueado | inactivo (US-106); reemplaza a activo boolean']
   intentos_fallidos integer [not null, default: 0]
   bloqueado_en timestamptz
   ultimo_login_en timestamptz
@@ -33,34 +32,34 @@ Table usuarios {
   actualizado_en timestamptz
   desactivado_por integer [ref: > usuarios.id]
   desactivado_en timestamptz
-
-  Note: 'Cuentas de acceso al panel. doctor_id es opcional y en un solo sentido (2.6.3).'
+ 
+  Note: 'Cuentas de acceso al panel. doctor_id es opcional y en un solo sentido (2.6.3). Ver pendiente sobre el valor bloqueado de estatus en la sección 2.1 del documento.'
 }
-
+ 
 Table permissions {
   id serial [pk]
   modulo varchar(50) [not null]
   accion varchar(30) [not null]
   codigo varchar(100) [not null, unique]
   descripcion text
-
+ 
   Note: 'Catálogo fijo de permisos posibles, consumido por requirePermission().'
 }
-
+ 
 Table usuario_permisos {
   id serial [pk]
   usuario_id integer [not null, ref: > usuarios.id]
   permission_id integer [not null, ref: > permissions.id]
   otorgado_por integer [ref: > usuarios.id]
   otorgado_en timestamptz [not null]
-
+ 
   indexes {
     (usuario_id, permission_id) [unique]
   }
-
+ 
   Note: 'Matriz de permisos por usuario, sin rol intermedio (2.6.2). Se cachea en sesión al hacer login.'
 }
-
+ 
 Table password_reset_tokens {
   id serial [pk]
   usuario_id integer [not null, ref: > usuarios.id]
@@ -69,14 +68,14 @@ Table password_reset_tokens {
   usado_en timestamptz
   solicitado_desde_ip varchar(45) [not null]
   creado_en timestamptz [not null]
-
+ 
   Note: 'Recuperación de contraseña de un solo uso, expira a los 30 minutos (2.1.2).'
 }
-
+ 
 //////////////////////////////////////////////
 // 2. Tutores y Pacientes
 //////////////////////////////////////////////
-
+ 
 Table propietarios {
   id serial [pk]
   nombre varchar(150) [not null]
@@ -89,10 +88,10 @@ Table propietarios {
   actualizado_en timestamptz
   desactivado_por integer [ref: > usuarios.id]
   desactivado_en timestamptz
-
+ 
   Note: 'UI: "Tutor". El teléfono es el identificador de búsqueda al dar de alta cita/laboratorio y el canal de WhatsApp.'
 }
-
+ 
 Table mascotas {
   id serial [pk]
   propietario_id integer [not null, ref: > propietarios.id]
@@ -106,14 +105,14 @@ Table mascotas {
   actualizado_en timestamptz
   desactivado_por integer [ref: > usuarios.id]
   desactivado_en timestamptz
-
+ 
   Note: 'UI: "Paciente". Un propietario puede tener una o más mascotas (1 a muchos).'
 }
-
+ 
 //////////////////////////////////////////////
 // 3. Catálogos de Doctores y Áreas
 //////////////////////////////////////////////
-
+ 
 Table doctores {
   id serial [pk]
   nombre varchar(100) [not null]
@@ -125,10 +124,10 @@ Table doctores {
   actualizado_en timestamptz
   desactivado_por integer [ref: > usuarios.id]
   desactivado_en timestamptz
-
+ 
   Note: 'Catálogo independiente de usuarios; un doctor puede existir sin cuenta de acceso.'
 }
-
+ 
 Table areas {
   id serial [pk]
   nombre varchar(100) [not null, unique]
@@ -140,26 +139,26 @@ Table areas {
   actualizado_en timestamptz
   desactivado_por integer [ref: > usuarios.id]
   desactivado_en timestamptz
-
+ 
   Note: 'Cada área activa genera automáticamente su propia vista de agenda (2.3).'
 }
-
+ 
 Table doctor_area {
   id serial [pk]
   doctor_id integer [not null, ref: > doctores.id]
   area_id integer [not null, ref: > areas.id]
-
+ 
   indexes {
     (doctor_id, area_id) [unique]
   }
-
+ 
   Note: 'Muchos a muchos: un doctor puede atender varias áreas (2.6.3).'
 }
-
+ 
 //////////////////////////////////////////////
 // 4. Agenda
 //////////////////////////////////////////////
-
+ 
 Table citas {
   id serial [pk]
   area_id integer [not null, ref: > areas.id]
@@ -181,14 +180,14 @@ Table citas {
   cancelado_en timestamptz
   actualizado_por integer [ref: > usuarios.id]
   actualizado_en timestamptz
-
+ 
   Note: 'Fuente de verdad de la agenda; Google Calendar es solo espejo (Decisión 7). El tutor se obtiene vía mascotas.propietario_id.'
 }
-
+ 
 //////////////////////////////////////////////
 // 5. Laboratorios
 //////////////////////////////////////////////
-
+ 
 Table registros_laboratorio {
   id serial [pk]
   mascota_id integer [not null, ref: > mascotas.id]
@@ -205,10 +204,10 @@ Table registros_laboratorio {
   creado_en timestamptz [not null]
   actualizado_por integer [ref: > usuarios.id]
   actualizado_en timestamptz
-
+ 
   Note: 'Registro único de laboratorio (sin QVET). El tutor se obtiene vía mascotas.propietario_id.'
 }
-
+ 
 Table estudios_solicitados {
   id serial [pk]
   registro_laboratorio_id integer [not null, ref: > registros_laboratorio.id]
@@ -217,16 +216,16 @@ Table estudios_solicitados {
   archivo_id integer [ref: > archivos_laboratorio.id]
   estado varchar(20) [not null, note: 'pendiente | enviado']
   creado_en timestamptz [not null]
-
+ 
   Note: 'Detalle de estudios (2.4.1). archivo_id permite que varios estudios compartan un mismo archivo consolidado.'
 }
-
+ 
 Table catalogo_categorias_estudio {
   id serial [pk]
   nombre varchar(100) [not null, unique]
   activo boolean [not null, default: true]
 }
-
+ 
 Table catalogo_estudios {
   id serial [pk]
   categoria_id integer [not null, ref: > catalogo_categorias_estudio.id]
@@ -235,13 +234,13 @@ Table catalogo_estudios {
   requiere_zona boolean [not null, default: false]
   activo boolean [not null, default: true]
 }
-
+ 
 Table catalogo_zonas_anatomicas {
   id serial [pk]
   codigo varchar(50) [not null, unique]
   nombre varchar(100) [not null]
 }
-
+ 
 Table archivos_laboratorio {
   id serial [pk]
   registro_laboratorio_id integer [not null, ref: > registros_laboratorio.id]
@@ -252,12 +251,12 @@ Table archivos_laboratorio {
   consolidado boolean [not null, default: false, note: 'true = PDF generado por el sistema fusionando varios archivos del mismo registro']
   cargado_por integer [not null, ref: > usuarios.id]
   cargado_en timestamptz [not null]
-
+ 
   indexes {
     hash_contenido
   }
 }
-
+ 
 Table envios_laboratorio {
   id serial [pk]
   registro_laboratorio_id integer [not null, ref: > registros_laboratorio.id]
@@ -266,22 +265,22 @@ Table envios_laboratorio {
   destinatario_telefono varchar(20)
   enviado_por integer [not null, ref: > usuarios.id]
   enviado_en timestamptz [not null]
-
+ 
   Note: 'destinatario_correo/telefono son una fotografía del dato de contacto al momento del envío (no cambian si el tutor corrige sus datos después).'
 }
-
+ 
 Table envio_archivo {
   id serial [pk]
   envio_id integer [not null, ref: > envios_laboratorio.id]
   archivo_id integer [not null, ref: > archivos_laboratorio.id]
-
+ 
   Note: 'Puente envío↔archivo; permite reenviar el mismo archivo en envíos posteriores.'
 }
-
+ 
 //////////////////////////////////////////////
 // 6. WhatsApp y Métricas
 //////////////////////////////////////////////
-
+ 
 Table plantillas_whatsapp {
   id serial [pk]
   intencion varchar(100) [not null, unique]
@@ -294,10 +293,10 @@ Table plantillas_whatsapp {
   actualizado_en timestamptz
   desactivado_por integer [ref: > usuarios.id]
   desactivado_en timestamptz
-
+ 
   Note: 'Respuestas fijas y pre-aprobadas; el LLM nunca genera este texto libremente.'
 }
-
+ 
 Table mensajes_whatsapp {
   id serial [pk]
   telefono_origen varchar(20) [not null]
@@ -310,6 +309,6 @@ Table mensajes_whatsapp {
   registro_laboratorio_id integer [ref: > registros_laboratorio.id]
   recibido_en timestamptz [not null]
   procesado_en timestamptz
-
+ 
   Note: 'Fuente de las métricas del bloque WhatsApp (2.5.1). telefono_origen puede correlacionar con propietarios.telefono si hay coincidencia.'
 }

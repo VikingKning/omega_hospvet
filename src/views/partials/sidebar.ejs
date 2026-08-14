@@ -6,7 +6,10 @@
   const configPerms = ['usuarios.ver', 'doctores.ver', 'areas.ver', 'plantillas.ver'];
   const showConfigGroup = configPerms.some(has);
   const configOpen =
-    currentPage === 'doctores' || currentPage === 'areas' || currentPage === 'plantillas';
+    currentPage === 'doctores' ||
+    currentPage === 'areas' ||
+    currentPage === 'plantillas' ||
+    currentPage === 'usuarios';
 %>
 <nav class="sidebar-nav" id="sidebar">
   <% if (has('agenda.ver') || has('grooming.ver')) { %>
@@ -77,7 +80,7 @@
           <span>Mi perfil</span>
         </a>
         <% if (has('usuarios.ver')) { %>
-          <a href="#" class="submenu-link">
+          <a href="usuarios.html" class="submenu-link<%= currentPage === 'usuarios' ? ' current' : '' %>">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             <span>Gestión de usuarios</span>
           </a>

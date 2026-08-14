@@ -1209,6 +1209,24 @@ body:has(.app)::after {
   background: var(--success);
 }
 
+/* US-601: estatus de usuarios.estatus (bloqueo_temp/bloqueado) — activo
+   reusa .is-active de arriba, inactivo se queda con el gris por defecto. */
+.status-badge.is-warning {
+  color: var(--warning);
+}
+
+.status-badge.is-warning::before {
+  background: var(--warning);
+}
+
+.status-badge.is-danger {
+  color: var(--danger);
+}
+
+.status-badge.is-danger::before {
+  background: var(--danger);
+}
+
 .row-actions {
   display: flex;
   justify-content: flex-end;
@@ -1291,6 +1309,25 @@ body:has(.app)::after {
 
 .row-action-delete:hover {
   background: rgba(240, 15, 53, 0.1);
+}
+
+/* US-601: acciones de fila propias de usuarios (permisos, resetear
+   contraseña) — mismos colores base ya usados en el resto del sistema
+   (primary/warning), sin inventar variables nuevas. */
+.row-action-permisos {
+  color: var(--primary);
+}
+
+.row-action-permisos:hover {
+  background: var(--primary-light);
+}
+
+.row-action-reset {
+  color: var(--warning);
+}
+
+.row-action-reset:hover {
+  background: rgba(242, 169, 0, 0.1);
 }
 
 .table-footer {

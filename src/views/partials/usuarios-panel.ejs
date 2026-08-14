@@ -1,0 +1,213 @@
+<%
+// US-601: gestión de usuarios — mismo patrón que doctores-panel.ejs/
+// areas-panel.ejs/plantillas-panel.ejs (tabla estándar del sistema). Solo
+// lectura por ahora: los botones/acciones de alta/edición/permisos/
+// resetear/baja son intencionalmente decorativos (AC de la historia — cada
+// una llega en su propia historia futura: US-602/603/604/605).
+const permissions = user?.permissions ?? [];
+const has = (code) => permissions.includes(code);
+
+function sortVals(column) {
+  const nextDir = sort === column && dir === 'asc' ? 'desc' : 'asc';
+  return JSON.stringify({ sort: column, dir: nextDir, page: 1 });
+}
+
+function initials(nombre, apellidos) {
+  return `${nombre.charAt(0)}${apellidos.charAt(0)}`.toUpperCase();
+}
+
+const ESTATUS_LABELS = {
+  activo: 'Activo',
+  bloqueo_temp: 'Bloqueo temporal',
+  bloqueado: 'Bloqueado',
+  inactivo: 'Inactivo',
+};
+
+const ESTATUS_BADGE_CLASS = {
+  activo: ' is-active',
+  bloqueo_temp: ' is-warning',
+  bloqueado: ' is-danger',
+  inactivo: '',
+};
+
+const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', estatus: 'Estatus' };
+%>
+<% if (catalogoVacio) { %>
+  <div class="lab-table-wrap">
+    <div class="empty-state-panel">
+      <span class="empty-state-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </span>
+      <p class="empty-state-title">Todavía no hay usuarios registrados</p>
+      <p class="empty-state-description">Da de alta el primer usuario del panel para empezar a asignarle permisos.</p>
+      <% if (has('usuarios.crear')) { %>
+        <button class="btn-primary" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Registrar primer usuario
+        </button>
+      <% } %>
+    </div>
+  </div>
+<% } else { %>
+  <form id="usuarios-filters"
+        hx-post="usuarios.html" hx-target="#usuarios-panel" hx-swap="innerHTML"
+        hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+        hx-trigger="input changed delay:400ms from:#usuarios-search, submit"
+        hx-vals='{"page":1}'>
+    <input type="hidden" name="sort" value="<%= sort %>">
+    <input type="hidden" name="dir" value="<%= dir %>">
+    <input type="hidden" name="page" value="<%= page %>">
+
+    <div class="lab-toolbar">
+      <div class="lab-toolbar-filters">
+        <div class="lab-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="usuarios-search" name="q" value="<%= q %>" placeholder="Buscar por nombre, usuario o correo...">
+        </div>
+        <select id="usuarios-estatus" name="estatus" class="lab-select"
+                hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
+                hx-vals='{"page":1}'>
+          <option value="activo" <%= estatus === 'activo' ? 'selected' : '' %>>Activo</option>
+          <option value="bloqueo_temp" <%= estatus === 'bloqueo_temp' ? 'selected' : '' %>>Bloqueo temporal</option>
+          <option value="bloqueado" <%= estatus === 'bloqueado' ? 'selected' : '' %>>Bloqueado</option>
+          <option value="inactivo" <%= estatus === 'inactivo' ? 'selected' : '' %>>Inactivo</option>
+          <option value="todos" <%= estatus === 'todos' ? 'selected' : '' %>>Todos</option>
+        </select>
+      </div>
+      <% if (has('usuarios.crear')) { %>
+        <button class="btn-primary" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nuevo usuario
+        </button>
+      <% } %>
+    </div>
+
+    <div class="lab-table-wrap">
+      <table class="lab-table">
+        <thead>
+          <tr>
+            <% ['nombre', 'username', 'correo'].forEach((column) => { %>
+              <th class="sortable-th">
+                <button type="button" class="sortable-th-link"
+                        hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
+                        hx-vals='<%- sortVals(column) %>'>
+                  <%= SORT_LABELS[column] %>
+                  <svg class="sort-arrow<%= sort === column ? ' active' : '' %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <% if (sort === column && dir === 'desc') { %>
+                      <path d="M6 9l6 6 6-6"/>
+                    <% } else { %>
+                      <path d="M18 15l-6-6-6 6"/>
+                    <% } %>
+                  </svg>
+                </button>
+              </th>
+            <% }) %>
+            <th>Doctor vinculado</th>
+            <th class="sortable-th">
+              <button type="button" class="sortable-th-link"
+                      hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
+                      hx-vals='<%- sortVals("estatus") %>'>
+                Estatus
+                <svg class="sort-arrow<%= sort === 'estatus' ? ' active' : '' %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <% if (sort === 'estatus' && dir === 'desc') { %>
+                    <path d="M6 9l6 6 6-6"/>
+                  <% } else { %>
+                    <path d="M18 15l-6-6-6 6"/>
+                  <% } %>
+                </svg>
+              </button>
+            </th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% usuarios.forEach((usuario) => { %>
+            <tr>
+              <td>
+                <div class="person-cell">
+                  <span class="avatar-circle"><%= initials(usuario.nombre, usuario.apellidos) %></span>
+                  <div>
+                    <div class="person-cell-name"><%= usuario.nombre %> <%= usuario.apellidos %></div>
+                  </div>
+                </div>
+              </td>
+              <td><%= usuario.username %></td>
+              <td><%= usuario.correo %></td>
+              <td>
+                <% if (usuario.doctor_nombre) { %>
+                  <%= usuario.doctor_nombre %> <%= usuario.doctor_apellidos %>
+                <% } else { %>
+                  <span class="area-tag-empty">Sin vínculo</span>
+                <% } %>
+              </td>
+              <td>
+                <span class="status-badge<%= ESTATUS_BADGE_CLASS[usuario.estatus] ?? '' %>"><%= ESTATUS_LABELS[usuario.estatus] ?? usuario.estatus %></span>
+              </td>
+              <td class="text-right">
+                <div class="row-actions">
+                  <% if (has('usuarios.editar')) { %>
+                    <button class="row-action-btn row-action-edit" type="button" aria-label="Editar usuario <%= usuario.username %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                  <% if (has('usuarios.permisos')) { %>
+                    <button class="row-action-btn row-action-permisos" type="button" aria-label="Permisos de <%= usuario.username %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
+                        <path d="m9 12 2 2 4-4"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                  <% if (has('usuarios.resetear_password')) { %>
+                    <button class="row-action-btn row-action-reset" type="button" aria-label="Resetear contraseña de <%= usuario.username %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l1.8-1.8a1 1 0 0 0 0-1.4L19.4 5a1 1 0 0 0-1.4 0l-1.8 1.8a1 1 0 0 0 0 1.4Z"/>
+                        <path d="m21 2-9.6 9.6"/>
+                        <circle cx="7.5" cy="15.5" r="5.5"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                  <% if (has('usuarios.eliminar') && usuario.estatus !== 'inactivo') { %>
+                    <button class="row-action-btn row-action-delete" type="button" aria-label="Dar de baja a <%= usuario.username %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% if (usuarios.length === 0) { %>
+        <p class="lab-empty">No hay resultados para tu búsqueda.</p>
+      <% } %>
+
+      <div class="table-footer">
+        <span><%= usuarios.length %> resultados · <%= total %> usuarios en total</span>
+        <% if (totalPages > 1) { %>
+          <nav class="pagination" aria-label="Paginación">
+            <button type="button" class="pagination-btn" aria-disabled="<%= page <= 1 %>" <%= page <= 1 ? 'disabled' : '' %>
+                    hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
+                    hx-vals='{"page":<%= Math.max(1, page - 1) %>}' aria-label="Página anterior">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <% for (let p = 1; p <= totalPages; p++) { %>
+              <button type="button" class="pagination-page<%= p === page ? ' current' : '' %>"
+                      hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
+                      hx-vals='{"page":<%= p %>}'><%= p %></button>
+            <% } %>
+            <button type="button" class="pagination-btn" aria-disabled="<%= page >= totalPages %>" <%= page >= totalPages ? 'disabled' : '' %>
+                    hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
+                    hx-vals='{"page":<%= Math.min(totalPages, page + 1) %>}' aria-label="Página siguiente">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </nav>
+        <% } %>
+      </div>
+    </div>
+  </form>
+<% } %>

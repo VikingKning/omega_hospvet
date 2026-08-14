@@ -1,0 +1,108 @@
+jest.mock('../../src/modules/usuarios/usuarios.repository');
+const repository = require('../../src/modules/usuarios/usuarios.repository');
+const { list } = require('../../src/modules/usuarios/usuarios.service');
+const db = require('../../src/config/database');
+
+afterAll(() => db.destroy());
+
+describe('usuarios.service.list', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.existsAny.mockResolvedValue(true);
+    repository.count.mockResolvedValue(0);
+    repository.findPage.mockResolvedValue([]);
+  });
+
+  it('AC: por defecto el filtro es "activo" (decidido explícitamente, a diferencia de plantillas)', async () => {
+    const result = await list({});
+    expect(repository.findPage).toHaveBeenCalledWith(
+      expect.objectContaining({ estatus: 'activo' }),
+    );
+    expect(result.estatus).toBe('activo');
+  });
+
+  it.each([['bloqueo_temp'], ['bloqueado'], ['inactivo']])(
+    'acepta filtrar por estatus=%s',
+    async (estatus) => {
+      const result = await list({ estatus });
+      expect(repository.findPage).toHaveBeenCalledWith(expect.objectContaining({ estatus }));
+      expect(result.estatus).toBe(estatus);
+    },
+  );
+
+  it('estatus=todos desactiva el filtro (manda undefined al repository)', async () => {
+    const result = await list({ estatus: 'todos' });
+    expect(repository.findPage).toHaveBeenCalledWith(
+      expect.objectContaining({ estatus: undefined }),
+    );
+    expect(result.estatus).toBe('todos');
+  });
+
+  it('un estatus desconocido cae al default "activo", no truena', async () => {
+    const result = await list({ estatus: 'lo-que-sea' });
+    expect(repository.findPage).toHaveBeenCalledWith(
+      expect.objectContaining({ estatus: 'activo' }),
+    );
+    expect(result.estatus).toBe('activo');
+  });
+
+  it('recorta espacios en la búsqueda y manda undefined si queda vacía', async () => {
+    await list({ q: '   ' });
+    expect(repository.findPage).toHaveBeenCalledWith(expect.objectContaining({ q: undefined }));
+  });
+
+  it('una página inválida cae a la página 1, no truena', async () => {
+    const result = await list({ page: 'no-es-un-numero' });
+    expect(result.page).toBe(1);
+  });
+
+  it('una página fuera de rango se recorta al total de páginas', async () => {
+    repository.count.mockResolvedValue(5); // 5 usuarios, PAGE_SIZE=10 => 1 sola página
+    const result = await list({ page: '99' });
+    expect(result.page).toBe(1);
+    expect(result.totalPages).toBe(1);
+  });
+
+  it('catalogoVacio es true solo cuando no existe ningún usuario (sin importar filtros)', async () => {
+    repository.existsAny.mockResolvedValue(false);
+    const result = await list({});
+    expect(result.catalogoVacio).toBe(true);
+  });
+
+  it('catalogoVacio es false si hay usuarios aunque esta búsqueda no encuentre nada', async () => {
+    repository.existsAny.mockResolvedValue(true);
+    repository.count.mockResolvedValue(0);
+    const result = await list({ q: 'no-coincide-con-nada' });
+    expect(result.catalogoVacio).toBe(false);
+    expect(result.total).toBe(0);
+  });
+
+  it('por defecto ordena por nombre ascendente', async () => {
+    const result = await list({});
+    expect(repository.findPage).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'nombre', dir: 'asc' }),
+    );
+    expect(result.sort).toBe('nombre');
+    expect(result.dir).toBe('asc');
+  });
+
+  it.each([['nombre'], ['username'], ['correo'], ['estatus']])(
+    'acepta ordenar por %s',
+    async (column) => {
+      await list({ sort: column, dir: 'desc' });
+      expect(repository.findPage).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: column, dir: 'desc' }),
+      );
+    },
+  );
+
+  it('una columna de orden desconocida cae a "nombre", no truena', async () => {
+    const result = await list({ sort: 'algo-que-no-existe' });
+    expect(result.sort).toBe('nombre');
+  });
+
+  it('una dirección desconocida cae a "asc"', async () => {
+    const result = await list({ dir: 'algo-raro' });
+    expect(result.dir).toBe('asc');
+  });
+});

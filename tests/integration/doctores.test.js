@@ -123,6 +123,13 @@ afterAll(async () => {
   await Promise.all([db.destroy(), sessionStore.close()]);
 });
 
+// Este describe asume que `doctores` está completamente vacía en el
+// momento en que corre — sigue siendo cierto solo porque NINGÚN otro
+// archivo de test inserta filas en esta tabla (a diferencia de `areas` o
+// `usuarios`, que sí las comparten entre suites). Si algún test futuro
+// necesita un doctor real (p.ej. para probar una columna "Doctor
+// vinculado" en otro módulo), NO insertarlo aquí — verificar ese caso en
+// vivo en su lugar (ver la memoria de US-601, que se topó con esto).
 describe('GET /doctores.html sin catálogo (US-606 AC1/AC3)', () => {
   it('muestra el estado vacío con CTA, sin la barra de herramientas', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });

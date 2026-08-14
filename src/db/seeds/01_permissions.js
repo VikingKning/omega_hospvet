@@ -20,8 +20,9 @@ const permissions = [
   ['usuarios', 'ver', 'Ver el listado de usuarios del panel'],
   ['usuarios', 'crear', 'Crear un nuevo usuario del panel'],
   ['usuarios', 'editar', 'Editar los datos de un usuario del panel'],
-  ['usuarios', 'desactivar', 'Desactivar un usuario del panel'],
+  ['usuarios', 'eliminar', 'Dar de baja (desactivar) un usuario del panel'],
   ['usuarios', 'permisos', 'Otorgar o revocar permisos de un usuario'],
+  ['usuarios', 'resetear_password', 'Resetear la contraseña de un usuario'],
 
   ['doctores', 'ver', 'Ver el catálogo de doctores'],
   ['doctores', 'crear', 'Crear un doctor nuevo'],
