@@ -96,7 +96,6 @@ async function createTestUser({ username, password }, permissionCodes) {
       correo: `${username}@omegavet.test`,
       username,
       password_hash: await bcrypt.hash(password, 4),
-      activo: true,
       creado_en: db.fn.now(),
     })
     .returning('id');

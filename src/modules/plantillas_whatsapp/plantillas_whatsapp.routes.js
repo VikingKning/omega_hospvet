@@ -1,0 +1,56 @@
+const express = require('express');
+const requireAuth = require('../../middlewares/requireAuth');
+const requirePermission = require('../../middlewares/requirePermission');
+const { doubleCsrfProtection } = require('../../config/csrf');
+const controller = require('./plantillas_whatsapp.controller');
+
+const router = express.Router();
+
+router.get('/plantillas.html', requireAuth, requirePermission('plantillas.ver'), controller.list);
+
+// Filtro/orden/paginación vía HTMX: nunca aparece en la URL ni en el
+// historial del navegador (mismo criterio de privacidad que
+// doctores.html/areas.html). El body viaja igual de "sucio" que un query
+// string, así que se protege con el mismo CSRF que POST /login.
+router.post(
+  '/plantillas.html',
+  requireAuth,
+  requirePermission('plantillas.ver'),
+  doubleCsrfProtection,
+  controller.filter,
+);
+
+// US-613: alta y edición, mismo formulario en un modal. Los GET solo arman
+// el fragmento del formulario (vacío o precargado); los POST/PUT hacen el
+// alta/edición real. Cada ruta exige el permiso específico de la acción
+// (crear ≠ editar) — así un usuario con uno solo de los dos nunca puede
+// ejecutar el otro, aunque el formulario sea visualmente el mismo. Una
+// historia de baja todavía sin número agregará aquí la ruta DELETE.
+router.get(
+  '/plantillas/nuevo',
+  requireAuth,
+  requirePermission('plantillas.crear'),
+  controller.nuevoForm,
+);
+router.get(
+  '/plantillas/:id/editar',
+  requireAuth,
+  requirePermission('plantillas.editar'),
+  controller.editarForm,
+);
+router.post(
+  '/plantillas',
+  requireAuth,
+  requirePermission('plantillas.crear'),
+  doubleCsrfProtection,
+  controller.crear,
+);
+router.put(
+  '/plantillas/:id',
+  requireAuth,
+  requirePermission('plantillas.editar'),
+  doubleCsrfProtection,
+  controller.editar,
+);
+
+module.exports = router;

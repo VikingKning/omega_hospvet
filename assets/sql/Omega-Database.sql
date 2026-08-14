@@ -2,19 +2,22 @@ CREATE TABLE "usuarios" (
   "id" serial PRIMARY KEY,
   "nombre" varchar(100) NOT NULL,
   "apellidos" varchar(100) NOT NULL,
-  "correo" varchar(150) UNIQUE NOT NULL,
+  "correo" varchar(150) NOT NULL,
   "telefono" varchar(20),
-  "username" varchar(50) UNIQUE NOT NULL,
+  "username" varchar(50) NOT NULL,
   "password_hash" varchar(255) NOT NULL,
   "doctor_id" integer,
-  "activo" boolean NOT NULL DEFAULT true,
+  "estatus" varchar(20) NOT NULL DEFAULT 'activo',
+  "intentos_fallidos" integer NOT NULL DEFAULT 0,
+  "bloqueado_en" timestamptz,
   "ultimo_login_en" timestamptz,
   "creado_por" integer,
   "creado_en" timestamptz NOT NULL,
   "actualizado_por" integer,
   "actualizado_en" timestamptz,
   "desactivado_por" integer,
-  "desactivado_en" timestamptz
+  "desactivado_en" timestamptz,
+  CONSTRAINT "usuarios_estatus_check" CHECK ("estatus" IN ('activo', 'bloqueo_temp', 'bloqueado', 'inactivo'))
 );
 
 CREATE TABLE "permissions" (
@@ -231,6 +234,12 @@ CREATE TABLE "mensajes_whatsapp" (
   "recibido_en" timestamptz NOT NULL,
   "procesado_en" timestamptz
 );
+
+CREATE UNIQUE INDEX ON "usuarios" ("correo");
+
+CREATE UNIQUE INDEX ON "usuarios" ("username");
+
+CREATE INDEX ON "usuarios" ("estatus");
 
 CREATE UNIQUE INDEX ON "usuario_permisos" ("usuario_id", "permission_id");
 

@@ -812,13 +812,18 @@ body:has(.app)::after {
 }
 
 .modal-form input,
-.modal-form select {
+.modal-form select,
+.modal-form textarea {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
   color: var(--text-dark);
+}
+
+.modal-form textarea {
+  resize: vertical;
 }
 
 .modal-form input:read-only,

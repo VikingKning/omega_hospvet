@@ -1,0 +1,40 @@
+<%
+// US-613: mismo formulario para alta y edición — el modo se decide por si
+// `plantilla` viene o no (edición trae el registro completo, alta viene
+// null). Este partial se usa tanto para el primer render (GET
+// /plantillas/nuevo o GET /plantillas/:id/editar) como para el re-render
+// con error (POST/PUT fallidos, ver plantillas_whatsapp.controller.js) —
+// por eso intencion/texto_respuesta viajan aparte de `plantilla`: en un
+// re-render por error es lo que el usuario acababa de escribir, no
+// necesariamente lo que ya está guardado.
+const esEdicion = Boolean(plantilla);
+%>
+<div class="modal-header">
+  <h2><%= esEdicion ? 'Editar plantilla' : 'Nueva plantilla' %></h2>
+  <button class="modal-close-btn" type="button" id="plantillaFormClose" aria-label="Cerrar">&times;</button>
+</div>
+
+<% if (error) { %>
+  <div class="form-error-banner">
+    <span><%= error %></span>
+    <button type="button" class="modal-close-btn" id="plantillaFormErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
+  </div>
+<% } %>
+
+<form class="modal-form"
+      hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `plantillas/${plantilla.id}` : 'plantillas' %>"
+      hx-target="#plantillaFormModalBody" hx-swap="innerHTML"
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+  <label>
+    Intención
+    <input type="text" name="intencion" value="<%= intencion %>" required maxlength="100" autofocus>
+  </label>
+  <label>
+    Texto de respuesta
+    <textarea name="texto_respuesta" rows="4" required><%= texto_respuesta %></textarea>
+  </label>
+  <div class="modal-actions">
+    <button type="button" class="btn-secondary" id="plantillaFormCancel">Cancelar</button>
+    <button type="submit" class="btn-primary">Guardar</button>
+  </div>
+</form>

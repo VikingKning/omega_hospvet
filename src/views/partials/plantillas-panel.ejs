@@ -1,0 +1,150 @@
+<%
+// US-612: catálogo de plantillas de WhatsApp — mismo patrón que
+// doctores-panel.ejs/areas-panel.ejs (tabla estándar del sistema). Solo
+// lectura por ahora: los botones de alta/edición/baja son intencionalmente
+// decorativos (AC de la historia — alta/edición llegan en US-613, la baja
+// real en una historia futura todavía sin número).
+const permissions = user?.permissions ?? [];
+const has = (code) => permissions.includes(code);
+
+function sortVals(column) {
+  const nextDir = sort === column && dir === 'asc' ? 'desc' : 'asc';
+  return JSON.stringify({ sort: column, dir: nextDir, page: 1 });
+}
+%>
+<% if (catalogoVacio) { %>
+  <div class="lab-table-wrap">
+    <div class="empty-state-panel">
+      <span class="empty-state-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+      </span>
+      <p class="empty-state-title">Todavía no hay plantillas registradas</p>
+      <p class="empty-state-description">Da de alta la primera plantilla de WhatsApp para comenzar a utilizar respuestas predefinidas desde el sistema.</p>
+      <% if (has('plantillas.crear')) { %>
+        <button class="btn-primary" type="button"
+                hx-get="plantillas/nuevo" hx-target="#plantillaFormModalBody" hx-swap="innerHTML">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Registrar primera plantilla
+        </button>
+      <% } %>
+    </div>
+  </div>
+<% } else { %>
+  <form id="plantillas-filters"
+        hx-post="plantillas.html" hx-target="#plantillas-panel" hx-swap="innerHTML"
+        hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+        hx-trigger="input changed delay:400ms from:#plantillas-search, submit"
+        hx-vals='{"page":1}'>
+    <input type="hidden" name="estado" value="<%= estado %>">
+    <input type="hidden" name="sort" value="<%= sort %>">
+    <input type="hidden" name="dir" value="<%= dir %>">
+    <input type="hidden" name="page" value="<%= page %>">
+
+    <div class="lab-toolbar">
+      <div class="lab-toolbar-filters">
+        <div class="lab-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="plantillas-search" name="q" value="<%= q %>" placeholder="Buscar por intención...">
+        </div>
+        <div class="toggle-group">
+          <button type="button" class="toggle-btn<%= estado === 'activos' ? ' active' : '' %>"
+                  hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
+                  hx-vals='{"estado":"activos","page":1}'>Activos</button>
+          <button type="button" class="toggle-btn<%= estado === 'todos' ? ' active' : '' %>"
+                  hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
+                  hx-vals='{"estado":"todos","page":1}'>Todos</button>
+        </div>
+      </div>
+      <% if (has('plantillas.crear')) { %>
+        <button class="btn-primary" type="button"
+                hx-get="plantillas/nuevo" hx-target="#plantillaFormModalBody" hx-swap="innerHTML">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nueva Plantilla
+        </button>
+      <% } %>
+    </div>
+
+    <div class="lab-table-wrap">
+      <table class="lab-table">
+        <thead>
+          <tr>
+            <% ['intencion', 'veces_usada', 'estado'].forEach((column) => { %>
+              <th class="sortable-th">
+                <button type="button" class="sortable-th-link"
+                        hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
+                        hx-vals='<%- sortVals(column) %>'>
+                  <%= { intencion: 'Intención', veces_usada: 'Veces usada', estado: 'Estado' }[column] %>
+                  <svg class="sort-arrow<%= sort === column ? ' active' : '' %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <% if (sort === column && dir === 'desc') { %>
+                      <path d="M6 9l6 6 6-6"/>
+                    <% } else { %>
+                      <path d="M18 15l-6-6-6 6"/>
+                    <% } %>
+                  </svg>
+                </button>
+              </th>
+            <% }) %>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% plantillas.forEach((plantilla) => { %>
+            <tr>
+              <td><%= plantilla.intencion %></td>
+              <td><%= plantilla.veces_usada %></td>
+              <td>
+                <span class="status-badge<%= plantilla.activo ? ' is-active' : '' %>"><%= plantilla.activo ? 'Activo' : 'Inactivo' %></span>
+              </td>
+              <td class="text-right">
+                <div class="row-actions">
+                  <% if (has('plantillas.editar')) { %>
+                    <button class="row-action-btn row-action-edit" type="button"
+                            aria-label="Editar plantilla <%= plantilla.intencion %>"
+                            hx-get="plantillas/<%= plantilla.id %>/editar" hx-target="#plantillaFormModalBody" hx-swap="innerHTML">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                  <% if (has('plantillas.eliminar') && plantilla.activo) { %>
+                    <button class="row-action-btn row-action-delete" type="button" aria-label="Eliminar plantilla <%= plantilla.intencion %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% if (plantillas.length === 0) { %>
+        <p class="lab-empty">No hay resultados para tu búsqueda.</p>
+      <% } %>
+
+      <div class="table-footer">
+        <span><%= plantillas.length %> resultados · <%= total %> plantillas en total</span>
+        <% if (totalPages > 1) { %>
+          <nav class="pagination" aria-label="Paginación">
+            <button type="button" class="pagination-btn" aria-disabled="<%= page <= 1 %>" <%= page <= 1 ? 'disabled' : '' %>
+                    hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
+                    hx-vals='{"page":<%= Math.max(1, page - 1) %>}' aria-label="Página anterior">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <% for (let p = 1; p <= totalPages; p++) { %>
+              <button type="button" class="pagination-page<%= p === page ? ' current' : '' %>"
+                      hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
+                      hx-vals='{"page":<%= p %>}'><%= p %></button>
+            <% } %>
+            <button type="button" class="pagination-btn" aria-disabled="<%= page >= totalPages %>" <%= page >= totalPages ? 'disabled' : '' %>
+                    hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
+                    hx-vals='{"page":<%= Math.min(totalPages, page + 1) %>}' aria-label="Página siguiente">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </nav>
+        <% } %>
+      </div>
+    </div>
+  </form>
+<% } %>

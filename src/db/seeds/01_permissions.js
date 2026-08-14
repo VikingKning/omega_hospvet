@@ -33,10 +33,10 @@ const permissions = [
   ['areas', 'editar', 'Editar un área existente'],
   ['areas', 'eliminar', 'Eliminar (dar de baja) un área'],
 
-  ['plantillas_whatsapp', 'ver', 'Ver las plantillas de respuesta de WhatsApp'],
-  ['plantillas_whatsapp', 'crear', 'Crear una plantilla de respuesta de WhatsApp'],
-  ['plantillas_whatsapp', 'editar', 'Editar una plantilla de respuesta de WhatsApp'],
-  ['plantillas_whatsapp', 'desactivar', 'Desactivar una plantilla de respuesta de WhatsApp'],
+  ['plantillas', 'ver', 'Ver las plantillas de respuesta de WhatsApp'],
+  ['plantillas', 'crear', 'Crear una plantilla de respuesta de WhatsApp'],
+  ['plantillas', 'editar', 'Editar una plantilla de respuesta de WhatsApp'],
+  ['plantillas', 'eliminar', 'Eliminar (dar de baja) una plantilla de respuesta de WhatsApp'],
 
   ['metricas', 'ver', 'Ver el panel de métricas'],
 ];

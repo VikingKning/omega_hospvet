@@ -34,7 +34,7 @@ beforeAll(async () => {
       correo: 'inactivo.test@omegavet.test',
       username: INACTIVE_USER.username,
       password_hash: await bcrypt.hash(INACTIVE_USER.password, 4),
-      activo: false,
+      estatus: 'inactivo',
       creado_en: db.fn.now(),
     })
     .onConflict('username')
@@ -116,7 +116,7 @@ describe('flujo de login (US-101)', () => {
     expect(res.body.error).toBe('Usuario o contraseña incorrectos.');
   });
 
-  it('AC5: cuenta desactivada + credenciales correctas responde 403 (cuenta inactiva)', async () => {
+  it('US-106 PASO 1: cuenta dada de baja (inactivo) + credenciales correctas responde 401 con el MISMO mensaje genérico (no revela que la cuenta existe ni que está inactiva)', async () => {
     const agent = request.agent(app);
     const csrfToken = await getCsrfToken(agent);
 
@@ -125,8 +125,180 @@ describe('flujo de login (US-101)', () => {
       .set('x-csrf-token', csrfToken)
       .send({ username: INACTIVE_USER.username, password: INACTIVE_USER.password });
 
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Usuario o contraseña incorrectos.');
+  });
+
+  it('una cuenta inactiva no incrementa intentos_fallidos (ni siquiera es un intento real)', async () => {
+    const agent = request.agent(app);
+    const csrfToken = await getCsrfToken(agent);
+
+    await agent
+      .post('/login')
+      .set('x-csrf-token', csrfToken)
+      .send({ username: INACTIVE_USER.username, password: 'lo-que-sea' });
+
+    const row = await db('usuarios').where({ username: INACTIVE_USER.username }).first();
+    expect(row.intentos_fallidos).toBe(0);
+  });
+});
+
+describe('bloqueo escalonado por intentos fallidos (US-106)', () => {
+  const LOCK_USER = { username: 'bloqueo.test', password: 'BloqueoTest123!' };
+
+  beforeEach(async () => {
+    await db('usuarios').where({ username: LOCK_USER.username }).del();
+    await db('usuarios').insert({
+      nombre: 'Bloqueo',
+      apellidos: 'Test',
+      correo: 'bloqueo.test@omegavet.test',
+      username: LOCK_USER.username,
+      password_hash: await bcrypt.hash(LOCK_USER.password, 4),
+      creado_en: db.fn.now(),
+    });
+  });
+
+  afterAll(async () => {
+    await db('usuarios').where({ username: LOCK_USER.username }).del();
+  });
+
+  async function intentoFallido(agent) {
+    const csrfToken = await getCsrfToken(agent);
+    return agent
+      .post('/login')
+      .set('x-csrf-token', csrfToken)
+      .send({ username: LOCK_USER.username, password: 'contraseña-incorrecta' });
+  }
+
+  async function intentoConPasswordCorrecta(agent) {
+    const csrfToken = await getCsrfToken(agent);
+    return agent
+      .post('/login')
+      .set('x-csrf-token', csrfToken)
+      .send({ username: LOCK_USER.username, password: LOCK_USER.password });
+  }
+
+  it('AC: al 5º intento fallido consecutivo bloquea 15 min — incluso con la contraseña correcta se rechaza, mostrando los minutos restantes', async () => {
+    const agent = request.agent(app);
+    for (let i = 0; i < 5; i += 1) {
+      const res = await intentoFallido(agent);
+      expect(res.status).toBe(401);
+    }
+
+    const row = await db('usuarios').where({ username: LOCK_USER.username }).first();
+    expect(row.estatus).toBe('bloqueo_temp');
+    expect(row.intentos_fallidos).toBe(5);
+    expect(row.bloqueado_en).not.toBeNull();
+
+    const res = await intentoConPasswordCorrecta(agent);
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/desactivada/);
+    expect(res.body.error).toContain('Cuenta bloqueada temporalmente');
+    expect(res.body.error).toMatch(/\d+ minutos/);
+
+    // El intento durante el bloqueo (aunque la contraseña era correcta) no
+    // se evalúa ni cuenta como uno nuevo.
+    const rowTrasIntento = await db('usuarios').where({ username: LOCK_USER.username }).first();
+    expect(rowTrasIntento.intentos_fallidos).toBe(5);
+  });
+
+  it('AC: el bloqueo temporal expirado permite procesar el intento de nuevo (y un login exitoso resetea el contador a cero)', async () => {
+    const agent = request.agent(app);
+    for (let i = 0; i < 5; i += 1) await intentoFallido(agent);
+
+    // Simula que ya pasaron los 15 minutos del bloqueo.
+    await db('usuarios')
+      .where({ username: LOCK_USER.username })
+      .update({ bloqueado_en: new Date(Date.now() - 16 * 60_000) });
+
+    const res = await intentoConPasswordCorrecta(agent);
+    expect(res.status).toBe(200);
+
+    const row = await db('usuarios').where({ username: LOCK_USER.username }).first();
+    expect(row.estatus).toBe('activo');
+    expect(row.intentos_fallidos).toBe(0);
+    expect(row.bloqueado_en).toBeNull();
+  });
+
+  it('AC: un login exitoso antes de llegar a ningún umbral también resetea el contador a cero', async () => {
+    const agent = request.agent(app);
+    await intentoFallido(agent);
+    await intentoFallido(agent);
+
+    await intentoConPasswordCorrecta(agent);
+
+    const row = await db('usuarios').where({ username: LOCK_USER.username }).first();
+    expect(row.intentos_fallidos).toBe(0);
+    expect(row.estatus).toBe('activo');
+  });
+
+  it('AC: al llegar a 10 intentos fallidos TOTALES (conservando el acumulado tras el primer bloqueo) bloquea 30 min', async () => {
+    // Simula que ya se cumplió el primer ciclo (5 fallidos, bloqueo de 15
+    // min ya expirado) y van 9 acumulados.
+    await db('usuarios')
+      .where({ username: LOCK_USER.username })
+      .update({
+        intentos_fallidos: 9,
+        estatus: 'bloqueo_temp',
+        bloqueado_en: new Date(Date.now() - 16 * 60_000),
+      });
+
+    const agent = request.agent(app);
+    const res = await intentoFallido(agent); // 10º intento
+    expect(res.status).toBe(401);
+
+    const row = await db('usuarios').where({ username: LOCK_USER.username }).first();
+    expect(row.estatus).toBe('bloqueo_temp');
+    expect(row.intentos_fallidos).toBe(10);
+
+    const bloqueado = await intentoConPasswordCorrecta(agent);
+    expect(bloqueado.status).toBe(403);
+    expect(bloqueado.body.error).toContain('30 minutos');
+  });
+
+  it('AC: al llegar a 15 intentos fallidos TOTALES bloquea la cuenta de forma PERMANENTE — no se auto-desbloquea con el tiempo', async () => {
+    // Simula que ya se cumplieron los dos primeros ciclos (10 acumulados,
+    // bloqueo de 30 min ya expirado).
+    await db('usuarios')
+      .where({ username: LOCK_USER.username })
+      .update({
+        intentos_fallidos: 14,
+        estatus: 'bloqueo_temp',
+        bloqueado_en: new Date(Date.now() - 31 * 60_000),
+      });
+
+    const agent = request.agent(app);
+    const res = await intentoFallido(agent); // 15º intento
+    expect(res.status).toBe(401);
+
+    const row = await db('usuarios').where({ username: LOCK_USER.username }).first();
+    expect(row.estatus).toBe('bloqueado');
+    expect(row.intentos_fallidos).toBe(15);
+
+    // A diferencia de 'bloqueo_temp', 'bloqueado' nunca se reevalúa por
+    // tiempo — ni aunque hayan "pasado" mil minutos.
+    await db('usuarios')
+      .where({ username: LOCK_USER.username })
+      .update({ bloqueado_en: new Date(Date.now() - 999 * 60_000) });
+
+    const permanente = await intentoConPasswordCorrecta(agent);
+    expect(permanente.status).toBe(403);
+    expect(permanente.body.error).toBe(
+      'Cuenta bloqueada. Favor de contactar con el administrador.',
+    );
+  });
+
+  it('un intento durante un bloqueo temporal vigente NO incrementa el contador', async () => {
+    await db('usuarios').where({ username: LOCK_USER.username }).update({
+      intentos_fallidos: 5,
+      estatus: 'bloqueo_temp',
+      bloqueado_en: new Date(),
+    });
+
+    const agent = request.agent(app);
+    await intentoFallido(agent);
+
+    const row = await db('usuarios').where({ username: LOCK_USER.username }).first();
+    expect(row.intentos_fallidos).toBe(5);
   });
 });
 

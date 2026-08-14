@@ -1,0 +1,542 @@
+// US-612: catálogo de plantillas de WhatsApp — mismo patrón que
+// doctores.test.js/areas.test.js (tabla estándar del sistema). Requiere una
+// base de datos real migrada y sembrada (ver tests/integration/auth.test.js
+// para el porqué). Solo lectura por ahora: alta/edición llegan en US-613, la
+// baja real en una historia futura todavía sin número (ver
+// plantillas_whatsapp.routes.js).
+const bcrypt = require('bcrypt');
+const request = require('supertest');
+const app = require('../../src/app');
+const db = require('../../src/config/database');
+const { store: sessionStore } = require('../../src/config/session');
+
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+const SOLO_VER_USER = { username: 'solo.ver.plantillas.test', password: 'SoloVerTest123!' };
+const SIN_PERMISOS_USER = {
+  username: 'sin.permisos.plantillas.test',
+  password: 'SinPermisosTest123!',
+};
+// US-613: usuarios con exactamente uno de los dos permisos de escritura,
+// para probar el AC "editar sin crear (o viceversa) se rechaza, aunque el
+// formulario sea el mismo".
+const SOLO_CREAR_USER = { username: 'solo.crear.plantillas.test', password: 'SoloCrearTest123!' };
+const SOLO_EDITAR_USER = {
+  username: 'solo.editar.plantillas.test',
+  password: 'SoloEditarTest123!',
+};
+
+async function getCsrfToken(agent) {
+  const res = await agent.get('/');
+  const match = res.text.match(/id="csrfToken" value="([^"]+)"/);
+  return match[1];
+}
+
+async function loginAs(credentials) {
+  const agent = request.agent(app);
+  const csrfToken = await getCsrfToken(agent);
+  await agent.post('/login').set('x-csrf-token', csrfToken).send(credentials);
+  return agent;
+}
+
+// El token para el POST de filtrado vive en el hx-headers del <form>
+// renderizado por el GET (distinto del hidden #csrfToken de la pantalla de
+// login) — hay que leerlo de una carga de /plantillas.html ya autenticada.
+async function getPlantillasCsrfToken(agent) {
+  const res = await agent.get('/plantillas.html');
+  const match = res.text.match(/x-csrf-token":\s*"([^"]+)"/);
+  return match[1];
+}
+
+// HTMX manda el <form> con la codificación por defecto de un form HTML
+// (application/x-www-form-urlencoded), no JSON.
+async function filtrarPlantillas(agent, body) {
+  const csrfToken = await getPlantillasCsrfToken(agent);
+  return agent.post('/plantillas.html').type('form').set('x-csrf-token', csrfToken).send(body);
+}
+
+const SUFFIX = 'QA612';
+async function cleanup() {
+  await db('plantillas_whatsapp').where('intencion', 'like', `%${SUFFIX}`).del();
+
+  const usernames = [
+    SOLO_VER_USER.username,
+    SIN_PERMISOS_USER.username,
+    SOLO_CREAR_USER.username,
+    SOLO_EDITAR_USER.username,
+  ];
+  const usuarioIds = await db('usuarios').whereIn('username', usernames).pluck('id');
+  if (usuarioIds.length) {
+    await db('usuario_permisos').whereIn('usuario_id', usuarioIds).del();
+    await db('usuarios').whereIn('id', usuarioIds).del();
+  }
+}
+
+async function createTestUser({ username, password }, permissionCodes) {
+  const [{ id: usuarioId }] = await db('usuarios')
+    .insert({
+      nombre: 'Test',
+      apellidos: 'US612',
+      correo: `${username}@omegavet.test`,
+      username,
+      password_hash: await bcrypt.hash(password, 4),
+      creado_en: db.fn.now(),
+    })
+    .returning('id');
+
+  if (permissionCodes.length) {
+    const permisos = await db('permissions').whereIn('codigo', permissionCodes).select('id');
+    await db('usuario_permisos').insert(
+      permisos.map((p) => ({
+        usuario_id: usuarioId,
+        permission_id: p.id,
+        otorgado_en: db.fn.now(),
+      })),
+    );
+  }
+}
+
+beforeAll(async () => {
+  await cleanup();
+  await createTestUser(SOLO_VER_USER, ['plantillas.ver']);
+  await createTestUser(SIN_PERMISOS_USER, []);
+});
+
+afterAll(async () => {
+  await cleanup();
+  await Promise.all([db.destroy(), sessionStore.close()]);
+});
+
+describe('GET /plantillas.html', () => {
+  beforeAll(async () => {
+    await db('plantillas_whatsapp').insert({
+      intencion: `Confirmar cita ${SUFFIX}`,
+      texto_respuesta: 'Tu cita ha sido confirmada.',
+      activo: true,
+      veces_usada: 12,
+      creado_en: db.fn.now(),
+    });
+    await db('plantillas_whatsapp').insert({
+      intencion: `Recordatorio vacuna ${SUFFIX}`,
+      texto_respuesta: 'Te recordamos la vacuna de tu mascota.',
+      activo: true,
+      veces_usada: 3,
+      creado_en: db.fn.now(),
+    });
+    await db('plantillas_whatsapp').insert({
+      intencion: `Retirada ${SUFFIX}`,
+      texto_respuesta: 'Texto de una plantilla dada de baja.',
+      activo: false,
+      veces_usada: 0,
+      creado_en: db.fn.now(),
+    });
+  });
+
+  it('AC: la carga inicial tiene "Todos" seleccionado por defecto y lista activas E inactivas, con intención/veces_usada/estado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/plantillas.html');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(`Confirmar cita ${SUFFIX}`);
+    expect(res.text).toContain(`Retirada ${SUFFIX}`); // inactiva, SÍ aparece por defecto (a diferencia de doctores/áreas)
+    expect(res.text).toContain('toggle-btn active'); // el toggle "Todos" trae la clase active por defecto
+  });
+
+  it('un GET con query string a mano se ignora por completo (privacidad: nunca se lee ni se refleja)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/plantillas.html?estado=activos&q=${SUFFIX}`);
+
+    expect(res.text).toContain(`Retirada ${SUFFIX}`); // si leyera estado=activos, no aparecería
+  });
+
+  it('POST con estado=activos EXCLUYE a las inactivas', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { estado: 'activos' });
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(`Retirada ${SUFFIX}`);
+    expect(res.text).toContain(`Confirmar cita ${SUFFIX}`);
+  });
+
+  it('POST con q=recordatorio encuentra la plantilla por intención', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { q: 'Recordatorio' });
+
+    expect(res.text).toContain(`Recordatorio vacuna ${SUFFIX}`);
+    expect(res.text).not.toContain(`Confirmar cita ${SUFFIX}`);
+  });
+
+  it('POST sin token CSRF es rechazado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.post('/plantillas.html').send({ estado: 'activos' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('AC: un usuario con solo plantillas.ver no ve los botones de crear/editar/eliminar', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.get('/plantillas.html');
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain('Nueva Plantilla');
+    expect(res.text).not.toContain('row-action-edit');
+    expect(res.text).not.toContain('row-action-delete');
+  });
+
+  it('AC: el ícono de editar aparece en TODAS las filas (activas e inactivas) con plantillas.editar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { estado: 'todos' });
+    const filas = res.text.split('row-action-edit').length - 1;
+
+    expect(filas).toBeGreaterThanOrEqual(3); // las 3 fixtures de este archivo, activas e inactivas
+  });
+
+  it('AC: el ícono de eliminar NO aparece en una plantilla inactiva, aunque haya permiso', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { estado: 'todos' });
+    const filaRetirada = res.text.split(`Retirada ${SUFFIX}`)[1].split('</tr>')[0];
+
+    expect(filaRetirada).not.toContain('row-action-delete');
+  });
+
+  it('un usuario sin plantillas.ver es rebotado a /main.html al pedir /plantillas.html directo', async () => {
+    const agent = await loginAs(SIN_PERMISOS_USER);
+
+    const res = await agent.get('/plantillas.html');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('un usuario sin plantillas.ver recibe HX-Redirect (no un 302 normal) cuando la petición viene de HTMX', async () => {
+    const agent = request.agent(app);
+    const csrfToken = await getCsrfToken(agent);
+    await agent.post('/login').set('x-csrf-token', csrfToken).send(SIN_PERMISOS_USER);
+
+    const res = await agent
+      .post('/plantillas.html')
+      .set('HX-Request', 'true')
+      .set('x-csrf-token', 'no-importa-porque-el-permiso-falla-antes')
+      .send({ estado: 'todos' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['hx-redirect']).toBe('/main.html');
+  });
+
+  describe('orden de la tabla por header (POST sort=&dir=)', () => {
+    it('sort=intencion&dir=asc (por defecto) ordena alfabéticamente', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+      const res = await filtrarPlantillas(agent, {
+        estado: 'todos',
+        sort: 'intencion',
+        dir: 'asc',
+      });
+
+      const idxConfirmar = res.text.indexOf(`Confirmar cita ${SUFFIX}`);
+      const idxRecordatorio = res.text.indexOf(`Recordatorio vacuna ${SUFFIX}`);
+      const idxRetirada = res.text.indexOf(`Retirada ${SUFFIX}`);
+      expect(idxConfirmar).toBeLessThan(idxRecordatorio);
+      expect(idxRecordatorio).toBeLessThan(idxRetirada);
+    });
+
+    it('sort=intencion&dir=desc invierte el orden', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+      const res = await filtrarPlantillas(agent, {
+        estado: 'todos',
+        sort: 'intencion',
+        dir: 'desc',
+      });
+
+      const idxConfirmar = res.text.indexOf(`Confirmar cita ${SUFFIX}`);
+      const idxRetirada = res.text.indexOf(`Retirada ${SUFFIX}`);
+      expect(idxRetirada).toBeLessThan(idxConfirmar);
+    });
+
+    it('sort=veces_usada ordena numéricamente', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+      const res = await filtrarPlantillas(agent, {
+        estado: 'todos',
+        sort: 'veces_usada',
+        dir: 'asc',
+      });
+
+      const idxRetirada = res.text.indexOf(`Retirada ${SUFFIX}`); // 0 usos
+      const idxRecordatorio = res.text.indexOf(`Recordatorio vacuna ${SUFFIX}`); // 3 usos
+      const idxConfirmar = res.text.indexOf(`Confirmar cita ${SUFFIX}`); // 12 usos
+      expect(idxRetirada).toBeLessThan(idxRecordatorio);
+      expect(idxRecordatorio).toBeLessThan(idxConfirmar);
+    });
+
+    it('sort=estado agrupa por activa/inactiva respetando la dirección', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+      const asc = await filtrarPlantillas(agent, { estado: 'todos', sort: 'estado', dir: 'asc' });
+
+      expect(asc.text.indexOf(`Retirada ${SUFFIX}`)).toBeLessThan(
+        asc.text.indexOf(`Confirmar cita ${SUFFIX}`),
+      );
+    });
+
+    it('una columna de orden desconocida no truena, cae al orden por intención', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+      const res = await filtrarPlantillas(agent, { estado: 'todos', sort: 'algo-invalido' });
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain(`Confirmar cita ${SUFFIX}`);
+    });
+  });
+});
+
+describe('GET /plantillas/nuevo y GET /plantillas/:id/editar (US-613 — formulario)', () => {
+  let plantillaId;
+
+  beforeAll(async () => {
+    await createTestUser(SOLO_CREAR_USER, ['plantillas.ver', 'plantillas.crear']);
+    await createTestUser(SOLO_EDITAR_USER, ['plantillas.ver', 'plantillas.editar']);
+
+    const [plantilla] = await db('plantillas_whatsapp')
+      .insert({
+        intencion: `Formulario ${SUFFIX}`,
+        texto_respuesta: 'Texto original de la plantilla.',
+        activo: true,
+        veces_usada: 0,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    plantillaId = plantilla.id;
+  });
+
+  it('AC: el formulario de alta abre vacío, con título "Nueva plantilla"', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/plantillas/nuevo');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Nueva plantilla');
+    expect(res.text).not.toContain('Editar plantilla');
+  });
+
+  it('AC: el formulario de edición trae intención/texto_respuesta precargados, título "Editar plantilla"', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/plantillas/${plantillaId}/editar`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Editar plantilla');
+    expect(res.text).toContain(`value="Formulario ${SUFFIX}"`);
+    expect(res.text).toContain('Texto original de la plantilla.');
+  });
+
+  it('un usuario sin plantillas.crear no puede abrir el formulario de alta', async () => {
+    const agent = await loginAs(SOLO_EDITAR_USER);
+
+    const res = await agent.get('/plantillas/nuevo');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('un usuario sin plantillas.editar no puede abrir el formulario de edición', async () => {
+    const agent = await loginAs(SOLO_CREAR_USER);
+
+    const res = await agent.get(`/plantillas/${plantillaId}/editar`);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', () => {
+  async function crearPlantilla(agent, intencion, texto = 'Texto de respuesta de prueba.') {
+    const csrfToken = await getPlantillasCsrfToken(agent);
+    return agent
+      .post('/plantillas')
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ intencion, texto_respuesta: texto });
+  }
+
+  async function editarPlantilla(agent, id, intencion, texto = 'Texto editado.') {
+    const csrfToken = await getPlantillasCsrfToken(agent);
+    return agent
+      .put(`/plantillas/${id}`)
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ intencion, texto_respuesta: texto });
+  }
+
+  it('AC: alta sin id inserta la plantilla con activo=true, veces_usada=0 y hace el swap out-of-band de la tabla', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await crearPlantilla(agent, `Nueva Alta ${SUFFIX}`, 'Respuesta de alta.');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['hx-trigger']).toBe('closePlantillaModal');
+    expect(res.text).toContain('hx-swap-oob="true"');
+
+    const row = await db('plantillas_whatsapp').where('intencion', `Nueva Alta ${SUFFIX}`).first();
+    expect(row).toBeDefined();
+    expect(row.texto_respuesta).toBe('Respuesta de alta.');
+    expect(row.activo).toBe(true);
+    expect(row.veces_usada).toBe(0);
+    expect(row.creado_por).not.toBeNull();
+  });
+
+  it('AC: una intención vacía muestra el error y no cierra el modal ni crea el registro', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await crearPlantilla(agent, '   ');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Intención es obligatorio');
+    expect(res.headers['hx-trigger']).toBeUndefined();
+    expect(res.text).not.toContain('hx-swap-oob');
+  });
+
+  it('AC: un texto de respuesta vacío muestra el error y no crea el registro', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    const res = await agent
+      .post('/plantillas')
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ intencion: `SinTexto ${SUFFIX}`, texto_respuesta: '   ' });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Texto de respuesta es obligatorio');
+
+    const row = await db('plantillas_whatsapp').where('intencion', `SinTexto ${SUFFIX}`).first();
+    expect(row).toBeUndefined();
+  });
+
+  it('AC: una intención duplicada con una plantilla activa muestra el error y no cierra el modal ni crea el registro', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const intencion = `Duplicada ${SUFFIX}`;
+    await crearPlantilla(agent, intencion); // primera, debe quedar activa
+
+    const res = await crearPlantilla(agent, intencion); // segunda con la misma intención
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('La intención ya está registrada.');
+    expect(res.headers['hx-trigger']).toBeUndefined();
+    expect(res.text).not.toContain('hx-swap-oob');
+
+    const count = await db('plantillas_whatsapp')
+      .where('intencion', intencion)
+      .count('* as total')
+      .first();
+    expect(Number(count.total)).toBe(1);
+  });
+
+  it('AC: la edición actualiza intención/texto_respuesta y conserva veces_usada', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await crearPlantilla(agent, `Original ${SUFFIX}`);
+    const original = await db('plantillas_whatsapp')
+      .where('intencion', `Original ${SUFFIX}`)
+      .first();
+    await db('plantillas_whatsapp').where({ id: original.id }).update({ veces_usada: 42 });
+
+    const res = await editarPlantilla(agent, original.id, `Renombrada ${SUFFIX}`, 'Texto nuevo.');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['hx-trigger']).toBe('closePlantillaModal');
+
+    const actualizada = await db('plantillas_whatsapp').where({ id: original.id }).first();
+    expect(actualizada.intencion).toBe(`Renombrada ${SUFFIX}`);
+    expect(actualizada.texto_respuesta).toBe('Texto nuevo.');
+    expect(actualizada.veces_usada).toBe(42); // no se tocó
+    expect(actualizada.actualizado_por).not.toBeNull();
+    expect(actualizada.actualizado_en).not.toBeNull();
+  });
+
+  it('AC: editar sin cambiar la intención no choca consigo misma (excluye el propio id del chequeo de duplicados)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const intencion = `SinCambios ${SUFFIX}`;
+    await crearPlantilla(agent, intencion);
+    const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
+
+    const res = await editarPlantilla(agent, plantilla.id, intencion);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['hx-trigger']).toBe('closePlantillaModal');
+  });
+
+  it('AC: editar a una intención usada por OTRA plantilla activa muestra el error y no actualiza', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await crearPlantilla(agent, `Ocupada ${SUFFIX}`);
+    await crearPlantilla(agent, `PorEditar ${SUFFIX}`);
+    const porEditar = await db('plantillas_whatsapp')
+      .where('intencion', `PorEditar ${SUFFIX}`)
+      .first();
+
+    const res = await editarPlantilla(agent, porEditar.id, `Ocupada ${SUFFIX}`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('La intención ya está registrada.');
+    expect(res.headers['hx-trigger']).toBeUndefined();
+
+    const sinCambios = await db('plantillas_whatsapp').where({ id: porEditar.id }).first();
+    expect(sinCambios.intencion).toBe(`PorEditar ${SUFFIX}`);
+  });
+
+  it('POST /plantillas sin token CSRF es rechazado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent
+      .post('/plantillas')
+      .type('form')
+      .send({ intencion: `SinCsrf ${SUFFIX}`, texto_respuesta: 'algo' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('AC: un usuario con plantillas.editar pero SIN plantillas.crear no puede dar de alta, aunque el formulario sea el mismo', async () => {
+    const agent = await loginAs(SOLO_EDITAR_USER);
+
+    const res = await agent
+      .post('/plantillas')
+      .type('form')
+      .send({ intencion: `SinPermisoCrear ${SUFFIX}`, texto_respuesta: 'algo' });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+
+    const row = await db('plantillas_whatsapp')
+      .where('intencion', `SinPermisoCrear ${SUFFIX}`)
+      .first();
+    expect(row).toBeUndefined();
+  });
+
+  it('AC: un usuario con plantillas.crear pero SIN plantillas.editar no puede editar, aunque el formulario sea el mismo', async () => {
+    const adminAgent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const intencion = `SinPermisoEditar ${SUFFIX}`;
+    await crearPlantilla(adminAgent, intencion);
+    const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
+
+    const agent = await loginAs(SOLO_CREAR_USER);
+    const res = await agent
+      .put(`/plantillas/${plantilla.id}`)
+      .type('form')
+      .send({ intencion: 'Lo que sea', texto_respuesta: 'algo' });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+
+    const sinCambios = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
+    expect(sinCambios.intencion).toBe(intencion);
+  });
+});

@@ -25,7 +25,7 @@ exports.seed = async function seed(knex) {
         correo,
         username,
         password_hash: passwordHash,
-        activo: true,
+        estatus: 'activo',
         creado_por: null,
         creado_en: ahora,
       })

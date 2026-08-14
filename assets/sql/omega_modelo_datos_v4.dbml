@@ -23,7 +23,9 @@ Table usuarios {
   username varchar(50) [not null, unique]
   password_hash varchar(255) [not null]
   doctor_id integer [ref: > doctores.id]
-  activo boolean [not null, default: true]
+  estatus varchar(20) [not null, default: 'activo', note: 'activo | bloqueo_temp | bloqueado | inactivo (US-106)']
+  intentos_fallidos integer [not null, default: 0]
+  bloqueado_en timestamptz
   ultimo_login_en timestamptz
   creado_por integer [ref: > usuarios.id]
   creado_en timestamptz [not null]
