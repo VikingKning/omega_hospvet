@@ -369,13 +369,17 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
       .send({ intencion, texto_respuesta: texto });
   }
 
-  async function editarPlantilla(agent, id, intencion, texto = 'Texto editado.') {
+  // activo:'true' por defecto — el switch Activo/Inactivo solo viaja en el
+  // body cuando está marcado, así que sin este default cada edición de
+  // estos tests desactivaría la plantilla como efecto secundario no
+  // buscado (ver los tests dedicados al switch más abajo).
+  async function editarPlantilla(agent, id, intencion, texto = 'Texto editado.', activo = 'true') {
     const csrfToken = await getPlantillasCsrfToken(agent);
     return agent
       .put(`/plantillas/${id}`)
       .type('form')
       .set('x-csrf-token', csrfToken)
-      .send({ intencion, texto_respuesta: texto });
+      .send({ intencion, texto_respuesta: texto, activo });
   }
 
   it('AC: alta sin id inserta la plantilla con activo=true, veces_usada=0 y hace el swap out-of-band de la tabla', async () => {
@@ -463,6 +467,50 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     expect(actualizada.actualizado_en).not.toBeNull();
   });
 
+  it('AC (switch, a petición del usuario): desmarcar "Activo" al editar desactiva la plantilla (desactivado_por/desactivado_en)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const intencion = `DesactivarPorSwitch ${SUFFIX}`;
+    await crearPlantilla(agent, intencion);
+    const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
+
+    const res = await editarPlantilla(agent, plantilla.id, intencion, 'Texto.', 'false');
+
+    expect(res.status).toBe(200);
+    const actualizada = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
+    expect(actualizada.activo).toBe(false);
+    expect(actualizada.desactivado_por).not.toBeNull();
+    expect(actualizada.desactivado_en).not.toBeNull();
+  });
+
+  it('AC (switch, a petición del usuario): marcar "Activo" al editar REACTIVA una plantilla inactiva (limpia desactivado_por/desactivado_en)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const intencion = `ReactivarPorSwitch ${SUFFIX}`;
+    await crearPlantilla(agent, intencion);
+    const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
+    await editarPlantilla(agent, plantilla.id, intencion, 'Texto.', 'false');
+    const inactiva = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
+    expect(inactiva.activo).toBe(false);
+
+    const res = await editarPlantilla(agent, plantilla.id, intencion, 'Texto.', 'true');
+
+    expect(res.status).toBe(200);
+    const actualizada = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
+    expect(actualizada.activo).toBe(true);
+    expect(actualizada.desactivado_por).toBeNull();
+    expect(actualizada.desactivado_en).toBeNull();
+  });
+
+  it('AC: el formulario de edición trae el switch marcado para una plantilla activa', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const intencion = `SwitchPrecargado ${SUFFIX}`;
+    await crearPlantilla(agent, intencion);
+    const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
+
+    const res = await agent.get(`/plantillas/${plantilla.id}/editar`);
+
+    expect(res.text).toContain('name="activo" value="true" checked');
+  });
+
   it('AC: editar sin cambiar la intención no choca consigo misma (excluye el propio id del chequeo de duplicados)', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
     const intencion = `SinCambios ${SUFFIX}`;
@@ -538,5 +586,150 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
 
     const sinCambios = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
     expect(sinCambios.intencion).toBe(intencion);
+  });
+});
+
+describe('DELETE /plantillas/:id (US-614 — baja lógica)', () => {
+  let plantillaId;
+  let plantillaId2;
+
+  // Dos plantillas que comparten substring de búsqueda ("Baja") — necesario
+  // para el test de abajo que reproduce el gotcha ya conocido de
+  // doctores/áreas: HTMX manda los valores incluidos vía hx-include como
+  // QUERY STRING en un DELETE (`methodsThatUseUrlParams` trae "delete" por
+  // default, igual que "get"), no como body.
+  beforeAll(async () => {
+    const [plantilla] = await db('plantillas_whatsapp')
+      .insert({
+        intencion: `Baja ${SUFFIX}`,
+        texto_respuesta: 'Texto de la plantilla a dar de baja.',
+        activo: true,
+        veces_usada: 5,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    plantillaId = plantilla.id;
+
+    const [plantilla2] = await db('plantillas_whatsapp')
+      .insert({
+        intencion: `Bajado ${SUFFIX}`,
+        texto_respuesta: 'Otra plantilla.',
+        activo: true,
+        veces_usada: 0,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    plantillaId2 = plantilla2.id;
+  });
+
+  // Los tests de este describe dependen del orden (Jest corre los `it` de un
+  // mismo archivo en orden, sin paralelizar): el primero desactiva la
+  // plantilla, el siguiente confirma que sigue existiendo con estado=todos.
+  it('AC: desactiva (activo=false, desactivado_por/desactivado_en), conserva veces_usada, sin DELETE físico, y el fragmento respeta el filtro/búsqueda activos (bug real: HTMX manda estos valores por query string, no por body)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    const res = await agent
+      .delete(`/plantillas/${plantillaId}`)
+      .query({ estado: 'activos', q: 'Baja' })
+      .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(`Baja ${SUFFIX}`); // recién desactivada, ya no aparece
+    expect(res.text).toContain(`Bajado ${SUFFIX}`); // el otro match de "Baja" sigue activo
+    // "1 resultados" es el assert que realmente distingue el bug: si el
+    // fragmento hubiera vuelto al estado por defecto (req.body vacío en vez
+    // de req.query), aparecerían TODAS las demás plantillas activas de la
+    // base, no solo la que matchea q=Baja.
+    expect(res.text).toContain('1 resultados');
+
+    const row = await db('plantillas_whatsapp').where({ id: plantillaId }).first();
+    expect(row.activo).toBe(false);
+    expect(row.desactivado_por).not.toBeNull();
+    expect(row.desactivado_en).not.toBeNull();
+    expect(row.veces_usada).toBe(5); // no se tocó
+  });
+
+  it('AC: con el filtro Activos seleccionado la plantilla dada de baja no aparece', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { estado: 'activos' });
+
+    expect(res.text).not.toContain(`Baja ${SUFFIX}`);
+  });
+
+  it('AC: con el filtro Todos, la plantilla sigue existiendo (no fue un DELETE físico) y aparece como Inactiva', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { estado: 'todos' });
+
+    expect(res.text).toContain(`Baja ${SUFFIX}`);
+    expect(res.text).toContain('Inactivo');
+  });
+
+  it('AC: con Todos seleccionado, una plantilla inactiva sigue mostrando la opción de Editar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { estado: 'todos' });
+    const filaBaja = res.text.split(`Baja ${SUFFIX}`)[1].split('</tr>')[0];
+
+    expect(filaBaja).toContain('row-action-edit');
+  });
+
+  it('AC: reactivar mediante US-613 (switch del formulario de edición) conserva el valor histórico de veces_usada', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    const editRes = await agent
+      .put(`/plantillas/${plantillaId}`)
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ intencion: `Baja ${SUFFIX}`, texto_respuesta: 'Texto reactivado.', activo: 'true' });
+
+    expect(editRes.status).toBe(200);
+    expect(editRes.headers['hx-trigger']).toBe('closePlantillaModal');
+
+    const row = await db('plantillas_whatsapp').where({ id: plantillaId }).first();
+    expect(row.activo).toBe(true);
+    expect(row.desactivado_por).toBeNull();
+    expect(row.desactivado_en).toBeNull();
+    expect(row.veces_usada).toBe(5); // se conserva, no se resetea al reactivar
+
+    // Y el listado con Activos vuelve a mostrarla — "actualiza la tabla"
+    // tras la reactivación, mismo criterio que la baja.
+    const listado = await filtrarPlantillas(agent, { estado: 'activos' });
+    expect(listado.text).toContain(`Baja ${SUFFIX}`);
+  });
+
+  it('sin token CSRF es rechazado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.delete(`/plantillas/${plantillaId2}`).query({ estado: 'todos' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('AC: un usuario con plantillas.ver pero sin plantillas.eliminar es rebotado a /main.html (aunque se invoque directo, fuera de la interfaz)', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.delete(`/plantillas/${plantillaId2}`).query({ estado: 'todos' });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+
+    const sinCambios = await db('plantillas_whatsapp').where({ id: plantillaId2 }).first();
+    expect(sinCambios.activo).toBe(true); // no se tocó
+  });
+
+  it('un id inválido no truena, responde 200 sin tronar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    const res = await agent
+      .delete('/plantillas/no-es-un-id')
+      .query({ estado: 'todos' })
+      .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(200);
   });
 });

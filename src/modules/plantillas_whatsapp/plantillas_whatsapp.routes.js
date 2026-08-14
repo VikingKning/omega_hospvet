@@ -20,12 +20,21 @@ router.post(
   controller.filter,
 );
 
+// US-614: baja lógica de una plantilla, disparada por HTMX desde el ícono
+// de eliminar del listado (con confirmación previa vía hx-confirm).
+router.delete(
+  '/plantillas/:id',
+  requireAuth,
+  requirePermission('plantillas.eliminar'),
+  doubleCsrfProtection,
+  controller.desactivar,
+);
+
 // US-613: alta y edición, mismo formulario en un modal. Los GET solo arman
 // el fragmento del formulario (vacío o precargado); los POST/PUT hacen el
 // alta/edición real. Cada ruta exige el permiso específico de la acción
 // (crear ≠ editar) — así un usuario con uno solo de los dos nunca puede
-// ejecutar el otro, aunque el formulario sea visualmente el mismo. Una
-// historia de baja todavía sin número agregará aquí la ruta DELETE.
+// ejecutar el otro, aunque el formulario sea visualmente el mismo.
 router.get(
   '/plantillas/nuevo',
   requireAuth,

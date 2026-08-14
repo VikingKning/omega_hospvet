@@ -3,6 +3,7 @@ const repository = require('../../src/modules/plantillas_whatsapp/plantillas_wha
 const {
   list,
   obtener,
+  desactivar,
   crear,
   editar,
   PlantillaValidationError,
@@ -118,6 +119,22 @@ describe('plantillas_whatsapp.service.obtener (US-613)', () => {
   });
 });
 
+describe('plantillas_whatsapp.service.desactivar (US-614)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('delega en el repository con el id ya parseado y el usuario que ejecuta la baja', async () => {
+    await desactivar('7', 42);
+    expect(repository.desactivar).toHaveBeenCalledWith(7, 42);
+  });
+
+  it('un id inválido no truena y no llega al repository', async () => {
+    await desactivar('no-es-un-numero', 42);
+    expect(repository.desactivar).not.toHaveBeenCalled();
+  });
+});
+
 describe('plantillas_whatsapp.service.crear (US-613)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -204,19 +221,33 @@ describe('plantillas_whatsapp.service.editar (US-613)', () => {
     repository.update.mockResolvedValue();
   });
 
-  it('actualiza intención/texto_respuesta', async () => {
+  it('actualiza intención/texto_respuesta/activo', async () => {
     await editar({
       id: 5,
       intencion: 'Nueva intención',
       texto_respuesta: 'Nuevo texto',
+      activo: 'true',
       usuarioId: 2,
     });
 
     expect(repository.update).toHaveBeenCalledWith(5, {
       intencion: 'Nueva intención',
       texto_respuesta: 'Nuevo texto',
+      activo: true,
       usuarioId: 2,
     });
+  });
+
+  it('el switch Activo ausente (desmarcado) se interpreta como false, no como error', async () => {
+    await editar({
+      id: 5,
+      intencion: 'Nueva intención',
+      texto_respuesta: 'Nuevo texto',
+      activo: undefined,
+      usuarioId: 2,
+    });
+
+    expect(repository.update).toHaveBeenCalledWith(5, expect.objectContaining({ activo: false }));
   });
 
   it('excluye el propio id al chequear duplicados', async () => {

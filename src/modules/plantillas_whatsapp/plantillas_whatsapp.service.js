@@ -84,6 +84,17 @@ async function obtener(rawId) {
   return repository.findById(id);
 }
 
+// US-614: baja lógica (activo=false + desactivado_por/desactivado_en),
+// nunca un DELETE físico — se conserva veces_usada y el historial de
+// mensajes enviados con esta plantilla. Un id inválido/inexistente no
+// truena, simplemente no hace nada (mismo criterio permisivo que
+// doctores/areas.service.js#desactivar).
+async function desactivar(rawId, usuarioId) {
+  const id = parseId(rawId);
+  if (id === null) return;
+  await repository.desactivar(id, usuarioId);
+}
+
 // Quita acentos/diacríticos para el chequeo de duplicados — mismo criterio
 // que areas.service.js#normalizeNombre: "Confirmar cita" y "confirmar  Cita"
 // (espacios/mayúsculas/acentos distintos) cuentan como la misma intención.
@@ -125,9 +136,8 @@ function validateTexto(rawValor, etiqueta, maxLength) {
 // un INSERT nuevo (chocaría con el UNIQUE). Mismo patrón que
 // areas.service.js#crear: si ya existe un registro con esa intención,
 // activo -> duplicado real (se rechaza); inactivo -> se reactiva ese mismo
-// registro en vez de crear uno paralelo (hoy es código muerto, no hay
-// forma de desactivar una plantilla todavía — ver
-// repository.js#reactivar).
+// registro en vez de crear uno paralelo (una plantilla se desactiva desde
+// el switch del formulario de edición, ver editar()/repository.js#update).
 async function crear({ intencion: rawIntencion, texto_respuesta: rawTexto, usuarioId }) {
   const intencion = validateTexto(rawIntencion, 'Intención', INTENCION_MAX_LENGTH);
   const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta');
@@ -144,25 +154,44 @@ async function crear({ intencion: rawIntencion, texto_respuesta: rawTexto, usuar
   return repository.create({ intencion, texto_respuesta, usuarioId });
 }
 
-// US-613 AC: edición — con id, actualiza intención/texto_respuesta,
-// conserva veces_usada. A diferencia de crear(), aquí SÍ se rechaza contra
-// CUALQUIER otro registro con esa intención, esté activo o no — mismo
-// criterio que areas.service.js#editar (no hay "reactivar" al editar).
-async function editar({ id, intencion: rawIntencion, texto_respuesta: rawTexto, usuarioId }) {
+// El switch Activo/Inactivo del formulario solo viaja en el body cuando
+// está marcado (comportamiento estándar de un <input type="checkbox">) —
+// su ausencia significa "Inactivo", no un valor inválido que rechazar.
+// Mismo criterio que doctores.service.js#parseActivo.
+function parseActivo(rawActivo) {
+  return rawActivo === 'true';
+}
+
+// US-613 AC (ampliada): edición — con id, actualiza intención/texto_respuesta
+// y el estado Activo/Inactivo (switch agregado a petición explícita del
+// usuario, no estaba en el AC original de la historia), conserva
+// veces_usada. A diferencia de crear(), aquí SÍ se rechaza contra CUALQUIER
+// otro registro con esa intención, esté activo o no — mismo criterio que
+// areas.service.js#editar (no hay "reactivar por nombre" al editar; el
+// switch de esta misma pantalla ya cubre reactivar/desactivar por id).
+async function editar({
+  id,
+  intencion: rawIntencion,
+  texto_respuesta: rawTexto,
+  activo: rawActivo,
+  usuarioId,
+}) {
   const intencion = validateTexto(rawIntencion, 'Intención', INTENCION_MAX_LENGTH);
   const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta');
+  const activo = parseActivo(rawActivo);
 
   const existing = await findDuplicado(intencion, id);
   if (existing) {
     throw new DuplicateIntencionError();
   }
 
-  await repository.update(id, { intencion, texto_respuesta, usuarioId });
+  await repository.update(id, { intencion, texto_respuesta, activo, usuarioId });
 }
 
 module.exports = {
   list,
   obtener,
+  desactivar,
   crear,
   editar,
   PlantillaValidationError,

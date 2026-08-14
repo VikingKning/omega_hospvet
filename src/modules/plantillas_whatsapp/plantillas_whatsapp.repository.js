@@ -81,24 +81,45 @@ async function create({ intencion, texto_respuesta, usuarioId }) {
   return row.id;
 }
 
-// US-613 AC: edición — solo intención/texto_respuesta +
-// actualizado_por/actualizado_en; veces_usada y activo nunca se tocan aquí.
-async function update(id, { intencion, texto_respuesta, usuarioId }) {
-  await db('plantillas_whatsapp').where({ id }).update({
-    intencion,
-    texto_respuesta,
-    actualizado_por: usuarioId,
-    actualizado_en: db.fn.now(),
+// US-613 (ampliada): edición — intención/texto_respuesta +
+// actualizado_por/actualizado_en; veces_usada nunca se toca aquí. El
+// switch Activo/Inactivo del formulario de edición vive en esta misma
+// pantalla (a petición explícita, no estaba en el AC original de la
+// historia) — la transición se calcula contra el valor actual en la base
+// DENTRO de una transacción (no contra lo que el formulario cargó al
+// abrirse), fijando/limpiando desactivado_por/desactivado_en exactamente
+// igual que doctores.repository.js#editar.
+async function update(id, { intencion, texto_respuesta, activo, usuarioId }) {
+  await db.transaction(async (trx) => {
+    const actual = await trx('plantillas_whatsapp').where({ id }).first('activo');
+
+    const cambios = {
+      intencion,
+      texto_respuesta,
+      actualizado_por: usuarioId,
+      actualizado_en: trx.fn.now(),
+    };
+
+    if (actual.activo && !activo) {
+      cambios.activo = false;
+      cambios.desactivado_por = usuarioId;
+      cambios.desactivado_en = trx.fn.now();
+    } else if (!actual.activo && activo) {
+      cambios.activo = true;
+      cambios.desactivado_por = null;
+      cambios.desactivado_en = null;
+    }
+
+    await trx('plantillas_whatsapp').where({ id }).update(cambios);
   });
 }
 
 // US-613 (alta con intención reutilizada de una plantilla dada de baja): en
 // vez de un INSERT que chocaría con el UNIQUE de `intencion`, se reactiva
 // el registro desactivado que ya tenía esa intención — mismo patrón que
-// areas.repository.js#reactivar. Hoy no hay ninguna vía para desactivar una
-// plantilla (la baja es una historia futura sin número todavía), así que
-// esta rama es código muerto en la práctica, pero se deja lista para
-// cuando esa historia exista, consistente con el resto del sistema.
+// areas.repository.js#reactivar. Distinto del switch Activo/Inactivo de
+// editar(): este reactivar() es específico del ALTA (nombre reutilizado),
+// no de la edición de un registro ya identificado por id.
 async function reactivar(id, intencion, usuarioId) {
   await db('plantillas_whatsapp').where({ id }).update({
     intencion,
@@ -107,6 +128,17 @@ async function reactivar(id, intencion, usuarioId) {
     desactivado_en: null,
     actualizado_por: usuarioId,
     actualizado_en: db.fn.now(),
+  });
+}
+
+// US-614: baja lógica, nunca DELETE físico — se conserva el historial de
+// uso (veces_usada) y de mensajes ya enviados con esta plantilla. Mismo
+// patrón que doctores/areas.repository.js#desactivar.
+async function desactivar(id, usuarioId) {
+  await db('plantillas_whatsapp').where({ id }).update({
+    activo: false,
+    desactivado_por: usuarioId,
+    desactivado_en: db.fn.now(),
   });
 }
 
@@ -119,4 +151,5 @@ module.exports = {
   create,
   update,
   reactivar,
+  desactivar,
 };

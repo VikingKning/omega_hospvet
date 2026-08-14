@@ -33,6 +33,21 @@ const esEdicion = Boolean(plantilla);
     Texto de respuesta
     <textarea name="texto_respuesta" rows="4" required><%= texto_respuesta %></textarea>
   </label>
+  <%
+    // Switch Activo/Inactivo: solo en edición, a petición explícita (no
+    // estaba en el AC original de la historia). En alta no tiene sentido
+    // mostrarlo — el AC exige activo=true siempre para un registro nuevo.
+  %>
+  <% if (esEdicion) { %>
+    <label class="switch-field">
+      <span class="switch">
+        <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %>>
+        <span class="switch-track"></span>
+      </span>
+      <span class="switch-state-on">Activo</span>
+      <span class="switch-state-off">Inactivo</span>
+    </label>
+  <% } %>
   <div class="modal-actions">
     <button type="button" class="btn-secondary" id="plantillaFormCancel">Cancelar</button>
     <button type="submit" class="btn-primary">Guardar</button>

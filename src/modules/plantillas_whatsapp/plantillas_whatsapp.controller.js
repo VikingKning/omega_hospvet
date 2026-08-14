@@ -27,6 +27,29 @@ async function filter(req, res, next) {
   }
 }
 
+// US-614: baja lógica de una plantilla, disparada por HTMX desde el ícono
+// de eliminar del listado (con confirmación previa vía hx-confirm). Igual
+// que filter(), recibe el estado de filtro/orden/página actual (el botón
+// lo arrastra vía hx-include del mismo <form>) para que el fragmento
+// devuelto refleje la vista donde el usuario ya estaba, no un estado por
+// defecto.
+//
+// A diferencia de filter() (POST), aquí SÍ hace falta leer también
+// req.query: la config por default de HTMX (`methodsThatUseUrlParams`)
+// incluye "delete" junto con "get" — los valores incluidos vía hx-include
+// viajan como query string en la URL del DELETE, no como body (mismo
+// gotcha ya documentado en doctores.controller.js/areas.controller.js).
+async function desactivar(req, res, next) {
+  try {
+    await service.desactivar(req.params.id, req.session.user.id);
+    const data = await service.list({ ...req.query, ...req.body });
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/plantillas-panel', { ...data, user: req.session.user, csrfToken });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // US-613: fragmento HTMX con el formulario vacío ("Nueva plantilla"),
 // swapeado dentro del modal.
 async function nuevoForm(req, res, next) {
@@ -57,6 +80,7 @@ async function editarForm(req, res, next) {
       plantilla,
       intencion: plantilla.intencion,
       texto_respuesta: plantilla.texto_respuesta,
+      activo: plantilla.activo,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -124,6 +148,7 @@ async function editar(req, res, next) {
         id: req.params.id,
         intencion: req.body.intencion,
         texto_respuesta: req.body.texto_respuesta,
+        activo: req.body.activo,
         usuarioId: req.session.user.id,
       });
     } catch (err) {
@@ -132,6 +157,7 @@ async function editar(req, res, next) {
           plantilla: existing,
           intencion: req.body.intencion ?? '',
           texto_respuesta: req.body.texto_respuesta ?? '',
+          activo: req.body.activo === 'true',
           error: err.message,
           csrfToken,
           user: req.session.user,
@@ -146,4 +172,4 @@ async function editar(req, res, next) {
   }
 }
 
-module.exports = { list, filter, nuevoForm, editarForm, crear, editar };
+module.exports = { list, filter, desactivar, nuevoForm, editarForm, crear, editar };
