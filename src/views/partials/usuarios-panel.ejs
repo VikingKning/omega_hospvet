@@ -31,7 +31,22 @@ const ESTATUS_BADGE_CLASS = {
 };
 
 const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', estatus: 'Estatus' };
+
+// US-603: a diferencia del formulario (modal, con su propio banner de
+// error), la baja se dispara directo desde un botón de la tabla — no hay
+// otro lugar donde mostrar un rechazo (AC: "propia cuenta"/ninguna baja
+// duplicada) que no sea este mismo panel que HTMX ya está reemplazando.
+// `error` es opcional: solo lo manda usuarios.controller.js#darDeBaja
+// cuando el service rechaza la operación; el resto de los renders de este
+// partial (list/filter/alta/edición) ni lo pasan, así que por default no
+// hay banner.
+const bannerError = typeof error === 'undefined' ? null : error;
 %>
+<% if (bannerError) { %>
+  <div class="form-error-banner">
+    <span><%= bannerError %></span>
+  </div>
+<% } %>
 <% if (catalogoVacio) { %>
   <div class="lab-table-wrap">
     <div class="empty-state-panel">
@@ -41,7 +56,8 @@ const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', 
       <p class="empty-state-title">Todavía no hay usuarios registrados</p>
       <p class="empty-state-description">Da de alta el primer usuario del panel para empezar a asignarle permisos.</p>
       <% if (has('usuarios.crear')) { %>
-        <button class="btn-primary" type="button">
+        <button class="btn-primary" type="button"
+                hx-get="usuarios/nuevo" hx-target="#usuarioFormModalBody" hx-swap="innerHTML">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Registrar primer usuario
         </button>
@@ -75,7 +91,8 @@ const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', 
         </select>
       </div>
       <% if (has('usuarios.crear')) { %>
-        <button class="btn-primary" type="button">
+        <button class="btn-primary" type="button"
+                hx-get="usuarios/nuevo" hx-target="#usuarioFormModalBody" hx-swap="innerHTML">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Nuevo usuario
         </button>
@@ -146,14 +163,18 @@ const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', 
               <td class="text-right">
                 <div class="row-actions">
                   <% if (has('usuarios.editar')) { %>
-                    <button class="row-action-btn row-action-edit" type="button" aria-label="Editar usuario <%= usuario.username %>">
+                    <button class="row-action-btn row-action-edit" type="button"
+                            aria-label="Editar usuario <%= usuario.username %>"
+                            hx-get="usuarios/<%= usuario.id %>/editar" hx-target="#usuarioFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
                       </svg>
                     </button>
                   <% } %>
                   <% if (has('usuarios.permisos')) { %>
-                    <button class="row-action-btn row-action-permisos" type="button" aria-label="Permisos de <%= usuario.username %>">
+                    <button class="row-action-btn row-action-permisos" type="button"
+                            aria-label="Permisos de <%= usuario.username %>"
+                            hx-get="usuarios/<%= usuario.id %>/editar" hx-target="#usuarioFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>
                         <path d="m9 12 2 2 4-4"/>
@@ -169,8 +190,18 @@ const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', 
                       </svg>
                     </button>
                   <% } %>
-                  <% if (has('usuarios.eliminar') && usuario.estatus !== 'inactivo') { %>
-                    <button class="row-action-btn row-action-delete" type="button" aria-label="Dar de baja a <%= usuario.username %>">
+                  <%
+                  // US-603 AC: "un usuario no puede dar de baja su propia
+                  // cuenta" — se oculta el botón para la propia fila (además
+                  // del rechazo del lado del servidor, defensa en
+                  // profundidad ante una petición directa forjada).
+                  %>
+                  <% if (has('usuarios.eliminar') && usuario.estatus !== 'inactivo' && usuario.id !== user.id) { %>
+                    <button class="row-action-btn row-action-delete" type="button"
+                            aria-label="Dar de baja a <%= usuario.username %>"
+                            hx-delete="usuarios/<%= usuario.id %>" hx-include="#usuarios-filters"
+                            hx-target="#usuarios-panel" hx-swap="innerHTML"
+                            hx-confirm="¿Dar de baja a <%= usuario.nombre %> <%= usuario.apellidos %> (<%= usuario.username %>)? Perderá el acceso al sistema, pero su información e historial no se eliminan.">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
                       </svg>

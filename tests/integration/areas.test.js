@@ -147,7 +147,7 @@ describe('GET /areas.html', () => {
   it('POST con estado=todos incluye también a las inactivas', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-    const res = await filtrarAreas(agent, { estado: 'todos' });
+    const res = await filtrarAreas(agent, { estado: 'todos', q: SUFFIX });
 
     expect(res.status).toBe(200);
     expect(res.text).toContain(`Radiología ${SUFFIX}`);
@@ -209,7 +209,12 @@ describe('GET /areas.html', () => {
     it('sort=nombre&dir=asc (por defecto) ordena alfabéticamente', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const res = await filtrarAreas(agent, { estado: 'todos', sort: 'nombre', dir: 'asc' });
+      const res = await filtrarAreas(agent, {
+        estado: 'todos',
+        q: SUFFIX,
+        sort: 'nombre',
+        dir: 'asc',
+      });
 
       const idxCardio = res.text.indexOf(`Cardiología ${SUFFIX}`);
       const idxDermato = res.text.indexOf(`Dermatología ${SUFFIX}`);
@@ -221,7 +226,12 @@ describe('GET /areas.html', () => {
     it('sort=nombre&dir=desc invierte el orden', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const res = await filtrarAreas(agent, { estado: 'todos', sort: 'nombre', dir: 'desc' });
+      const res = await filtrarAreas(agent, {
+        estado: 'todos',
+        q: SUFFIX,
+        sort: 'nombre',
+        dir: 'desc',
+      });
 
       const idxCardio = res.text.indexOf(`Cardiología ${SUFFIX}`);
       const idxDermato = res.text.indexOf(`Dermatología ${SUFFIX}`);
@@ -233,8 +243,18 @@ describe('GET /areas.html', () => {
     it('sort=estado agrupa por activa/inactiva respetando la dirección', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const asc = await filtrarAreas(agent, { estado: 'todos', sort: 'estado', dir: 'asc' });
-      const desc = await filtrarAreas(agent, { estado: 'todos', sort: 'estado', dir: 'desc' });
+      const asc = await filtrarAreas(agent, {
+        estado: 'todos',
+        q: SUFFIX,
+        sort: 'estado',
+        dir: 'asc',
+      });
+      const desc = await filtrarAreas(agent, {
+        estado: 'todos',
+        q: SUFFIX,
+        sort: 'estado',
+        dir: 'desc',
+      });
 
       // activo=false ordena antes que activo=true en ascendente, y al revés en descendente.
       expect(asc.text.indexOf(`Radiología ${SUFFIX}`)).toBeLessThan(
@@ -248,7 +268,12 @@ describe('GET /areas.html', () => {
     it('sort=slug ordena por slug', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const res = await filtrarAreas(agent, { estado: 'todos', sort: 'slug', dir: 'asc' });
+      const res = await filtrarAreas(agent, {
+        estado: 'todos',
+        q: SUFFIX,
+        sort: 'slug',
+        dir: 'asc',
+      });
 
       const idxCardio = res.text.indexOf(`cardiologia-${SUFFIX.toLowerCase()}`);
       const idxDermato = res.text.indexOf(`dermatologia-${SUFFIX.toLowerCase()}`);
@@ -260,7 +285,7 @@ describe('GET /areas.html', () => {
     it('una columna de orden desconocida no truena, cae al orden por nombre', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-      const res = await filtrarAreas(agent, { estado: 'todos', sort: 'algo-invalido' });
+      const res = await filtrarAreas(agent, { estado: 'todos', q: SUFFIX, sort: 'algo-invalido' });
 
       expect(res.status).toBe(200);
       expect(res.text).toContain(`Cardiología ${SUFFIX}`);
@@ -329,7 +354,7 @@ describe('DELETE /areas/:id (US-611 — baja lógica)', () => {
   it('el registro sigue existiendo (no fue un DELETE físico) y aparece con estado=todos', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-    const res = await filtrarAreas(agent, { estado: 'todos' });
+    const res = await filtrarAreas(agent, { estado: 'todos', q: SUFFIX });
 
     expect(res.text).toContain(`Baja ${SUFFIX}`);
     expect(res.text).toContain('Inactivo');

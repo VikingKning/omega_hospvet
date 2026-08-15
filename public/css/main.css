@@ -740,7 +740,7 @@ body:has(.app)::after {
 .modal-card {
   width: 100%;
   max-width: 440px;
-  max-height: 90vh;
+  max-height: 95vh;
   overflow-y: auto;
   background: var(--surface);
   border-radius: var(--radius);
@@ -750,6 +750,14 @@ body:has(.app)::after {
 
 .modal-card-wide {
   max-width: 720px;
+}
+
+/* US-604: el modal de usuarios necesita más espacio que .modal-card-wide
+   cuando trae la matriz de permisos (hasta 4 columnas de acción por fila) —
+   clase aparte para no ensanchar de paso el mockup de laboratorio.ejs, que
+   sigue usando .modal-card-wide sin necesitar tanto espacio. */
+.modal-card-xwide {
+  max-width: 1040px;
 }
 
 .modal-header {
@@ -814,7 +822,7 @@ body:has(.app)::after {
 .modal-form input,
 .modal-form select,
 .modal-form textarea {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 14px;
@@ -833,8 +841,6 @@ body:has(.app)::after {
   cursor: not-allowed;
 }
 
-/* Switch Activo/Inactivo (formulario de edición de plantillas) — puro CSS,
-   sin JS: el texto visible se decide con :has() sobre el checkbox real. */
 .switch-field {
   display: inline-flex;
   align-items: center;
@@ -1003,6 +1009,14 @@ body:has(.app)::after {
   gap: 14px;
 }
 
+.modal-col-datos {
+  flex: 0 1 300px;
+}
+
+.modal-col-permisos {
+  flex: 2 1 480px;
+}
+
 .modal-col-title {
   font-size: 14px;
   font-weight: 700;
@@ -1088,6 +1102,138 @@ body:has(.app)::after {
   text-align: center;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* US-604: matriz de permisos (módulo x acción) del formulario de usuarios —
+   mismo look que .mini-table, con scroll propio (horizontal por el número
+   de columnas, vertical por el número de filas) para que sea la TABLA la
+   que scrollea, nunca el modal completo — así el modal nunca crece más
+   alto que la columna corta de "Datos generales" y los botones de
+   Cancelar/Guardar quedan siempre a la vista, sin scrollear la página. La
+   altura es aproximada a lo que mide esa columna (7 campos); si un tab
+   tiene menos filas que eso, simplemente no llega a necesitar su propio
+   scroll. */
+.permisos-matrix-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 420px;
+}
+
+.permisos-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.permisos-matrix th {
+  padding: 8px 10px;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: center;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.permisos-matrix th:first-child {
+  text-align: left;
+}
+
+.permisos-matrix td {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.permisos-matrix tr:first-child td {
+  border-top: none;
+}
+
+.permisos-matrix td:first-child {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dark);
+  white-space: normal;
+}
+
+.permisos-matrix td.permiso-cell input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* US-604 (segunda iteración): tabs puro-CSS del apartado de Permisos —
+   sin JS, mismo criterio que el switch Activo/Inactivo de plantillas
+   (US-613). Los radios (.permisos-tab-radio) son hermanos directos tanto
+   de .permisos-tabs (la barra de labels) como de cada .permisos-tab-panel
+   — el selector `~` de abajo depende de que compartan el mismo padre. Los
+   3 ids de tab posibles (principal/agendas/configuraciones) son un
+   conjunto fijo definido en usuarios.service.js, así que cada regla se
+   escribe explícita en vez de con un selector genérico por atributo. */
+.permisos-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.permisos-tab-label {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.permisos-tab-label:hover {
+  color: var(--text-dark);
+}
+
+.permisos-tab-panel {
+  display: none;
+}
+
+#permisosTab-principal:checked ~ .permisos-tabs .permisos-tab-label-principal,
+#permisosTab-agendas:checked ~ .permisos-tabs .permisos-tab-label-agendas,
+#permisosTab-configuraciones:checked ~ .permisos-tabs .permisos-tab-label-configuraciones {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+#permisosTab-principal:checked ~ .permisos-tab-panel-principal,
+#permisosTab-agendas:checked ~ .permisos-tab-panel-agendas,
+#permisosTab-configuraciones:checked ~ .permisos-tab-panel-configuraciones {
+  display: block;
+}
+
+/* US-604: fila de encabezado de sección (agrupa varios módulos del mismo
+   menú lateral, ej. "Agendas" = Consultas y cirugías + Grooming) — separada
+   visualmente de las filas de módulo/checkboxes de abajo. */
+.permisos-matrix .permisos-seccion-row td {
+  padding-top: 14px;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: left;
+  white-space: normal;
+}
+
+.permisos-matrix .permisos-seccion-row:first-child td {
+  padding-top: 8px;
 }
 
 /* ---------- Catálogos con listado, filtros y paginación (US-606) ---------- */

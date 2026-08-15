@@ -43,7 +43,16 @@
     </a>
   <% } %>
 
-  <% if (has('metricas.ver')) { %>
+  <%
+    // US-604: el antiguo metricas.ver único se desdobló en un permiso por
+    // sub-sección real (metricas_whatsapp/metricas_laboratorio/
+    // metricas_agenda.ver) — el grupo se muestra si tiene AL MENOS uno de
+    // los tres, y cada link del submenú se gatea con el suyo propio (mismo
+    // criterio que el submenú de Configuraciones de abajo).
+    const metricasPerms = ['metricas_whatsapp.ver', 'metricas_laboratorio.ver', 'metricas_agenda.ver'];
+    const showMetricasGroup = metricasPerms.some(has);
+  %>
+  <% if (showMetricasGroup) { %>
     <div class="nav-group">
       <button class="nav-link nav-toggle<%= metricasOpen ? ' active' : '' %>" type="button" data-target="metricas-menu">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
@@ -51,18 +60,24 @@
         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <div class="submenu<%= metricasOpen ? ' open' : '' %>" id="metricas-menu">
-        <a href="#" class="submenu-link">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-          <span>WhatsApp</span>
-        </a>
-        <a href="#" class="submenu-link">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
-          <span>Laboratorios</span>
-        </a>
-        <a href="#" class="submenu-link">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-          <span>Agenda</span>
-        </a>
+        <% if (has('metricas_whatsapp.ver')) { %>
+          <a href="#" class="submenu-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            <span>WhatsApp</span>
+          </a>
+        <% } %>
+        <% if (has('metricas_laboratorio.ver')) { %>
+          <a href="#" class="submenu-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
+            <span>Laboratorios</span>
+          </a>
+        <% } %>
+        <% if (has('metricas_agenda.ver')) { %>
+          <a href="#" class="submenu-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span>Agenda</span>
+          </a>
+        <% } %>
       </div>
     </div>
   <% } %>

@@ -39,6 +39,19 @@
     </div>
   </div>
 
+  <!--
+    Modal de alta/edición (US-602): mismo formulario para las dos acciones,
+    el contenido real lo llena HTMX (partials/usuario-form.ejs) al hacer
+    clic en el botón de alta del toolbar o en el ícono de editar de una
+    fila — ver usuarios-panel.ejs. Vive fuera de #usuarios-panel: HTMX
+    reemplaza ese contenedor en cada filtro/orden/página, y si el modal
+    viviera adentro se destruiría a medio uso en cuanto la petición
+    terminara (mismo patrón que areaFormModalBackdrop en areas.ejs).
+  -->
+  <div class="modal-backdrop" id="usuarioFormModalBackdrop">
+    <div class="modal-card" id="usuarioFormModalBody"></div>
+  </div>
+
 <script>
   const sidebar = document.getElementById('sidebar');
   const app = document.querySelector('.app');
@@ -77,6 +90,308 @@
       submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
     });
   });
+
+  // Modal de alta/edición (US-602). El contenido de #usuarioFormModalBody
+  // lo reemplaza HTMX en cada apertura/reintento, así que los botones de
+  // adentro (cerrar, cancelar, cerrar el mensaje de error) y el combobox
+  // de Doctor vinculado se manejan por delegación en el contenedor — un
+  // addEventListener directo sobre esos elementos se perdería en cuanto
+  // HTMX los vuelva a crear. Mismo patrón que areaFormModalBody en
+  // areas.ejs / doctorFormModalBody en doctores.ejs.
+  const usuarioFormModalBackdrop = document.getElementById('usuarioFormModalBackdrop');
+  const usuarioFormModalBody = document.getElementById('usuarioFormModalBody');
+
+  function openUsuarioFormModal() {
+    usuarioFormModalBackdrop.classList.add('open');
+  }
+
+  function closeUsuarioFormModal() {
+    usuarioFormModalBackdrop.classList.remove('open');
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Catálogo de doctores activos para el combobox: vive en JS, no en el
+  // DOM, para no depender de que HTMX re-ejecute scripts al hacer swap
+  // (ver el <script type="application/json"> inerte en usuario-form.ejs).
+  // Se reinicia en cada apertura/reintento del formulario.
+  let usuarioFormDoctores = [];
+
+  function hideDoctorList() {
+    const list = document.getElementById('doctorList');
+    if (list) list.hidden = true;
+  }
+
+  // AC: el listbox tiene capacidad de búsqueda y permite dejar el campo
+  // vacío (usuarios.doctor_id = NULL) — "Sin vínculo" siempre aparece
+  // primero, sin importar el texto buscado, como forma explícita de
+  // limpiar la selección.
+  function renderDoctorList(filterText) {
+    const list = document.getElementById('doctorList');
+    if (!list) return;
+    const term = filterText.trim().toLowerCase();
+    const filtered = term
+      ? usuarioFormDoctores.filter((d) => `${d.nombre} ${d.apellidos}`.toLowerCase().includes(term))
+      : usuarioFormDoctores;
+
+    let html = '<li class="combobox-item" data-id="" data-label="">Sin vínculo</li>';
+    if (term && filtered.length === 0) {
+      html += '<li class="combobox-empty">Sin resultados</li>';
+    } else {
+      html += filtered
+        .map((d) => {
+          const label = escapeHtml(`${d.nombre} ${d.apellidos}`);
+          return `<li class="combobox-item" data-id="${d.id}" data-label="${label}">${label}</li>`;
+        })
+        .join('');
+    }
+    list.innerHTML = html;
+    list.hidden = false;
+  }
+
+  // El combobox va primero en el formulario (ver usuario-form.ejs) para que
+  // el listbox absoluto siempre abra cerca del tope del modal y nunca fuerce
+  // scroll extra. Como beneficio adicional: al elegir un doctor real (no
+  // "Sin vínculo", que llega con id vacío) se precargan Nombre/Apellidos con
+  // los del doctor — el usuario los puede seguir editando a mano después.
+  // Elegir "Sin vínculo" (id vacío) hace lo simétrico: vacía Nombre/Apellidos,
+  // así un ida-y-vuelta (doctor → Sin vínculo) no deja el nombre del doctor
+  // pegado en un usuario que ya no está vinculado a nadie.
+  function selectDoctor(id, label) {
+    document.getElementById('doctorSearch').value = label;
+    document.getElementById('doctorIdInput').value = id;
+    hideDoctorList();
+
+    const nombreInput = document.getElementById('usuarioFormModalBody').querySelector('input[name="nombre"]');
+    const apellidosInput = document.getElementById('usuarioFormModalBody').querySelector('input[name="apellidos"]');
+
+    if (id) {
+      const doctor = usuarioFormDoctores.find((d) => String(d.id) === String(id));
+      if (doctor) {
+        nombreInput.value = doctor.nombre;
+        apellidosInput.value = doctor.apellidos;
+      }
+    } else {
+      nombreInput.value = '';
+      apellidosInput.value = '';
+    }
+
+    // US-604 (séptima iteración): vincular un doctor precarga Nombre/
+    // Apellidos de forma programática (arriba), lo que NO dispara un evento
+    // `input` — sin este llamado explícito, elegir un doctor nunca
+    // recalcularía la propuesta de username, a diferencia de tecleen Nombre
+    // (s)/Apellidos a mano. `intentarSugerirUsername()` ya filtra alta-only
+    // y "no pisar una edición manual del username".
+    intentarSugerirUsername();
+  }
+
+  // US-604 (última iteración): sugerencia de username en vivo mientras se
+  // escribe Nombre(s)/Apellidos, solo en alta (AC del usuario: en edición
+  // no se autopropone, para no arriesgarse a tocar el username de una
+  // cuenta ya en uso solo por corregir un acento). Se apaga en cuanto el
+  // administrador edita Username a mano: la asignación programática de más
+  // abajo (`usernameInputAhora.value = ...`) nunca dispara un evento
+  // `input`, así que basta con este mismo listener delegado para distinguir
+  // "el admin lo tecleó" de "lo llenó la sugerencia". `usuarioFormAperturaId`
+  // evita que la respuesta de un fetch lanzado en una apertura anterior del
+  // modal (ej. se cerró y se volvió a abrir para otra alta antes de que
+  // respondiera el servidor) le pise el username a un formulario distinto.
+  let usuarioFormUsernameEditadoManual = false;
+  let usuarioFormUsernameDebounce = null;
+  let usuarioFormAperturaId = 0;
+
+  function usuarioFormCsrfToken() {
+    const form = usuarioFormModalBody.querySelector('form');
+    if (!form) return '';
+    try {
+      return JSON.parse(form.getAttribute('hx-headers') ?? '{}')['x-csrf-token'] ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  // Punto de entrada único para disparar la sugerencia — usado tanto por el
+  // listener de `input` de Nombre(s)/Apellidos (tecleo) como por
+  // selectDoctor() (elegir un doctor precarga Nombre/Apellidos de forma
+  // programática, sin disparar `input`; sin este segundo punto de entrada
+  // la sugerencia nunca se recalcularía en ese camino). Mismo criterio de
+  // alta-only + "no pisar una edición manual" en ambos casos.
+  function intentarSugerirUsername() {
+    const form = usuarioFormModalBody.querySelector('form');
+    if (!form || form.dataset.esEdicion === '1' || usuarioFormUsernameEditadoManual) return;
+    clearTimeout(usuarioFormUsernameDebounce);
+    usuarioFormUsernameDebounce = setTimeout(solicitarUsernameSugerido, 400);
+  }
+
+  function solicitarUsernameSugerido() {
+    const nombreInput = document.getElementById('nombreInput');
+    const apellidosInput = document.getElementById('apellidosInput');
+    if (!nombreInput || !apellidosInput) return;
+    const aperturaId = usuarioFormAperturaId;
+
+    fetch('usuarios/username-sugerido', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': usuarioFormCsrfToken() },
+      body: JSON.stringify({ nombre: nombreInput.value, apellidos: apellidosInput.value }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data || !data.username) return;
+        if (aperturaId !== usuarioFormAperturaId || usuarioFormUsernameEditadoManual) return;
+        const usernameInputAhora = document.getElementById('usernameInput');
+        if (usernameInputAhora) usernameInputAhora.value = data.username;
+      })
+      .catch(() => {});
+  }
+
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target !== usuarioFormModalBody) return;
+    // Si el fragmento trae un <form> (carga inicial, o reintento tras un
+    // error de validación/duplicado) el modal debe quedar/seguir abierto.
+    // La respuesta de éxito no trae form (solo el swap out-of-band de la
+    // tabla) — en ese caso no hay nada que abrir, el evento
+    // closeUsuarioModal de abajo se encarga de cerrarlo.
+    if (!usuarioFormModalBody.querySelector('form')) return;
+
+    // Nueva apertura (GET /usuarios/nuevo o /usuarios/:id/editar): cualquier
+    // sugerencia en vuelo de la apertura anterior queda invalidada y el
+    // estado "editado a mano" se reinicia. Un reintento tras un error de
+    // validación (POST/PUT que vuelve a caer aquí) NO reinicia nada — el
+    // admin no cerró el modal, así que si ya había tocado el username a
+    // mano antes de que fallara el guardado, la propuesta automática debe
+    // seguir apagada tras el reintento (AC: "una vez que el administrador
+    // modifique manualmente el username, el sistema no deberá
+    // sobrescribirlo automáticamente").
+    const esAperturaFresca = event.detail.requestConfig?.verb === 'get';
+    if (esAperturaFresca) {
+      usuarioFormAperturaId += 1;
+      usuarioFormUsernameEditadoManual = false;
+    }
+    clearTimeout(usuarioFormUsernameDebounce);
+
+    const datosEl = document.getElementById('usuarioFormDoctoresData');
+    usuarioFormDoctores = datosEl ? JSON.parse(datosEl.textContent) : [];
+
+    // US-604: el modal solo necesita ser ancho cuando trae la matriz de
+    // permisos (usuarios sin usuarios.permisos ven un formulario de una
+    // sola columna) — se decide mirando el contenido recién swapeado, no
+    // con una clase fija en el HTML estático de arriba. .modal-card-xwide
+    // (no .modal-card-wide) porque la matriz necesita más espacio que
+    // cualquier otro formulario del sistema hasta ahora.
+    usuarioFormModalBody.classList.toggle(
+      'modal-card-xwide',
+      Boolean(usuarioFormModalBody.querySelector('.permisos-matrix')),
+    );
+
+    openUsuarioFormModal();
+  });
+
+  usuarioFormModalBody.addEventListener('input', (event) => {
+    if (event.target.id === 'doctorSearch') {
+      renderDoctorList(event.target.value);
+      if (!event.target.value.trim()) {
+        document.getElementById('doctorIdInput').value = '';
+      }
+      return;
+    }
+
+    if (event.target.id === 'telefonoInput') {
+      // Formato de teléfono en México: 10 dígitos, NN-NNNN-NNNN. Se
+      // reconstruye el valor completo en cada tecla (no solo se insertan
+      // guiones) para que borrar un dígito de en medio también recorra los
+      // guiones correctamente, en vez de dejarlos "pegados" en su posición
+      // original.
+      const digitos = event.target.value.replace(/\D/g, '').slice(0, 10);
+      const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter(
+        (parte) => parte,
+      );
+      event.target.value = partes.join('-');
+      return;
+    }
+
+    if (event.target.id === 'usernameInput') {
+      // Único momento en que se marca "editado a mano": la asignación
+      // programática de la sugerencia (ver solicitarUsernameSugerido) nunca
+      // dispara un evento `input`, así que llegar aquí solo puede ser una
+      // tecla real del administrador.
+      usuarioFormUsernameEditadoManual = true;
+      return;
+    }
+
+    if (event.target.id === 'nombreInput' || event.target.id === 'apellidosInput') {
+      intentarSugerirUsername();
+    }
+  });
+
+  usuarioFormModalBody.addEventListener('focusin', (event) => {
+    if (event.target.id === 'doctorSearch') renderDoctorList(event.target.value);
+  });
+
+  // Regla pedida por el usuario: no tiene sentido crear/editar/eliminar/
+  // etc. algo que no se puede ni ver. Marcar cualquier otra acción de una
+  // fila de la matriz de permisos marca "Ver" automáticamente si no lo
+  // estaba; desmarcar "Ver" desmarca TODA la fila (nada más sobrevive sin
+  // Ver). Delegado sobre .permisos-matrix, con data-accion (ver
+  // usuario-form.ejs) para encontrar el checkbox de "Ver" de la misma fila
+  // sin depender de su posición exacta entre columnas.
+  usuarioFormModalBody.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('.permisos-matrix input[type="checkbox"]');
+    if (!checkbox) return;
+
+    const fila = checkbox.closest('tr');
+    const verCheckbox = fila.querySelector('input[data-accion="ver"]');
+    if (!verCheckbox) return; // fila sin columna "Ver" (no debería pasar)
+
+    if (checkbox === verCheckbox) {
+      if (!checkbox.checked) {
+        fila.querySelectorAll('input[type="checkbox"]').forEach((otro) => {
+          if (otro !== verCheckbox) otro.checked = false;
+        });
+      }
+      return;
+    }
+
+    if (checkbox.checked && !verCheckbox.checked) {
+      verCheckbox.checked = true;
+    }
+  });
+
+  usuarioFormModalBody.addEventListener('click', (event) => {
+    if (event.target.closest('#usuarioFormClose, #usuarioFormCancel')) {
+      closeUsuarioFormModal();
+    }
+    if (event.target.closest('#usuarioFormErrorDismiss')) {
+      event.target.closest('.form-error-banner')?.remove();
+    }
+    const item = event.target.closest('.combobox-item');
+    if (item) {
+      // El combobox vive dentro de un <label> (Doctor vinculado), y el <li>
+      // no es un control enfocable — sin preventDefault(), el navegador
+      // reenvía el click como si fuera sobre el control asociado del label
+      // (#doctorSearch), reenfocándolo justo después de seleccionar. Eso
+      // dispara el listener de "focusin" de abajo y reabre la lista que
+      // selectDoctor() recién cerró.
+      event.preventDefault();
+      selectDoctor(item.dataset.id, item.dataset.label);
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    const combobox = document.getElementById('doctorCombobox');
+    if (combobox && !combobox.contains(event.target)) hideDoctorList();
+  });
+
+  usuarioFormModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === usuarioFormModalBackdrop) closeUsuarioFormModal();
+  });
+
+  // HX-Trigger: closeUsuarioModal (ver usuarios.controller.js,
+  // renderExito()) — htmx traduce ese header en este evento personalizado.
+  document.body.addEventListener('closeUsuarioModal', closeUsuarioFormModal);
 </script>
 
 </body>
