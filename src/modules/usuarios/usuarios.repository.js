@@ -127,11 +127,28 @@ async function findUsernamesConPrefijo(base, excludeId) {
 // usuario ya editado tenía un doctor que después se dio de baja, su
 // vínculo actual se sigue mostrando (ver findDoctorVinculado), solo deja
 // de aparecer en ESTA lista para volver a elegirlo desde cero.
+// US-602 (octava iteración): además excluye doctores que YA tienen un
+// usuario vinculado (`whereNotExists` — sin importar el estatus de ese otro
+// usuario, mismo criterio "sin importar su estatus" que ya aplica a
+// username/correo) para no duplicar un doctor con dos cuentas. Solo importa
+// para ALTA: en edición el vínculo ya no se puede tocar (ver
+// usuarios.service.js#editar), así que esta lista ni siquiera se pide ahí.
 async function listDoctoresActivos() {
-  return db('doctores')
-    .where({ activo: true })
-    .orderBy(['apellidos', 'nombre'])
-    .select('id', 'nombre', 'apellidos');
+  return db('doctores as d')
+    .where('d.activo', true)
+    .whereNotExists(function excluirYaVinculados() {
+      this.select(1).from('usuarios as u').whereRaw('u.doctor_id = d.id');
+    })
+    .orderBy(['d.apellidos', 'd.nombre'])
+    .select('d.id', 'd.nombre', 'd.apellidos');
+}
+
+// US-602 (octava iteración): para el AC "un doctor no puede tener más de un
+// usuario vinculado" — se valida en el alta (ver
+// usuarios.service.js#crear), sin importar el estatus del usuario que ya lo
+// tiene (mismo criterio que findByUsername/findByCorreo).
+async function findByDoctorId(doctorId) {
+  return db('usuarios').where({ doctor_id: doctorId }).first();
 }
 
 // Para precargar el combobox en edición con el doctor ya vinculado, sin
@@ -295,9 +312,13 @@ async function create({
 // otorgado_por/otorgado_en frescos, se borran los que se desmarcaron, y los
 // que se quedan marcados NO se tocan (AC: "no crea registros duplicados ni
 // modifica innecesariamente otorgado_por u otorgado_en").
+// US-602 (octava iteración) AC: el vínculo con un doctor es de solo-alta —
+// `doctor_id` NUNCA aparece en `cambios`, así que ningún UPDATE de edición
+// puede tocarlo, sin importar qué llegue desde capas de arriba (mismo
+// criterio que `password_hash`, que tampoco es parámetro de esta función).
 async function update(
   id,
-  { nombre, apellidos, correo, telefono, username, doctorId, estatus, permissionIds, usuarioId },
+  { nombre, apellidos, correo, telefono, username, estatus, permissionIds, usuarioId },
 ) {
   await db.transaction(async (trx) => {
     const actual = await trx('usuarios').where({ id }).first('estatus');
@@ -308,7 +329,6 @@ async function update(
       correo,
       telefono,
       username,
-      doctor_id: doctorId,
       estatus,
       actualizado_por: usuarioId,
       actualizado_en: trx.fn.now(),
@@ -368,6 +388,7 @@ module.exports = {
   findByCorreo,
   findUsernamesConPrefijo,
   listDoctoresActivos,
+  findByDoctorId,
   findDoctorVinculado,
   listPermissionsCatalog,
   listPermisosUsuario,

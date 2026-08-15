@@ -20,6 +20,7 @@ const {
   DuplicateCorreoError,
   UltimoAdministradorPermisosError,
   NoPuedeDarDeBajaPropiaCuentaError,
+  DoctorYaVinculadoError,
 } = require('../../src/modules/usuarios/usuarios.service');
 const db = require('../../src/config/database');
 
@@ -419,6 +420,7 @@ describe('usuarios.service.crear (US-602)', () => {
   });
 
   it('AC: guarda el doctorId cuando se selecciona uno del listbox', async () => {
+    repository.findByDoctorId.mockResolvedValue(undefined);
     await crear({
       nombre: 'Ana',
       apellidos: 'Gómez',
@@ -429,6 +431,36 @@ describe('usuarios.service.crear (US-602)', () => {
       usuarioId: 1,
     });
     expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ doctorId: 5 }));
+    expect(repository.findByDoctorId).toHaveBeenCalledWith(5);
+  });
+
+  it('AC (octava iteración): rechaza un doctorId ya vinculado a otro usuario, sin crear el registro', async () => {
+    repository.findByDoctorId.mockResolvedValue({ id: 9 });
+    await expect(
+      crear({
+        nombre: 'Ana',
+        apellidos: 'Gómez',
+        correo: 'ana@omegavet.test',
+        username: 'ana.gomez',
+        password: 'ContraseñaSegura1',
+        doctorId: '5',
+        usuarioId: 1,
+      }),
+    ).rejects.toThrow(DoctorYaVinculadoError);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('sin doctorId, no se consulta findByDoctorId (nada que proteger)', async () => {
+    await crear({
+      nombre: 'Ana',
+      apellidos: 'Gómez',
+      correo: 'ana@omegavet.test',
+      username: 'ana.gomez',
+      password: 'ContraseñaSegura1',
+      usuarioId: 1,
+    });
+    expect(repository.findByDoctorId).not.toHaveBeenCalled();
+    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ doctorId: null }));
   });
 
   it('US-604 AC: guarda un permission_id en usuario_permisos por cada permiso seleccionado', async () => {
@@ -558,7 +590,6 @@ describe('usuarios.service.editar (US-602)', () => {
       correo: 'ana@omegavet.test',
       telefono: '555-1234',
       username: 'ana.gomez',
-      doctorId: '3',
       estatus: 'activo',
       usuarioId: 2,
     });
@@ -569,8 +600,8 @@ describe('usuarios.service.editar (US-602)', () => {
       correo: 'ana@omegavet.test',
       telefono: '555-1234',
       username: 'ana.gomez',
-      doctorId: 3,
       estatus: 'activo',
+      permissionIds: undefined,
       usuarioId: 2,
     });
     expect(repository.update.mock.calls[0][1]).not.toHaveProperty('password');
@@ -639,18 +670,18 @@ describe('usuarios.service.editar (US-602)', () => {
     );
   });
 
-  it('sin doctorId guarda doctorId null (desvincula)', async () => {
+  it('AC (octava iteración): el vínculo con un doctor NUNCA se toca desde edición, aunque llegue un doctorId en el body', async () => {
     await editar({
       id: 5,
       nombre: 'Ana',
       apellidos: 'Gómez',
       correo: 'ana@omegavet.test',
       username: 'ana.gomez',
-      doctorId: '',
+      doctorId: '99', // un intento directo/forjado — editar() ya ni acepta este parámetro
       estatus: 'activo',
       usuarioId: 2,
     });
-    expect(repository.update).toHaveBeenCalledWith(5, expect.objectContaining({ doctorId: null }));
+    expect(repository.update.mock.calls[0][1]).not.toHaveProperty('doctorId');
   });
 
   it('rechaza apellidos vacíos', async () => {

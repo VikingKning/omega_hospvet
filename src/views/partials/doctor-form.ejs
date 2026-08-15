@@ -40,8 +40,22 @@ const esEdicion = Boolean(doctor);
 
   <label>
     Especialidades
+    <%
+    // US-607 (segunda iteración, pedido de estilo): mismo motivo que el
+    // filtro "Estatus" de usuarios-panel.ejs — un <select> nativo no puede
+    // tener su lista abierta con esquinas redondeadas. Se reemplaza por un
+    // combobox propio (trigger de solo lectura + <ul class="combobox-list">
+    // ya poblada por JS, ver doctores.ejs#renderAreaPicker). El input
+    // oculto es lo único que lee #areaPickerAdd; ninguno de los dos lleva
+    // `name` — nunca se someten directamente, doctorAreasBody es quien
+    // arma los `name="areaIds"` reales al agregar.
+    %>
     <div class="area-picker-row">
-      <select id="areaPickerSelect"></select>
+      <div class="combobox" id="areaPickerCombobox">
+        <input type="text" id="areaPickerTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Selecciona un área...">
+        <input type="hidden" id="areaPickerValue">
+        <ul class="combobox-list" id="areaPickerList" hidden></ul>
+      </div>
       <button type="button" class="btn-secondary" id="areaPickerAdd">Agregar</button>
     </div>
   </label>

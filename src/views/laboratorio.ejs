@@ -191,6 +191,113 @@
     });
   });
 
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Cualquier `.combobox-list` de esta vista puede: (a) abrir cerca del
+  // borde de un contenedor con scroll (el modal "Nuevo registro" tiene
+  // `overflow-y:auto`) — un `.combobox-list` con `position:absolute` (el
+  // default de main.css) sigue contando para el área scrolleable de un
+  // ancestro con overflow aunque se vea como un overlay; o (b) terminar
+  // tapada por otro contenido que gana el stacking context — main.css
+  // fuerza `position:relative;z-index:1` a TODOS los hijos directos de
+  // `.main-content` (`.main-content > *`, truco para la marca de agua de
+  // fondo), así que un descendiente `position:fixed` de `.lab-toolbar`
+  // (los filtros) sigue atrapado dentro del stacking context de ese hijo
+  // para pintarse, y pierde contra `.lab-table-wrap` (hermano posterior en
+  // el DOM, mismo z-index:1) sin importar el z-index propio de la lista.
+  // `position:fixed` por sí solo resuelve (a) pero NO (b): solo cambia
+  // respecto a qué ancestro se calculan las coordenadas, no de qué
+  // stacking context depende para pintarse. La única forma de escapar
+  // ambos a la vez es sacar la lista del DOM de su contenedor y colgarla
+  // directo de `<body>` mientras está abierta (un "portal", patrón
+  // estándar en UI flotante) — se recuerda su padre original una sola vez
+  // (`list._homeParent`) para devolverla a su lugar al cerrarla.
+  function openFloatingList(trigger, list) {
+    if (!list._homeParent) list._homeParent = list.parentElement;
+    document.body.appendChild(list);
+    const rect = trigger.getBoundingClientRect();
+    list.style.position = 'fixed';
+    list.style.top = `${rect.bottom + 4}px`;
+    list.style.left = `${rect.left}px`;
+    list.style.width = `${rect.width}px`;
+    list.style.right = 'auto';
+    list.hidden = false;
+  }
+
+  function closeFloatingList(list) {
+    list.hidden = true;
+    if (list._homeParent) list._homeParent.appendChild(list);
+  }
+
+  // Pedido de estilo: todo <select> nativo de esta vista se "envuelve" en
+  // tiempo de ejecución con el mismo combobox propio del resto del sistema
+  // (trigger de solo lectura + <ul class="combobox-list"> con esquinas
+  // redondeadas de verdad, algo que un <select> nativo no puede tener). El
+  // <select> original se queda en el DOM — oculto con `.select-hidden-source`
+  // (recorte a 1x1px, NO `hidden`/`display:none`, para no excluirlo de la
+  // validación nativa de los que son `required`) — como única fuente de
+  // verdad: todo el código de más abajo que lee/escribe `.value`/
+  // `.selectedIndex` o repuebla sus <option> sigue funcionando sin cambios,
+  // esta función solo agrega una capa visual encima. Cambios programáticos
+  // (`.selectedIndex = 0`, `.value = ''`, `form.reset()`) no disparan
+  // `change` por sí solos, así que el código que haga esos cambios debe
+  // llamar al `sync()` que esta función devuelve.
+  function enhanceSelect(select) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'combobox';
+    select.insertAdjacentElement('beforebegin', wrapper);
+
+    const trigger = document.createElement('input');
+    trigger.type = 'text';
+    trigger.readOnly = true;
+    trigger.autocomplete = 'off';
+    trigger.className = `select-trigger-input${select.className ? ` ${select.className}` : ''}`;
+    wrapper.appendChild(trigger);
+
+    select.classList.add('select-hidden-source');
+    select.tabIndex = -1;
+    wrapper.appendChild(select);
+
+    const list = document.createElement('ul');
+    list.className = 'combobox-list';
+    list.hidden = true;
+    wrapper.appendChild(list);
+
+    function sync() {
+      const selected = select.options[select.selectedIndex];
+      trigger.value = selected ? selected.textContent : '';
+      list.innerHTML = Array.from(select.options)
+        .map((opt, i) => `<li class="combobox-item" data-index="${i}">${escapeHtml(opt.textContent)}</li>`)
+        .join('');
+    }
+
+    list.addEventListener('click', (event) => {
+      const item = event.target.closest('.combobox-item');
+      if (!item) return;
+      select.selectedIndex = Number(item.dataset.index);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      sync();
+      closeFloatingList(list);
+    });
+
+    trigger.addEventListener('focus', () => {
+      sync(); // por si las <option> cambiaron desde la última apertura
+      openFloatingList(trigger, list);
+    });
+
+    document.addEventListener('click', (event) => {
+      if (wrapper.contains(event.target) || list.contains(event.target)) return;
+      closeFloatingList(list);
+    });
+
+    sync();
+    return { sync };
+  }
+
   // ---------- Laboratorio: datos, tabla, filtros, alta y carga de resultados ----------
 
   let nextId = 11;
@@ -212,6 +319,8 @@
   const searchInput = document.getElementById('labSearch');
   const estadoFilter = document.getElementById('labFilterEstado');
   const tipoFilter = document.getElementById('labFilterTipo');
+  enhanceSelect(estadoFilter);
+  enhanceSelect(tipoFilter);
 
   function formatDate(isoDate) {
     if (!isoDate) return '—';
@@ -391,6 +500,7 @@
     return null;
   }
 
+  const fPetType = document.getElementById('fPetType');
   const fCategoria = document.getElementById('fCategoria');
   const fEstudio = document.getElementById('fEstudio');
   const fEstudioSearch = document.getElementById('fEstudioSearch');
@@ -398,6 +508,9 @@
   const fEstudioCombobox = document.getElementById('fEstudioCombobox');
   const fZonaWrap = document.getElementById('fZonaWrap');
   const fZona = document.getElementById('fZona');
+  const fPetTypeUI = enhanceSelect(fPetType);
+  const fCategoriaUI = enhanceSelect(fCategoria);
+  const fZonaUI = enhanceSelect(fZona);
 
   function populateCategorias() {
     const todasOption = '<option value="">Todas las categorías</option>';
@@ -405,6 +518,7 @@
       .map((c) => `<option value="${c.id}">${c.nombre}</option>`)
       .join('');
     fCategoria.innerHTML = todasOption + categoriaOptions;
+    fCategoriaUI.sync();
   }
 
   function getEstudioEntries() {
@@ -444,6 +558,7 @@
       ? entries.filter((e) => normalizeText(e.nombre).includes(normalizeText(filterText)))
       : entries;
 
+    openFloatingList(fEstudioSearch, fEstudioList);
     activeIndex = -1;
 
     if (filtered.length === 0) {
@@ -469,7 +584,7 @@
   }
 
   function hideEstudioList() {
-    fEstudioList.hidden = true;
+    closeFloatingList(fEstudioList);
     activeIndex = -1;
   }
 
@@ -518,9 +633,8 @@
   });
 
   document.addEventListener('click', (e) => {
-    if (!fEstudioCombobox.contains(e.target)) {
-      hideEstudioList();
-    }
+    if (fEstudioCombobox.contains(e.target) || fEstudioList.contains(e.target)) return;
+    hideEstudioList();
   });
 
   function updateZonaVisibility() {
@@ -537,6 +651,7 @@
       fZona.required = false;
       fZona.value = '';
     }
+    fZonaUI.sync();
   }
 
   fCategoria.addEventListener('change', populateEstudios);
@@ -590,6 +705,7 @@
   function openModal() {
     document.getElementById('fDate').value = new Date().toISOString().slice(0, 10);
     fCategoria.selectedIndex = 0;
+    fCategoriaUI.sync();
     populateEstudios();
     selectedStudies = [];
     renderSelectedStudies();
@@ -599,6 +715,12 @@
   function closeModal() {
     modalBackdrop.classList.remove('open');
     labForm.reset();
+    // form.reset() no dispara `change` en sus <select> — el combobox propio
+    // de cada uno se queda con el texto viejo hasta que se resincroniza a
+    // mano (mismo motivo que fCategoriaUI.sync() en openModal()).
+    fPetTypeUI.sync();
+    fCategoriaUI.sync();
+    fZonaUI.sync();
   }
 
   document.getElementById('btnNuevoRegistro').addEventListener('click', openModal);
@@ -616,7 +738,7 @@
       return;
     }
 
-    const petType = document.getElementById('fPetType').value;
+    const petType = fPetType.value;
     const petName = document.getElementById('fPetName').value.trim();
     const breed = document.getElementById('fBreed').value.trim();
     const doctor = document.getElementById('fDoctor').value.trim();

@@ -55,6 +55,17 @@ class NoPuedeDarDeBajaPropiaCuentaError extends Error {
   }
 }
 
+// US-602 (octava iteración) AC: "para no duplicar doctores con cuenta" — un
+// doctor no puede quedar vinculado a más de un usuario. Solo aplica en
+// alta: en edición el vínculo ya no se puede tocar (ver editar() más
+// abajo), así que ahí no hace falta ni puede dispararse este error.
+class DoctorYaVinculadoError extends Error {
+  constructor() {
+    super('Ese doctor ya tiene una cuenta de usuario vinculada.');
+    this.status = 409;
+  }
+}
+
 // Mismo costo que 05_admin_usuario.js/auth.service.js#DUMMY_HASH — un solo
 // costo de bcrypt para toda cuenta real del sistema, sea sembrada o creada
 // desde este formulario.
@@ -625,8 +636,12 @@ async function crear({
     throw new DuplicateCorreoError();
   }
 
-  const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
   const doctorId = parseDoctorId(rawDoctorId);
+  if (doctorId && (await repository.findByDoctorId(doctorId))) {
+    throw new DoctorYaVinculadoError();
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
   const permissionIds = await aplicarReglaEditarUsuariosIncluyePermisos(
     await aplicarReglaVerImplicaAcciones(parsePermissionIds(rawPermisos)),
   );
@@ -646,7 +661,12 @@ async function crear({
 
 // US-602 AC: edición — con id, actualiza datos generales + estatus; NUNCA
 // toca password_hash (el campo de contraseña ni siquiera se muestra en
-// edición, el reseteo es una historia aparte, US-605).
+// edición, el reseteo es una historia aparte, US-605). US-602 (octava
+// iteración) AC: el vínculo con un doctor tampoco se puede tocar desde
+// edición — a propósito NO hay un parámetro `doctorId` aquí (mismo criterio
+// que `password`, que tampoco es parámetro de esta función); el valor
+// original simplemente nunca se toca porque `repository.update()` ya ni
+// siquiera incluye esa columna en su UPDATE.
 // US-604: `permisosProvistos` distingue "el apartado de Permisos no se
 // mostró" (quien edita no tiene usuarios.permisos) de "se mostró y se
 // dejaron todos los checkboxes sin marcar" — el controller arma este flag a
@@ -660,7 +680,6 @@ async function editar({
   correo: rawCorreo,
   telefono: rawTelefono,
   username: rawUsername,
-  doctorId: rawDoctorId,
   estatus: rawEstatus,
   permisos: rawPermisos,
   permisosProvistos,
@@ -680,7 +699,6 @@ async function editar({
     throw new DuplicateCorreoError();
   }
 
-  const doctorId = parseDoctorId(rawDoctorId);
   let permissionIds;
   if (permisosProvistos) {
     permissionIds = await aplicarReglaEditarUsuariosIncluyePermisos(
@@ -695,7 +713,6 @@ async function editar({
     correo,
     telefono,
     username,
-    doctorId,
     estatus,
     permissionIds,
     usuarioId,
@@ -737,4 +754,5 @@ module.exports = {
   DuplicateCorreoError,
   UltimoAdministradorPermisosError,
   NoPuedeDarDeBajaPropiaCuentaError,
+  DoctorYaVinculadoError,
 };

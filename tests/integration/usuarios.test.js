@@ -421,6 +421,8 @@ describe('GET /usuarios/nuevo y GET /usuarios/:id/editar (US-602 — formulario)
     expect(res.text).not.toContain('Editar usuario');
     expect(res.text).toContain('name="password"');
     expect(res.text).not.toContain('name="estatus"');
+    // Ojo de mostrar/ocultar contraseña (mismo patrón que el login).
+    expect(res.text).toContain('id="passwordToggle"');
   });
 
   it('AC: el formulario de edición trae los campos precargados, título "Editar usuario", SIN campo de contraseña', async () => {
@@ -434,8 +436,23 @@ describe('GET /usuarios/nuevo y GET /usuarios/:id/editar (US-602 — formulario)
     expect(res.text).toContain(`value="Precarga ${SUFFIX}"`);
     expect(res.text).toContain(`value="formulario.precarga.${SUFFIX.toLowerCase()}@omegavet.test"`);
     expect(res.text).toContain('value="555-0000"');
+    // AC (novena iteración): Estatus se arma como combobox (trigger
+    // readonly + lista de 4 opciones), no como <select> nativo — el hidden
+    // con name="estatus" sigue siendo lo que de verdad viaja al guardar.
     expect(res.text).toContain('name="estatus"');
+    expect(res.text).not.toContain('<select name="estatus">');
+    expect(res.text).toContain(
+      'id="estatusTrigger" class="select-trigger-input" value="Bloqueado" readonly',
+    );
+    expect(res.text).toContain('id="estatusInput" value="bloqueado"');
     expect(res.text).not.toContain('name="password"');
+    expect(res.text).not.toContain('id="passwordToggle"');
+    // AC (octava iteración): Doctor vinculado no es editable en edición —
+    // se muestra de solo lectura ("Sin vínculo" en este fixture, que no
+    // tiene doctor_id) y sin name, así que ni siquiera viaja al guardar.
+    expect(res.text).toContain('value="Sin vínculo" readonly');
+    expect(res.text).not.toContain('name="doctorId"');
+    expect(res.text).not.toContain('id="doctorSearch"');
   });
 
   it('un usuario sin usuarios.crear no puede abrir el formulario de alta', async () => {
@@ -661,6 +678,31 @@ describe('POST /usuarios y PUT /usuarios/:id (US-602 — alta y edición)', () =
 
     expect(res.status).toBe(200);
     expect(res.headers['hx-trigger']).toBe('closeUsuarioModal');
+  });
+
+  it('AC (octava iteración): un doctorId forjado en el body de una edición se ignora — el vínculo nunca cambia', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const username = `doctorforjado.${lower}`;
+    await crearUsuario(agent, {
+      apellidos: `DoctorForjado ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+    });
+    const usuario = await db('usuarios').where({ username }).first();
+    expect(usuario.doctor_id).toBeNull(); // el alta de este fixture no vincula ningún doctor
+
+    const res = await editarUsuario(agent, usuario.id, {
+      nombre: 'DoctorForjado',
+      apellidos: `DoctorForjado ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+      estatus: 'activo',
+      doctorId: '999999', // intento directo, sin pasar por la UI (que ya ni manda este campo en edición)
+    });
+
+    expect(res.status).toBe(200);
+    const sinCambios = await db('usuarios').where({ id: usuario.id }).first();
+    expect(sinCambios.doctor_id).toBeNull();
   });
 
   it('AC: editar a un username usado por OTRO registro muestra el error y no actualiza', async () => {
@@ -922,6 +964,66 @@ describe('US-604 — matriz de permisos en el formulario de usuarios', () => {
     expect(res.status).toBe(200);
     expect(res.text).not.toContain('name="permisos"');
     expect(res.text).not.toContain('name="permisosSeccion"');
+  });
+
+  it('AC (séptima iteración): la matriz trae una columna "Todos" por fila, cuyo checkbox nunca es un permiso real (sin name="permisos")', async () => {
+    const agent = await loginAs(CON_PERMISOS_USER);
+
+    const res = await agent.get('/usuarios/nuevo');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('<th>Todos</th>');
+    const checkboxesTodos = res.text.match(
+      /<input type="checkbox" class="permiso-todos-checkbox"[^>]*>/g,
+    );
+    expect(checkboxesTodos.length).toBeGreaterThan(0);
+    checkboxesTodos.forEach((tag) => {
+      expect(tag).not.toContain('name="permisos"');
+      expect(tag).not.toContain('name=');
+    });
+  });
+
+  it('AC (décima iteración): "Todos" aparece marcado al precargar una fila donde el usuario ya tiene TODAS las acciones, y sin marcar cuando le falta alguna', async () => {
+    const agent = await loginAs(CON_PERMISOS_USER);
+    const verId = await permisoId('areas.ver');
+    const crearId = await permisoId('areas.crear');
+    const editarId = await permisoId('areas.editar');
+    const eliminarId = await permisoId('areas.eliminar');
+    const [usuario] = await db('usuarios')
+      .insert({
+        nombre: 'TodosPrecargado',
+        apellidos: `Filas ${SUFFIX}`,
+        correo: `todosprecargado.${lower}@omegavet.test`,
+        username: `todosprecargado.${lower}`,
+        password_hash: await bcrypt.hash('x', 4),
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    await db('usuario_permisos').insert(
+      // Catálogo de áreas: las 4 acciones (fila completa). Catálogo de
+      // doctores: se deja SIN ningún permiso (fila vacía) para confirmar
+      // que "Todos" no aparece marcado ahí.
+      [verId, crearId, editarId, eliminarId].map((permissionId) => ({
+        usuario_id: usuario.id,
+        permission_id: permissionId,
+        otorgado_en: db.fn.now(),
+      })),
+    );
+
+    const res = await agent.get(`/usuarios/${usuario.id}/editar`);
+
+    expect(res.status).toBe(200);
+    // Se ancla por el value="<id>" real de un permiso de cada fila (mismo
+    // criterio ya usado en el resto del archivo), no por el texto del
+    // módulo — evita cualquier ambigüedad de dónde exactamente empieza/
+    // termina la fila en el HTML.
+    const filas = res.text.split('<tr>');
+    const filaAreas = filas.find((f) => f.includes(`value="${verId}"`));
+    expect(filaAreas.match(/permiso-todos-checkbox[^>]*>/)[0]).toContain('checked');
+
+    const doctoresVerId = await permisoId('doctores.ver');
+    const filaDoctores = filas.find((f) => f.includes(`value="${doctoresVerId}"`));
+    expect(filaDoctores.match(/permiso-todos-checkbox[^>]*>/)[0]).not.toContain('checked');
   });
 
   it('AC: alta con permisos seleccionados crea una fila en usuario_permisos por cada uno, con otorgado_por/otorgado_en', async () => {

@@ -781,6 +781,17 @@ body:has(.app)::after {
   cursor: pointer;
 }
 
+/* Modal de confirmación (#confirmModalBackdrop, ver areas.ejs/doctores.ejs/
+   plantillas.ejs/usuarios.ejs): el mensaje se asigna con
+   `confirmModalMessage.textContent = message`, y por default un <p> con
+   `white-space: normal` colapsa cualquier salto de línea a un espacio — un
+   hx-confirm con `&#10;` en su valor (la forma de meter un salto de línea
+   real dentro de un atributo HTML; `\n` literal NO funciona ahí, se ve
+   como texto) necesita esta regla para que el salto realmente se dibuje. */
+#confirmModalMessage {
+  white-space: pre-line;
+}
+
 .modal-form {
   display: flex;
   flex-direction: column;
@@ -815,7 +826,7 @@ body:has(.app)::after {
   gap: 8px;
 }
 
-.area-picker-row select {
+.area-picker-row .combobox {
   flex: 1;
 }
 
@@ -828,17 +839,93 @@ body:has(.app)::after {
   font-size: 14px;
   font-family: inherit;
   color: var(--text-dark);
+  /* Mismo tono que .modal-form input:read-only de abajo — un `<select>`
+     nativo (Estatus) no tenía background propio y caía al default del
+     navegador/SO, que se ve distinto del resto de los campos del modal
+     (pedido del usuario: que se parezca al recuadro de solo lectura de
+     Doctor vinculado, "fondo blanco, esquinas redondeadas"). Declararlo
+     aquí, una sola vez para input/select/textarea, evita repetirlo. */
+  background: var(--bg-base);
 }
 
 .modal-form textarea {
   resize: vertical;
 }
 
+/* Trigger de cualquier combobox que reemplaza a un <select> nativo (Estatus
+   en editar usuario y en el filtro de usuarios, Especialidades en
+   doctor-form, los de laboratorio.ejs) — el ícono de flecha y el cursor de
+   "esto es un desplegable" viven en un solo lugar, sin importar si el
+   trigger además hereda `.lab-select` (filtros) o `.modal-form input`
+   (selects reales de un formulario) para su caja/padding/fondo base. */
+.select-trigger-input {
+  cursor: pointer;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23959391' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px 16px;
+}
+
 .modal-form input:read-only,
 .modal-form input:disabled {
-  background: var(--bg-base);
   color: var(--text-muted);
   cursor: not-allowed;
+}
+
+/* Triggers de combobox que viven dentro de un .modal-form (Estatus en
+   editar usuario, Especialidades en doctor-form) reutilizan el estilo
+   readonly de arriba tal cual (mismo fondo/texto que Doctor vinculado),
+   pero SÍ son interactivos (abren una lista) — el cursor "not-allowed"
+   heredado sería engañoso. `.select-trigger-input` ya pone
+   `cursor: pointer`, pero con menor especificidad que
+   `.modal-form input:read-only` — sin este override puntual, esa regla
+   (más específica) gana y el cursor se queda en "not-allowed". */
+#estatusTrigger,
+#areaPickerTrigger {
+  cursor: pointer;
+}
+
+/* laboratorio.ejs: los 5 <select> de esa vista se "envuelven" en tiempo de
+   ejecución (ver enhanceSelect() en laboratorio.ejs) en vez de reescribir
+   su HTML a mano — el <select> original se queda en el DOM como única
+   fuente de verdad (todo el código existente que lee/escribe su .value o
+   repuebla sus <option> sigue funcionando sin cambios) pero visualmente
+   oculto. A propósito NO se usa `hidden`/`display:none` para ocultarlo:
+   un campo `required` que "no se está renderizando" queda EXCLUIDO de la
+   validación nativa del navegador (fPetType/fZona sí son required) — este
+   patrón (recorte a 1x1px en vez de `display:none`) es el mismo truco
+   estándar de "oculto visualmente pero sigue participando" que usan los
+   frameworks de accesibilidad, y sí preserva esa validación. */
+.select-hidden-source {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Ojo de mostrar/ocultar contraseña (alta de usuarios) — .input-wrap/
+   .toggle-pass vienen de styles.css (mismo patrón que el login, sin
+   duplicar sus reglas). Ese archivo asume el padding+ancho de `.field
+   input` (width: 100%; padding: 12px 42px 12px 42px, reservando espacio a
+   los dos lados para un ícono izquierdo + el ojo); los inputs de
+   modal-form no tienen ícono izquierdo, así que solo hace falta reservar
+   el lado derecho — mismos 42px que usa el login para el ojo. El
+   `width: 100%` SÍ hacía falta explícito: `.input-wrap` es flex-row, y un
+   <input> dentro de un contenedor flex-row no se estira solo al 100% (a
+   diferencia de un hijo directo de `.modal-form label`, que sí es
+   flex-column) — sin esto el input quedaba angosto (ancho por default del
+   navegador) y el botón del ojo, posicionado respecto al wrap completo,
+   aparecía "flotando" fuera del recuadro visible del input. Mismo ajuste
+   que ya existía para `.combobox input[type="text"]` más abajo. */
+.password-field-wrap input {
+  width: 100%;
+  padding-right: 42px;
 }
 
 .switch-field {

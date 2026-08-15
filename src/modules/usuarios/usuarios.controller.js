@@ -95,19 +95,22 @@ async function nuevoForm(req, res, next) {
 // US-602: fragmento HTMX con el formulario precargado ("Editar usuario"),
 // sin el campo de contraseña (AC: no aparece ni puede modificarse desde
 // esta funcionalidad). US-604: además precarga los permisos ya asignados.
+// US-602 (octava iteración) AC: el vínculo con un doctor tampoco se puede
+// modificar desde aquí — `usuario-form.ejs` lo muestra de solo lectura en
+// edición, así que ni hace falta pedir el catálogo de doctores disponibles
+// (se manda `[]`, la isla de datos JSON de usuarios.ejs igual la necesita
+// como array válido, aunque no se use).
 async function editarForm(req, res, next) {
   try {
     const usuario = await service.obtener(req.params.id);
     if (!usuario) {
       return res.status(404).send('Usuario no encontrado');
     }
-    const [doctoresDisponibles, catalogoPermisos, permisosAsignadosIds, areasParaPermisos] =
-      await Promise.all([
-        service.listDoctoresDisponibles(),
-        service.obtenerCatalogoPermisos(),
-        service.permisosAsignadosDe(usuario.id),
-        service.listAreasParaPermisos(),
-      ]);
+    const [catalogoPermisos, permisosAsignadosIds, areasParaPermisos] = await Promise.all([
+      service.obtenerCatalogoPermisos(),
+      service.permisosAsignadosDe(usuario.id),
+      service.listAreasParaPermisos(),
+    ]);
     const csrfToken = generateCsrfToken(req, res);
     res.render('partials/usuario-form', {
       usuario,
@@ -118,7 +121,7 @@ async function editarForm(req, res, next) {
       username: usuario.username,
       estatus: usuario.estatus,
       doctorSeleccionado: usuario.doctor ?? null,
-      doctoresDisponibles,
+      doctoresDisponibles: [],
       matrizPermisos: service.construirMatrizPermisos(catalogoPermisos, areasParaPermisos),
       permisosAsignadosIds,
       error: null,
@@ -230,6 +233,11 @@ async function editar(req, res, next) {
     const permisosProvistos = req.body.permisosSeccion !== undefined;
 
     try {
+      // US-602 (octava iteración) AC: el vínculo con un doctor no se puede
+      // tocar desde edición — a propósito NO se manda `doctorId` a
+      // service.editar() (ese parámetro ya ni existe en su firma), aunque
+      // el body trajera uno (el formulario ni siquiera lo envía en modo
+      // edición, ver usuario-form.ejs).
       await service.editar({
         id: req.params.id,
         nombre: req.body.nombre,
@@ -237,7 +245,6 @@ async function editar(req, res, next) {
         correo: req.body.correo,
         telefono: req.body.telefono,
         username: req.body.username,
-        doctorId: req.body.doctorId,
         estatus: req.body.estatus,
         permisos: req.body.permisos,
         permisosProvistos,
@@ -245,15 +252,7 @@ async function editar(req, res, next) {
       });
     } catch (err) {
       if (err.status) {
-        const [
-          doctoresDisponibles,
-          doctorSeleccionado,
-          catalogoPermisos,
-          permisosActuales,
-          areasParaPermisos,
-        ] = await Promise.all([
-          service.listDoctoresDisponibles(),
-          service.resolverDoctor(req.body.doctorId),
+        const [catalogoPermisos, permisosActuales, areasParaPermisos] = await Promise.all([
           service.obtenerCatalogoPermisos(),
           service.permisosAsignadosDe(existing.id),
           service.listAreasParaPermisos(),
@@ -266,8 +265,8 @@ async function editar(req, res, next) {
           telefono: req.body.telefono ?? '',
           username: err.usernameSugerido ?? req.body.username ?? '',
           estatus: req.body.estatus ?? existing.estatus,
-          doctorSeleccionado: doctorSeleccionado ?? null,
-          doctoresDisponibles,
+          doctorSeleccionado: existing.doctor ?? null,
+          doctoresDisponibles: [],
           matrizPermisos: service.construirMatrizPermisos(catalogoPermisos, areasParaPermisos),
           permisosAsignadosIds: permisosProvistos
             ? service.parsePermissionIds(req.body.permisos)

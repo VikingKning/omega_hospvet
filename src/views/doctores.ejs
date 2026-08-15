@@ -173,6 +173,23 @@
     return div.innerHTML;
   }
 
+  // El picker de especialidades vive dentro de .modal-card, que tiene
+  // `overflow-y:auto` — un `.combobox-list` con `position:absolute` (el
+  // default de main.css) sigue contando para el área scrolleable de ese
+  // ancestro aunque se vea como un overlay, así que el modal completo
+  // ganaba un scrollbar innecesario solo para "alcanzar" la lista. Se
+  // resuelve pasándola a `position:fixed` (relativa al viewport, escapa
+  // cualquier overflow de sus ancestros) con coordenadas calculadas a
+  // partir de dónde quedó el trigger en pantalla.
+  function positionComboboxList(trigger, list) {
+    const rect = trigger.getBoundingClientRect();
+    list.style.position = 'fixed';
+    list.style.top = `${rect.bottom + 4}px`;
+    list.style.left = `${rect.left}px`;
+    list.style.width = `${rect.width}px`;
+    list.style.right = 'auto';
+  }
+
   // Estado del picker de especialidades: vive en JS, no en el DOM, para no
   // depender de que HTMX re-ejecute scripts al hacer swap (ver el
   // <script type="application/json"> inerte en doctor-form.ejs). Se
@@ -181,13 +198,23 @@
   let doctorFormAreas = { disponibles: [], seleccionadas: [] };
 
   function renderAreaPicker() {
-    const select = document.getElementById('areaPickerSelect');
-    if (!select) return;
+    const trigger = document.getElementById('areaPickerTrigger');
+    const valueInput = document.getElementById('areaPickerValue');
+    const list = document.getElementById('areaPickerList');
+    if (!trigger || !valueInput || !list) return;
     const yaAsignadas = new Set(doctorFormAreas.seleccionadas.map((area) => area.id));
     const opciones = doctorFormAreas.disponibles.filter((area) => !yaAsignadas.has(area.id));
-    select.innerHTML =
-      '<option value="">Selecciona un área...</option>' +
-      opciones.map((area) => `<option value="${area.id}">${escapeHtml(area.nombre)}</option>`).join('');
+    list.innerHTML = opciones
+      .map(
+        (area) =>
+          `<li class="combobox-item" data-id="${area.id}" data-label="${escapeHtml(area.nombre)}">${escapeHtml(area.nombre)}</li>`,
+      )
+      .join('');
+    // Repoblar la lista siempre resetea la selección — mismo comportamiento
+    // que el <select> anterior, que también perdía su .value al
+    // reconstruir sus <option> desde cero en cada agregar/quitar.
+    trigger.value = '';
+    valueInput.value = '';
   }
 
   function renderDoctorAreas() {
@@ -224,6 +251,18 @@
     openDoctorFormModal();
   });
 
+  // US-607 (segunda iteración): abre la lista del picker de especialidades
+  // al enfocar el trigger (mismo criterio que el combobox de Estatus en
+  // usuario-form.ejs — un input de solo lectura sí recibe foco por click o
+  // tab, aunque no se pueda escribir en él).
+  doctorFormModalBody.addEventListener('focusin', (event) => {
+    if (event.target.id !== 'areaPickerTrigger') return;
+    const list = document.getElementById('areaPickerList');
+    if (!list) return;
+    positionComboboxList(event.target, list);
+    list.hidden = false;
+  });
+
   doctorFormModalBody.addEventListener('click', (event) => {
     if (event.target.closest('#doctorFormClose, #doctorFormCancel')) {
       closeDoctorFormModal();
@@ -231,9 +270,15 @@
     if (event.target.closest('#doctorFormErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();
     }
+    const areaItem = event.target.closest('#areaPickerList .combobox-item');
+    if (areaItem) {
+      document.getElementById('areaPickerTrigger').value = areaItem.dataset.label;
+      document.getElementById('areaPickerValue').value = areaItem.dataset.id;
+      document.getElementById('areaPickerList').hidden = true;
+      return;
+    }
     if (event.target.closest('#areaPickerAdd')) {
-      const select = document.getElementById('areaPickerSelect');
-      const id = Number(select.value);
+      const id = Number(document.getElementById('areaPickerValue').value);
       if (!id) return;
       const area = doctorFormAreas.disponibles.find((a) => a.id === id);
       if (!area) return;
@@ -247,6 +292,13 @@
       doctorFormAreas.seleccionadas = doctorFormAreas.seleccionadas.filter((a) => a.id !== id);
       renderAreaPicker();
       renderDoctorAreas();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    const combobox = document.getElementById('areaPickerCombobox');
+    if (combobox && !combobox.contains(event.target)) {
+      document.getElementById('areaPickerList')?.setAttribute('hidden', '');
     }
   });
 

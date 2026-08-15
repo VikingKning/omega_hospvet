@@ -21,6 +21,10 @@ const ESTATUS_LABELS = {
   bloqueo_temp: 'Bloqueo temporal',
   bloqueado: 'Bloqueado',
   inactivo: 'Inactivo',
+  // "todos" solo existe como valor de FILTRO (nunca es el estatus real de
+  // un usuario) — vive en el mismo mapa para no duplicarlo entre el badge
+  // de la tabla y el trigger del filtro de abajo.
+  todos: 'Todos',
 };
 
 const ESTATUS_BADGE_CLASS = {
@@ -80,15 +84,44 @@ const bannerError = typeof error === 'undefined' ? null : error;
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           <input type="text" id="usuarios-search" name="q" value="<%= q %>" placeholder="Buscar por nombre, usuario o correo...">
         </div>
-        <select id="usuarios-estatus" name="estatus" class="lab-select"
-                hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
-                hx-vals='{"page":1}'>
-          <option value="activo" <%= estatus === 'activo' ? 'selected' : '' %>>Activo</option>
-          <option value="bloqueo_temp" <%= estatus === 'bloqueo_temp' ? 'selected' : '' %>>Bloqueo temporal</option>
-          <option value="bloqueado" <%= estatus === 'bloqueado' ? 'selected' : '' %>>Bloqueado</option>
-          <option value="inactivo" <%= estatus === 'inactivo' ? 'selected' : '' %>>Inactivo</option>
-          <option value="todos" <%= estatus === 'todos' ? 'selected' : '' %>>Todos</option>
-        </select>
+        <%
+        // US-601 (segunda iteración, pedido de estilo): un <select> nativo
+        // no puede tener su lista abierta con esquinas redondeadas — lo
+        // dibuja el navegador/SO, no CSS (mismo límite ya documentado en
+        // usuario-form.ejs para Estatus). Se reemplaza por el mismo patrón
+        // de combobox (trigger de solo lectura + <ul class="combobox-list">
+        // ya con esquinas redondeadas de verdad). A diferencia de los
+        // combobox de formulario (Doctor vinculado/Estatus en editar
+        // usuario), este es un FILTRO: cada opción dispara directo su
+        // propio hx-post (mismo patrón que los botones de orden/paginación
+        // de esta misma tabla) — no hace falta un input oculto que se
+        // actualice por JS y luego dispare un evento. El input oculto de
+        // abajo solo existe para que hx-include siga mandando el estatus
+        // vigente en las DEMÁS acciones (buscar, ordenar, paginar).
+        %>
+        <input type="hidden" name="estatus" value="<%= estatus %>">
+        <div class="combobox" id="estatusFiltroCombobox">
+          <input type="text" id="estatusFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
+                 value="<%= ESTATUS_LABELS[estatus] ?? 'Todos' %>">
+          <%
+          // El JS del cliente saca esta lista de #usuarios-filters y la
+          // cuelga de <body> mientras está abierta (para escapar el
+          // stacking context de `.main-content > *` — ver usuarios.ejs,
+          // openFloatingList()). Eso rompe la herencia de hx-headers que el
+          // <form> le pasaba (htmx solo la busca en ancestros REALES en el
+          // DOM al momento del click) — sin el CSRF token, doubleCsrfProtection
+          // rechaza el POST con 403. Se repite hx-headers aquí, directo en el
+          // <ul>, para que viaje con la lista sin importar dónde quede
+          // reparentada.
+          %>
+          <ul class="combobox-list" id="estatusFiltroList" hidden hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+            <% ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo', 'todos'].forEach((valor) => { %>
+              <li class="combobox-item"
+                  hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
+                  hx-vals='<%- JSON.stringify({ estatus: valor, page: 1 }) %>'><%= ESTATUS_LABELS[valor] %></li>
+            <% }) %>
+          </ul>
+        </div>
       </div>
       <% if (has('usuarios.crear')) { %>
         <button class="btn-primary" type="button"
@@ -201,7 +234,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
                             aria-label="Dar de baja a <%= usuario.username %>"
                             hx-delete="usuarios/<%= usuario.id %>" hx-include="#usuarios-filters"
                             hx-target="#usuarios-panel" hx-swap="innerHTML"
-                            hx-confirm="¿Dar de baja a <%= usuario.nombre %> <%= usuario.apellidos %> (<%= usuario.username %>)? Perderá el acceso al sistema, pero su información e historial no se eliminan.">
+                            hx-confirm="Favor de confirmar la eliminación del usuario: <%= usuario.nombre %> <%= usuario.apellidos %> (<%= usuario.username %>)&#10;Perderá el acceso al sistema, pero su información e historial no se eliminan.">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
                       </svg>

@@ -89,12 +89,25 @@ function estaMarcado(permiso) {
     <% if (puedeGestionarPermisos) { %><h3 class="modal-col-title">Datos generales</h3><% } %>
     <label>
       Doctor vinculado
-      <div class="combobox" id="doctorCombobox">
-        <input type="text" id="doctorSearch" placeholder="Buscar doctor..." autocomplete="off"
-               value="<%= doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : '' %>">
-        <input type="hidden" name="doctorId" id="doctorIdInput" value="<%= doctorSeleccionado ? doctorSeleccionado.id : '' %>">
-        <ul class="combobox-list" id="doctorList" hidden></ul>
-      </div>
+      <% if (esEdicion) { %>
+        <%
+        // US-602 (octava iteración) AC: el vínculo con un doctor ya no se
+        // puede cambiar desde edición — se muestra de solo lectura (mismo
+        // estilo ya definido en main.css para `.modal-form input:read-only`)
+        // y, a propósito, SIN `name`: el servidor de todos modos ignora
+        // cualquier doctorId que llegara en el body de una edición
+        // (usuarios.service.js#editar ya ni acepta ese parámetro), así que
+        // ni hace falta que este campo viaje.
+        %>
+        <input type="text" value="<%= doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : 'Sin vínculo' %>" readonly>
+      <% } else { %>
+        <div class="combobox" id="doctorCombobox">
+          <input type="text" id="doctorSearch" placeholder="Buscar doctor..." autocomplete="off"
+                 value="<%= doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : '' %>">
+          <input type="hidden" name="doctorId" id="doctorIdInput" value="<%= doctorSeleccionado ? doctorSeleccionado.id : '' %>">
+          <ul class="combobox-list" id="doctorList" hidden></ul>
+        </div>
+      <% } %>
     </label>
     <label>
       Nombre(s)
@@ -122,17 +135,49 @@ function estaMarcado(permiso) {
     <% if (!esEdicion) { %>
       <label>
         Contraseña inicial
-        <input type="password" name="password" required minlength="8" autocomplete="new-password">
+        <%
+        // Mismo patrón (markup+SVG+clases) que el ojo de mostrar/ocultar de
+        // index.ejs (login) — .input-wrap/.toggle-pass ya viven en
+        // styles.css (usuarios.ejs carga ese archivo además de main.css).
+        // Aquí el toggle se maneja por delegación sobre
+        // usuarioFormModalBody (usuarios.ejs), no con un listener directo,
+        // porque HTMX reemplaza este formulario en cada apertura/reintento.
+        %>
+        <div class="input-wrap password-field-wrap">
+          <input type="password" name="password" id="passwordInput" required minlength="8" autocomplete="new-password">
+          <button type="button" class="toggle-pass" id="passwordToggle" aria-label="Mostrar contraseña">
+            <svg id="passwordEyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
       </label>
     <% } %>
     <% if (esEdicion) { %>
       <label>
         Estatus
-        <select name="estatus">
-          <% ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo'].forEach((valor) => { %>
-            <option value="<%= valor %>" <%= estatus === valor ? 'selected' : '' %>><%= ESTATUS_LABELS[valor] %></option>
-          <% }) %>
-        </select>
+        <%
+        // US-602 (novena iteración, pedido de estilo): un <select> nativo
+        // no se puede forzar a que su lista abierta se vea "fondo blanco,
+        // esquinas redondeadas" — eso lo dibuja el sistema operativo/
+        // navegador, no CSS (ya se intentó solo con CSS y seguía viéndose
+        // distinto). Se reemplaza por el mismo patrón de combobox de
+        // Doctor vinculado (sin buscador, son 4 valores fijos nada más):
+        // un input de solo lectura como "trigger" — reutiliza tal cual el
+        // estilo `.modal-form input:read-only` que ya usa Doctor vinculado,
+        // cero CSS nuevo para el recuadro — más la MISMA `.combobox-list`/
+        // `.combobox-item` ya usada ahí (blanco, esquinas redondeadas,
+        // reales esta vez porque el navegador ya no dibuja la lista). El
+        // input oculto es el que de verdad viaja al servidor como
+        // `estatus`.
+        %>
+        <div class="combobox" id="estatusCombobox">
+          <input type="text" id="estatusTrigger" class="select-trigger-input" value="<%= ESTATUS_LABELS[estatus] %>" readonly autocomplete="off">
+          <input type="hidden" name="estatus" id="estatusInput" value="<%= estatus %>">
+          <ul class="combobox-list" id="estatusList" hidden>
+            <% ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo'].forEach((valor) => { %>
+              <li class="combobox-item" data-value="<%= valor %>"><%= ESTATUS_LABELS[valor] %></li>
+            <% }) %>
+          </ul>
+        </div>
       </label>
     <% } %>
   </div>
@@ -178,6 +223,17 @@ function estaMarcado(permiso) {
               <thead>
                 <tr>
                   <th>Módulo</th>
+                  <%
+                  // US-604 (séptima iteración): columna de conveniencia
+                  // pedida por el usuario — un checkbox por fila que marca
+                  // (o desmarca) TODAS las acciones de ESA fila en un solo
+                  // clic. No representa un permiso real: nunca lleva
+                  // `name="permisos"`, así que nunca viaja al servidor ni se
+                  // guarda ("esta tabla no es persistente") — es puramente
+                  // una acción de UI, manejada por delegación en
+                  // usuarios.ejs (clase .permiso-todos-checkbox).
+                  %>
+                  <th>Todos</th>
                   <% tab.acciones.forEach((accion) => { %>
                     <th><%= etiqueta(ACCION_LABELS, accion) %></th>
                   <% }) %>
@@ -187,7 +243,7 @@ function estaMarcado(permiso) {
                 <% tab.secciones.forEach((seccion) => { %>
                   <% if (seccion.titulo) { %>
                     <tr class="permisos-seccion-row">
-                      <td colspan="<%= 1 + tab.acciones.length %>"><%= seccion.titulo %></td>
+                      <td colspan="<%= 2 + tab.acciones.length %>"><%= seccion.titulo %></td>
                     </tr>
                   <% } %>
                   <% seccion.modulos.forEach((fila) => { %>
@@ -199,7 +255,26 @@ function estaMarcado(permiso) {
                       // siquiera tiene entradas para módulos `agenda_*`
                       // (son dinámicos, no fijos).
                       %>
+                      <%
+                      // US-604 (décima iteración) AC: si YA están marcadas
+                      // todas las acciones de la fila (ej. al precargar la
+                      // edición de un usuario que ya tenía el módulo
+                      // completo), "Todos" debe verse marcado desde que se
+                      // abre el formulario, no solo cuando el propio
+                      // administrador lo clickea. `celdas` siempre tiene al
+                      // menos un permiso real (si el módulo llegó hasta
+                      // aquí es porque contribuyó con alguna acción a las
+                      // columnas del tab), así que basta con que ninguna
+                      // celda real esté sin marcar.
+                      %>
+                      <% const filaCompleta = fila.celdas.every((permiso) => !permiso || estaMarcado(permiso)); %>
                       <td><%= fila.nombre ?? etiqueta(MODULO_LABELS, fila.modulo) %></td>
+                      <td class="permiso-cell">
+                        <input type="checkbox" class="permiso-todos-checkbox"
+                               aria-label="Otorgar todos los permisos de <%= fila.nombre ?? etiqueta(MODULO_LABELS, fila.modulo) %>"
+                               title="Marca o desmarca todas las acciones de esta fila"
+                               <%= filaCompleta ? 'checked' : '' %>>
+                      </td>
                       <% fila.celdas.forEach((permiso, celdaIndex) => { %>
                         <td class="permiso-cell">
                           <% if (permiso) { %>

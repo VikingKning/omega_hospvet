@@ -123,7 +123,7 @@ function initials(nombre, apellidos) {
                             aria-label="Dar de baja a <%= doctor.nombre %> <%= doctor.apellidos %>"
                             hx-delete="doctores/<%= doctor.id %>" hx-include="#doctores-filters"
                             hx-target="#doctores-panel" hx-swap="innerHTML"
-                            hx-confirm="¿Dar de baja a <%= doctor.nombre %> <%= doctor.apellidos %>? No se elimina su historial de citas ni de laboratorio, solo deja de aparecer como doctor activo.">
+                            hx-confirm='Favor de confirmar la eliminación del o de la Dr(a). <%= doctor.nombre %> <%= doctor.apellidos %>.&#10;No se elimina su historial de citas ni de laboratorio, solo deja de aparecer como doctor activo.'>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
                       </svg>
