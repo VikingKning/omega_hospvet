@@ -312,8 +312,16 @@ function estaMarcado(permiso) {
 
 <%
 // Datos para el combobox de "Doctor vinculado" (JS de usuarios.ejs): una
-// isla de datos inerte, no un <script> ejecutable — mismo criterio que
-// doctorFormAreasData en doctor-form.ejs (US-607): funciona igual sin
-// depender de que HTMX re-ejecute scripts en contenido swapeado.
+// isla de datos inerte — mismo criterio que doctorFormAreasData en
+// doctor-form.ejs (US-607). NO puede ser un <script> (ni siquiera
+// type="application/json"): con allowScriptTags:false en la config de
+// HTMX (SEC-002), HTMX elimina TODO <script> del contenido swapeado antes
+// de insertarlo (querySelectorAll('script') no distingue por `type`) — se
+// confirmó en vivo que esto dejaba el combobox de Doctor vinculado
+// siempre vacío. Un <div hidden> no es un <script>, así que ni HTMX ni el
+// CSP (que solo rige script-src) lo tocan. El caracter "menor que" del
+// JSON se re-escapa a su forma unicode (sigue siendo JSON válido,
+// JSON.parse lo interpreta igual) para que un nombre de doctor que lo
+// traiga nunca pueda cerrar el div de forma anticipada.
 %>
-<script type="application/json" id="usuarioFormDoctoresData" nonce="<%= cspNonce %>"><%- JSON.stringify(doctoresDisponibles) %></script>
+<div id="usuarioFormDoctoresData" hidden><%- JSON.stringify(doctoresDisponibles).replace(/</g, String.fromCharCode(92,117,48,48,51,99)) %></div>

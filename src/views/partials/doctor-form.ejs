@@ -33,9 +33,21 @@ const esEdicion = Boolean(doctor);
     Apellidos
     <input type="text" name="apellidos" value="<%= apellidos %>" required maxlength="100">
   </label>
-  <label class="checkbox-field">
-    <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %>>
-    Activo
+  <%
+  // Pedido de estilo: mismo switch ya usado en plantilla-form.ejs (US-613)
+  // en vez de un checkbox — reusa las clases .switch-field/.switch/
+  // .switch-track ya definidas en main.css, sin CSS nuevo. A diferencia de
+  // plantillas (donde el switch solo aparece en edición, porque el alta
+  // siempre crea activo=true), en doctores ya se mostraba en alta también
+  // — se mantiene ese comportamiento, solo cambia el control visual.
+  %>
+  <label class="switch-field">
+    <span class="switch">
+      <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %>>
+      <span class="switch-track"></span>
+    </span>
+    <span class="switch-state-on">Activo</span>
+    <span class="switch-state-off">Inactivo</span>
   </label>
 
   <label>
@@ -78,14 +90,19 @@ const esEdicion = Boolean(doctor);
 
 <%
 // Datos para el picker de especialidades (JS de doctores.ejs): una isla de
-// datos inerte, no un <script> ejecutable — así funciona igual sin importar
-// si HTMX re-ejecuta scripts en el contenido swapeado o no (el resto del
-// proyecto no depende de eso, y este partial tampoco necesita empezar a
-// hacerlo). El JS que la lee vive en el <script> persistente de
-// doctores.ejs, delegado sobre #doctorFormModalBody (sobrevive a que HTMX
-// reemplace este contenido en cada apertura/reintento).
+// datos inerte. NO puede ser un <script> (ni con type="application/json"):
+// con allowScriptTags:false en la config de HTMX (SEC-002), HTMX elimina
+// TODO <script> del contenido swapeado antes de insertarlo
+// (querySelectorAll('script') no distingue por `type`) — confirmado en
+// vivo que esto dejaba el picker de Especialidades siempre vacío. Un
+// <div hidden> no es un <script>, ni HTMX ni el CSP (que solo rige
+// script-src) lo tocan. El JS que la lee vive en el <script> persistente
+// de doctores.ejs, delegado sobre #doctorFormModalBody. El caracter
+// "menor que" del JSON se re-escapa a su forma unicode (sigue siendo JSON
+// válido) para que un nombre de área con `<`/`</div>` nunca pueda cerrar
+// el div de forma anticipada.
 %>
-<script type="application/json" id="doctorFormAreasData" nonce="<%= cspNonce %>"><%- JSON.stringify({
+<div id="doctorFormAreasData" hidden><%- JSON.stringify({
   disponibles: areasDisponibles,
   seleccionadas: areasSeleccionadas,
-}) %></script>
+}).replace(/</g, String.fromCharCode(92,117,48,48,51,99)) %></div>

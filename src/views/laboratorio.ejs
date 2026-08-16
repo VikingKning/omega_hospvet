@@ -225,6 +225,15 @@
     list.style.left = `${rect.left}px`;
     list.style.width = `${rect.width}px`;
     list.style.right = 'auto';
+    // Reparentar a <body> saca la lista del stacking context de su
+    // ancestro, pero NO le gana automáticamente a otro contenido que
+    // también sea hijo directo de <body> con su propio z-index — el
+    // z-index:20 por default de .combobox-list (main.css) pierde contra
+    // .modal-backdrop (z-index:100): los combobox del modal "Nuevo
+    // registro" (Tipo de mascota/Categoría/Zona/Estudio) quedaban
+    // pintándose DETRÁS del propio modal que los contiene. Se fuerza un
+    // z-index por encima de cualquier modal del sistema.
+    list.style.zIndex = '1000';
     list.hidden = false;
   }
 

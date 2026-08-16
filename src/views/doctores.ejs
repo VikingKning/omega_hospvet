@@ -205,12 +205,18 @@
     if (!trigger || !valueInput || !list) return;
     const yaAsignadas = new Set(doctorFormAreas.seleccionadas.map((area) => area.id));
     const opciones = doctorFormAreas.disponibles.filter((area) => !yaAsignadas.has(area.id));
-    list.innerHTML = opciones
-      .map(
-        (area) =>
-          `<li class="combobox-item" data-id="${area.id}" data-label="${escapeHtml(area.nombre)}">${escapeHtml(area.nombre)}</li>`,
-      )
-      .join('');
+    // Mismo criterio que fEstudioList (laboratorio.ejs) y doctorList
+    // (usuarios.ejs) para "sin resultados": .combobox-empty, no un <li>
+    // seleccionable — evita que la lista se vea vacía/rota cuando un
+    // doctor ya tiene todas las áreas del catálogo asignadas.
+    list.innerHTML = opciones.length
+      ? opciones
+          .map(
+            (area) =>
+              `<li class="combobox-item" data-id="${area.id}" data-label="${escapeHtml(area.nombre)}">${escapeHtml(area.nombre)}</li>`,
+          )
+          .join('')
+      : '<li class="combobox-empty">No hay más especialidades disponibles.</li>';
     // Repoblar la lista siempre resetea la selección — mismo comportamiento
     // que el <select> anterior, que también perdía su .value al
     // reconstruir sus <option> desde cero en cada agregar/quitar.
@@ -273,6 +279,14 @@
     }
     const areaItem = event.target.closest('#areaPickerList .combobox-item');
     if (areaItem) {
+      // El combobox vive dentro de un <label> (Especialidades), y el <li>
+      // no es un control enfocable — sin preventDefault(), el navegador
+      // reenvía el click como si fuera sobre el control asociado del label
+      // (#areaPickerTrigger), reenfocándolo justo después de seleccionar.
+      // Eso dispara el listener de "focusin" de arriba y reabre la lista
+      // que este mismo click acaba de cerrar (mismo bug, mismo fix, que
+      // selectDoctor() en usuarios.ejs para "Doctor vinculado").
+      event.preventDefault();
       document.getElementById('areaPickerTrigger').value = areaItem.dataset.label;
       document.getElementById('areaPickerValue').value = areaItem.dataset.id;
       document.getElementById('areaPickerList').hidden = true;

@@ -1573,30 +1573,35 @@ body:has(.app)::after {
   background: rgba(242, 169, 0, 0.1);
 }
 
-/* Tooltips de los íconos de "Acciones" — regla transversal para toda tabla
-   del sistema con esta columna (actual o futura). CSS puro, sin JS: el
-   propio :hover/:focus-visible del botón basta para "aparece mientras haya
-   hover, desaparece al salir", así que no hace falta duplicar esa lógica en
-   cada vista. El fondo usa `--tooltip-bg`, que cada `.row-action-*` ya
-   define junto a su propio `color` (arriba) — así el tooltip queda del
-   mismo color que su ícono sin inventar variables nuevas por acción.
+/* Tooltips vía [data-tooltip] — regla transversal para todo elemento del
+   sistema que necesite uno (íconos de "Acciones" de cualquier tabla, y
+   también etiquetas informativas como .area-tag-varios más abajo). CSS
+   puro, sin JS: el propio :hover/:focus-visible del elemento basta para
+   "aparece mientras haya hover, desaparece al salir". El elemento que use
+   [data-tooltip] necesita `position: relative` (ya lo tiene .row-action-btn;
+   .area-tag-varios lo agrega aparte). El fondo usa `--tooltip-bg`
+   (default var(--text-dark)) — cada `.row-action-*` ya lo define junto a
+   su propio `color`, así el tooltip queda del mismo color que su ícono sin
+   inventar variables nuevas por acción; otros usos (ej. .area-tag-varios)
+   pueden fijar su propia paleta.
    Nota: se probó primero con `background: currentColor` para ahorrarse la
    variable, pero `currentColor` en un `::before` resuelve contra el
-   `color` del PROPIO pseudo-elemento (el blanco del texto del tooltip,
-   fijado abajo), no el del botón — confirmado con Chromium real, todos los
+   `color` del PROPIO pseudo-elemento (el del texto del tooltip, fijado
+   abajo), no el del elemento — confirmado con Chromium real, todos los
    tooltips salían blanco sobre blanco. `--tooltip-bg` evita esa trampa.
-   Se posiciona DEBAJO del ícono, no encima: .lab-table-wrap tiene
+   Se posiciona DEBAJO del elemento, no encima: .lab-table-wrap tiene
    overflow-x:auto, y la spec de CSS fuerza overflow-y a "auto" también
    cuando solo se fija un eje (mismo problema ya resuelto para los combobox
    flotantes esta sesión) — un tooltip que abriera hacia arriba se recortaría
    contra el borde superior del contenedor en la primera fila de la tabla.
    Hacia abajo siempre hay espacio: el resto de las filas, o el
    table-footer (paginación) en la última.
-   El primer/último botón de cada fila ancla el globo a su propio borde
-   izquierdo/derecho (en vez de centrarlo) para no desbordar los bordes de
-   la tabla — la flechita se queda centrada en el ícono en los tres casos. */
-.row-action-btn[data-tooltip]::before,
-.row-action-btn[data-tooltip]::after {
+   El primer/último botón de una fila de .row-actions ancla el globo a su
+   propio borde izquierdo/derecho (en vez de centrarlo) para no desbordar
+   los bordes de la tabla — la flechita se queda centrada en el ícono en
+   los tres casos. */
+[data-tooltip]::before,
+[data-tooltip]::after {
   position: absolute;
   top: calc(100% + 8px);
   left: 50%;
@@ -1610,19 +1615,20 @@ body:has(.app)::after {
   z-index: 5;
 }
 
-.row-action-btn[data-tooltip]::before {
+[data-tooltip]::before {
   content: attr(data-tooltip);
   padding: 6px 10px;
   border-radius: 6px;
   background: var(--tooltip-bg, var(--text-dark));
   color: var(--tooltip-text, #fff);
+  border: 1px solid var(--tooltip-border, transparent);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
   box-shadow: 0 4px 10px rgba(20, 41, 79, 0.18);
 }
 
-.row-action-btn[data-tooltip]::after {
+[data-tooltip]::after {
   content: '';
   width: 0;
   height: 0;
@@ -1631,10 +1637,10 @@ body:has(.app)::after {
   border-bottom-color: var(--tooltip-bg, var(--text-dark));
 }
 
-.row-action-btn[data-tooltip]:hover::before,
-.row-action-btn[data-tooltip]:hover::after,
-.row-action-btn[data-tooltip]:focus-visible::before,
-.row-action-btn[data-tooltip]:focus-visible::after {
+[data-tooltip]:hover::before,
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-visible::after {
   opacity: 1;
   visibility: visible;
 }
@@ -1648,6 +1654,27 @@ body:has(.app)::after {
   left: auto;
   right: 0;
   transform: none;
+}
+
+/* .area-tag-varios (catálogo de doctores): a diferencia de los tooltips de
+   Acciones (fondo de color, texto corto sin wrap), este es informativo y
+   puede traer varios nombres de área — pedido explícito del usuario: fondo
+   blanco, borde y texto negros, y que NO se extienda de más si el doctor
+   tiene todas las áreas asignadas (evitar scroll horizontal en la tabla).
+   Se permite el wrap normal + un max-width en vez de nowrap. */
+.area-tag-varios {
+  position: relative;
+  cursor: default;
+  --tooltip-bg: #fff;
+  --tooltip-text: #000;
+  --tooltip-border: #000;
+}
+
+.area-tag-varios[data-tooltip]::before {
+  white-space: normal;
+  max-width: 220px;
+  text-align: center;
+  font-weight: 500;
 }
 
 .table-footer {

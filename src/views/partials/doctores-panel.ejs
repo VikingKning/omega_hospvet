@@ -98,10 +98,20 @@ function initials(nombre, apellidos) {
                 </div>
               </td>
               <td>
-                <% if (doctor.areas) { %>
-                  <% doctor.areas.split(', ').forEach((area) => { %><span class="area-tag"><%= area %></span><% }) %>
-                <% } else { %>
+                <%
+                // Pedido de estilo: más de 3 áreas colapsa a una sola
+                // etiqueta "Varios" con tooltip (ver .area-tag-varios en
+                // main.css) — listar las 6-7 áreas de un doctor con todas
+                // asignadas desbordaba la celda y forzaba scroll horizontal
+                // en la tabla (.lab-table-wrap tiene overflow-x:auto).
+                const listaAreas = doctor.areas ? doctor.areas.split(', ') : [];
+                %>
+                <% if (listaAreas.length === 0) { %>
                   <span class="area-tag-empty">Sin área asignada</span>
+                <% } else if (listaAreas.length > 3) { %>
+                  <span class="area-tag area-tag-varios" data-tooltip="<%= listaAreas.join(', ') %>">Varias</span>
+                <% } else { %>
+                  <% listaAreas.forEach((area) => { %><span class="area-tag"><%= area %></span><% }) %>
                 <% } %>
               </td>
               <td>
