@@ -279,8 +279,18 @@ describe('GET /usuarios.html', () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await filtrarUsuarios(agent, { estatus: 'todos', q: SUFFIX });
-    const filaInactivo = res.text.split(`Inactivo ${SUFFIX}`)[1].split('</tr>')[0];
-    const filaActiva = res.text.split(`Activa ${SUFFIX}`)[1].split('</tr>')[0];
+    // Ancla en el <div class="person-cell-name"> (aparece EXACTAMENTE una
+    // vez por fila) en vez del texto plano "Activa QA601"/"Inactivo
+    // QA601" — desde US-605 ese mismo texto se repite dentro del
+    // hx-confirm del botón de resetear contraseña, así que un split sobre
+    // el texto plano ya no aísla la fila completa (se corta antes de
+    // llegar al botón de eliminar, que va después en el marcado).
+    const filaInactivo = res.text
+      .split(`<div class="person-cell-name">Diego Inactivo ${SUFFIX}</div>`)[1]
+      .split('</tr>')[0];
+    const filaActiva = res.text
+      .split(`<div class="person-cell-name">Ana Activa ${SUFFIX}</div>`)[1]
+      .split('</tr>')[0];
 
     expect(filaInactivo).not.toContain('row-action-delete');
     expect(filaActiva).toContain('row-action-delete');

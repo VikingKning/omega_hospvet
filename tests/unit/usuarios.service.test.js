@@ -15,11 +15,13 @@ const {
   crear,
   editar,
   darDeBaja,
+  resetearPassword,
   UsuarioValidationError,
   DuplicateUsernameError,
   DuplicateCorreoError,
   UltimoAdministradorPermisosError,
   NoPuedeDarDeBajaPropiaCuentaError,
+  NoPuedeResetearPropiaCuentaError,
   DoctorYaVinculadoError,
 } = require('../../src/modules/usuarios/usuarios.service');
 const db = require('../../src/config/database');
@@ -1094,4 +1096,64 @@ describe('usuarios.service.darDeBaja (US-603)', () => {
   // operación") y la invalidación de sesión son responsabilidad de la query
   // atómica de usuarios.repository.js#darDeBaja (WHERE real contra
   // Postgres) — probadas en integración, no aquí.
+});
+
+describe('usuarios.service.resetearPassword (US-605)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('genera una temporal de 12 caracteres, la hashea con bcrypt y la devuelve en texto plano si el repository afectó una fila', async () => {
+    repository.resetearPassword.mockResolvedValue(1);
+
+    const passwordTemporal = await resetearPassword('7', 2);
+
+    expect(passwordTemporal).toHaveLength(12);
+    // AC: "sin permitir que el usuario administrador capture o defina
+    // manualmente dicha contraseña" — no hay ningún parámetro de entrada
+    // que pudiera influir en el valor generado, solo el id objetivo y
+    // quién ejecuta la operación.
+    expect(repository.resetearPassword).toHaveBeenCalledTimes(1);
+    const [idLlamado, hashGuardado, usuarioIdLlamado] = repository.resetearPassword.mock.calls[0];
+    expect(idLlamado).toBe(7);
+    expect(usuarioIdLlamado).toBe(2);
+    expect(await bcrypt.compare(passwordTemporal, hashGuardado)).toBe(true);
+  });
+
+  it('el alfabeto de la temporal nunca incluye caracteres ambiguos (0/O, 1/l/I)', async () => {
+    repository.resetearPassword.mockResolvedValue(1);
+
+    // Se generan varias para reducir la probabilidad de un falso negativo
+    // por no haber tocado el caracter problemático en una sola corrida.
+    const generadas = await Promise.all(Array.from({ length: 30 }, () => resetearPassword('7', 2)));
+
+    generadas.forEach((passwordTemporal) => {
+      expect(passwordTemporal).not.toMatch(/[0O1lI]/);
+    });
+  });
+
+  it('devuelve null (sin exponer ninguna contraseña) si el repository no afectó ninguna fila (id inexistente)', async () => {
+    repository.resetearPassword.mockResolvedValue(0);
+
+    const passwordTemporal = await resetearPassword('999999', 2);
+
+    expect(passwordTemporal).toBeNull();
+  });
+
+  it('AC (mismo criterio que darDeBaja): rechaza resetear la propia contraseña, sin llegar al repository', async () => {
+    await expect(resetearPassword('2', 2)).rejects.toThrow(NoPuedeResetearPropiaCuentaError);
+    expect(repository.resetearPassword).not.toHaveBeenCalled();
+  });
+
+  it('un id inválido no llega al repository, devuelve null sin tronar', async () => {
+    const passwordTemporal = await resetearPassword('no-es-un-numero', 2);
+
+    expect(passwordTemporal).toBeNull();
+    expect(repository.resetearPassword).not.toHaveBeenCalled();
+  });
+
+  // AC9 (conservar 'inactivo') y la invalidación de sesión son
+  // responsabilidad de la transacción de usuarios.repository.js#resetearPassword
+  // (lee el estatus actual dentro de la misma transacción) — probadas en
+  // integración, no aquí.
 });

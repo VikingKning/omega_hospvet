@@ -56,14 +56,30 @@ router.delete(
   controller.darDeBaja,
 );
 
+// US-605: restablecimiento de contraseña, disparado por HTMX desde el
+// ícono de reset del listado (con confirmación previa vía hx-confirm) —
+// mismo patrón que DELETE /usuarios/:id (US-603). "Permiso requerido:
+// usuarios.editar" es literal del AC de la historia — el botón en la
+// tabla se gatea con usuarios.resetear_password (ver usuarios-panel.ejs),
+// pero ese permiso nunca existe por separado: siempre se otorga junto con
+// usuarios.editar (ver aplicarReglaEditarUsuariosIncluyePermisos), así que
+// ambos gates son equivalentes en la práctica.
+router.post(
+  '/usuarios/:id/resetear-password',
+  requireAuth,
+  requirePermission('usuarios.editar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.resetearPassword,
+);
+
 // US-602: alta y edición, mismo formulario en un modal. Los GET solo arman
 // el fragmento del formulario (vacío o precargado); los POST/PUT hacen el
 // alta/edición real. Cada ruta exige el permiso específico de la acción
 // (crear ≠ editar) — así un usuario con uno solo de los dos nunca puede
 // ejecutar el otro, aunque el formulario sea visualmente el mismo. US-604
 // agrega el apartado de Permisos al mismo formulario (con su propio gate,
-// ver requirePermisosSiSePresenta arriba); US-603 (baja) y US-605 (reseteo
-// de contraseña) agregarán aquí sus propias rutas de escritura.
+// ver requirePermisosSiSePresenta arriba).
 router.get(
   '/usuarios/nuevo',
   requireAuth,

@@ -17,7 +17,7 @@ CREATE TABLE "usuarios" (
   "actualizado_en" timestamptz,
   "desactivado_por" integer,
   "desactivado_en" timestamptz,
-  CONSTRAINT "usuarios_estatus_check" CHECK ("estatus" IN ('activo', 'bloqueo_temp', 'bloqueado', 'inactivo'))
+  CONSTRAINT "usuarios_estatus_check" CHECK ("estatus" IN ('activo', 'bloqueo_temp', 'bloqueado', 'inactivo', 'cambio_pwd'))
 );
 
 CREATE TABLE "permissions" (

@@ -1081,6 +1081,31 @@ body:has(.app)::after {
   margin-top: 8px;
 }
 
+/* US-605: caja de la contraseña temporal en el modal de "Resetear
+   contraseña" — monoespaciada para que sea inequívoca al copiarla/
+   dictarla (sin confundir 1/l/I ni 0/O, aunque el generador ya evita esos
+   caracteres del lado del servidor). */
+.password-temporal-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+}
+
+.password-temporal-display code {
+  flex: 1;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--text-dark);
+  word-break: break-all;
+}
+
 .modal-form-columns {
   flex-direction: row;
   flex-wrap: wrap;

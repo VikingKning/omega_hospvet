@@ -77,6 +77,36 @@
     <div class="modal-card" id="usuarioFormModalBody"></div>
   </div>
 
+  <%#
+    US-605: la contraseña temporal generada por un restablecimiento viaja
+    del servidor al cliente vía el header HX-Trigger (mostrarPasswordTemporal,
+    ver usuarios.controller.js#resetearPassword) — nunca embebida en el
+    HTML del panel, que persiste en el DOM después del swap. Este modal
+    vive fuera de #usuarios-panel por el mismo motivo que los otros dos: no
+    debe destruirse a medio uso cuando HTMX reemplaza ese contenedor. AC:
+    "no permite recuperar ni volver a mostrar la misma contraseña
+    temporal" — se cumple simplemente por diseño (el servidor nunca la
+    guarda en ningún lado más allá de esta respuesta única), y el cliente
+    además borra el valor del DOM al cerrar el modal, para no dejarlo
+    inspeccionable después de cerrado.
+  %>
+  <div class="modal-backdrop" id="passwordTemporalModalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Contraseña temporal generada</h2>
+        <button class="modal-close-btn" type="button" id="passwordTemporalModalClose" aria-label="Cerrar">&times;</button>
+      </div>
+      <p>Proporciónasela al usuario por un canal seguro. El sistema no volverá a mostrarla.</p>
+      <div class="password-temporal-display">
+        <code id="passwordTemporalValue"></code>
+        <button type="button" class="btn-secondary" id="passwordTemporalCopy">Copiar</button>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" id="passwordTemporalModalCerrar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
 <script nonce="<%= cspNonce %>">
   const sidebar = document.getElementById('sidebar');
   const app = document.querySelector('.app');
@@ -124,10 +154,19 @@
   // paginar) siguen sin pedir confirmación, como hasta ahora.
   const confirmModalBackdrop = document.getElementById('confirmModalBackdrop');
   const confirmModalMessage = document.getElementById('confirmModalMessage');
+  const confirmModalConfirmBtn = document.getElementById('confirmModalConfirm');
   let resolveConfirm = null;
 
-  function openConfirmModal(message) {
+  // US-605: esta vista ya no tiene una sola acción destructiva (dar de
+  // baja) — "Resetear contraseña" también pide confirmación con el mismo
+  // modal, pero "Dar de baja" como texto del botón sería incorrecto ahí.
+  // `confirmLabel` es opcional (default "Dar de baja", el único caso que
+  // existía hasta ahora) para no tener que tocar areas.ejs/doctores.ejs/
+  // plantillas.ejs, que reusan este mismo componente y solo necesitan el
+  // comportamiento original.
+  function openConfirmModal(message, confirmLabel = 'Dar de baja') {
     confirmModalMessage.textContent = message;
+    confirmModalConfirmBtn.textContent = confirmLabel;
     confirmModalBackdrop.classList.add('open');
     return new Promise((resolve) => {
       resolveConfirm = resolve;
@@ -142,7 +181,7 @@
 
   document.getElementById('confirmModalCancel').addEventListener('click', () => closeConfirmModal(false));
   document.getElementById('confirmModalClose').addEventListener('click', () => closeConfirmModal(false));
-  document.getElementById('confirmModalConfirm').addEventListener('click', () => closeConfirmModal(true));
+  confirmModalConfirmBtn.addEventListener('click', () => closeConfirmModal(true));
   confirmModalBackdrop.addEventListener('click', (event) => {
     if (event.target === confirmModalBackdrop) closeConfirmModal(false);
   });
@@ -150,7 +189,7 @@
   document.body.addEventListener('htmx:confirm', (event) => {
     if (!event.target.hasAttribute('hx-confirm')) return;
     event.preventDefault();
-    openConfirmModal(event.detail.question).then((confirmed) => {
+    openConfirmModal(event.detail.question, event.target.dataset.confirmLabel).then((confirmed) => {
       if (confirmed) event.detail.issueRequest(true);
     });
   });
@@ -617,16 +656,28 @@
       event.preventDefault();
       selectDoctor(doctorItem.dataset.id, doctorItem.dataset.label);
     }
-    const estatusItem = event.target.closest('#estatusList .combobox-item');
-    if (estatusItem) {
-      event.preventDefault();
-      selectEstatus(estatusItem);
-    }
   });
 
   document.addEventListener('click', (event) => {
     const combobox = document.getElementById('doctorCombobox');
     if (combobox && !combobox.contains(event.target)) hideDoctorList();
+
+    // A diferencia de #doctorList (que nunca se reparenta, siempre se
+    // queda dentro de #usuarioFormModalBody — ver comentario en
+    // openEstatusList()), #estatusList SÍ se cuelga de <body> mientras
+    // está abierta (openFloatingList). Una vez ahí, un click en uno de
+    // sus <li> ya no burbujea a través de #usuarioFormModalBody — el
+    // listener delegado de ahí (arriba) nunca lo veía, así que
+    // seleccionar una opción no hacía nada. Se maneja aquí, en
+    // document, que siempre contiene la lista sin importar dónde esté
+    // reparentada.
+    const estatusItem = event.target.closest('#estatusList .combobox-item');
+    if (estatusItem) {
+      event.preventDefault();
+      selectEstatus(estatusItem);
+      return;
+    }
+
     const estatusCombobox = document.getElementById('estatusCombobox');
     const estatusList = document.getElementById('estatusList');
     const clickedInsideEstatus =
@@ -642,6 +693,52 @@
   // HX-Trigger: closeUsuarioModal (ver usuarios.controller.js,
   // renderExito()) — htmx traduce ese header en este evento personalizado.
   document.body.addEventListener('closeUsuarioModal', closeUsuarioFormModal);
+
+  // US-605: HX-Trigger mostrarPasswordTemporal (ver
+  // usuarios.controller.js#resetearPassword) — el detalle del evento trae
+  // la contraseña en texto plano, leída UNA sola vez.
+  const passwordTemporalModalBackdrop = document.getElementById('passwordTemporalModalBackdrop');
+  const passwordTemporalValue = document.getElementById('passwordTemporalValue');
+
+  function closePasswordTemporalModal() {
+    passwordTemporalModalBackdrop.classList.remove('open');
+    // Se borra del DOM al cerrar — no basta con ocultar el modal, el valor
+    // no debe quedar inspeccionable después de este punto (AC: "no
+    // permite recuperar ni volver a mostrar la misma contraseña
+    // temporal").
+    passwordTemporalValue.textContent = '';
+  }
+
+  document
+    .getElementById('passwordTemporalModalClose')
+    .addEventListener('click', closePasswordTemporalModal);
+  document
+    .getElementById('passwordTemporalModalCerrar')
+    .addEventListener('click', closePasswordTemporalModal);
+  passwordTemporalModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === passwordTemporalModalBackdrop) closePasswordTemporalModal();
+  });
+
+  document.getElementById('passwordTemporalCopy').addEventListener('click', async (event) => {
+    // event.currentTarget deja de estar disponible (vuelve null) en cuanto
+    // termina el despacho SÍNCRONO del evento — un handler async sigue
+    // ejecutándose después de eso, así que hay que leerlo ANTES del primer
+    // await, nunca después (se confirmó el bug en vivo con Chromium real:
+    // "Cannot read properties of null (reading 'textContent')" al intentar
+    // leerlo después de await navigator.clipboard.writeText()).
+    const btn = event.currentTarget;
+    const textoOriginal = btn.textContent;
+    await navigator.clipboard.writeText(passwordTemporalValue.textContent);
+    btn.textContent = 'Copiado';
+    setTimeout(() => {
+      btn.textContent = textoOriginal;
+    }, 1500);
+  });
+
+  document.body.addEventListener('mostrarPasswordTemporal', (event) => {
+    passwordTemporalValue.textContent = event.detail.password;
+    passwordTemporalModalBackdrop.classList.add('open');
+  });
 </script>
 
 </body>

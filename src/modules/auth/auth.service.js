@@ -96,6 +96,33 @@ async function login(username, password) {
     }
   }
 
+  // US-605: estatus='cambio_pwd' — la "contraseña" que se está evaluando es
+  // la temporal generada por un restablecimiento administrativo. Tiene su
+  // propio contador de intentos fallidos (ver
+  // registrarIntentoFallidoCambioPwd: 5 intentos -> bloqueado directo, SIN
+  // el bloqueo_temp intermedio de 15/30 min del PASO 6 normal — así lo pide
+  // el AC). Si es correcta, NO se abre una sesión normal: se devuelve
+  // `mustChangePassword: true` para que el controller arme una sesión
+  // restringida (sin permisos reales) que requireAuth.js confina a
+  // /cambiar-password hasta que complete el cambio obligatorio — el
+  // usuario nunca llega a "estar activo" solo por acertar la temporal.
+  if (user.estatus === 'cambio_pwd') {
+    if (!passwordMatches) {
+      await repository.registrarIntentoFallidoCambioPwd(user.id, user.intentos_fallidos);
+      throw new InvalidCredentialsError();
+    }
+
+    await repository.resetIntentosCambioPwd(user.id);
+    return {
+      id: user.id,
+      username: user.username,
+      nombre: user.nombre,
+      apellidos: user.apellidos,
+      permissions: [],
+      mustChangePassword: true,
+    };
+  }
+
   // PASO 6: contraseña incorrecta — incrementa el contador (y escala el
   // estatus si cruza un umbral).
   if (!passwordMatches) {
@@ -119,4 +146,46 @@ async function login(username, password) {
   };
 }
 
-module.exports = { login, InvalidCredentialsError, AccountLockedError, TemporaryLockError };
+// US-605: paso final del cambio obligatorio de contraseña — valida la
+// nueva contraseña con la MISMA política mínima ya usada en el alta de
+// usuarios (usuarios.service.js#PASSWORD_MIN_LENGTH), duplicada aquí a
+// propósito (mismo criterio de "cada módulo habla con su propia lógica"
+// ya establecido en el resto del proyecto — no hay una política más
+// estricta codificada en ningún lado del sistema hoy). No valida el
+// estatus actual del usuario aquí: requireAuth.js ya garantiza que solo
+// una sesión con mustChangePassword=true puede llegar a este endpoint.
+const PASSWORD_MIN_LENGTH = 8;
+
+class PasswordInvalidaError extends Error {
+  constructor(message) {
+    super(message);
+    this.status = 400;
+  }
+}
+
+async function cambiarPasswordObligatorio(usuarioId, rawPassword, rawConfirmacion) {
+  const password = rawPassword ?? '';
+  const confirmacion = rawConfirmacion ?? '';
+
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    throw new PasswordInvalidaError(
+      `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres.`,
+    );
+  }
+  if (password !== confirmacion) {
+    throw new PasswordInvalidaError('Las contraseñas no coinciden.');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await repository.completarCambioPassword(usuarioId, passwordHash);
+  return repository.getPermissionCodes(usuarioId);
+}
+
+module.exports = {
+  login,
+  cambiarPasswordObligatorio,
+  InvalidCredentialsError,
+  AccountLockedError,
+  TemporaryLockError,
+  PasswordInvalidaError,
+};

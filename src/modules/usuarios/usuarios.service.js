@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const repository = require('./usuarios.repository');
 
 // Mismo patrón de errores con `.status` que areas/plantillas_whatsapp.service.js
@@ -55,6 +56,19 @@ class NoPuedeDarDeBajaPropiaCuentaError extends Error {
   }
 }
 
+// US-605: no está en el AC explícitamente, pero resetear la propia
+// contraseña con esta acción administrativa mataría la sesión de quien
+// mismo está ejecutando la operación (ver repository.resetearPassword,
+// mismo mecanismo de invalidación de sesión que darDeBaja) — se
+// desconectaría a la mitad de su propia petición. Mismo criterio y mensaje
+// que NoPuedeDarDeBajaPropiaCuentaError.
+class NoPuedeResetearPropiaCuentaError extends Error {
+  constructor() {
+    super('Un usuario no puede restablecer la contraseña de su propia cuenta.');
+    this.status = 400;
+  }
+}
+
 // US-602 (octava iteración) AC: "para no duplicar doctores con cuenta" — un
 // doctor no puede quedar vinculado a más de un usuario. Solo aplica en
 // alta: en edición el vínculo ya no se puede tocar (ver editar() más
@@ -74,7 +88,24 @@ const PASSWORD_MIN_LENGTH = 8;
 
 const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['nombre', 'username', 'correo', 'estatus'];
-const ESTATUS_VALUES = ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo'];
+
+// US-602/US-604: los 4 valores que un administrador puede elegir A MANO
+// desde el combobox de Estatus en "Editar usuario" — usado por
+// parseEstatusEdicion() para saneamiento de PUT /usuarios/:id.
+const ESTATUS_VALUES_EDITABLES = ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo'];
+
+// US-605: 'cambio_pwd' SÍ es un estatus real que puede tener un usuario
+// (tras un restablecimiento de contraseña), y por consistencia con el
+// resto del listado se puede filtrar por él — pero NUNCA se elige a mano
+// desde el formulario de edición (usuario-form.ejs no lo ofrece como
+// opción, y parseEstatusEdicion() de abajo sigue validando solo contra
+// ESTATUS_VALUES_EDITABLES) — la única forma de que un usuario llegue a
+// 'cambio_pwd' es la acción de reset (repository.resetearPassword). Si se
+// aceptara aquí también, un PUT forjado directo al servidor podría dejar a
+// alguien en 'cambio_pwd' sin haber pasado por el flujo real (sin
+// contraseña temporal generada, sin sesión anterior invalidada) — un
+// estado roto e inconsistente.
+const ESTATUS_VALUES_FILTRO = [...ESTATUS_VALUES_EDITABLES, 'cambio_pwd'];
 
 function parsePage(rawPage) {
   const page = Number.parseInt(rawPage, 10);
@@ -98,7 +129,7 @@ function parseDir(rawDir) {
 // criterio consistente con doctores/áreas). Cualquier valor que no sea uno
 // de los 4 estatus válidos ni "todos" cae al default, nunca truena.
 function parseEstatus(rawEstatus) {
-  if (ESTATUS_VALUES.includes(rawEstatus)) return rawEstatus;
+  if (ESTATUS_VALUES_FILTRO.includes(rawEstatus)) return rawEstatus;
   if (rawEstatus === 'todos') return 'todos';
   return 'activo';
 }
@@ -285,7 +316,7 @@ function parseDoctorId(rawDoctorId) {
 // válidos cae a "activo", mismo criterio permisivo que el resto del
 // formulario (nunca truena por un valor corrupto).
 function parseEstatusEdicion(rawEstatus) {
-  return ESTATUS_VALUES.includes(rawEstatus) ? rawEstatus : 'activo';
+  return ESTATUS_VALUES_EDITABLES.includes(rawEstatus) ? rawEstatus : 'activo';
 }
 
 // US-604: mismo criterio que parseAreaIds() de doctores.service.js — un
@@ -735,6 +766,47 @@ async function darDeBaja(rawId, usuarioId) {
   await repository.darDeBaja(id, usuarioId);
 }
 
+// US-605 AC: "genera automáticamente una contraseña temporal aleatoria y
+// segura, sin permitir que el usuario administrador capture o defina
+// manualmente dicha contraseña". 12 caracteres de un alfabeto sin
+// caracteres ambiguos (0/O, 1/l/I) — un administrador tiene que poder
+// releerla/tecleara al dictársela al dueño de la cuenta por un canal
+// seguro, así que la legibilidad importa tanto como la entropía. Se usa
+// crypto.randomInt (criptográficamente seguro, sin el sesgo de módulo de
+// Math.random) — nunca Math.random() para algo que se guarda como
+// contraseña real de una cuenta, aunque sea temporal.
+const TEMP_PASSWORD_LENGTH = 12;
+const TEMP_PASSWORD_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+
+function generarPasswordTemporal() {
+  let password = '';
+  for (let i = 0; i < TEMP_PASSWORD_LENGTH; i += 1) {
+    password += TEMP_PASSWORD_ALPHABET[crypto.randomInt(TEMP_PASSWORD_ALPHABET.length)];
+  }
+  return password;
+}
+
+// US-605: restablecimiento administrativo de contraseña — genera la
+// temporal, la hashea (bcrypt, mismo costo que el resto del sistema) y
+// delega la transacción (update + invalidar sesión activa) al repository,
+// igual que darDeBaja(). Un id inválido/inexistente no truena, mismo
+// criterio permisivo que el resto del módulo. Devuelve la contraseña en
+// texto plano UNA SOLA VEZ, para que el controller la mande en la
+// respuesta — nunca se guarda en ningún lado más allá de este valor de
+// retorno (ni logs, ni la fila de la BD, que solo guarda el hash).
+async function resetearPassword(rawId, usuarioId) {
+  const id = parseId(rawId);
+  if (id === null) return null;
+  if (id === usuarioId) {
+    throw new NoPuedeResetearPropiaCuentaError();
+  }
+
+  const passwordTemporal = generarPasswordTemporal();
+  const passwordHash = await bcrypt.hash(passwordTemporal, BCRYPT_COST);
+  const afectado = await repository.resetearPassword(id, passwordHash, usuarioId);
+  return afectado ? passwordTemporal : null;
+}
+
 module.exports = {
   list,
   obtener,
@@ -749,10 +821,12 @@ module.exports = {
   crear,
   editar,
   darDeBaja,
+  resetearPassword,
   UsuarioValidationError,
   DuplicateUsernameError,
   DuplicateCorreoError,
   UltimoAdministradorPermisosError,
   NoPuedeDarDeBajaPropiaCuentaError,
+  NoPuedeResetearPropiaCuentaError,
   DoctorYaVinculadoError,
 };

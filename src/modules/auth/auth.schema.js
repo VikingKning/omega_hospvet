@@ -7,4 +7,12 @@ const loginSchema = Joi.object({
   password: Joi.string().min(1).required(),
 });
 
-module.exports = { loginSchema };
+// US-605: solo valida presencia — la política real (mínimo 8 caracteres,
+// coincide con confirmación) vive en auth.service.js#cambiarPasswordObligatorio,
+// mismo criterio que loginSchema/PASSWORD_MIN_LENGTH de usuarios.service.js.
+const cambiarPasswordSchema = Joi.object({
+  password: Joi.string().min(1).required(),
+  confirmacion: Joi.string().min(1).required(),
+});
+
+module.exports = { loginSchema, cambiarPasswordSchema };

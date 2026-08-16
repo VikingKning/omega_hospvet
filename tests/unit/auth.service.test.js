@@ -4,9 +4,11 @@ jest.mock('../../src/modules/auth/auth.repository');
 const repository = require('../../src/modules/auth/auth.repository');
 const {
   login,
+  cambiarPasswordObligatorio,
   InvalidCredentialsError,
   AccountLockedError,
   TemporaryLockError,
+  PasswordInvalidaError,
 } = require('../../src/modules/auth/auth.service');
 // El automock de Jest carga igual el módulo real del repository para
 // inspeccionar su forma, lo que a su vez crea un pool de Knex real
@@ -173,5 +175,65 @@ describe('auth.service.login', () => {
 
     await expect(login('jdoe', 'otra-cosa')).rejects.toBeInstanceOf(InvalidCredentialsError);
     expect(repository.registrarIntentoFallido).toHaveBeenCalledWith(1, 5);
+  });
+
+  describe('US-605: estatus=cambio_pwd (login con contraseña temporal)', () => {
+    it('temporal correcta -> sesión restringida (mustChangePassword:true, permissions:[]), sin llamar getPermissionCodes ni resetIntentosYLogin', async () => {
+      repository.findByUsername.mockResolvedValue(makeUser({ estatus: 'cambio_pwd' }));
+      repository.resetIntentosCambioPwd.mockResolvedValue();
+
+      const result = await login('jdoe', PASSWORD);
+
+      expect(result).toEqual({
+        id: 1,
+        username: 'jdoe',
+        nombre: 'Jane',
+        apellidos: 'Doe',
+        permissions: [],
+        mustChangePassword: true,
+      });
+      expect(repository.resetIntentosCambioPwd).toHaveBeenCalledWith(1);
+      expect(repository.getPermissionCodes).not.toHaveBeenCalled();
+      expect(repository.resetIntentosYLogin).not.toHaveBeenCalled();
+    });
+
+    it('temporal incorrecta -> InvalidCredentialsError, usa el contador PROPIO de cambio_pwd, no el de US-106', async () => {
+      repository.findByUsername.mockResolvedValue(
+        makeUser({ estatus: 'cambio_pwd', intentos_fallidos: 2 }),
+      );
+      repository.registrarIntentoFallidoCambioPwd.mockResolvedValue();
+
+      await expect(login('jdoe', 'otra-cosa')).rejects.toBeInstanceOf(InvalidCredentialsError);
+      expect(repository.registrarIntentoFallidoCambioPwd).toHaveBeenCalledWith(1, 2);
+      expect(repository.registrarIntentoFallido).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('US-605: cambiarPasswordObligatorio', () => {
+    it('AC18: contraseña válida y coincide con la confirmación -> hashea, delega en el repository y devuelve los permisos reales', async () => {
+      repository.completarCambioPassword.mockResolvedValue();
+      repository.getPermissionCodes.mockResolvedValue(['usuarios.ver']);
+
+      const permissions = await cambiarPasswordObligatorio(1, 'NuevaClave123!', 'NuevaClave123!');
+
+      expect(permissions).toEqual(['usuarios.ver']);
+      expect(repository.completarCambioPassword).toHaveBeenCalledWith(1, expect.any(String));
+      const [, hashGuardado] = repository.completarCambioPassword.mock.calls[0];
+      expect(await bcrypt.compare('NuevaClave123!', hashGuardado)).toBe(true);
+    });
+
+    it('rechaza una contraseña de menos de 8 caracteres, sin tocar el repository', async () => {
+      await expect(cambiarPasswordObligatorio(1, 'corta', 'corta')).rejects.toBeInstanceOf(
+        PasswordInvalidaError,
+      );
+      expect(repository.completarCambioPassword).not.toHaveBeenCalled();
+    });
+
+    it('rechaza si la contraseña y la confirmación no coinciden', async () => {
+      await expect(
+        cambiarPasswordObligatorio(1, 'NuevaClave123!', 'OtraClave123!'),
+      ).rejects.toBeInstanceOf(PasswordInvalidaError);
+      expect(repository.completarCambioPassword).not.toHaveBeenCalled();
+    });
   });
 });

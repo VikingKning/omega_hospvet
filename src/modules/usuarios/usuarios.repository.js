@@ -238,6 +238,50 @@ async function darDeBaja(id, usuarioId) {
   });
 }
 
+// US-605: restablecimiento administrativo de contraseña — actualiza
+// password_hash (ya hasheada por el service, nunca texto plano en esta
+// capa), resetea intentos_fallidos/bloqueado_en (mismo criterio que
+// cualquier otra transición hacia un estatus "utilizable", ver update() de
+// arriba) y registra actualizado_por/actualizado_en.
+//
+// AC9: si el usuario objetivo YA está 'inactivo', su estatus se CONSERVA
+// así — solo activo/bloqueo_temp/bloqueado transicionan a 'cambio_pwd'. No
+// tendría sentido forzar el flujo de cambio obligatorio en una cuenta que
+// ni puede iniciar sesión (auth.service.js rechaza 'inactivo' antes de
+// comparar la contraseña).
+//
+// Misma invalidación de sesión que darDeBaja — necesaria aquí en
+// particular: la US da como motivo del reset "sospecha de que la cuenta
+// fue comprometida", y eso no protege nada si la sesión ya abierta de un
+// posible atacante sigue viva después del reset.
+//
+// Devuelve cuántas filas se afectaron (0 si el id no existe) para que el
+// service sepa si mostrarle al administrador la contraseña temporal o no
+// — no tiene sentido revelarla si la operación no tocó ningún registro.
+async function resetearPassword(id, passwordHash, usuarioId) {
+  return db.transaction(async (trx) => {
+    const actual = await trx('usuarios').where({ id }).first('estatus');
+    if (!actual) return 0;
+
+    const nuevoEstatus = actual.estatus === 'inactivo' ? 'inactivo' : 'cambio_pwd';
+
+    const affected = await trx('usuarios').where({ id }).update({
+      password_hash: passwordHash,
+      estatus: nuevoEstatus,
+      intentos_fallidos: 0,
+      bloqueado_en: null,
+      actualizado_por: usuarioId,
+      actualizado_en: trx.fn.now(),
+    });
+
+    if (affected) {
+      await trx('session').whereRaw("(sess->'user'->>'id')::int = ?", [id]).del();
+    }
+
+    return affected;
+  });
+}
+
 // US-602 AC: alta — estatus='activo', intentos_fallidos=0, bloqueado_en=null
 // siempre (nunca los manda el formulario), password_hash ya viene
 // calculado por el service (bcrypt.hash, nunca texto plano en esta capa).
@@ -398,4 +442,5 @@ module.exports = {
   create,
   update,
   darDeBaja,
+  resetearPassword,
 };

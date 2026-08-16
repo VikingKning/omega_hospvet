@@ -15,6 +15,11 @@ const ESTATUS_LABELS = {
   bloqueo_temp: 'Bloqueo temporal',
   bloqueado: 'Bloqueado',
   inactivo: 'Inactivo',
+  // US-605: no es una opción elegible en el combobox de abajo (a propósito
+  // — solo se llega aquí vía la acción de reset, nunca a mano), pero sí
+  // hace falta la etiqueta para que el trigger muestre algo legible si se
+  // edita a un usuario que ACTUALMENTE está en este estatus.
+  cambio_pwd: 'Cambio de contraseña pendiente',
 };
 
 // US-604: el apartado de Permisos es una columna aparte del mismo

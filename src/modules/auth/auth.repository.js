@@ -47,9 +47,59 @@ async function resetIntentosYLogin(usuarioId) {
   });
 }
 
+// US-605 AC: contraseña TEMPORAL incorrecta durante estatus='cambio_pwd' —
+// contador propio, independiente del de registrarIntentoFallido(). El AC
+// pide un umbral único (5 intentos -> bloqueado directo), sin el paso
+// intermedio de bloqueo_temp (15/30 min) que sí aplica al login normal —
+// por eso es una función separada y no una reutilización de la de arriba.
+async function registrarIntentoFallidoCambioPwd(usuarioId, intentosActuales) {
+  const nuevosIntentos = intentosActuales + 1;
+  const update = { intentos_fallidos: nuevosIntentos };
+
+  if (nuevosIntentos >= 5) {
+    update.estatus = 'bloqueado';
+    update.bloqueado_en = db.fn.now();
+  }
+
+  await db('usuarios').where({ id: usuarioId }).update(update);
+}
+
+// US-605 AC: contraseña temporal correcta — a diferencia de
+// resetIntentosYLogin(), NO cambia estatus a 'activo' (el usuario sigue en
+// cambio_pwd hasta completar el cambio obligatorio, ver
+// completarCambioPassword) — solo limpia el contador de intentos fallidos
+// y registra el login.
+async function resetIntentosCambioPwd(usuarioId) {
+  await db('usuarios').where({ id: usuarioId }).update({
+    intentos_fallidos: 0,
+    bloqueado_en: null,
+    ultimo_login_en: db.fn.now(),
+  });
+}
+
+// US-605 AC: cambio obligatorio completado — actualiza password_hash,
+// vuelve estatus='activo', resetea intentos_fallidos/bloqueado_en (mismo
+// criterio que cualquier otra transición hacia 'activo', ver
+// usuarios.repository.js#update) y registra actualizado_por/actualizado_en
+// con el propio usuario (es el único caso de todo el sistema donde
+// actualizado_por = el mismo id que se está actualizando).
+async function completarCambioPassword(usuarioId, passwordHash) {
+  await db('usuarios').where({ id: usuarioId }).update({
+    password_hash: passwordHash,
+    estatus: 'activo',
+    intentos_fallidos: 0,
+    bloqueado_en: null,
+    actualizado_por: usuarioId,
+    actualizado_en: db.fn.now(),
+  });
+}
+
 module.exports = {
   findByUsername,
   getPermissionCodes,
   registrarIntentoFallido,
   resetIntentosYLogin,
+  registrarIntentoFallidoCambioPwd,
+  resetIntentosCambioPwd,
+  completarCambioPassword,
 };

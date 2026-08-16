@@ -1,4 +1,5 @@
 const authService = require('./auth.service');
+const { generateCsrfToken } = require('../../config/csrf');
 
 async function login(req, res, next) {
   try {
@@ -13,7 +14,13 @@ async function login(req, res, next) {
 
       req.session.user = user;
       req.session.loginAt = Date.now();
-      res.json({ redirectTo: '/main.html' });
+      // US-605: user.mustChangePassword solo viene en true cuando
+      // authService.login() resolvió una sesión restringida (estatus
+      // cambio_pwd con la temporal correcta) — requireAuth.js confina esa
+      // sesión a /cambiar-password sin importar a dónde redirija el
+      // cliente, pero se manda el destino correcto de una vez para no
+      // depender de un rebote.
+      res.json({ redirectTo: user.mustChangePassword ? '/cambiar-password' : '/main.html' });
     });
   } catch (err) {
     if (err.status) {
@@ -31,4 +38,34 @@ function logout(req, res, next) {
   });
 }
 
-module.exports = { login, logout };
+// US-605: pantalla del cambio obligatorio — requireAuth.js ya garantiza que
+// solo llega aquí una sesión válida (restringida o no); no hace falta
+// re-chequear mustChangePassword en el controller.
+function cambiarPasswordForm(req, res) {
+  const csrfToken = generateCsrfToken(req, res);
+  res.render('cambiar-password', { csrfToken });
+}
+
+async function cambiarPassword(req, res, next) {
+  try {
+    const permissions = await authService.cambiarPasswordObligatorio(
+      req.session.user.id,
+      req.body.password,
+      req.body.confirmacion,
+    );
+    // Misma sesión, sin re-login (decidido explícitamente): se actualiza in
+    // situ con los permisos reales (la sesión restringida se creó con
+    // permissions:[]) y se quita la marca — requireAuth.js deja de
+    // confinarla a partir de esta misma request.
+    req.session.user.permissions = permissions;
+    delete req.session.user.mustChangePassword;
+    res.json({ redirectTo: '/main.html' });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    next(err);
+  }
+}
+
+module.exports = { login, logout, cambiarPasswordForm, cambiarPassword };

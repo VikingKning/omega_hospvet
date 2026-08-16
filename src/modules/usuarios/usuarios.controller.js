@@ -58,6 +58,43 @@ async function darDeBaja(req, res, next) {
   }
 }
 
+// US-605: restablecimiento de contraseña, disparado por HTMX desde el
+// ícono de reset del listado (con confirmación previa vía hx-confirm) —
+// mismo patrón de manejo de error que darDeBaja(). A diferencia de
+// darDeBaja, en éxito además manda la contraseña temporal generada al
+// cliente vía el header HX-Trigger — nunca embebida en el HTML del panel
+// (que persiste en el DOM después del swap): el JS de usuarios.ejs la lee
+// del detalle del evento una sola vez para mostrarla en un modal aparte, y
+// una vez cerrado ese modal no hay forma de recuperarla de nuevo (AC: "no
+// permite recuperar ni volver a mostrar la misma contraseña temporal") —
+// el servidor tampoco la guarda en ningún lado más allá de esta respuesta.
+async function resetearPassword(req, res, next) {
+  try {
+    let error = null;
+    let passwordTemporal = null;
+    try {
+      passwordTemporal = await service.resetearPassword(req.params.id, req.session.user.id);
+      if (!passwordTemporal) {
+        error = 'No se pudo restablecer la contraseña: el usuario ya no existe.';
+      }
+    } catch (err) {
+      if (!err.status) throw err;
+      error = err.message;
+    }
+    const data = await service.list(req.body);
+    const csrfToken = generateCsrfToken(req, res);
+    if (passwordTemporal) {
+      res.set(
+        'HX-Trigger',
+        JSON.stringify({ mostrarPasswordTemporal: { password: passwordTemporal } }),
+      );
+    }
+    res.render('partials/usuarios-panel', { ...data, user: req.session.user, csrfToken, error });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // US-602: fragmento HTMX con el formulario vacío ("Nuevo usuario"),
 // swapeado dentro del modal. US-604: el catálogo de permisos viaja siempre
 // (agrupado por módulo) — el partial decide si lo muestra según
@@ -289,6 +326,7 @@ module.exports = {
   list,
   filter,
   darDeBaja,
+  resetearPassword,
   nuevoForm,
   editarForm,
   sugerirUsername,

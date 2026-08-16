@@ -21,6 +21,11 @@ const ESTATUS_LABELS = {
   bloqueo_temp: 'Bloqueo temporal',
   bloqueado: 'Bloqueado',
   inactivo: 'Inactivo',
+  // US-605: usuario con una contraseña temporal pendiente de cambio
+  // obligatorio (ver auth.service.js#login) — filtrable como cualquier
+  // otro estatus real, aunque nunca es un valor elegible a mano desde
+  // "Editar usuario" (ver ESTATUS_VALUES_EDITABLES en usuarios.service.js).
+  cambio_pwd: 'Cambio de contraseña pendiente',
   // "todos" solo existe como valor de FILTRO (nunca es el estatus real de
   // un usuario) — vive en el mismo mapa para no duplicarlo entre el badge
   // de la tabla y el trigger del filtro de abajo.
@@ -32,6 +37,9 @@ const ESTATUS_BADGE_CLASS = {
   bloqueo_temp: ' is-warning',
   bloqueado: ' is-danger',
   inactivo: '',
+  // Mismo color que bloqueo_temp (ámbar) — es una situación transitoria
+  // que requiere atención, no un error (rojo) ni un estado normal (verde).
+  cambio_pwd: ' is-warning',
 };
 
 const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', estatus: 'Estatus' };
@@ -115,7 +123,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
           // reparentada.
           %>
           <ul class="combobox-list" id="estatusFiltroList" hidden hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
-            <% ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo', 'todos'].forEach((valor) => { %>
+            <% ['activo', 'bloqueo_temp', 'bloqueado', 'cambio_pwd', 'inactivo', 'todos'].forEach((valor) => { %>
               <li class="combobox-item"
                   hx-post="usuarios.html" hx-include="#usuarios-filters" hx-target="#usuarios-panel"
                   hx-vals='<%- JSON.stringify({ estatus: valor, page: 1 }) %>'><%= ESTATUS_LABELS[valor] %></li>
@@ -204,8 +212,25 @@ const bannerError = typeof error === 'undefined' ? null : error;
                       </svg>
                     </button>
                   <% } %>
-                  <% if (has('usuarios.resetear_password')) { %>
-                    <button class="row-action-btn row-action-reset" type="button" data-tooltip="Resetear contraseña" aria-label="Resetear contraseña de <%= usuario.username %>">
+                  <%
+                  // US-605: se oculta para usuarios inactivos (no pueden
+                  // iniciar sesión de todos modos — auth.service.js
+                  // rechaza 'inactivo' antes de comparar la contraseña,
+                  // así que resetearla no tendría ningún efecto útil
+                  // visible) y para la propia cuenta (mismo motivo que el
+                  // botón de baja: la operación mata la sesión activa del
+                  // usuario objetivo — ver usuarios.repository.js#resetearPassword
+                  // — y no tiene sentido que alguien se desconecte a la
+                  // mitad de su propia acción; el servicio también lo
+                  // rechaza del lado del servidor si se forzara).
+                  %>
+                  <% if (has('usuarios.resetear_password') && usuario.estatus !== 'inactivo' && usuario.id !== user.id) { %>
+                    <button class="row-action-btn row-action-reset" type="button" data-tooltip="Resetear contraseña"
+                            aria-label="Resetear contraseña de <%= usuario.username %>"
+                            hx-post="usuarios/<%= usuario.id %>/resetear-password" hx-include="#usuarios-filters"
+                            hx-target="#usuarios-panel" hx-swap="innerHTML"
+                            data-confirm-label="Restablecer"
+                            hx-confirm="Favor de confirmar el restablecimiento de contraseña de <%= usuario.nombre %> <%= usuario.apellidos %> (<%= usuario.username %>).&#10;Se generará una nueva contraseña temporal y, si tiene una sesión activa, se cerrará de inmediato.">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l1.8-1.8a1 1 0 0 0 0-1.4L19.4 5a1 1 0 0 0-1.4 0l-1.8 1.8a1 1 0 0 0 0 1.4Z"/>
                         <path d="m21 2-9.6 9.6"/>
