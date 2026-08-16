@@ -316,4 +316,4 @@ function estaMarcado(permiso) {
 // doctorFormAreasData en doctor-form.ejs (US-607): funciona igual sin
 // depender de que HTMX re-ejecute scripts en contenido swapeado.
 %>
-<script type="application/json" id="usuarioFormDoctoresData"><%- JSON.stringify(doctoresDisponibles) %></script>
+<script type="application/json" id="usuarioFormDoctoresData" nonce="<%= cspNonce %>"><%- JSON.stringify(doctoresDisponibles) %></script>

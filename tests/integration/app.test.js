@@ -65,3 +65,34 @@ describe('assets sensibles', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// SEC-001 (reporte de seguridad): antes el CSP estaba desactivado por
+// completo (helmet({ contentSecurityPolicy: false })) porque las vistas
+// usan <script> inline sin nonces. Ahora cada request genera su propio
+// nonce (ver app.js) y script-src lo exige — sin 'unsafe-inline'. style-src
+// sí mantiene 'unsafe-inline' (ver comentario en app.js): el cliente
+// posiciona los combobox flotantes vía `elemento.style.top = ...`, algo
+// que un CSP nonce-based no puede cubrir por ser un valor calculado en
+// tiempo real, no contenido estático nonce-able.
+describe('Content-Security-Policy', () => {
+  it('GET / responde con CSP basada en nonce en script-src, sin unsafe-inline ahí', async () => {
+    const res = await request(app).get('/');
+    const csp = res.headers['content-security-policy'];
+    expect(csp).toBeDefined();
+    expect(csp).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+'/);
+    expect(csp.match(/script-src[^;]+/)[0]).not.toMatch(/unsafe-inline/);
+    expect(csp).toContain("frame-src 'self' https://calendar.google.com");
+  });
+
+  it('genera un nonce distinto en cada request', async () => {
+    const [a, b] = await Promise.all([request(app).get('/'), request(app).get('/')]);
+    const nonceOf = (res) => res.headers['content-security-policy'].match(/nonce-([^']+)/)[1];
+    expect(nonceOf(a)).not.toBe(nonceOf(b));
+  });
+
+  it('el nonce del header coincide con el que se renderiza en el HTML', async () => {
+    const res = await request(app).get('/');
+    const headerNonce = res.headers['content-security-policy'].match(/nonce-([^']+)/)[1];
+    expect(res.text).toContain(`nonce="${headerNonce}"`);
+  });
+});

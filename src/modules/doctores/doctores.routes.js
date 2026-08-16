@@ -1,6 +1,7 @@
 const express = require('express');
 const requireAuth = require('../../middlewares/requireAuth');
 const requirePermission = require('../../middlewares/requirePermission');
+const writeLimiter = require('../../middlewares/writeLimiter');
 const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./doctores.controller');
 
@@ -16,6 +17,7 @@ router.post(
   '/doctores.html',
   requireAuth,
   requirePermission('doctores.ver'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.filter,
 );
@@ -26,6 +28,7 @@ router.delete(
   '/doctores/:id',
   requireAuth,
   requirePermission('doctores.eliminar'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.desactivar,
 );
@@ -52,6 +55,7 @@ router.post(
   '/doctores',
   requireAuth,
   requirePermission('doctores.crear'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.crear,
 );
@@ -59,6 +63,7 @@ router.put(
   '/doctores/:id',
   requireAuth,
   requirePermission('doctores.editar'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.editar,
 );

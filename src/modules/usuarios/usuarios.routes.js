@@ -2,6 +2,7 @@ const express = require('express');
 const requireAuth = require('../../middlewares/requireAuth');
 const requirePermission = require('../../middlewares/requirePermission');
 const hxRedirect = require('../../middlewares/hxRedirect');
+const writeLimiter = require('../../middlewares/writeLimiter');
 const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./usuarios.controller');
 
@@ -38,6 +39,7 @@ router.post(
   '/usuarios.html',
   requireAuth,
   requirePermission('usuarios.ver'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.filter,
 );
@@ -49,6 +51,7 @@ router.delete(
   '/usuarios/:id',
   requireAuth,
   requirePermission('usuarios.eliminar'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.darDeBaja,
 );
@@ -83,6 +86,7 @@ router.post(
   '/usuarios/username-sugerido',
   requireAuth,
   requirePermission('usuarios.crear'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.sugerirUsername,
 );
@@ -91,6 +95,7 @@ router.post(
   requireAuth,
   requirePermission('usuarios.crear'),
   requirePermisosSiSePresenta,
+  writeLimiter,
   doubleCsrfProtection,
   controller.crear,
 );
@@ -99,6 +104,7 @@ router.put(
   requireAuth,
   requirePermission('usuarios.editar'),
   requirePermisosSiSePresenta,
+  writeLimiter,
   doubleCsrfProtection,
   controller.editar,
 );

@@ -7,7 +7,8 @@
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="css/main.css">
-<script src="js/htmx.min.js"></script>
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
 </head>
 <body>
 
@@ -39,14 +40,14 @@
     </div>
   </div>
 
-  <!--
+  <%#
     Modal de confirmación reutilizable para acciones destructivas de esta
     vista (por ahora solo "dar de baja", US-614). Vive fuera de
     #plantillas-panel a propósito: HTMX reemplaza ese contenedor en cada
     filtro/orden/página, y si el modal viviera adentro se destruiría a
     medio uso en cuanto la petición terminara. Mismo patrón que
     confirmModalBackdrop en doctores.ejs/areas.ejs.
-  -->
+  %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -61,7 +62,7 @@
     </div>
   </div>
 
-  <!--
+  <%#
     Modal de alta/edición (US-613): mismo formulario para las dos acciones,
     el contenido real lo llena HTMX (partials/plantilla-form.ejs) al hacer
     clic en el botón de alta del toolbar o en el ícono de editar de una
@@ -69,12 +70,12 @@
     reemplaza ese contenedor en cada filtro/orden/página, y si el modal
     viviera adentro se destruiría a medio uso en cuanto la petición
     terminara (mismo patrón que areaFormModalBackdrop en areas.ejs).
-  -->
+  %>
   <div class="modal-backdrop" id="plantillaFormModalBackdrop">
     <div class="modal-card" id="plantillaFormModalBody"></div>
   </div>
 
-<script>
+<script nonce="<%= cspNonce %>">
   const sidebar = document.getElementById('sidebar');
   const app = document.querySelector('.app');
   const sidebarToggle = document.getElementById('sidebarToggle');

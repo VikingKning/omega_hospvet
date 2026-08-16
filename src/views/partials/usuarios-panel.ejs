@@ -196,7 +196,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
               <td class="text-right">
                 <div class="row-actions">
                   <% if (has('usuarios.editar')) { %>
-                    <button class="row-action-btn row-action-edit" type="button"
+                    <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar"
                             aria-label="Editar usuario <%= usuario.username %>"
                             hx-get="usuarios/<%= usuario.id %>/editar" hx-target="#usuarioFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -205,7 +205,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
                     </button>
                   <% } %>
                   <% if (has('usuarios.permisos')) { %>
-                    <button class="row-action-btn row-action-permisos" type="button"
+                    <button class="row-action-btn row-action-permisos" type="button" data-tooltip="Permisos"
                             aria-label="Permisos de <%= usuario.username %>"
                             hx-get="usuarios/<%= usuario.id %>/editar" hx-target="#usuarioFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -215,7 +215,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
                     </button>
                   <% } %>
                   <% if (has('usuarios.resetear_password')) { %>
-                    <button class="row-action-btn row-action-reset" type="button" aria-label="Resetear contraseña de <%= usuario.username %>">
+                    <button class="row-action-btn row-action-reset" type="button" data-tooltip="Resetear contraseña" aria-label="Resetear contraseña de <%= usuario.username %>">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l1.8-1.8a1 1 0 0 0 0-1.4L19.4 5a1 1 0 0 0-1.4 0l-1.8 1.8a1 1 0 0 0 0 1.4Z"/>
                         <path d="m21 2-9.6 9.6"/>
@@ -230,7 +230,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
                   // profundidad ante una petición directa forjada).
                   %>
                   <% if (has('usuarios.eliminar') && usuario.estatus !== 'inactivo' && usuario.id !== user.id) { %>
-                    <button class="row-action-btn row-action-delete" type="button"
+                    <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
                             aria-label="Dar de baja a <%= usuario.username %>"
                             hx-delete="usuarios/<%= usuario.id %>" hx-include="#usuarios-filters"
                             hx-target="#usuarios-panel" hx-swap="innerHTML"

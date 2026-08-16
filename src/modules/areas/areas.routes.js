@@ -1,6 +1,7 @@
 const express = require('express');
 const requireAuth = require('../../middlewares/requireAuth');
 const requirePermission = require('../../middlewares/requirePermission');
+const writeLimiter = require('../../middlewares/writeLimiter');
 const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./areas.controller');
 
@@ -14,6 +15,7 @@ router.post(
   '/areas.html',
   requireAuth,
   requirePermission('areas.ver'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.filter,
 );
@@ -24,6 +26,7 @@ router.delete(
   '/areas/:id',
   requireAuth,
   requirePermission('areas.eliminar'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.desactivar,
 );
@@ -42,6 +45,7 @@ router.post(
   '/areas',
   requireAuth,
   requirePermission('areas.crear'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.crear,
 );
@@ -49,6 +53,7 @@ router.put(
   '/areas/:id',
   requireAuth,
   requirePermission('areas.editar'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.editar,
 );

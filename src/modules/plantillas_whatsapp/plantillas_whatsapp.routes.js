@@ -1,6 +1,7 @@
 const express = require('express');
 const requireAuth = require('../../middlewares/requireAuth');
 const requirePermission = require('../../middlewares/requirePermission');
+const writeLimiter = require('../../middlewares/writeLimiter');
 const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./plantillas_whatsapp.controller');
 
@@ -16,6 +17,7 @@ router.post(
   '/plantillas.html',
   requireAuth,
   requirePermission('plantillas.ver'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.filter,
 );
@@ -26,6 +28,7 @@ router.delete(
   '/plantillas/:id',
   requireAuth,
   requirePermission('plantillas.eliminar'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.desactivar,
 );
@@ -51,6 +54,7 @@ router.post(
   '/plantillas',
   requireAuth,
   requirePermission('plantillas.crear'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.crear,
 );
@@ -58,6 +62,7 @@ router.put(
   '/plantillas/:id',
   requireAuth,
   requirePermission('plantillas.editar'),
+  writeLimiter,
   doubleCsrfProtection,
   controller.editar,
 );

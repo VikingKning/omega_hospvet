@@ -1512,6 +1512,7 @@ body:has(.app)::after {
 }
 
 .row-action-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1530,6 +1531,7 @@ body:has(.app)::after {
 
 .row-action-edit {
   color: var(--editable);
+  --tooltip-bg: var(--editable);
 }
 
 .row-action-edit:hover {
@@ -1538,6 +1540,7 @@ body:has(.app)::after {
 
 .row-action-delete {
   color: var(--danger);
+  --tooltip-bg: var(--danger);
 }
 
 .row-action-delete:hover {
@@ -1549,6 +1552,7 @@ body:has(.app)::after {
    (primary/warning), sin inventar variables nuevas. */
 .row-action-permisos {
   color: var(--primary);
+  --tooltip-bg: var(--primary);
 }
 
 .row-action-permisos:hover {
@@ -1557,10 +1561,93 @@ body:has(.app)::after {
 
 .row-action-reset {
   color: var(--warning);
+  --tooltip-bg: var(--warning);
+  /* --warning es un ámbar claro — texto blanco encima no llega al
+     contraste mínimo legible (~2:1 calculado). El resto de las acciones sí
+     funcionan con texto blanco (mismo criterio que .btn-danger, que ya usa
+     var(--danger) + texto blanco en el resto del sistema). */
+  --tooltip-text: var(--text-dark);
 }
 
 .row-action-reset:hover {
   background: rgba(242, 169, 0, 0.1);
+}
+
+/* Tooltips de los íconos de "Acciones" — regla transversal para toda tabla
+   del sistema con esta columna (actual o futura). CSS puro, sin JS: el
+   propio :hover/:focus-visible del botón basta para "aparece mientras haya
+   hover, desaparece al salir", así que no hace falta duplicar esa lógica en
+   cada vista. El fondo usa `--tooltip-bg`, que cada `.row-action-*` ya
+   define junto a su propio `color` (arriba) — así el tooltip queda del
+   mismo color que su ícono sin inventar variables nuevas por acción.
+   Nota: se probó primero con `background: currentColor` para ahorrarse la
+   variable, pero `currentColor` en un `::before` resuelve contra el
+   `color` del PROPIO pseudo-elemento (el blanco del texto del tooltip,
+   fijado abajo), no el del botón — confirmado con Chromium real, todos los
+   tooltips salían blanco sobre blanco. `--tooltip-bg` evita esa trampa.
+   Se posiciona DEBAJO del ícono, no encima: .lab-table-wrap tiene
+   overflow-x:auto, y la spec de CSS fuerza overflow-y a "auto" también
+   cuando solo se fija un eje (mismo problema ya resuelto para los combobox
+   flotantes esta sesión) — un tooltip que abriera hacia arriba se recortaría
+   contra el borde superior del contenedor en la primera fila de la tabla.
+   Hacia abajo siempre hay espacio: el resto de las filas, o el
+   table-footer (paginación) en la última.
+   El primer/último botón de cada fila ancla el globo a su propio borde
+   izquierdo/derecho (en vez de centrarlo) para no desbordar los bordes de
+   la tabla — la flechita se queda centrada en el ícono en los tres casos. */
+.row-action-btn[data-tooltip]::before,
+.row-action-btn[data-tooltip]::after {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.15s ease,
+    visibility 0.15s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.row-action-btn[data-tooltip]::before {
+  content: attr(data-tooltip);
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--tooltip-bg, var(--text-dark));
+  color: var(--tooltip-text, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(20, 41, 79, 0.18);
+}
+
+.row-action-btn[data-tooltip]::after {
+  content: '';
+  width: 0;
+  height: 0;
+  margin-top: -4px;
+  border: 5px solid transparent;
+  border-bottom-color: var(--tooltip-bg, var(--text-dark));
+}
+
+.row-action-btn[data-tooltip]:hover::before,
+.row-action-btn[data-tooltip]:hover::after,
+.row-action-btn[data-tooltip]:focus-visible::before,
+.row-action-btn[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.row-actions .row-action-btn[data-tooltip]:first-child::before {
+  left: 0;
+  transform: none;
+}
+
+.row-actions .row-action-btn[data-tooltip]:last-child::before {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .table-footer {

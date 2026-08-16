@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -37,13 +38,56 @@ app.use(
     },
   }),
 );
+// Genera un nonce único por request para el CSP (script-src) — permite los
+// <script> propios del proyecto (inline y js/htmx.min.js) sin necesitar
+// 'unsafe-inline'. Tiene que registrarse ANTES de helmet(): la directiva
+// script-src de abajo lee res.locals.cspNonce vía una función (req, res) =>
+// ..., que helmet invoca al construir el header — el valor ya tiene que
+// existir en res.locals para ese momento.
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 app.use(
   helmet({
-    // Las vistas EJS migradas del PoC usan <script> inline sin nonces (menú,
-    // combobox de laboratorio, semáforo de citas, etc). El CSP por defecto de
-    // helmet bloquearía ese JS. Se desactiva hasta que ese JS se extraiga a
-    // archivos separados y se pueda habilitar un CSP real.
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      // useDefaults:false: se prefiere una política explícita y completa a
+      // heredar en silencio los defaults de helmet (que incluyen
+      // style-src 'unsafe-inline', innecesario aquí — cero CSS inline en
+      // todo el proyecto, confirmado).
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+        scriptSrcAttr: ["'none'"], // refuerza: cero onclick=/onerror=/etc. en el proyecto
+        // 'unsafe-inline' aquí no es un descuido: no hay CSS en atributos
+        // style="" ni <style> en ningún .ejs (verificado), pero el CLIENTE
+        // sí hace `elemento.style.top = ...`/`.left =`/`.width = ...` en
+        // varios lugares (posicionamiento de los combobox flotantes en
+        // usuarios.ejs/doctores.ejs/laboratorio.ejs, animaciones del
+        // sidebar, semáforo de citas). Eso pasa por el mismo mecanismo de
+        // "estilo inline" que un style="" en el HTML — un CSP style-src sin
+        // 'unsafe-inline' lo bloquea igual, y a diferencia de script-src no
+        // hay forma práctica de darle un nonce a un valor que se calcula en
+        // tiempo real (ej. la posición de un rect). Es el mismo trade-off
+        // que usan la mayoría de los CSP nonce-based en producción: el
+        // riesgo real de XSS vive en script-src (ejecución arbitraria),
+        // no en style-src (a lo sumo permite maquetar/ocultar contenido).
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'"], // HTMX (selfRequestsOnly) solo pega al mismo origen
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        // agenda.ejs/grooming.ejs embeben un iframe de Google Calendar
+        // (mockup actual, ver Bitácora — FullCalendar lo reemplazará).
+        frameSrc: ["'self'", 'https://calendar.google.com'],
+        frameAncestors: ["'self'"],
+        upgradeInsecureRequests: [],
+      },
+    },
   }),
 );
 app.use(compression());

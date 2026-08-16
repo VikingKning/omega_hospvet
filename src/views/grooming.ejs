@@ -66,11 +66,11 @@
         </div>
 
         <div class="gcal-embed">
-          <!--
+          <%#
             Reemplaza CALENDAR_ID por el ID de tu Google Calendar:
             Google Calendar > Configuración > (elige el calendario) > "Integrar calendario" > "ID de calendario".
             Ajusta ctz si tu zona horaria no es America/Mexico_City.
-          -->
+          %>
           <iframe
             src="https://calendar.google.com/calendar/embed?src=CALENDAR_ID%40group.calendar.google.com&ctz=America%2FMexico_City&mode=WEEK&showTitle=0&showPrint=0&showCalendars=0&showTabs=0&showDate=1&showNav=0"
             width="100%"
@@ -85,7 +85,7 @@
     </div>
   </div>
 
-<script>
+<script nonce="<%= cspNonce %>">
   const sidebar = document.getElementById('sidebar');
   const app = document.querySelector('.app');
   const sidebarToggle = document.getElementById('sidebarToggle');

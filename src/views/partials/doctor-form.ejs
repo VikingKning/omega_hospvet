@@ -85,7 +85,7 @@ const esEdicion = Boolean(doctor);
 // doctores.ejs, delegado sobre #doctorFormModalBody (sobrevive a que HTMX
 // reemplace este contenido en cada apertura/reintento).
 %>
-<script type="application/json" id="doctorFormAreasData"><%- JSON.stringify({
+<script type="application/json" id="doctorFormAreasData" nonce="<%= cspNonce %>"><%- JSON.stringify({
   disponibles: areasDisponibles,
   seleccionadas: areasSeleccionadas,
 }) %></script>

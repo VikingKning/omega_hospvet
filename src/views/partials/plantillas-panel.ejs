@@ -98,7 +98,7 @@ function sortVals(column) {
               <td class="text-right">
                 <div class="row-actions">
                   <% if (has('plantillas.editar')) { %>
-                    <button class="row-action-btn row-action-edit" type="button"
+                    <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar"
                             aria-label="Editar plantilla <%= plantilla.intencion %>"
                             hx-get="plantillas/<%= plantilla.id %>/editar" hx-target="#plantillaFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -107,7 +107,7 @@ function sortVals(column) {
                     </button>
                   <% } %>
                   <% if (has('plantillas.eliminar') && plantilla.activo) { %>
-                    <button class="row-action-btn row-action-delete" type="button"
+                    <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
                             aria-label="Dar de baja la plantilla <%= plantilla.intencion %>"
                             hx-delete="plantillas/<%= plantilla.id %>" hx-include="#plantillas-filters"
                             hx-target="#plantillas-panel" hx-swap="innerHTML"
