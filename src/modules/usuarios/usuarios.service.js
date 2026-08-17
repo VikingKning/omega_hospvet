@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const repository = require('./usuarios.repository');
+const { assertPasswordValida } = require('../../config/passwordPolicy');
 
 // Mismo patrón de errores con `.status` que areas/plantillas_whatsapp.service.js
 // — el controller los atrapa para re-renderizar el formulario con el
@@ -84,7 +85,6 @@ class DoctorYaVinculadoError extends Error {
 // costo de bcrypt para toda cuenta real del sistema, sea sembrada o creada
 // desde este formulario.
 const BCRYPT_COST = 12;
-const PASSWORD_MIN_LENGTH = 8;
 
 const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['nombre', 'username', 'correo', 'estatus'];
@@ -654,10 +654,16 @@ async function crear({
   const telefono = parseTelefono(rawTelefono);
 
   const password = rawPassword ?? '';
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    throw new UsuarioValidationError(
-      `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres.`,
-    );
+  // Bitácora de Decisiones Técnicas v5, Decisión 24 — validación compartida
+  // con perfil.service.js#cambiarPassword y
+  // auth.service.js#cambiarPasswordObligatorio (mínimo 15, lista de
+  // comunes/predecibles, HIBP). Se relanza como UsuarioValidationError para
+  // que el resto de este módulo (y sus tests) sigan tratando cualquier
+  // rechazo de validación del alta como el mismo tipo de error de siempre.
+  try {
+    await assertPasswordValida(password);
+  } catch (err) {
+    throw new UsuarioValidationError(err.message);
   }
 
   if (await repository.findByUsername(username)) {
@@ -768,14 +774,21 @@ async function darDeBaja(rawId, usuarioId) {
 
 // US-605 AC: "genera automáticamente una contraseña temporal aleatoria y
 // segura, sin permitir que el usuario administrador capture o defina
-// manualmente dicha contraseña". 12 caracteres de un alfabeto sin
-// caracteres ambiguos (0/O, 1/l/I) — un administrador tiene que poder
-// releerla/tecleara al dictársela al dueño de la cuenta por un canal
-// seguro, así que la legibilidad importa tanto como la entropía. Se usa
-// crypto.randomInt (criptográficamente seguro, sin el sesgo de módulo de
-// Math.random) — nunca Math.random() para algo que se guarda como
-// contraseña real de una cuenta, aunque sea temporal.
-const TEMP_PASSWORD_LENGTH = 12;
+// manualmente dicha contraseña". 16 caracteres (por encima del mínimo de 15
+// de la Decisión 24 — "restablecimiento administrativo" es una de las 4
+// operaciones que esa política cubre) de un alfabeto sin caracteres
+// ambiguos (0/O, 1/l/I) — un administrador tiene que poder releerla/
+// tecleara al dictársela al dueño de la cuenta por un canal seguro, así que
+// la legibilidad importa tanto como la entropía. Se usa crypto.randomInt
+// (criptográficamente seguro, sin el sesgo de módulo de Math.random) —
+// nunca Math.random() para algo que se guarda como contraseña real de una
+// cuenta, aunque sea temporal. No se valida contra la lista de
+// comunes/HIBP (passwordPolicy.js#assertPasswordValida): es una cadena
+// aleatoria recién generada por el propio servidor, no una elegida por una
+// persona — ese chequeo existe para detectar contraseñas humanas
+// predecibles, no aporta nada aquí y solo agregaría una llamada de red
+// innecesaria a una operación que hoy es síncrona.
+const TEMP_PASSWORD_LENGTH = 16;
 const TEMP_PASSWORD_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
 
 function generarPasswordTemporal() {

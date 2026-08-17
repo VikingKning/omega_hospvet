@@ -1,7 +1,9 @@
 const bcrypt = require('bcrypt');
 
 jest.mock('../../src/modules/usuarios/usuarios.repository');
+jest.mock('../../src/config/passwordPolicy');
 const repository = require('../../src/modules/usuarios/usuarios.repository');
+const passwordPolicy = require('../../src/config/passwordPolicy');
 const {
   list,
   obtener,
@@ -370,6 +372,11 @@ describe('usuarios.service.crear (US-602)', () => {
     repository.findByUsername.mockResolvedValue(undefined);
     repository.findByCorreo.mockResolvedValue(undefined);
     repository.create.mockResolvedValue(99);
+    // La política de contraseñas real (Decisión 24: longitud/lista de
+    // comunes/HIBP) se prueba aparte en passwordPolicy.test.js — aquí se
+    // mockea resuelta por default para que estos tests se enfoquen en las
+    // reglas propias de usuarios.service.js, sin llamadas de red reales.
+    passwordPolicy.assertPasswordValida.mockResolvedValue(undefined);
     // US-604 (quinta iteración): crear() ahora siempre pasa por
     // aplicarReglaVerImplicaAcciones (lee el catálogo completo) y, en el
     // camino de username duplicado, por siguienteUsernameDisponible (lee
@@ -529,14 +536,18 @@ describe('usuarios.service.crear (US-602)', () => {
     expect(repository.create).not.toHaveBeenCalled();
   });
 
-  it('rechaza una contraseña de menos de 8 caracteres', async () => {
+  it('AC: rechaza una contraseña que no cumple la política compartida (Decisión 24), relanzada como UsuarioValidationError', async () => {
+    const errorPolitica = new Error('La contraseña debe tener al menos 15 caracteres.');
+    errorPolitica.status = 400;
+    passwordPolicy.assertPasswordValida.mockRejectedValueOnce(errorPolitica);
+
     await expect(
       crear({
         nombre: 'Ana',
         apellidos: 'Gómez',
         correo: 'ana@omegavet.test',
         username: 'ana.gomez',
-        password: '1234567',
+        password: 'corta',
         usuarioId: 1,
       }),
     ).rejects.toThrow(UsuarioValidationError);
@@ -863,6 +874,7 @@ describe('usuarios.service — validación de formato de correo (US-604, sexta i
     repository.update.mockResolvedValue();
     repository.listPermissionsCatalog.mockResolvedValue([]);
     repository.findUsernamesConPrefijo.mockResolvedValue([]);
+    passwordPolicy.assertPasswordValida.mockResolvedValue(undefined);
   });
 
   const base = {
@@ -926,6 +938,7 @@ describe('usuarios.service — regla "Ver implica las demás acciones" (US-604, 
     repository.update.mockResolvedValue();
     repository.listPermissionsCatalog.mockResolvedValue(CATALOGO);
     repository.findUsernamesConPrefijo.mockResolvedValue([]);
+    passwordPolicy.assertPasswordValida.mockResolvedValue(undefined);
   });
 
   const base = {
@@ -1036,6 +1049,7 @@ describe('usuarios.service — DuplicateUsernameError con sugerencia automática
     repository.create.mockResolvedValue(99);
     repository.update.mockResolvedValue();
     repository.listPermissionsCatalog.mockResolvedValue([]);
+    passwordPolicy.assertPasswordValida.mockResolvedValue(undefined);
   });
 
   const base = {
@@ -1103,12 +1117,12 @@ describe('usuarios.service.resetearPassword (US-605)', () => {
     jest.clearAllMocks();
   });
 
-  it('genera una temporal de 12 caracteres, la hashea con bcrypt y la devuelve en texto plano si el repository afectó una fila', async () => {
+  it('genera una temporal de 16 caracteres (Decisión 24: mínimo 15), la hashea con bcrypt y la devuelve en texto plano si el repository afectó una fila', async () => {
     repository.resetearPassword.mockResolvedValue(1);
 
     const passwordTemporal = await resetearPassword('7', 2);
 
-    expect(passwordTemporal).toHaveLength(12);
+    expect(passwordTemporal).toHaveLength(16);
     // AC: "sin permitir que el usuario administrador capture o defina
     // manualmente dicha contraseña" — no hay ningún parámetro de entrada
     // que pudiera influir en el valor generado, solo el id objetivo y

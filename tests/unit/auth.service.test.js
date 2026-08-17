@@ -1,7 +1,9 @@
 const bcrypt = require('bcrypt');
 
 jest.mock('../../src/modules/auth/auth.repository');
+jest.mock('../../src/config/passwordPolicy');
 const repository = require('../../src/modules/auth/auth.repository');
+const passwordPolicy = require('../../src/config/passwordPolicy');
 const {
   login,
   cambiarPasswordObligatorio,
@@ -210,19 +212,43 @@ describe('auth.service.login', () => {
   });
 
   describe('US-605: cambiarPasswordObligatorio', () => {
+    beforeEach(() => {
+      // La política real (Decisión 24) se prueba aparte en
+      // passwordPolicy.test.js — aquí se mockea resuelta por default,
+      // salvo el test que verifica explícitamente el rechazo.
+      passwordPolicy.assertPasswordValida.mockResolvedValue(undefined);
+    });
+
     it('AC18: contraseña válida y coincide con la confirmación -> hashea, delega en el repository y devuelve los permisos reales', async () => {
       repository.completarCambioPassword.mockResolvedValue();
       repository.getPermissionCodes.mockResolvedValue(['usuarios.ver']);
 
-      const permissions = await cambiarPasswordObligatorio(1, 'NuevaClave123!', 'NuevaClave123!');
+      const permissions = await cambiarPasswordObligatorio(
+        1,
+        'NuevaClaveLargaSegura123!',
+        'NuevaClaveLargaSegura123!',
+      );
 
       expect(permissions).toEqual(['usuarios.ver']);
       expect(repository.completarCambioPassword).toHaveBeenCalledWith(1, expect.any(String));
       const [, hashGuardado] = repository.completarCambioPassword.mock.calls[0];
-      expect(await bcrypt.compare('NuevaClave123!', hashGuardado)).toBe(true);
+      expect(await bcrypt.compare('NuevaClaveLargaSegura123!', hashGuardado)).toBe(true);
     });
 
-    it('rechaza una contraseña de menos de 8 caracteres, sin tocar el repository', async () => {
+    it('AC: no llama a assertPasswordValida con currentPassword — "diferente a la actual" no aplica al cambio obligatorio', async () => {
+      repository.completarCambioPassword.mockResolvedValue();
+      repository.getPermissionCodes.mockResolvedValue([]);
+
+      await cambiarPasswordObligatorio(1, 'NuevaClaveLargaSegura123!', 'NuevaClaveLargaSegura123!');
+
+      expect(passwordPolicy.assertPasswordValida).toHaveBeenCalledWith('NuevaClaveLargaSegura123!');
+    });
+
+    it('rechaza una contraseña que no cumple la política compartida (Decisión 24), sin tocar el repository', async () => {
+      const errorPolitica = new Error('La contraseña debe tener al menos 15 caracteres.');
+      errorPolitica.status = 400;
+      passwordPolicy.assertPasswordValida.mockRejectedValueOnce(errorPolitica);
+
       await expect(cambiarPasswordObligatorio(1, 'corta', 'corta')).rejects.toBeInstanceOf(
         PasswordInvalidaError,
       );
@@ -231,7 +257,7 @@ describe('auth.service.login', () => {
 
     it('rechaza si la contraseña y la confirmación no coinciden', async () => {
       await expect(
-        cambiarPasswordObligatorio(1, 'NuevaClave123!', 'OtraClave123!'),
+        cambiarPasswordObligatorio(1, 'NuevaClaveLargaSegura123!', 'OtraClaveLargaSegura123!'),
       ).rejects.toBeInstanceOf(PasswordInvalidaError);
       expect(repository.completarCambioPassword).not.toHaveBeenCalled();
     });

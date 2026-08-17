@@ -17,6 +17,7 @@ const doctoresRoutes = require('./modules/doctores/doctores.routes');
 const areasRoutes = require('./modules/areas/areas.routes');
 const plantillasRoutes = require('./modules/plantillas_whatsapp/plantillas_whatsapp.routes');
 const usuariosRoutes = require('./modules/usuarios/usuarios.routes');
+const perfilRoutes = require('./modules/perfil/perfil.routes');
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
@@ -138,6 +139,7 @@ app.use('/', doctoresRoutes);
 app.use('/', areasRoutes);
 app.use('/', plantillasRoutes);
 app.use('/', usuariosRoutes);
+app.use('/', perfilRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

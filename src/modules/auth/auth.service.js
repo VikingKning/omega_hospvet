@@ -1,5 +1,6 @@
 const bcrypt = require('bcrypt');
 const repository = require('./auth.repository');
+const { assertPasswordValida } = require('../../config/passwordPolicy');
 
 class InvalidCredentialsError extends Error {
   constructor() {
@@ -147,15 +148,15 @@ async function login(username, password) {
 }
 
 // US-605: paso final del cambio obligatorio de contraseña — valida la
-// nueva contraseña con la MISMA política mínima ya usada en el alta de
-// usuarios (usuarios.service.js#PASSWORD_MIN_LENGTH), duplicada aquí a
-// propósito (mismo criterio de "cada módulo habla con su propia lógica"
-// ya establecido en el resto del proyecto — no hay una política más
-// estricta codificada en ningún lado del sistema hoy). No valida el
-// estatus actual del usuario aquí: requireAuth.js ya garantiza que solo
+// nueva contraseña contra la política compartida del sistema
+// (passwordPolicy.js#assertPasswordValida, Decisión 24 de la Bitácora v5:
+// mínimo 15, lista de comunes/predecibles, HIBP). No se pasa
+// `currentPassword`: la regla "diferente a la actual" es específica de un
+// cambio VOLUNTARIO (ver perfil.service.js#cambiarPassword, US-110); aquí
+// el usuario está saliendo de una contraseña TEMPORAL generada por un
+// administrador, no comparando contra una que él mismo eligió. No valida
+// el estatus actual del usuario aquí: requireAuth.js ya garantiza que solo
 // una sesión con mustChangePassword=true puede llegar a este endpoint.
-const PASSWORD_MIN_LENGTH = 8;
-
 class PasswordInvalidaError extends Error {
   constructor(message) {
     super(message);
@@ -167,10 +168,10 @@ async function cambiarPasswordObligatorio(usuarioId, rawPassword, rawConfirmacio
   const password = rawPassword ?? '';
   const confirmacion = rawConfirmacion ?? '';
 
-  if (password.length < PASSWORD_MIN_LENGTH) {
-    throw new PasswordInvalidaError(
-      `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres.`,
-    );
+  try {
+    await assertPasswordValida(password);
+  } catch (err) {
+    throw new PasswordInvalidaError(err.message);
   }
   if (password !== confirmacion) {
     throw new PasswordInvalidaError('Las contraseñas no coinciden.');

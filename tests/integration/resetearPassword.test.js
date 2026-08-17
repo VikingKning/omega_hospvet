@@ -119,7 +119,7 @@ describe('POST /usuarios/:id/resetear-password (US-605)', () => {
     expect(res.headers.location).toBe('/main.html');
   });
 
-  it('AC5/AC6: genera una temporal aleatoria de 12 caracteres y guarda solo su hash bcrypt', async () => {
+  it('AC5/AC6: genera una temporal aleatoria de 16 caracteres (Decisión 24) y guarda solo su hash bcrypt', async () => {
     const objetivo = await createTargetUser();
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
@@ -128,7 +128,7 @@ describe('POST /usuarios/:id/resetear-password (US-605)', () => {
 
     const trigger = JSON.parse(res.headers['hx-trigger']);
     const passwordTemporal = trigger.mostrarPasswordTemporal.password;
-    expect(passwordTemporal).toHaveLength(12);
+    expect(passwordTemporal).toHaveLength(16);
 
     const row = await db('usuarios').where({ id: objetivo.id }).first();
     expect(row.password_hash).not.toBe(passwordTemporal);

@@ -548,6 +548,11 @@ body:has(.app)::after {
   background: var(--primary-hover);
 }
 
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-primary svg {
   width: 16px;
   height: 16px;
@@ -1017,6 +1022,202 @@ body:has(.app)::after {
   border-radius: 8px;
   color: var(--danger);
   font-size: 13px;
+}
+
+/* US-109: primer uso de un banner de ÉXITO en el sistema — hasta ahora
+   solo existía el de error (arriba). Mismo layout, paleta verde
+   (var(--success), ya definida y usada en otros lados como el badge
+   "Activo"). */
+.form-success-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: rgba(30, 142, 62, 0.08);
+  border: 1px solid var(--success);
+  border-radius: 8px;
+  color: var(--success);
+  font-size: 13px;
+}
+
+/* US-109: página de "Mi perfil" — a diferencia del resto del panel
+   (catálogos con tabla), esta pantalla es una pila de tarjetas a lo ancho
+   completo de .main-content (pedido explícito del usuario: "la pantalla
+   tiene que estar al ancho al 100%"), inspirada directamente en el mockup
+   compartido (mockup_mi_perfil_omega*.html). */
+.perfil-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Tarjeta blanca base — mismo aspecto que .lab-table-wrap (fondo/borde/
+   radio), reutilizada tanto por "Mi cuenta" (un <div>, siempre visible) como
+   por cada sección colapsable (un <details>, ver .profile-section abajo). */
+.profile-card {
+  padding: 20px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.profile-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-section-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.profile-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.profile-section-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* "Mi cuenta" es siempre visible (pedido explícito: "no colapsable") — su
+   encabezado reusa .profile-section-header, pero es un <div>, no un
+   <summary>, así que no necesita ninguno de los resets de abajo. */
+.profile-summary-card .profile-section-header {
+  margin-bottom: 14px;
+}
+
+.account-status-badge {
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: var(--bg-base);
+  color: var(--text-muted);
+}
+
+.account-status-badge.is-active {
+  background: rgba(30, 142, 62, 0.12);
+  color: var(--success);
+}
+
+.account-status-badge.is-warning {
+  background: rgba(242, 169, 0, 0.14);
+  color: var(--warning);
+}
+
+.account-status-badge.is-danger {
+  background: rgba(240, 15, 53, 0.1);
+  color: var(--danger);
+}
+
+.profile-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 20px;
+}
+
+.profile-summary-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.profile-summary-value {
+  font-size: 13px;
+  color: var(--text-dark);
+}
+
+/* Secciones colapsables (Datos personales/Áreas asignadas/Permisos/Cambiar
+   contraseña) — <details>/<summary> puro HTML, sin JS, mismo criterio que
+   el resto de componentes "sin enganchar" de este proyecto (switch de
+   US-613, tabs de permisos de US-604). */
+.profile-section > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.profile-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.profile-section[open] > summary {
+  margin-bottom: 14px;
+}
+
+.profile-section-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.profile-section[open] > summary .profile-section-chevron {
+  transform: rotate(180deg);
+}
+
+/* Datos personales: Nombre/Apellidos y Correo/Teléfono viajan en pares,
+   como en el mockup — a diferencia de .modal-form-columns (columnas
+   independientes lado a lado), aquí cada fila es su propio grid de 2, y las
+   filas se apilan verticalmente dentro del mismo .modal-form. */
+.profile-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* US-110: columna de "Cambiar contraseña" — a diferencia de las filas de
+   .profile-form-row en Datos personales (2 labels sueltos, hermanos
+   directos), aquí cada columna es su propio contenedor porque el lado
+   izquierdo agrupa 2 labels relacionados (Nueva + Confirmar) y el derecho
+   solo 1 (Actual); sin este wrapper, un grid de 2 columnas alinearía la
+   fila equivocada entre ambos lados. */
+.profile-form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.account-areas {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.account-permisos-vacio {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* US-110: recordatorio de la política de contraseñas (Decisión 24) bajo
+   los 3 campos de "Cambiar contraseña" — mismo tono que el resto de textos
+   de ayuda del sistema, sin ser un banner de error. */
+.password-policy-hint {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Permisos de solo lectura: mismas .permisos-tabs/.permisos-matrix* que la
+   matriz editable de "Editar usuario" (US-604) — aquí una celda muestra un
+   ícono de check (ya otorgado) o un guion (no otorgado) en vez de un
+   checkbox, ver perfil-form.ejs#estaMarcado. */
+.permiso-check {
+  color: var(--success);
+}
+
+.permiso-dash {
+  color: var(--border);
 }
 
 .combobox {

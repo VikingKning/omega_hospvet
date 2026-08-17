@@ -3,13 +3,20 @@
   const has = (code) => permissions.includes(code);
   const agendaOpen = currentPage === 'agenda' || currentPage === 'grooming';
   const metricasOpen = currentPage === 'metricas';
-  const configPerms = ['usuarios.ver', 'doctores.ver', 'areas.ver', 'plantillas.ver'];
-  const showConfigGroup = configPerms.some(has);
+  // US-109: "Mi perfil" no requiere ningún permiso (disponible para
+  // cualquier usuario autenticado) y vive dentro de este mismo grupo — el
+  // grupo completo tiene que poder mostrarse aunque el usuario no tenga
+  // NINGUNO de los otros 4 permisos, o "Mi perfil" quedaría inalcanzable
+  // para esa cuenta. Antes de US-109, showConfigGroup dependía solo de
+  // esos 4 permisos porque no había nada más en el grupo que no los
+  // necesitara.
+  const showConfigGroup = true;
   const configOpen =
     currentPage === 'doctores' ||
     currentPage === 'areas' ||
     currentPage === 'plantillas' ||
-    currentPage === 'usuarios';
+    currentPage === 'usuarios' ||
+    currentPage === 'perfil';
 %>
 <nav class="sidebar-nav" id="sidebar">
   <% if (has('agenda.ver') || has('grooming.ver')) { %>
@@ -90,7 +97,7 @@
         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <div class="submenu<%= configOpen ? ' open' : '' %>" id="config-menu">
-        <a href="#" class="submenu-link">
+        <a href="mi-perfil.html" class="submenu-link<%= currentPage === 'perfil' ? ' current' : '' %>">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
           <span>Mi perfil</span>
         </a>

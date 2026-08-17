@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi perfil | Omega Veterinaria & Estética</title>
+<link rel="icon" type="image/png" href="assets/imgs/icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/main.css">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
+</head>
+<body>
+
+  <div class="app" id="app">
+    <div class="top-row">
+      <div class="sidebar-header">
+        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <span class="sidebar-title">Omega Vet</span>
+        <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+
+      <header class="topbar">
+        <span class="topbar-icon-badge">
+          <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
+        </span>
+        <h1 class="topbar-title">Mi perfil</h1>
+      </header>
+    </div>
+
+    <div class="body-row">
+    <div class="nav-backdrop" id="navBackdrop"></div>
+    <%- include('partials/sidebar', { user, currentPage: 'perfil' }) %>
+
+    <main class="main-content" id="perfil-panel">
+      <%- include('partials/perfil-form', { nombre, apellidos, telefono, correo, username, estatus, ultimoLoginEn, doctor, areasDoctor, matrizPermisos, permisosAsignadosIds, mensaje, error, csrfToken }) %>
+    </main>
+    </div>
+  </div>
+
+<script nonce="<%= cspNonce %>">
+  const sidebar = document.getElementById('sidebar');
+  const app = document.querySelector('.app');
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const navBackdrop = document.getElementById('navBackdrop');
+
+  sidebarToggle.addEventListener('click', () => {
+    app.classList.toggle('sidebar-hidden');
+    app.classList.toggle('mobile-menu-open');
+  });
+
+  navBackdrop.addEventListener('click', () => {
+    app.classList.remove('sidebar-hidden');
+    app.classList.remove('mobile-menu-open');
+  });
+
+  document.querySelectorAll('.nav-toggle').forEach((toggle) => {
+    const submenu = document.getElementById(toggle.dataset.target);
+    if (submenu.classList.contains('open')) {
+      submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+    }
+
+    toggle.addEventListener('click', () => {
+      const isOpen = submenu.classList.contains('open');
+
+      document.querySelectorAll('.submenu.open').forEach((open) => {
+        if (open !== submenu) {
+          open.classList.remove('open');
+          open.style.maxHeight = null;
+          open.previousElementSibling?.classList.remove('active');
+        }
+      });
+
+      submenu.classList.toggle('open', !isOpen);
+      toggle.classList.toggle('active', !isOpen);
+      submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
+    });
+  });
+
+  // Misma máscara de teléfono mexicano (NN-NNNN-NNNN) que usuarios.ejs —
+  // delegado sobre #perfil-panel (nunca se reemplaza a sí mismo, solo su
+  // contenido) porque HTMX reemplaza el <form> completo en cada guardado.
+  document.getElementById('perfil-panel').addEventListener('input', (event) => {
+    if (event.target.id !== 'telefonoInput') return;
+
+    const digitos = event.target.value.replace(/\D/g, '').slice(0, 10);
+    const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter(
+      (parte) => parte,
+    );
+    event.target.value = partes.join('-');
+  });
+
+  // Ojo de mostrar/ocultar de los 3 campos de "Cambiar contraseña" — mismo
+  // mecanismo que usuario-form.ejs/index.ejs (login), delegado sobre
+  // #perfil-panel por la misma razón que la máscara de teléfono de arriba:
+  // ese fragmento se reemplaza completo en cada guardado. Un solo handler
+  // para los 3 botones vía data-input-id/data-eye-icon-id, en vez de
+  // repetirlo 3 veces con ids fijos.
+  document.getElementById('perfil-panel').addEventListener('click', (event) => {
+    const toggle = event.target.closest('.toggle-pass');
+    if (!toggle) return;
+
+    const input = document.getElementById(toggle.dataset.inputId);
+    const eyeIcon = document.getElementById(toggle.dataset.eyeIconId);
+    const isPassword = input.getAttribute('type') === 'password';
+    input.setAttribute('type', isPassword ? 'text' : 'password');
+    toggle.setAttribute('aria-label', isPassword ? 'Ocultar contraseña' : 'Mostrar contraseña');
+    eyeIcon.innerHTML = isPassword
+      ? '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.8 21.8 0 0 1-3.22 4.36M1 1l22 22"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>'
+      : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  });
+</script>
+
+</body>
+</html>

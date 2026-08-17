@@ -149,7 +149,9 @@ function estaMarcado(permiso) {
         // porque HTMX reemplaza este formulario en cada apertura/reintento.
         %>
         <div class="input-wrap password-field-wrap">
-          <input type="password" name="password" id="passwordInput" required minlength="8" autocomplete="new-password">
+          <input type="password" name="password" id="passwordInput" required minlength="15" maxlength="72"
+                 title="La contraseña debe tener al menos 15 caracteres. Puedes utilizar letras, números, símbolos y espacios."
+                 autocomplete="new-password">
           <button type="button" class="toggle-pass" id="passwordToggle" aria-label="Mostrar contraseña">
             <svg id="passwordEyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>

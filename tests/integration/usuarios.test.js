@@ -570,17 +570,17 @@ describe('POST /usuarios y PUT /usuarios/:id (US-602 — alta y edición)', () =
     expect(row).toBeUndefined();
   });
 
-  it('AC: una contraseña de menos de 8 caracteres no permite guardar', async () => {
+  it('AC (Decisión 24): una contraseña de menos de 15 caracteres no permite guardar', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await crearUsuario(agent, {
       username: `passcorta.${lower}`,
       correo: `passcorta.${lower}@omegavet.test`,
-      password: '1234567',
+      password: 'CortaPero14chr',
     });
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('contraseña debe tener al menos 8 caracteres');
+    expect(res.text).toContain('contraseña debe tener al menos 15 caracteres');
 
     const row = await db('usuarios').where('username', `passcorta.${lower}`).first();
     expect(row).toBeUndefined();

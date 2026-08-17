@@ -52,8 +52,12 @@
   });
 
   document.querySelectorAll('.nav-toggle').forEach((toggle) => {
+    const submenu = document.getElementById(toggle.dataset.target);
+    if (submenu.classList.contains('open')) {
+      submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+    }
+
     toggle.addEventListener('click', () => {
-      const submenu = document.getElementById(toggle.dataset.target);
       const isOpen = submenu.classList.contains('open');
 
       document.querySelectorAll('.submenu.open').forEach((open) => {
