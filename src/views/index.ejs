@@ -18,8 +18,8 @@
       <p>Panel administrativo</p>
     </div>
 
-    <% if (expired) { %>
-      <span class="error-msg show" id="form-notice">Tu sesión expiró. Inicia sesión de nuevo.</span>
+    <% if (expiredMessage) { %>
+      <span class="error-msg show" id="form-notice"><%= expiredMessage %></span>
     <% } %>
     <span class="error-msg" id="form-error"></span>
 

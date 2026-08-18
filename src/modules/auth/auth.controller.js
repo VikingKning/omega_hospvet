@@ -14,6 +14,13 @@ async function login(req, res, next) {
 
       req.session.user = user;
       req.session.loginAt = Date.now();
+      // US-108: arranca la ventana móvil de 30 min de inactividad — sin
+      // esto, requireAuth.js vería `lastActivityAt` undefined en la
+      // primera petición tras el login y (por diseño, para no rechazar de
+      // más) no aplicaría el chequeo hasta la primera vez que sí exista;
+      // fijarlo aquí asegura que la ventana ya está corriendo desde el
+      // login mismo, no desde la siguiente petición.
+      req.session.lastActivityAt = Date.now();
       // US-605: user.mustChangePassword solo viene en true cuando
       // authService.login() resolvió una sesión restringida (estatus
       // cambio_pwd con la temporal correcta) — requireAuth.js confina esa

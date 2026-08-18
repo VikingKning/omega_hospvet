@@ -102,6 +102,15 @@ app.use(express.static(path.join(rootDir, 'public')));
 app.use(cookieParser());
 app.use(sessionMiddleware);
 
+// Mensaje específico por motivo de expiración — texto exacto de cada AC
+// (US-108 para inactividad, US-111 para el tope absoluto de 8h);
+// `expirarSesion` en requireAuth.js manda el motivo exacto en
+// `?expired=<motivo>`.
+const EXPIRED_MESSAGES = {
+  inactividad: 'La sesión expiró por inactividad. Favor de iniciar sesión nuevamente.',
+  absoluto: 'Tu sesión ha expirado. Favor de iniciar sesión nuevamente.',
+};
+
 app.get(['/', '/index.html'], (req, res) => {
   if (req.session.user) {
     return res.redirect('/main.html');
@@ -112,7 +121,10 @@ app.get(['/', '/index.html'], (req, res) => {
   // en este GET sea el mismo que llegue de vuelta en el POST /login.
   req.session.csrfInitialized = true;
   const csrfToken = generateCsrfToken(req, res);
-  res.render('index', { csrfToken, expired: req.query.expired === '1' });
+  res.render('index', {
+    csrfToken,
+    expiredMessage: EXPIRED_MESSAGES[req.query.expired] ?? null,
+  });
 });
 
 app.get('/main.html', requireAuth, attachSidebarAreas, (req, res) => {

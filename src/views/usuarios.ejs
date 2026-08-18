@@ -465,7 +465,18 @@
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': usuarioFormCsrfToken() },
       body: JSON.stringify({ nombre: nombreInput.value, apellidos: apellidosInput.value }),
     })
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        // US-108 AC: sesión expirada -> requireAuth.js redirige a login;
+        // fetch() ya siguió ese redirect solo, así que esta respuesta es el
+        // HTML de esa página, no el JSON esperado — hay que navegar de
+        // verdad en vez de intentar leerla como JSON (que fallaría en
+        // silencio, dejando al usuario sin saber que su sesión expiró).
+        if (res.redirected) {
+          window.location.href = res.url;
+          return null;
+        }
+        return res.ok ? res.json() : null;
+      })
       .then((data) => {
         // `data.username` puede venir vacío a propósito (ej. se limpió
         // Nombre/Apellidos al volver a "Sin vínculo" tras haber elegido un
