@@ -86,11 +86,58 @@ async function existsBySlug(slug) {
   return Boolean(row);
 }
 
+// Auto-provisión de permisos de agenda: cada área activa necesita sus
+// propios 5 permisos `agenda_<slug>.<accion>` para poder aparecer en el
+// tab "Agendas" de la matriz de permisos (usuarios.service.js#construirTabAgendas
+// empareja por `modulo`) y, desde la reconstrucción del sidebar, en el menú
+// de navegación real (`agenda.<slug>.ver`). Mismo shape que genera
+// 01_permissions.js#agendaPermissions para las 8 áreas fijas — duplicado a
+// propósito (ese archivo es un seed de arranque que solo corre una vez;
+// esto es código de producción que corre en cada alta/reactivación real,
+// mismo criterio de independencia entre piezas ya aplicado en el resto del
+// proyecto). Si 01_permissions.js cambia el patrón de código/descripción,
+// esta función debe actualizarse en conjunto.
+const AGENDA_ACCIONES = [
+  ['ver', 'Ver'],
+  ['crear', 'Agendar'],
+  ['editar', 'Editar'],
+  ['cancelar', 'Cancelar'],
+  ['confirmar', 'Confirmar'],
+];
+
+function permisosAgendaDelArea(slug, nombre) {
+  return AGENDA_ACCIONES.map(([accion, accionLabel]) => ({
+    modulo: `agenda_${slug}`,
+    accion,
+    codigo: `agenda.${slug}.${accion}`,
+    descripcion: `${accionLabel} citas de ${nombre}`,
+  }));
+}
+
+// onConflict('codigo').ignore() (la única columna UNIQUE de `permissions`)
+// — idempotente a propósito: create() nunca debería chocar (el slug
+// siempre es nuevo, ver generateUniqueSlug en el service), pero
+// reactivar() sí puede toparse con un área que ya tenía sus permisos
+// provisionados de antes (las 8 áreas fijas de 06_areas_agenda.js, cuyos
+// permisos vienen de 01_permissions.js, no de esta función) — nunca debe
+// tronar ni duplicar filas.
+async function asegurarPermisosAgenda(trx, slug, nombre) {
+  await trx('permissions')
+    .insert(permisosAgendaDelArea(slug, nombre))
+    .onConflict('codigo')
+    .ignore();
+}
+
 async function create({ nombre, slug, usuarioId }) {
-  const [row] = await db('areas')
-    .insert({ nombre, slug, creado_por: usuarioId, creado_en: db.fn.now() })
-    .returning('id');
-  return row.id;
+  return db.transaction(async (trx) => {
+    const [row] = await trx('areas')
+      .insert({ nombre, slug, creado_por: usuarioId, creado_en: trx.fn.now() })
+      .returning('id');
+
+    await asegurarPermisosAgenda(trx, slug, nombre);
+
+    return row.id;
+  });
 }
 
 // El slug nunca se toca aquí — a propósito, así lo pide la historia.
@@ -107,16 +154,22 @@ async function updateNombre(id, nombre, usuarioId) {
 // desactivado que ya tenía ese nombre — conserva su slug de siempre (nunca
 // se regenera) y limpia desactivado_por/desactivado_en. `nombre` se
 // reescribe con lo que el usuario acaba de escribir (mismo valor salvo
-// mayúsculas/espacios, por si acaso).
+// mayúsculas/espacios, por si acaso). También asegura sus permisos de
+// agenda (idempotente): un área dada de alta antes de que existiera esta
+// auto-provisión pudo quedar sin ellos.
 async function reactivar(id, nombre, usuarioId) {
-  await db('areas').where({ id }).update({
-    nombre,
-    activo: true,
-    // null explícito para limpiar la columna — undefined la deja intacta.
-    desactivado_por: null,
-    desactivado_en: null,
-    actualizado_por: usuarioId,
-    actualizado_en: db.fn.now(),
+  await db.transaction(async (trx) => {
+    const area = await trx('areas').where({ id }).first('slug');
+    await trx('areas').where({ id }).update({
+      nombre,
+      activo: true,
+      // null explícito para limpiar la columna — undefined la deja intacta.
+      desactivado_por: null,
+      desactivado_en: null,
+      actualizado_por: usuarioId,
+      actualizado_en: trx.fn.now(),
+    });
+    await asegurarPermisosAgenda(trx, area.slug, nombre);
   });
 }
 

@@ -188,6 +188,26 @@ body:has(.app)::after {
   padding-left: 9px;
 }
 
+/* Áreas de agenda que el usuario puede ver (tiene agenda_<slug>.ver) pero
+   que todavía no tienen una página real construida (ver sidebar.ejs) — se
+   listan para que el menú refleje el permiso real, pero sin poder
+   navegar. `<span>`, no `<a>`, a propósito: no hay destino al que ir. */
+.submenu-link.is-disabled {
+  color: rgba(255, 255, 255, 0.35);
+  cursor: default;
+}
+
+.submenu-link.is-disabled:hover {
+  background: none;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.submenu-link-soon {
+  margin-left: auto;
+  font-size: 10px;
+  font-style: italic;
+}
+
 .topbar {
   flex: 1;
   min-width: 0;

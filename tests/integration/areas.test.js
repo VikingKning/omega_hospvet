@@ -59,6 +59,12 @@ async function cleanup() {
   // limpiar entre corridas, acumulando duplicados que hacían flaky el test
   // de reutilización de nombre (una `.first()` sin ORDER BY podía agarrar
   // una fila vieja en vez de la recién creada).
+  // Auto-provisión de permisos de agenda: cada área de prueba creada por
+  // este archivo también deja 5 filas en `permissions` (modulo
+  // `agenda_<slug>`) — hay que limpiarlas para no acumular basura entre
+  // corridas (aunque onConflict('codigo').ignore() las vuelve inofensivas
+  // si se reutiliza el mismo slug, más limpio no dejarlas).
+  await db('permissions').where('modulo', 'like', `agenda_%${SUFFIX.toLowerCase()}%`).del();
   await db('areas').where('slug', 'like', `%${SUFFIX.toLowerCase()}%`).del();
 
   const usernames = [SOLO_VER_USER.username, SIN_PERMISOS_USER.username];
@@ -474,6 +480,73 @@ describe('POST /areas y PUT /areas/:id (US-610 — alta y edición)', () => {
     expect(row.nombre).toBe(`Nutrición Clínica ${SUFFIX}`);
     expect(row.activo).toBe(true);
     expect(row.creado_por).not.toBeNull();
+  });
+
+  it('AC: el alta también aprovisiona los 5 permisos de agenda del área nueva (ver/crear/editar/cancelar/confirmar)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    await crearArea(agent, `Fisioterapia ${SUFFIX}`);
+
+    const slug = `fisioterapia-${SUFFIX.toLowerCase()}`;
+    const permisos = await db('permissions')
+      .where('modulo', `agenda_${slug}`)
+      .orderBy('accion')
+      .select('accion', 'codigo', 'descripcion');
+
+    expect(permisos).toHaveLength(5);
+    expect(permisos.map((p) => p.accion).sort()).toEqual(
+      ['cancelar', 'confirmar', 'crear', 'editar', 'ver'].sort(),
+    );
+    expect(permisos.find((p) => p.accion === 'ver').codigo).toBe(`agenda.${slug}.ver`);
+    expect(permisos.find((p) => p.accion === 'ver').descripcion).toBe(
+      `Ver citas de Fisioterapia ${SUFFIX}`,
+    );
+  });
+
+  it('AC: esos permisos nuevos ya aparecen en el tab "Agendas" de la matriz de permisos', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    await crearArea(agent, `Acupuntura ${SUFFIX}`);
+
+    const formRes = await agent.get('/usuarios/nuevo');
+    expect(formRes.text).toContain(`Acupuntura ${SUFFIX}`);
+  });
+
+  it('AC: reactivar un área que ya tenía sus permisos (onConflict) no duplica filas ni truena', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const nombre = `ConPermisosYaListos ${SUFFIX}`;
+    await crearArea(agent, nombre);
+    const area = await db('areas').where('nombre', nombre).first();
+
+    // Baja + alta con el mismo nombre = reactivación (US-610).
+    const csrfBaja = await getAreasCsrfToken(agent);
+    await agent.delete(`/areas/${area.id}`).set('x-csrf-token', csrfBaja);
+
+    const res = await crearArea(agent, nombre);
+    expect(res.status).toBe(200);
+
+    const permisos = await db('permissions').where('modulo', `agenda_${area.slug}`);
+    expect(permisos).toHaveLength(5);
+  });
+
+  it('AC: reactivar un área que se dio de alta ANTES de esta auto-provisión (sin permisos) se los asegura', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const nombre = `Huerfana ${SUFFIX}`;
+    await crearArea(agent, nombre);
+    const area = await db('areas').where('nombre', nombre).first();
+
+    // Simula una área creada antes de que existiera la auto-provisión:
+    // sin sus 5 permisos de agenda, dada de baja.
+    await db('permissions').where('modulo', `agenda_${area.slug}`).del();
+    const csrfBaja = await getAreasCsrfToken(agent);
+    await agent.delete(`/areas/${area.id}`).set('x-csrf-token', csrfBaja);
+    const sinPermisosAntes = await db('permissions').where('modulo', `agenda_${area.slug}`);
+    expect(sinPermisosAntes).toHaveLength(0);
+
+    await crearArea(agent, nombre); // reactiva
+
+    const permisosDespues = await db('permissions').where('modulo', `agenda_${area.slug}`);
+    expect(permisosDespues).toHaveLength(5);
   });
 
   it('AC: un nombre duplicado con un área activa muestra el error y no cierra el modal ni crea el registro', async () => {

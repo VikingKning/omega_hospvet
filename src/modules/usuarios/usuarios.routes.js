@@ -3,6 +3,7 @@ const requireAuth = require('../../middlewares/requireAuth');
 const requirePermission = require('../../middlewares/requirePermission');
 const hxRedirect = require('../../middlewares/hxRedirect');
 const writeLimiter = require('../../middlewares/writeLimiter');
+const attachSidebarAreas = require('../../middlewares/attachSidebarAreas');
 const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./usuarios.controller');
 
@@ -28,7 +29,13 @@ function requirePermisosSiSePresenta(req, res, next) {
   return next();
 }
 
-router.get('/usuarios.html', requireAuth, requirePermission('usuarios.ver'), controller.list);
+router.get(
+  '/usuarios.html',
+  requireAuth,
+  requirePermission('usuarios.ver'),
+  attachSidebarAreas,
+  controller.list,
+);
 
 // Filtro/orden/paginación vía HTMX: nunca aparece en la URL ni en el
 // historial del navegador (mismo criterio de privacidad que

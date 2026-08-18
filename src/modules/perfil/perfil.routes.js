@@ -1,6 +1,7 @@
 const express = require('express');
 const requireAuth = require('../../middlewares/requireAuth');
 const writeLimiter = require('../../middlewares/writeLimiter');
+const attachSidebarAreas = require('../../middlewares/attachSidebarAreas');
 const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./perfil.controller');
 
@@ -14,7 +15,7 @@ const router = express.Router();
 // solo exime /cambiar-password y /logout, "Mi perfil" cuenta como
 // cualquier otra funcionalidad de la que esa sesión debe quedar fuera
 // hasta completar el cambio obligatorio.
-router.get('/mi-perfil.html', requireAuth, controller.mostrarForm);
+router.get('/mi-perfil.html', requireAuth, attachSidebarAreas, controller.mostrarForm);
 router.post(
   '/mi-perfil.html',
   requireAuth,

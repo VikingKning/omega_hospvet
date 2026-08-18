@@ -2,12 +2,19 @@ const express = require('express');
 const requireAuth = require('../../middlewares/requireAuth');
 const requirePermission = require('../../middlewares/requirePermission');
 const writeLimiter = require('../../middlewares/writeLimiter');
+const attachSidebarAreas = require('../../middlewares/attachSidebarAreas');
 const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./doctores.controller');
 
 const router = express.Router();
 
-router.get('/doctores.html', requireAuth, requirePermission('doctores.ver'), controller.list);
+router.get(
+  '/doctores.html',
+  requireAuth,
+  requirePermission('doctores.ver'),
+  attachSidebarAreas,
+  controller.list,
+);
 
 // Filtro/orden/paginación vía HTMX: nunca aparece en la URL ni en el
 // historial del navegador (motivo: privacidad de lo que se busca). El body

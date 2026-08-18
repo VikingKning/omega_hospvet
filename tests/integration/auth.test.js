@@ -87,7 +87,11 @@ describe('flujo de login (US-101)', () => {
 
     const mainRes = await agent.get('/main.html');
     expect(mainRes.text).toContain('Laboratorio');
-    expect(mainRes.text).toContain('Consultas y cirugías');
+    // Reconstrucción del menú: "Agenda" ya no es un link fijo "Consultas y
+    // cirugías" — cada área activa (tabla `areas`) es su propia fila, ver
+    // sidebar.ejs.
+    expect(mainRes.text).toContain('Consultas');
+    expect(mainRes.text).toContain('Cirugías');
   });
 
   it('AC4: contraseña incorrecta responde 401 con mensaje genérico', async () => {

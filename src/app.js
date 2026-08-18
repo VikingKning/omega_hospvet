@@ -11,6 +11,7 @@ const { middleware: sessionMiddleware } = require('./config/session');
 const { generateCsrfToken } = require('./config/csrf');
 const requireAuth = require('./middlewares/requireAuth');
 const requirePermission = require('./middlewares/requirePermission');
+const attachSidebarAreas = require('./middlewares/attachSidebarAreas');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const authRoutes = require('./modules/auth/auth.routes');
 const doctoresRoutes = require('./modules/doctores/doctores.routes');
@@ -114,7 +115,7 @@ app.get(['/', '/index.html'], (req, res) => {
   res.render('index', { csrfToken, expired: req.query.expired === '1' });
 });
 
-app.get('/main.html', requireAuth, (req, res) => {
+app.get('/main.html', requireAuth, attachSidebarAreas, (req, res) => {
   res.render('main', { user: req.session.user });
 });
 
@@ -122,15 +123,31 @@ app.get('/main.html', requireAuth, (req, res) => {
 // requirePermission (el permiso sembrado exactamente para este módulo en
 // US-000) — así una URL directa no puede saltarse lo que el menú ya oculta
 // (AC6 de US-101: nunca confiar en que el frontend oculte el acceso).
+//
+// Reconstrucción del menú (mismo día que sidebar.ejs pasa a listar agendas
+// por área): agenda.html/grooming.html ya NO se protegen con los permisos
+// planos legacy `agenda.ver`/`grooming.ver` (siguen en el catálogo pero
+// nunca se exponen en la matriz de permisos desde US-604 — ver migración
+// 20260817000001), sino con los granulares `agenda.<slug>.ver` que sí son
+// asignables (el módulo de cada permiso en el catálogo es `agenda_<slug>`,
+// con guion bajo, pero su `codigo` real usado en sesión/requirePermission
+// lleva punto: `agenda.<slug>.ver`). agenda.html combina en una sola página
+// las áreas Consultas y
+// Cirugías, así que basta con tener visibilidad de CUALQUIERA de las dos
+// (requirePermission soporta un array con semántica OR).
 const modulePages = [
-  { route: 'agenda', view: 'agenda', permission: 'agenda.ver' },
-  { route: 'grooming', view: 'grooming', permission: 'grooming.ver' },
+  { route: 'agenda', view: 'agenda', permission: ['agenda.consultas.ver', 'agenda.cirugias.ver'] },
+  { route: 'grooming', view: 'grooming', permission: 'agenda.grooming.ver' },
   { route: 'laboratorio', view: 'laboratorio', permission: 'laboratorio.ver' },
 ];
 
 for (const { route, view, permission } of modulePages) {
-  app.get(`/${route}.html`, requireAuth, requirePermission(permission), (req, res) =>
-    res.render(view, { user: req.session.user }),
+  app.get(
+    `/${route}.html`,
+    requireAuth,
+    requirePermission(permission),
+    attachSidebarAreas,
+    (req, res) => res.render(view, { user: req.session.user }),
   );
 }
 
