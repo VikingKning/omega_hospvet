@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tutores y Pacientes | Omega Veterinaria & Estética</title>
+<link rel="icon" type="image/png" href="assets/imgs/icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/main.css">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
+</head>
+<body>
+
+  <div class="app" id="app">
+    <div class="top-row">
+      <div class="sidebar-header">
+        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <span class="sidebar-title">Omega Vet</span>
+        <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+
+      <header class="topbar">
+        <span class="topbar-icon-badge">
+          <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
+        </span>
+        <h1 class="topbar-title">Tutores y Pacientes</h1>
+      </header>
+    </div>
+
+    <div class="body-row">
+    <div class="nav-backdrop" id="navBackdrop"></div>
+    <%- include('partials/sidebar', { user, currentPage: 'tutores' }) %>
+
+    <main class="main-content" id="tutores-panel">
+      <%- include('partials/tutores-panel', { tutores, total, catalogoVacio, page, totalPages, pageSize, q, estadoTutores, estadoPacientes, user, csrfToken }) %>
+    </main>
+    </div>
+  </div>
+
+  <%#
+    Modal de confirmación para la baja (US-157) — nunca el confirm() nativo
+    del navegador (regla transversal del proyecto): htmx:confirm lo
+    intercepta más abajo. Vive fuera de #tutores-panel a propósito: HTMX
+    reemplaza ese contenedor en cada filtro/orden/página/baja, y si el
+    modal viviera adentro se destruiría a medio uso en cuanto la petición
+    terminara. Mismo patrón exacto que doctores.ejs/areas.ejs.
+  %>
+  <div class="modal-backdrop" id="confirmModalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Confirmar acción</h2>
+        <button class="modal-close-btn" type="button" id="confirmModalClose" aria-label="Cerrar">&times;</button>
+      </div>
+      <p id="confirmModalMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="confirmModalCancel">Cancelar</button>
+        <button type="button" class="btn-danger" id="confirmModalConfirm">Dar de baja</button>
+      </div>
+    </div>
+  </div>
+
+<script nonce="<%= cspNonce %>">
+  const sidebar = document.getElementById('sidebar');
+  const app = document.querySelector('.app');
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const navBackdrop = document.getElementById('navBackdrop');
+
+  sidebarToggle.addEventListener('click', () => {
+    app.classList.toggle('sidebar-hidden');
+    app.classList.toggle('mobile-menu-open');
+  });
+
+  navBackdrop.addEventListener('click', () => {
+    app.classList.remove('sidebar-hidden');
+    app.classList.remove('mobile-menu-open');
+  });
+
+  document.querySelectorAll('.nav-toggle').forEach((toggle) => {
+    const submenu = document.getElementById(toggle.dataset.target);
+    if (submenu.classList.contains('open')) {
+      submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+    }
+
+    toggle.addEventListener('click', () => {
+      const isOpen = submenu.classList.contains('open');
+
+      document.querySelectorAll('.submenu.open').forEach((open) => {
+        if (open !== submenu) {
+          open.classList.remove('open');
+          open.style.maxHeight = null;
+          open.previousElementSibling?.classList.remove('active');
+        }
+      });
+
+      submenu.classList.toggle('open', !isOpen);
+      toggle.classList.toggle('active', !isOpen);
+      submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
+    });
+  });
+
+  // Modal de confirmación en vez del confirm() nativo del navegador: patrón
+  // documentado por HTMX (evento htmx:confirm + evt.detail.issueRequest).
+  // Solo se intercepta cuando el elemento que disparó la petición trae
+  // hx-confirm — así el resto de los triggers de esta vista (buscar,
+  // filtrar, paginar) siguen sin pedir confirmación. Mismo patrón exacto
+  // que doctores.ejs/areas.ejs.
+  const confirmModalBackdrop = document.getElementById('confirmModalBackdrop');
+  const confirmModalMessage = document.getElementById('confirmModalMessage');
+  let resolveConfirm = null;
+
+  function openConfirmModal(message) {
+    confirmModalMessage.textContent = message;
+    confirmModalBackdrop.classList.add('open');
+    return new Promise((resolve) => {
+      resolveConfirm = resolve;
+    });
+  }
+
+  function closeConfirmModal(result) {
+    confirmModalBackdrop.classList.remove('open');
+    resolveConfirm?.(result);
+    resolveConfirm = null;
+  }
+
+  document.getElementById('confirmModalCancel').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirmModalClose').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirmModalConfirm').addEventListener('click', () => closeConfirmModal(true));
+  confirmModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === confirmModalBackdrop) closeConfirmModal(false);
+  });
+
+  document.body.addEventListener('htmx:confirm', (event) => {
+    if (!event.target.hasAttribute('hx-confirm')) return;
+    event.preventDefault();
+    openConfirmModal(event.detail.question).then((confirmed) => {
+      if (confirmed) event.detail.issueRequest(true);
+    });
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<%#
+  US-156: única página del sistema servida un nivel más profundo que la
+  raíz (/tutores/nuevo, /tutores/:id/editar) en vez de un solo segmento
+  como el resto (/doctores.html, /areas.html...). Sin esto, CUALQUIER
+  referencia relativa de la página — sus propios <link>/<a>/fetch(), pero
+  también las del partial compartido partials/sidebar.ejs, que asume
+  siempre estar servido desde la raíz — resolvería contra /tutores/ en vez
+  de /, rompiendo silenciosamente todo el menú lateral y el guardado.
+  <base> es el mecanismo estándar para esto: cubre <link>/<a>/<img> Y
+  fetch()/history.replaceState() con un solo cambio, sin tener que
+  reescribir cada referencia (propia y de partials compartidos) a mano.
+%>
+<base href="/">
+<title><%= propietario ? 'Editar propietario' : 'Nuevo propietario' %> | Omega Veterinaria & Estética</title>
+<link rel="icon" type="image/png" href="assets/imgs/icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <%
+  // US-156: a diferencia de doctores/áreas/plantillas/usuarios (formulario
+  // en un .modal-card sobre la propia tabla), esta página es una página
+  // completa propia — el mockup de esta historia la pide así (breadcrumb,
+  // "Regresar al listado", panel "Resumen" aparte). Por eso no usa HTMX en
+  // absoluto: el guardado es un fetch() + JSON, mismo patrón que
+  // index.ejs (login) y cambiar-password.ejs, no el patrón hx-post de
+  // doctor-form.ejs/area-form.ejs/plantilla-form.ejs.
+  const esEdicion = Boolean(propietario);
+  // Búsqueda en vivo del teléfono (pedido del usuario): solo tiene sentido
+  // en ALTA (en edición ya se está editando a alguien específico). No se
+  // condiciona además a tutores.editar — la ruta de búsqueda en sí solo
+  // exige tutores.crear (mismo permiso que esta página), y si el usuario
+  // selecciona una coincidencia, GET /tutores/:id/editar ya exige
+  // tutores.editar por su cuenta; ocultar la búsqueda aquí solo escondía
+  // la función sin aportar nada, el permiso real se sigue aplicando en la
+  // ruta de destino igual que en el resto del sistema.
+  const conBusquedaTelefono = !esEdicion;
+  %>
+
+  <div class="app" id="app">
+    <div class="top-row">
+      <div class="sidebar-header">
+        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <span class="sidebar-title">Omega Vet</span>
+        <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+
+      <header class="topbar">
+        <span class="topbar-icon-badge">
+          <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
+        </span>
+        <%#
+          Ajuste posterior (pedido del usuario): en mobile la cadena
+          completa se amontonaba junto al menú hamburguesa — el prefijo del
+          breadcrumb se envuelve en su propio <span> para poder ocultarlo
+          solo ahí (CSS, ver main.css), dejando nada más "Nuevo propietario"/
+          "Editar propietario" visible.
+        %>
+        <h1 class="topbar-title"><span class="topbar-breadcrumb-prefix">Tutores y Pacientes &rsaquo; Catálogo &rsaquo; </span><%= esEdicion ? 'Editar propietario' : 'Nuevo propietario' %></h1>
+      </header>
+    </div>
+
+    <div class="body-row">
+    <div class="nav-backdrop" id="navBackdrop"></div>
+    <%- include('partials/sidebar', { user, currentPage: 'tutores' }) %>
+
+    <main class="main-content">
+      <div class="tutor-form-page">
+        <div class="tutor-form-heading">
+          <span class="tutor-form-heading-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </span>
+          <div class="tutor-form-heading-text">
+            <h2 id="tutorFormTitulo"><%= esEdicion ? 'Editar propietario' : 'Nuevo propietario' %></h2>
+            <p>Capture la información del propietario y sus pacientes.</p>
+          </div>
+          <a class="btn-secondary" href="tutores.html">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Regresar al listado
+          </a>
+        </div>
+
+        <span class="form-error-banner" id="tutorFormError" style="display:none"></span>
+        <span class="form-success-banner" id="tutorFormSuccess" style="display:none"></span>
+
+        <div class="tutor-form-layout">
+          <div class="tutor-form-main">
+            <section class="profile-card">
+              <h3 class="tutor-form-card-title">Información del propietario</h3>
+              <div class="modal-form tutor-form-grid">
+                <label>
+                  Teléfono *
+                  <%
+                  // Pedido del usuario: el teléfono va primero y, solo en
+                  // alta, permite buscar entre los propietarios ya
+                  // existentes mientras se escribe — si hay coincidencia y
+                  // se selecciona, se navega a editar ESE propietario en
+                  // vez de continuar el alta; si no hay ninguna, no pasa
+                  // nada y se sigue capturando el resto de los campos como
+                  // un alta normal. Mismo patrón .combobox/.combobox-list
+                  // ya usado en el resto del sistema (Doctor vinculado en
+                  // usuario-form.ejs), pero con búsqueda en vivo contra el
+                  // servidor en vez de filtrar una lista ya cargada
+                  // (propietarios puede crecer mucho más que el catálogo
+                  // de doctores).
+                  %>
+                  <%
+                  // Mismo formato de teléfono mexicano (10 dígitos,
+                  // NN-NNNN-NNNN) ya establecido en usuario-form.ejs/
+                  // perfil-form.ejs — mismos atributos (placeholder,
+                  // inputmode, pattern, maxlength, title), pedido explícito
+                  // del usuario para mantenerlo consistente en todos los
+                  // formularios del sistema.
+                  %>
+                  <% if (conBusquedaTelefono) { %>
+                    <div class="combobox" id="tutorTelefonoCombobox">
+                      <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="">
+                      <ul class="combobox-list" id="tutorTelefonoList" hidden></ul>
+                    </div>
+                  <% } else { %>
+                    <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="<%= propietario?.telefono ?? '' %>">
+                  <% } %>
+                  <span class="error-msg" id="tutorTelefonoError">El teléfono es obligatorio.</span>
+                </label>
+                <label>
+                  Nombre completo *
+                  <input type="text" id="tutorNombre" maxlength="150" placeholder="Ej. Juan Pérez López" value="<%= propietario?.nombre ?? '' %>">
+                  <span class="error-msg" id="tutorNombreError">El nombre es obligatorio.</span>
+                </label>
+                <label>
+                  Correo electrónico
+                  <input type="email" id="tutorCorreo" maxlength="150" placeholder="Ej. juan.perez@correo.com" value="<%= propietario?.correo ?? '' %>">
+                </label>
+              </div>
+              <p class="tutor-form-hint">* Campos obligatorios</p>
+            </section>
+
+            <section class="profile-card">
+              <div class="tutor-pacientes-header">
+                <h3 class="tutor-form-card-title" style="margin:0">Pacientes asociados</h3>
+                <button class="btn-primary" type="button" id="agregarPacienteBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Agregar paciente
+                </button>
+              </div>
+              <div class="lab-table-wrap">
+                <table class="lab-table">
+                  <thead>
+                    <tr>
+                      <th>Especie</th>
+                      <th>Nombre</th>
+                      <th>Raza</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pacientesTableBody"></tbody>
+                </table>
+                <p class="lab-empty" id="pacientesEmpty" hidden>Todavía no hay pacientes agregados.</p>
+              </div>
+              <p class="tutor-form-hint">Puede agregar tantos pacientes como necesite antes de guardar.</p>
+            </section>
+          </div>
+
+          <aside class="tutor-form-aside">
+            <section class="profile-card">
+              <h3 class="tutor-form-card-title">Resumen</h3>
+              <div class="tutor-resumen-row">
+                <span class="tutor-resumen-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </span>
+                <span>
+                  <span class="tutor-resumen-label">Propietario</span>
+                  <span class="tutor-resumen-value" id="resumenPropietario"><%= propietario?.nombre || '—' %></span>
+                </span>
+              </div>
+              <div class="tutor-resumen-row">
+                <span class="tutor-resumen-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
+                </span>
+                <span>
+                  <span class="tutor-resumen-label">Pacientes</span>
+                  <span class="tutor-resumen-value" id="resumenPacientes">0</span>
+                </span>
+              </div>
+              <div class="tutor-resumen-row">
+                <span class="tutor-resumen-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+                </span>
+                <span>
+                  <span class="tutor-resumen-label">Estado</span>
+                  <span class="status-badge is-active">Activo</span>
+                </span>
+              </div>
+            </section>
+
+            <section class="profile-card tutor-form-info">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+              <p>En este formulario puede agregar, editar o dar de baja pacientes asociados a este propietario. Los pacientes dados de baja no se eliminan, solo cambian su estado a Inactivo.</p>
+            </section>
+          </aside>
+        </div>
+
+        <div class="tutor-form-actions">
+          <a class="btn-secondary" href="tutores.html">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            Cancelar
+          </a>
+          <div class="tutor-form-actions-right">
+            <button type="button" class="btn-secondary" id="guardarContinuarBtn">Guardar y continuar</button>
+            <button type="button" class="btn-primary" id="guardarBtn">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </main>
+    </div>
+  </div>
+
+  <%#
+    Confirmación de reactivación (AC5, decidido con el usuario): nunca un
+    confirm() nativo (regla transversal del proyecto) — mismo patrón visual
+    .modal-backdrop/.modal-card que #confirmModalBackdrop en doctores.ejs,
+    pero disparado a mano desde el manejador del fetch, no desde
+    htmx:confirm (esta página no usa HTMX).
+  %>
+  <div class="modal-backdrop" id="reactivarModalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>¿Reactivar propietario existente?</h2>
+        <button class="modal-close-btn" type="button" id="reactivarModalClose" aria-label="Cerrar">&times;</button>
+      </div>
+      <p>Ya existe un propietario <strong>inactivo</strong> registrado con este teléfono. Verifica que sea la misma persona antes de continuar — se cargará su información y sus pacientes en este formulario:</p>
+      <p>
+        <strong id="reactivarModalNombre"></strong><br>
+        <span id="reactivarModalTelefono"></span>
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="reactivarModalCancel">Cancelar</button>
+        <button type="button" class="btn-primary" id="reactivarModalConfirm">Reactivar</button>
+      </div>
+    </div>
+  </div>
+
+  <%#
+    Ajuste posterior (pedido del usuario): al salir del campo Teléfono con
+    un número que coincide EXACTO con un propietario ACTIVO, se avisa con
+    esta alerta (además del buscador incremental de arriba, que ya lo
+    sugiere mientras se escribe — conviven, no se reemplaza uno por otro).
+    Mismo patrón .modal-backdrop/.modal-card que #reactivarModalBackdrop.
+  %>
+  <div class="modal-backdrop" id="telefonoActivoModalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Teléfono ya registrado</h2>
+        <button class="modal-close-btn" type="button" id="telefonoActivoModalClose" aria-label="Cerrar">&times;</button>
+      </div>
+      <p>El teléfono ya está registrado por <strong id="telefonoActivoModalNombre"></strong>. ¿Desea editarlo?</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="telefonoActivoModalCancel">Cancelar</button>
+        <button type="button" class="btn-primary" id="telefonoActivoModalConfirm">Editar</button>
+      </div>
+    </div>
+  </div>
+
+  <%
+  // Isla de datos JSON inerte (nunca un <script>): la lista inicial de
+  // pacientes en edición, o vacía en alta — mismo patrón que
+  // doctorFormAreasData en doctor-form.ejs (allowScriptTags:false de HTMX
+  // no aplica aquí porque esta página no usa HTMX, pero el patrón se
+  // mantiene igual por consistencia con el resto del proyecto). El
+  // carácter "<" del JSON se re-escapa a su forma unicode para que un
+  // nombre/raza con `<`/`</div>` nunca pueda cerrar el div antes de tiempo.
+  %>
+  <div id="tutorFormPacientesData" hidden><%- JSON.stringify(pacientes).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
+
+  <script nonce="<%= cspNonce %>">
+    const sidebar = document.getElementById('sidebar');
+    const app = document.querySelector('.app');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const navBackdrop = document.getElementById('navBackdrop');
+
+    sidebarToggle.addEventListener('click', () => {
+      app.classList.toggle('sidebar-hidden');
+      app.classList.toggle('mobile-menu-open');
+    });
+
+    navBackdrop.addEventListener('click', () => {
+      app.classList.remove('sidebar-hidden');
+      app.classList.remove('mobile-menu-open');
+    });
+
+    document.querySelectorAll('.nav-toggle').forEach((toggle) => {
+      const submenu = document.getElementById(toggle.dataset.target);
+      if (submenu.classList.contains('open')) {
+        submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+      }
+
+      toggle.addEventListener('click', () => {
+        const isOpen = submenu.classList.contains('open');
+
+        document.querySelectorAll('.submenu.open').forEach((open) => {
+          if (open !== submenu) {
+            open.classList.remove('open');
+            open.style.maxHeight = null;
+            open.previousElementSibling?.classList.remove('active');
+          }
+        });
+
+        submenu.classList.toggle('open', !isOpen);
+        toggle.classList.toggle('active', !isOpen);
+        submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
+      });
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text ?? '';
+      return div.innerHTML;
+    }
+
+    // Mismo formato NN-NNNN-NNNN validado del lado del servidor
+    // (tutores.service.js#TELEFONO_REGEX) — duplicado aquí a propósito
+    // (cliente vs. servidor son casos de uso distintos, mismo criterio de
+    // "cada capa valida lo suyo" del resto del proyecto), solo para evitar
+    // un viaje de red en el caso más común.
+    const TELEFONO_REGEX = /^\d{2}-\d{4}-\d{4}$/;
+
+    // ---- Estado del formulario ----
+    // `tutorId` empieza como el id de edición (o null en alta) y se
+    // actualiza tras un "Guardar y continuar" exitoso (US-156, decidido con
+    // el usuario): un alta que se guarda y continúa se convierte en una
+    // edición in situ, sin recargar la página ni perder lo ya capturado.
+    let tutorId = <%- propietario ? propietario.id : 'null' %>;
+    const csrfToken = '<%= csrfToken %>';
+    const datosEl = document.getElementById('tutorFormPacientesData');
+    let pacientes = datosEl ? JSON.parse(datosEl.textContent) : [];
+
+    // Ajuste posterior (pedido del usuario): id del propietario inactivo
+    // que el usuario ya confirmó reactivar desde la alerta de blur del
+    // teléfono — mientras siga vigente (mismo valor que telefonoVerificado,
+    // ver más abajo), Guardar reactiva directo sin volver a preguntar.
+    // Cualquier cambio al teléfono invalida ambos (ver el listener de
+    // máscara más abajo).
+    let reactivandoId = null;
+    let telefonoVerificado = null;
+
+    const tutorNombreInput = document.getElementById('tutorNombre');
+    const tutorTelefonoInput = document.getElementById('tutorTelefono');
+    const tutorCorreoInput = document.getElementById('tutorCorreo');
+    const pacientesTableBody = document.getElementById('pacientesTableBody');
+    const pacientesEmpty = document.getElementById('pacientesEmpty');
+    const resumenPropietario = document.getElementById('resumenPropietario');
+    const resumenPacientes = document.getElementById('resumenPacientes');
+    const errorBanner = document.getElementById('tutorFormError');
+    const successBanner = document.getElementById('tutorFormSuccess');
+
+    // Ajuste posterior (pedido del usuario): por ahora solo hay dos tipos de
+    // mascota posibles (Perro/Gato) — el <input> de texto libre se
+    // reemplaza por un control de 2 íconos, mismo criterio visual que
+    // .toggle-group (selección única, botón activo resaltado).
+    const DOG_SVG =
+      '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M64 176C80.6 176 94.2 188.6 95.8 204.7L96.1 211.3C97.8 227.4 111.4 240 128 240L307.1 240L448 300.4L448 544C448 561.7 433.7 576 416 576L384 576C366.3 576 352 561.7 352 544L352 412.7C328 425 300.8 432 272 432C243.2 432 216 425 192 412.7L192 544C192 561.7 177.7 576 160 576L128 576C110.3 576 96 561.7 96 544L96 298.4C58.7 285.2 32 249.8 32 208C32 190.3 46.3 176 64 176zM387.8 32C395.5 32 402.7 35.6 407.4 41.8L424 64L476.1 64C488.8 64 501 69.1 510 78.1L528 96L584 96C597.3 96 608 106.7 608 120L608 144C608 188.2 572.2 224 528 224L464 224L457 252L332.3 198.6L363.9 51.4C366.3 40.1 376.2 32 387.8 32zM480 108C469 108 460 117 460 128C460 139 469 148 480 148C491 148 500 139 500 128C500 117 491 108 480 108z"/></svg>';
+    const CAT_SVG =
+      '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M96 160C149 160 192 203 192 256L192 341.8C221.7 297.1 269.8 265.6 325.4 257.8C351 317.8 410.6 359.9 480 359.9C490.9 359.9 501.6 358.8 512 356.8L512 544C512 561.7 497.7 576 480 576C462.3 576 448 561.7 448 544L448 403.2L312 512L368 512C385.7 512 400 526.3 400 544C400 561.7 385.7 576 368 576L224 576C171 576 128 533 128 480L128 256C128 239.4 115.4 225.8 99.3 224.2L92.7 223.9C76.6 222.2 64 208.6 64 192C64 174.3 78.3 160 96 160zM565.8 67.2C576.2 58.5 592 65.9 592 79.5L592 192C592 253.9 541.9 304 480 304C418.1 304 368 253.9 368 192L368 79.5C368 65.9 383.8 58.5 394.2 67.2L448 112L512 112L565.8 67.2zM432 172C421 172 412 181 412 192C412 203 421 212 432 212C443 212 452 203 452 192C452 181 443 172 432 172zM528 172C517 172 508 181 508 192C508 203 517 212 528 212C539 212 548 203 548 192C548 181 539 172 528 172z"/></svg>';
+
+    // Ajuste posterior (pedido del usuario): la columna "Acciones" se quita
+    // por completo — un paciente nuevo (sin id) ahora muestra una cruz
+    // pequeña del lado derecho de su propia celda de Estado (nunca en una
+    // columna aparte), y solo mientras sigue siendo nuevo. Mismo trazo que
+    // el ícono de "Cancelar" del pie del formulario.
+    const CLOSE_SVG =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
+    function showError(message) {
+      successBanner.style.display = 'none';
+      errorBanner.textContent = message;
+      errorBanner.style.display = 'flex';
+    }
+
+    function hideBanners() {
+      errorBanner.style.display = 'none';
+      successBanner.style.display = 'none';
+    }
+
+    function showSuccess(message) {
+      errorBanner.style.display = 'none';
+      successBanner.textContent = message;
+      successBanner.style.display = 'flex';
+    }
+
+    // ---- Pacientes: nombre/tipo/raza siempre editables directamente en la
+    // fila (sin un modo "editar" aparte) — más simple y robusto que
+    // alternar entre texto de solo lectura y un mini-formulario. Un
+    // paciente YA guardado (tiene `id`) usa el switch Activo/Inactivo
+    // (AC17/19: dar de baja y reactivar son la misma acción, un solo
+    // control) y nunca puede quitarse de la lista (nunca se elimina
+    // físicamente); uno nuevo (sin `id`) siempre nace Activo (AC13, sin
+    // switch) y sí puede quitarse antes de guardar (nada se creó todavía).
+    function renderPacientes() {
+      pacientesEmpty.hidden = pacientes.length !== 0;
+      resumenPacientes.textContent = String(pacientes.length);
+
+      pacientesTableBody.innerHTML = pacientes
+        .map((paciente, index) => {
+          const tipoCell = `
+            <div class="tipo-picker" role="group" aria-label="Tipo de mascota">
+              <button type="button" class="tipo-picker-btn${paciente.tipo === 'Perro' ? ' active' : ''}" data-tipo="Perro" data-index="${index}" data-tooltip="Perro" aria-label="Perro">${DOG_SVG}</button>
+              <button type="button" class="tipo-picker-btn${paciente.tipo === 'Gato' ? ' active' : ''}" data-tipo="Gato" data-index="${index}" data-tooltip="Gato" aria-label="Gato">${CAT_SVG}</button>
+            </div>
+          `;
+
+          // Un paciente YA guardado (id) usa el switch de siempre. Uno
+          // nuevo (sin id) nace Activo por definición (AC13) — no hace
+          // falta repetirlo en pantalla, así que la celda de Estado se deja
+          // solo con la cruz para quitarlo antes de guardar (ajuste
+          // posterior, pedido del usuario: el badge "Activo" sobraba y
+          // ensanchaba la fila lo suficiente para forzar un scroll
+          // horizontal en la tabla).
+          const estadoCell = paciente.id
+            ? `<label class="switch-field">
+                 <span class="switch">
+                   <input type="checkbox" class="paciente-activo-toggle" data-index="${index}" ${paciente.activo ? 'checked' : ''}>
+                   <span class="switch-track"></span>
+                 </span>
+                 <span class="switch-state-on">Activo</span>
+                 <span class="switch-state-off">Inactivo</span>
+               </label>`
+            : `<button class="paciente-cancelar-btn" type="button" data-tooltip="Quitar" aria-label="Quitar paciente nuevo" data-index="${index}">${CLOSE_SVG}</button>`;
+
+          return `
+            <tr>
+              <td>${tipoCell}</td>
+              <td><input type="text" class="paciente-input" data-field="nombre" data-index="${index}" maxlength="100" placeholder="Ej. Max" value="${escapeHtml(paciente.nombre)}"></td>
+              <td><input type="text" class="paciente-input" data-field="raza" data-index="${index}" maxlength="100" placeholder="Ej. Labrador Retriever" value="${escapeHtml(paciente.raza)}"></td>
+              <td>${estadoCell}</td>
+            </tr>
+          `;
+        })
+        .join('');
+    }
+
+    // Ajuste posterior (pedido del usuario): al confirmar la reactivación
+    // desde la alerta de blur del teléfono, se precarga TODA la
+    // información del propietario inactivo (Nombre/Correo/Pacientes) en
+    // este mismo formulario de alta — el usuario la revisa/ajusta y
+    // Guardar la reactiva (ver reactivandoId en guardar() más abajo). El
+    // teléfono NO se toca aquí: ya es el valor que el usuario escribió y
+    // disparó esta verificación.
+    function aplicarDatosExistente(tutor) {
+      tutorNombreInput.value = tutor.nombre;
+      tutorNombreInput.classList.remove('invalid');
+      document.getElementById('tutorNombreError').classList.remove('show');
+      tutorCorreoInput.value = tutor.correo || '';
+      pacientes = tutor.pacientes.map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        tipo: p.tipo || '',
+        raza: p.raza || '',
+        activo: p.activo,
+      }));
+      resumenPropietario.textContent = tutor.nombre || '—';
+      renderPacientes();
+    }
+
+    // Ajuste posterior (pedido del usuario): Cancelar en cualquiera de las
+    // dos alertas del teléfono (activo o inactivo) borra TODO el
+    // formulario, incluido el teléfono — no tendría sentido dejar
+    // capturado un número que el usuario decidió no usar. Se llama desde
+    // cerrarReactivarModal/cerrarTelefonoActivoModal más abajo, en el
+    // camino de "false" (Cancelar, la × de cerrar, o clic fuera del
+    // modal — las tres cuentan como cancelar, mismo criterio ya usado en
+    // el resto del proyecto).
+    function limpiarFormulario() {
+      tutorNombreInput.value = '';
+      tutorNombreInput.classList.remove('invalid');
+      document.getElementById('tutorNombreError').classList.remove('show');
+      tutorTelefonoInput.value = '';
+      tutorTelefonoInput.classList.remove('invalid');
+      document.getElementById('tutorTelefonoError').classList.remove('show');
+      tutorCorreoInput.value = '';
+      pacientes = [];
+      reactivandoId = null;
+      telefonoVerificado = null;
+      resumenPropietario.textContent = '—';
+      renderPacientes();
+    }
+
+    document.getElementById('agregarPacienteBtn').addEventListener('click', () => {
+      pacientes.push({ id: null, nombre: '', tipo: '', raza: '', activo: true });
+      renderPacientes();
+      pacientesTableBody.querySelector('tr:last-child input[data-field="nombre"]')?.focus();
+    });
+
+    // Delegado sobre el <tbody>: las filas se regeneran completas en cada
+    // agregar/quitar/toggle, así que un listener puesto directo en una fila
+    // se perdería en cuanto se vuelva a construir (mismo criterio que
+    // doctorFormModalBody en doctores.ejs).
+    pacientesTableBody.addEventListener('input', (event) => {
+      const field = event.target.dataset.field;
+      if (!field) return;
+      const index = Number(event.target.dataset.index);
+      pacientes[index][field] = event.target.value;
+      if (field === 'nombre') event.target.classList.remove('invalid');
+    });
+
+    pacientesTableBody.addEventListener('change', (event) => {
+      if (!event.target.classList.contains('paciente-activo-toggle')) return;
+      const index = Number(event.target.dataset.index);
+      pacientes[index].activo = event.target.checked;
+    });
+
+    pacientesTableBody.addEventListener('click', (event) => {
+      const tipoBtn = event.target.closest('.tipo-picker-btn');
+      if (tipoBtn) {
+        const index = Number(tipoBtn.dataset.index);
+        pacientes[index].tipo = tipoBtn.dataset.tipo;
+        renderPacientes();
+        return;
+      }
+
+      // Cruz de "Quitar paciente nuevo": solo existe en filas sin id (ver
+      // renderPacientes), así que no hace falta comprobar de nuevo aquí.
+      const cancelarBtn = event.target.closest('.paciente-cancelar-btn');
+      if (cancelarBtn) {
+        const index = Number(cancelarBtn.dataset.index);
+        pacientes.splice(index, 1);
+        renderPacientes();
+      }
+    });
+
+    tutorNombreInput.addEventListener('input', () => {
+      resumenPropietario.textContent = tutorNombreInput.value.trim() || '—';
+      tutorNombreInput.classList.remove('invalid');
+      document.getElementById('tutorNombreError').classList.remove('show');
+    });
+
+    // Misma máscara de teléfono mexicano (NN-NNNN-NNNN) que usuarios.ejs/
+    // perfil.ejs — se reconstruye el valor completo en cada tecla (no solo
+    // se insertan guiones) para que borrar un dígito de en medio también
+    // recorra los guiones correctamente. Va ANTES del listener de búsqueda
+    // en vivo de abajo (mismo elemento, mismo evento 'input'): los
+    // listeners corren en el orden en que se registraron, así que la
+    // búsqueda ya lee el valor con máscara aplicada, nunca el crudo.
+    tutorTelefonoInput.addEventListener('input', () => {
+      const digitos = tutorTelefonoInput.value.replace(/\D/g, '').slice(0, 10);
+      const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter(
+        (parte) => parte,
+      );
+      tutorTelefonoInput.value = partes.join('-');
+      tutorTelefonoInput.classList.remove('invalid');
+      document.getElementById('tutorTelefonoError').classList.remove('show');
+      // El número cambió: cualquier verificación/confirmación de reactivar
+      // anterior ya no aplica a este valor nuevo.
+      reactivandoId = null;
+      telefonoVerificado = null;
+    });
+
+    // ---- Búsqueda en vivo del teléfono (pedido del usuario, solo en
+    // alta), incremental: sin texto muestra los primeros propietarios
+    // ACTIVOS (nunca inactivos — un teléfono de un propietario inactivo no
+    // debe aparecer aquí, para no ofrecer un atajo que se salte el flujo
+    // real de reactivación con confirmación explícita del guardado, ver
+    // guardar() más abajo); conforme se escribe, filtra por coincidencia
+    // parcial; sin ninguna coincidencia, no se muestra nada (la lista se
+    // oculta, no un mensaje de "sin resultados"). Si el usuario selecciona
+    // una coincidencia, navega a editar ESE propietario en vez de
+    // continuar el alta. ----
+    const tutorTelefonoCombobox = document.getElementById('tutorTelefonoCombobox');
+    if (tutorTelefonoCombobox) {
+      const tutorTelefonoList = document.getElementById('tutorTelefonoList');
+      let telefonoBusquedaTimer = null;
+
+      function ocultarTelefonoList() {
+        tutorTelefonoList.hidden = true;
+      }
+
+      function renderTelefonoList(resultados) {
+        if (!resultados.length) {
+          ocultarTelefonoList();
+          return;
+        }
+        tutorTelefonoList.innerHTML = resultados
+          .map((r) => `<li class="combobox-item" data-id="${r.id}">${escapeHtml(r.nombre)} — ${escapeHtml(r.telefono)}</li>`)
+          .join('');
+        tutorTelefonoList.hidden = false;
+      }
+
+      async function buscarTelefono(q) {
+        const res = await fetch('tutores/buscar-telefono', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ q }),
+        });
+        // US-108 AC: mismo criterio que guardar() más abajo — si la sesión
+        // expiró a mitad de la captura, hay que navegar de verdad al login.
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
+        if (!res.ok) return;
+        renderTelefonoList(await res.json());
+      }
+
+      tutorTelefonoInput.addEventListener('input', () => {
+        clearTimeout(telefonoBusquedaTimer);
+        telefonoBusquedaTimer = setTimeout(() => buscarTelefono(tutorTelefonoInput.value), 400);
+      });
+
+      // Sin texto todavía (recién enfocado) también busca — "si no tiene
+      // nada, salen todos los usuarios" (activos, limitados).
+      tutorTelefonoInput.addEventListener('focus', () => buscarTelefono(tutorTelefonoInput.value));
+
+      tutorTelefonoList.addEventListener('click', (event) => {
+        const item = event.target.closest('.combobox-item[data-id]');
+        if (!item) return;
+        // Mismo motivo que selectDoctor()/selectEstatus() en usuarios.ejs:
+        // el <li> no es un control enfocable, así que sin preventDefault()
+        // el navegador reenvía el click al input asociado del <label>,
+        // reenfocándolo y volviendo a abrir la lista que se acaba de usar.
+        event.preventDefault();
+        window.location.href = `tutores/${item.dataset.id}/editar`;
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!tutorTelefonoCombobox.contains(event.target)) ocultarTelefonoList();
+      });
+
+      // Ajuste posterior (pedido del usuario): al SALIR del campo (blur)
+      // con un teléfono completo, se verifica si ya existe un propietario
+      // EXACTO con ese número (a diferencia de buscarTelefono() arriba,
+      // este chequeo sí revela inactivos — es el punto de entrada de la
+      // reactivación). Se cachea en telefonoVerificado para no repetir la
+      // consulta si el usuario vuelve a salir del campo sin cambiar el
+      // valor (p. ej. tras cancelar la alerta).
+      tutorTelefonoInput.addEventListener('blur', async () => {
+        const valor = tutorTelefonoInput.value.trim();
+        if (!TELEFONO_REGEX.test(valor) || valor === telefonoVerificado) return;
+
+        const res = await fetch('tutores/verificar-telefono', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ telefono: valor }),
+        });
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json();
+        // El usuario pudo haber seguido escribiendo mientras la petición
+        // estaba en vuelo — si el valor ya cambió, este resultado quedó
+        // obsoleto, no lo apliques (el próximo blur disparará su propio
+        // chequeo con el valor nuevo).
+        if (tutorTelefonoInput.value.trim() !== valor) return;
+        telefonoVerificado = valor;
+        if (!data.existe) return;
+
+        if (data.activo) {
+          const editar = await abrirTelefonoActivoModal(data.tutor);
+          if (editar) window.location.href = `tutores/${data.tutor.id}/editar`;
+          return;
+        }
+
+        const confirmado = await abrirReactivarModal(data.tutor);
+        if (confirmado) {
+          reactivandoId = data.tutor.id;
+          aplicarDatosExistente(data.tutor);
+        }
+      });
+    }
+
+    // ---- Validación mínima en cliente (obligatoriedad + formato) — la
+    // validación real (duplicados, formato de correo) la hace el servidor
+    // de todos modos; esto solo evita un viaje de red para el caso más
+    // común. ----
+    function validarCliente() {
+      let valido = true;
+      if (!tutorNombreInput.value.trim()) {
+        tutorNombreInput.classList.add('invalid');
+        document.getElementById('tutorNombreError').classList.add('show');
+        valido = false;
+      }
+      const tutorTelefonoError = document.getElementById('tutorTelefonoError');
+      if (!tutorTelefonoInput.value.trim()) {
+        tutorTelefonoInput.classList.add('invalid');
+        tutorTelefonoError.textContent = 'El teléfono es obligatorio.';
+        tutorTelefonoError.classList.add('show');
+        valido = false;
+      } else if (!TELEFONO_REGEX.test(tutorTelefonoInput.value.trim())) {
+        tutorTelefonoInput.classList.add('invalid');
+        tutorTelefonoError.textContent = 'El teléfono debe tener el formato NN-NNNN-NNNN.';
+        tutorTelefonoError.classList.add('show');
+        valido = false;
+      }
+      pacientes.forEach((paciente, index) => {
+        if (!paciente.nombre.trim()) {
+          const input = pacientesTableBody.querySelector(`input[data-field="nombre"][data-index="${index}"]`);
+          input?.classList.add('invalid');
+          valido = false;
+        }
+      });
+      return valido;
+    }
+
+    function construirBody(confirmarReactivacion) {
+      return JSON.stringify({
+        nombre: tutorNombreInput.value,
+        telefono: tutorTelefonoInput.value,
+        correo: tutorCorreoInput.value,
+        pacientes: pacientes.map((p) => ({ id: p.id, nombre: p.nombre, tipo: p.tipo, raza: p.raza, activo: p.activo })),
+        confirmarReactivacion: Boolean(confirmarReactivacion),
+      });
+    }
+
+    // Modal de reactivación: abre/cierra igual que #confirmModalBackdrop en
+    // doctores.ejs, pero resuelve una Promise en vez de reenviar un evento
+    // htmx:confirm (esta página no usa HTMX).
+    const reactivarModalBackdrop = document.getElementById('reactivarModalBackdrop');
+    let resolveReactivar = null;
+
+    function abrirReactivarModal(tutorExistente) {
+      document.getElementById('reactivarModalNombre').textContent = tutorExistente.nombre;
+      document.getElementById('reactivarModalTelefono').textContent = tutorExistente.telefono;
+      reactivarModalBackdrop.classList.add('open');
+      return new Promise((resolve) => {
+        resolveReactivar = resolve;
+      });
+    }
+
+    function cerrarReactivarModal(resultado) {
+      reactivarModalBackdrop.classList.remove('open');
+      if (!resultado) limpiarFormulario();
+      resolveReactivar?.(resultado);
+      resolveReactivar = null;
+    }
+
+    document.getElementById('reactivarModalCancel').addEventListener('click', () => cerrarReactivarModal(false));
+    document.getElementById('reactivarModalClose').addEventListener('click', () => cerrarReactivarModal(false));
+    document.getElementById('reactivarModalConfirm').addEventListener('click', () => cerrarReactivarModal(true));
+    reactivarModalBackdrop.addEventListener('click', (event) => {
+      if (event.target === reactivarModalBackdrop) cerrarReactivarModal(false);
+    });
+
+    // Ajuste posterior (pedido del usuario): alerta gemela para un teléfono
+    // que coincide con un propietario ACTIVO al salir del campo — mismo
+    // patrón Promise que abrirReactivarModal/cerrarReactivarModal.
+    const telefonoActivoModalBackdrop = document.getElementById('telefonoActivoModalBackdrop');
+    let resolveTelefonoActivo = null;
+
+    function abrirTelefonoActivoModal(tutorExistente) {
+      document.getElementById('telefonoActivoModalNombre').textContent = tutorExistente.nombre;
+      telefonoActivoModalBackdrop.classList.add('open');
+      return new Promise((resolve) => {
+        resolveTelefonoActivo = resolve;
+      });
+    }
+
+    function cerrarTelefonoActivoModal(resultado) {
+      telefonoActivoModalBackdrop.classList.remove('open');
+      if (!resultado) limpiarFormulario();
+      resolveTelefonoActivo?.(resultado);
+      resolveTelefonoActivo = null;
+    }
+
+    document.getElementById('telefonoActivoModalCancel').addEventListener('click', () => cerrarTelefonoActivoModal(false));
+    document.getElementById('telefonoActivoModalClose').addEventListener('click', () => cerrarTelefonoActivoModal(false));
+    document.getElementById('telefonoActivoModalConfirm').addEventListener('click', () => cerrarTelefonoActivoModal(true));
+    telefonoActivoModalBackdrop.addEventListener('click', (event) => {
+      if (event.target === telefonoActivoModalBackdrop) cerrarTelefonoActivoModal(false);
+    });
+
+    // AC24: "Guardar" cierra y regresa al listado. "Guardar y continuar"
+    // (decidido con el usuario) guarda igual pero se queda en el
+    // formulario, ya en modo edición con los ids reales — útil para seguir
+    // agregando pacientes sin salir.
+    async function guardar({ continuar }) {
+      hideBanners();
+      if (!validarCliente()) return;
+
+      // Ajuste posterior (pedido del usuario): si el usuario ya confirmó
+      // reactivar este mismo teléfono desde la alerta de blur, se manda
+      // confirmarReactivacion directo, sin volver a preguntar.
+      let body = construirBody(Boolean(reactivandoId));
+      let res = await fetch(tutorId ? `tutores/${tutorId}` : 'tutores', {
+        method: tutorId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+        body,
+      });
+
+      // AC5, decidido con el usuario: el teléfono pertenece a un
+      // propietario inactivo — se pide confirmación explícita (nunca un
+      // confirm() nativo) antes de reactivarlo. Con el ajuste posterior,
+      // esto ya casi nunca dispara (el blur del teléfono lo adelanta) pero
+      // se deja como respaldo — p. ej. si el usuario pegó el número y dio
+      // clic en Guardar sin llegar a salir del campo.
+      if (res.ok) {
+        const data = await res.json();
+        if (data.requiereConfirmacion) {
+          const confirmado = await abrirReactivarModal(data.tutorExistente);
+          if (!confirmado) return;
+          body = construirBody(true);
+          res = await fetch(tutorId ? `tutores/${tutorId}` : 'tutores', {
+            method: tutorId ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+            body,
+          });
+        } else {
+          return finalizarGuardado(data, continuar);
+        }
+      }
+
+      // US-108 AC: si la sesión expiró a mitad de la captura, fetch() sigue
+      // el redirect del servidor solo — hay que navegar de verdad al login
+      // en vez de intentar leer la respuesta ya seguida como JSON.
+      if (res.redirected) {
+        window.location.href = res.url;
+        return;
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || 'No se pudo guardar el propietario.');
+        return;
+      }
+      finalizarGuardado(data, continuar);
+    }
+
+    function finalizarGuardado(data, continuar) {
+      reactivandoId = null;
+      if (!continuar) {
+        window.location.href = data.redirectTo;
+        return;
+      }
+      tutorId = data.id;
+      pacientes = data.propietario.pacientes;
+      document.getElementById('tutorFormTitulo').textContent = 'Editar propietario';
+      document.title = 'Editar propietario | Omega Veterinaria & Estética';
+      history.replaceState(null, '', `tutores/${tutorId}/editar`);
+      renderPacientes();
+      showSuccess('Propietario guardado correctamente.');
+    }
+
+    document.getElementById('guardarBtn').addEventListener('click', () => guardar({ continuar: false }));
+    document.getElementById('guardarContinuarBtn').addEventListener('click', () => guardar({ continuar: true }));
+
+    renderPacientes();
+  </script>
+
+</body>
+</html>

@@ -50,11 +50,11 @@
 <nav class="sidebar-nav" id="sidebar">
   <% if (has('tutores.ver')) { %>
     <%
-    // Sin página todavía (catálogo de tutores/pacientes es una historia
-    // aparte) — mismo criterio que los 3 links de Métricas de abajo:
-    // aparece gateado por su permiso real, pero no navega a ningún lado.
+    // US-155: ya existe una página real (catálogo de tutores/pacientes),
+    // deja de ser el link decorativo `href="#"` que era desde la
+    // reconstrucción del menú.
     %>
-    <a href="#" class="nav-link<%= currentPage === 'tutores' ? ' current' : '' %>">
+    <a href="tutores.html" class="nav-link<%= currentPage === 'tutores' ? ' current' : '' %>">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
       <span>Tutores y pacientes</span>
     </a>

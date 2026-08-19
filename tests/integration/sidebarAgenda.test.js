@@ -3,7 +3,8 @@
 // filtrada por el permiso granular agenda_<slug>.ver de la sesión — en vez
 // de los 2 links fijos (Consultas/Cirugías, Grooming) de antes. También
 // agrega "Tutores y pacientes" como link de nivel superior (gateado por
-// tutores.ver, sin página real todavía). /agenda.html y /grooming.html
+// tutores.ver; desde US-155 ya navega a una página real, tutores.html —
+// antes de esa historia era un placeholder href="#"). /agenda.html y /grooming.html
 // pasan a protegerse con los permisos granulares (ver
 // migrations/20260817000001_...).
 const bcrypt = require('bcrypt');
@@ -140,13 +141,15 @@ describe('Sidebar — submenú "Agenda" dinámico por área', () => {
   });
 });
 
-describe('Sidebar — "Tutores y pacientes" (US greenfield, sin página todavía)', () => {
-  it('AC: con tutores.ver, aparece el link (placeholder #)', async () => {
+describe('Sidebar — "Tutores y pacientes"', () => {
+  it('AC: con tutores.ver, aparece el link y navega a tutores.html (US-155)', async () => {
     const agent = request.agent(app);
     await loginAs(agent, SOLO_TUTORES);
 
     const res = await agent.get('/main.html');
-    expect(res.text).toMatch(/<a href="#" class="nav-link[^"]*">[\s\S]*?Tutores y pacientes/);
+    expect(res.text).toMatch(
+      /<a href="tutores\.html" class="nav-link[^"]*">[\s\S]*?Tutores y pacientes/,
+    );
   });
 
   it('sin tutores.ver, no aparece el link', async () => {

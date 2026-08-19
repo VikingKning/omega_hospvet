@@ -1,0 +1,197 @@
+<%
+const permissions = user?.permissions ?? [];
+const has = (code) => permissions.includes(code);
+
+// propietarios.nombre es un solo campo de texto libre (a diferencia de
+// doctores, que tiene nombre/apellidos separados) — las iniciales se
+// calculan de las 2 primeras palabras si las hay, o de las 2 primeras
+// letras si el tutor solo capturó una palabra.
+function initialesTutor(nombre) {
+  const partes = (nombre || '').trim().split(/\s+/).filter(Boolean);
+  if (partes.length >= 2) return `${partes[0].charAt(0)}${partes[1].charAt(0)}`.toUpperCase();
+  return (partes[0] || '').slice(0, 2).toUpperCase();
+}
+%>
+<% if (catalogoVacio) { %>
+  <div class="lab-table-wrap">
+    <div class="empty-state-panel">
+      <span class="empty-state-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
+      </span>
+      <p class="empty-state-title">Todavía no hay tutores registrados</p>
+      <p class="empty-state-description">Da de alta al primer tutor y registra sus pacientes para empezar a gestionar su información desde esta pantalla.</p>
+      <% if (has('tutores.crear')) { %>
+        <a class="btn-primary" href="tutores/nuevo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Registrar primer propietario
+        </a>
+      <% } %>
+    </div>
+  </div>
+<% } else { %>
+  <form id="tutores-filters"
+        hx-post="tutores.html" hx-target="#tutores-panel" hx-swap="innerHTML"
+        hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+        hx-trigger="input changed delay:400ms from:#tutores-search, submit"
+        hx-vals='{"page":1}'>
+    <input type="hidden" name="estadoTutores" value="<%= estadoTutores %>">
+    <input type="hidden" name="estadoPacientes" value="<%= estadoPacientes %>">
+    <input type="hidden" name="page" value="<%= page %>">
+
+    <div class="lab-toolbar">
+      <div class="lab-toolbar-filters">
+        <div class="lab-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="tutores-search" name="q" value="<%= q %>" placeholder="Buscar por tutor, teléfono, correo o paciente...">
+        </div>
+        <div class="filter-group">
+          <span class="filter-group-label">Tutores</span>
+          <div class="toggle-group">
+            <button type="button" class="toggle-btn<%= estadoTutores === 'activos' ? ' active' : '' %>"
+                    hx-post="tutores.html" hx-include="#tutores-filters" hx-target="#tutores-panel"
+                    hx-vals='{"estadoTutores":"activos","page":1}'>Activos</button>
+            <button type="button" class="toggle-btn<%= estadoTutores === 'todos' ? ' active' : '' %>"
+                    hx-post="tutores.html" hx-include="#tutores-filters" hx-target="#tutores-panel"
+                    hx-vals='{"estadoTutores":"todos","page":1}'>Todos</button>
+          </div>
+        </div>
+        <div class="filter-group">
+          <span class="filter-group-label">Pacientes</span>
+          <div class="toggle-group">
+            <button type="button" class="toggle-btn<%= estadoPacientes === 'activos' ? ' active' : '' %>"
+                    hx-post="tutores.html" hx-include="#tutores-filters" hx-target="#tutores-panel"
+                    hx-vals='{"estadoPacientes":"activos","page":1}'>Activos</button>
+            <button type="button" class="toggle-btn<%= estadoPacientes === 'todos' ? ' active' : '' %>"
+                    hx-post="tutores.html" hx-include="#tutores-filters" hx-target="#tutores-panel"
+                    hx-vals='{"estadoPacientes":"todos","page":1}'>Todos</button>
+          </div>
+        </div>
+      </div>
+      <% if (has('tutores.crear')) { %>
+        <a class="btn-primary" href="tutores/nuevo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nuevo Propietario
+        </a>
+      <% } %>
+    </div>
+
+    <%#
+      Ajuste posterior (pedido del usuario): en mobile, la columna Estado se
+      oculta y su badge se duplica DENTRO de la celda de Propietario (bajo
+      el teléfono, oculto en desktop) — mismo criterio que el resto de
+      ajustes mobile de esta sesión: no perder información (sigue
+      distinguiendo Activo/Inactivo con el filtro "Todos"), solo liberar
+      una columna entera para que Propietario y Pacientes asociados queden
+      más cerca en la misma línea. Clase `tutores-table` nueva y exclusiva
+      de esta tabla — el resto de catálogos (doctores/áreas/plantillas/
+      usuarios) no se tocan.
+    %>
+    <div class="lab-table-wrap">
+      <table class="lab-table tutores-table">
+        <thead>
+          <tr>
+            <th>Propietario</th>
+            <th>Estado</th>
+            <th>Pacientes asociados</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% tutores.forEach((tutor) => { %>
+            <tr>
+              <td>
+                <div class="person-cell">
+                  <span class="avatar-circle"><%= initialesTutor(tutor.nombre) %></span>
+                  <div>
+                    <div class="person-cell-name"><%= tutor.nombre %></div>
+                    <div class="person-cell-subtitle"><%= tutor.telefono %></div>
+                    <span class="status-badge person-cell-status-mobile<%= tutor.activo ? ' is-active' : '' %>"><%= tutor.activo ? 'Activo' : 'Inactivo' %></span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="status-badge<%= tutor.activo ? ' is-active' : '' %>"><%= tutor.activo ? 'Activo' : 'Inactivo' %></span>
+              </td>
+              <td>
+                <% if (tutor.pacientes.length === 0) { %>
+                  <span class="area-tag-empty">No hay pacientes para mostrar.</span>
+                <% } else { %>
+                  <details class="pacientes-details">
+                    <summary><%= tutor.pacientes.length %> paciente<%= tutor.pacientes.length === 1 ? '' : 's' %></summary>
+                    <table class="pacientes-mini-table">
+                      <thead>
+                        <tr><th>Tipo</th><th>Nombre</th><th>Raza</th><th>Estado</th></tr>
+                      </thead>
+                      <tbody>
+                        <% tutor.pacientes.forEach((mascota) => { %>
+                          <tr>
+                            <td><%= mascota.tipo || '—' %></td>
+                            <td><%= mascota.nombre %></td>
+                            <td><%= mascota.raza || '—' %></td>
+                            <td><span class="status-badge<%= mascota.activo ? ' is-active' : '' %>"><%= mascota.activo ? 'Activo' : 'Inactivo' %></span></td>
+                          </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </details>
+                <% } %>
+              </td>
+              <td class="text-right">
+                <div class="row-actions">
+                  <% if (has('tutores.editar')) { %>
+                    <a class="row-action-btn row-action-edit" data-tooltip="Editar"
+                       aria-label="Editar tutor <%= tutor.nombre %>" href="tutores/<%= tutor.id %>/editar">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                      </svg>
+                    </a>
+                  <% } %>
+                  <% if (has('tutores.eliminar') && tutor.activo) { %>
+                    <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
+                            aria-label="Dar de baja a <%= tutor.nombre %>"
+                            hx-delete="tutores/<%= tutor.id %>" hx-include="#tutores-filters"
+                            hx-target="#tutores-panel" hx-swap="innerHTML"
+                            hx-confirm='Favor de confirmar la baja del propietario <%= tutor.nombre %>.&#10;No se elimina su información ni la de sus pacientes, ni su historial de citas o laboratorio — solo deja de aparecer como propietario activo.'>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% if (tutores.length === 0) { %>
+        <p class="lab-empty">No hay resultados para tu búsqueda.</p>
+      <% } %>
+
+      <div class="table-footer">
+        <%# AC: texto exacto "[encontrados] resultados – [total] tutores en
+            total" — separador en-dash, distinto del "·" que usan
+            doctores/áreas; se sigue el AC al pie de la letra. %>
+        <span><%= tutores.length %> resultados – <%= total %> tutores en total</span>
+        <% if (totalPages > 1) { %>
+          <nav class="pagination" aria-label="Paginación">
+            <button type="button" class="pagination-btn" aria-disabled="<%= page <= 1 %>" <%= page <= 1 ? 'disabled' : '' %>
+                    hx-post="tutores.html" hx-include="#tutores-filters" hx-target="#tutores-panel"
+                    hx-vals='{"page":<%= Math.max(1, page - 1) %>}' aria-label="Página anterior">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <% for (let p = 1; p <= totalPages; p++) { %>
+              <button type="button" class="pagination-page<%= p === page ? ' current' : '' %>"
+                      hx-post="tutores.html" hx-include="#tutores-filters" hx-target="#tutores-panel"
+                      hx-vals='{"page":<%= p %>}'><%= p %></button>
+            <% } %>
+            <button type="button" class="pagination-btn" aria-disabled="<%= page >= totalPages %>" <%= page >= totalPages ? 'disabled' : '' %>
+                    hx-post="tutores.html" hx-include="#tutores-filters" hx-target="#tutores-panel"
+                    hx-vals='{"page":<%= Math.min(totalPages, page + 1) %>}' aria-label="Página siguiente">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </nav>
+        <% } %>
+      </div>
+    </div>
+  </form>
+<% } %>

@@ -420,6 +420,16 @@ body:has(.app)::after {
     height: 56px;
   }
 
+  /* Ajuste posterior (pedido del usuario, tutor-form.ejs): en mobile el
+     breadcrumb completo ("Tutores y Pacientes › Catálogo › Nuevo
+     propietario") se amontonaba junto al menú hamburguesa — se oculta el
+     prefijo, dejando solo el segmento final. Clase nueva y exclusiva de
+     este breadcrumb (ninguna otra página del sistema usa uno), así que no
+     hace falta preocuparse por el orden de cascada con otra regla. */
+  .topbar-breadcrumb-prefix {
+    display: none;
+  }
+
   .body-row {
     position: relative;
   }
@@ -579,6 +589,9 @@ body:has(.app)::after {
 }
 
 .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -587,7 +600,19 @@ body:has(.app)::after {
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
+  text-decoration: none;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+/* US-156: mismo tratamiento que .btn-primary svg — sin esto, un ícono
+   dentro de .btn-secondary (tutor-form.ejs es el primer uso con ícono;
+   el resto del sistema solo usa "Cancelar" en texto plano) se renderiza a
+   su tamaño intrínseco del SVG en vez de alinearse con el texto. */
+.btn-secondary svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .btn-danger {
@@ -611,11 +636,61 @@ body:has(.app)::after {
   background: var(--bg-base);
 }
 
+/* overflow-y:hidden (no "visible") a propósito, aunque nada aquí necesita
+   recortar contenido real: por spec, overflow-x:auto fuerza el overflow-y
+   COMPUTADO a "auto" también si se deja en "visible" (ver el comentario
+   junto a [data-tooltip] más abajo) — sin un segundo valor de scroll
+   explícito, un tooltip invisible (opacity/visibility en 0) posicionado
+   fuera de los límites de la caja cuenta como "contenido desbordado" y
+   dispara un scrollbar vertical real y no deseado en cuanto la última fila
+   no tiene debajo un table-footer/paginación que le dé colchón. "hidden"
+   evita el scrollbar sin afectar ninguna tabla CON table-footer: ese
+   colchón de sobra ya evita que lleguen a necesitar recortar nada. La
+   tabla de pacientes de tutor-form.ejs es la única sin ese colchón — tiene
+   su propia excepción más abajo (`:has(.tipo-picker)`). */
 .lab-table-wrap {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* US-155: el estado vacío nunca tiene una tabla ancha que scrollear — no
+   necesita overflow-x en absoluto. Sin esto, la spec de CSS fuerza el
+   overflow-y computado a "auto" también (mismo quirk ya documentado más
+   abajo para los tooltips de .row-action-btn), y el botón "+ Registrar
+   primer propietario" (deshabilitado, con su propio [data-tooltip]) tiene
+   un tooltip invisible (opacity/visibility en 0) que igual sobresale ~40px
+   debajo de la caja — suficiente para que el navegador cuente esa área
+   fantasma como contenido desbordado y dispare un scrollbar real, aunque
+   no haya nada visible que cortar. Quitar el overflow aquí resuelve la
+   causa real en vez de agrandar el padding para "ganarle" al tooltip a
+   ciegas. */
+.lab-table-wrap:has(.empty-state-panel) {
+  overflow: visible;
+}
+
+/* Ajuste posterior (bug real, reportado con captura): la tabla de
+   pacientes de tutor-form.ejs no tiene table-footer/paginación dentro de
+   su .lab-table-wrap (a diferencia de TODAS las demás tablas del sistema)
+   — el overflow-y:hidden de la regla base, que en esas otras tablas nunca
+   llega a recortar nada real, aquí SÍ recortaba el tooltip real (no
+   fantasma) de la cruz "Quitar"/los íconos Perro-Gato de la última fila,
+   apenas visible como una rebanada cortada.
+   Primer intento (`overflow:visible`, como la excepción del estado vacío
+   de arriba) se revirtió: en mobile esta tabla SÍ necesita scroll
+   horizontal real (4 columnas angostas no caben en ~340px), y CSS no
+   permite overflow-x:auto + overflow-y:visible al mismo tiempo — el eje
+   "visible" se computa como "auto" también, reintroduciendo el scrollbar
+   vertical fantasma del ajuste anterior. En vez de pelear con el
+   overflow, se le da a la caja un padding-bottom real del tamaño del
+   tooltip (~45px: 8px de separación + el propio cuerpo del tooltip) —
+   dentro de esa área ya no hay nada que recortar, así el `hidden` de la
+   regla base nunca llega a tocar el tooltip real, y overflow-x:auto sigue
+   intacto para el scroll horizontal en mobile. */
+.lab-table-wrap:has(.tipo-picker) {
+  padding-bottom: 45px;
 }
 
 .lab-table {
@@ -693,6 +768,56 @@ body:has(.app)::after {
 
 .lab-studies-list li {
   padding: 2px 0;
+}
+
+/* US-155: mismo patrón visual que .lab-studies-details (laboratorio) para
+   "resumen + detalle desplegable sin JS", pero con su propia clase — cada
+   módulo duplica su propio componente a propósito (independencia entre
+   módulos), y aquí el contenido es una mini-tabla (Tipo/Nombre/Raza/Estado
+   por paciente), no una lista simple de nombres de estudio. */
+.pacientes-details summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 600;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.pacientes-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.pacientes-details summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+}
+
+.pacientes-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.pacientes-mini-table {
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pacientes-mini-table th {
+  text-align: left;
+  padding: 4px 10px 4px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pacientes-mini-table td {
+  padding: 4px 10px 4px 0;
+  color: var(--text-dark);
 }
 
 .badge {
@@ -1615,6 +1740,23 @@ body:has(.app)::after {
   color: #fff;
 }
 
+/* US-155: Tutores/Pacientes tiene DOS filtros de estado independientes en
+   pantalla al mismo tiempo (a diferencia de doctores/áreas, que solo tienen
+   uno) — cada .toggle-group necesita su propia etiqueta corta para que se
+   entienda cuál filtra qué. */
+.filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .avatar-circle {
   display: inline-flex;
   align-items: center;
@@ -1643,6 +1785,16 @@ body:has(.app)::after {
 .person-cell-subtitle {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* Ajuste posterior (pedido del usuario, tutores-panel.ejs): duplicado
+   mobile-only del badge de Estado, oculto en desktop (ahí ya tiene su
+   propia columna) — ver el override que lo muestra al final de este
+   archivo, junto con el resto de ajustes mobile. */
+.person-cell-status-mobile {
+  display: none;
+  margin-top: 2px;
+  font-size: 11px;
 }
 
 .area-tag {
@@ -1773,6 +1925,22 @@ body:has(.app)::after {
 .row-action-btn svg {
   width: 15px;
   height: 15px;
+}
+
+/* US-155: primer caso de una acción visible-pero-no-implementada-todavía
+   (editar/eliminar de Tutores, con su funcionalidad real pospuesta a
+   US-156/157) — la tabla necesita poder mostrar el ícono sin darle un
+   hx-* real, así que el estado disabled necesita su propio tratamiento
+   visual (el resto del sistema nunca deshabilitaba estos botones). El
+   tooltip sigue funcionando (:hover no depende de que el botón sea
+   enfocable), solo se atenúa el ícono. */
+.row-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.row-action-btn:disabled:hover {
+  background: var(--surface);
 }
 
 .row-action-edit {
@@ -2013,4 +2181,402 @@ body:has(.app)::after {
   font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+/* ---------- US-156: alta/edición de Tutores y Pacientes ---------- */
+/* Primera página de alta/edición del sistema que NO vive en un modal — el
+   mockup de esta historia la pide como página completa propia (breadcrumb,
+   botón "Regresar al listado", panel "Resumen" a un lado), a diferencia de
+   doctores/áreas/plantillas/usuarios (formulario en un .modal-card).
+   Reutiliza .profile-card (misma tarjeta blanca de Mi Perfil) para cada
+   sección en vez de inventar un componente de tarjeta nuevo. */
+/* Ajuste posterior (pedido explícito del usuario): esta página siempre debe
+   ocupar el 100% del ancho disponible, igual que el resto del sistema — el
+   max-width:1100px original dejaba ~1400px sin usar en pantallas anchas. */
+.tutor-form-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tutor-form-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.tutor-form-heading-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.tutor-form-heading-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.tutor-form-heading-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tutor-form-heading-text h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.tutor-form-heading-text p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.tutor-form-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.tutor-form-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.tutor-form-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tutor-form-card-title {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+/* Siempre junto a la clase `modal-form` en el HTML (mismo look de
+   label/input que doctor-form.ejs/area-form.ejs/plantilla-form.ejs, el
+   estándar de formularios del sistema) — aquí solo se pisa su `display`
+   (grid de 3 columnas en vez de columna única) para acomodar Nombre/
+   Teléfono/Correo lado a lado; `.modal-form label`/`.modal-form input`
+   siguen aplicando tal cual sobre los hijos. */
+.tutor-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.tutor-form-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tutor-pacientes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+/* Resumen: mismo patrón label/value que .profile-summary-* de Mi Perfil,
+   pero en una pila vertical (la tarjeta es angosta, a un lado) en vez de un
+   grid horizontal. */
+.tutor-resumen-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tutor-resumen-row + .tutor-resumen-row {
+  margin-top: 14px;
+}
+
+.tutor-resumen-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--primary);
+}
+
+.tutor-resumen-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.tutor-resumen-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tutor-resumen-value {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.tutor-form-info {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.tutor-form-info svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--primary);
+  margin-top: 1px;
+}
+
+.tutor-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.tutor-form-actions-right {
+  display: flex;
+  gap: 10px;
+}
+
+/* Tabla de pacientes: Nombre/Tipo/Raza son <input> siempre editables
+   directamente en la celda (sin un modo "editar" aparte) — más simple y
+   robusto que alternar entre texto de solo lectura y un formulario inline.
+   Reutiliza .lab-table para el resto (mismo look que cualquier otra tabla
+   del sistema). */
+.lab-table .paciente-input {
+  width: 100%;
+  min-width: 100px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-dark);
+  background: var(--bg-base);
+}
+
+.lab-table .paciente-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+  background: #fff;
+}
+
+.lab-table .paciente-input.invalid {
+  border-color: var(--danger);
+}
+
+/* Ajuste posterior (pedido del usuario): por ahora solo hay dos tipos de
+   mascota (Perro/Gato) — reemplaza el <input> libre de "Tipo" por un
+   control de 2 íconos, selección única, mismo criterio visual que
+   .toggle-group (borde compartido, separador entre botones, activo
+   resaltado en --primary) pero dimensionado para caber en una celda. */
+/* Sin overflow:hidden a propósito (a diferencia de .toggle-group, de donde
+   se copió el patrón visual): sus botones traen [data-tooltip], y un
+   overflow:hidden en el contenedor recorta el tooltip aunque
+   .tipo-picker-btn tenga su propio position:relative — el clip de un
+   ancestro con overflow:hidden aplica sin importar cuál sea el "positioned
+   ancestor" real de un position:absolute. Bug real, reportado en vivo: el
+   tooltip nunca se veía al hacer hover, aunque su CSS computado ya decía
+   visibility:visible (el gap era justo que ese chequeo no capta el
+   recorte del ancestro). Las esquinas redondeadas se logran aplicando el
+   border-radius directo al primer/último botón en vez de recortar. */
+.tipo-picker {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.tipo-picker-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tipo-picker-btn:first-child {
+  border-radius: 7px 0 0 7px;
+}
+
+.tipo-picker-btn:last-child {
+  border-radius: 0 7px 7px 0;
+}
+
+.tipo-picker-btn + .tipo-picker-btn {
+  border-left: 1px solid var(--border);
+}
+
+.tipo-picker-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tipo-picker-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Ajuste posterior (pedido del usuario): la columna "Acciones" se quita —
+   un paciente nuevo (sin id) muestra su cruz de "quitar" en la propia
+   celda de Estado, en vez de una columna aparte. El badge "Activo" que
+   vivía junto a ella se quitó después (otro ajuste): un alta siempre nace
+   activa, repetirlo en cada fila solo ensanchaba la tabla sin aportar
+   nada. */
+.paciente-cancelar-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.paciente-cancelar-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.paciente-cancelar-btn:hover {
+  color: var(--danger);
+}
+
+/* Ajustes de mobile para tutor-form.ejs — consolidados aquí, al FINAL del
+   archivo, a propósito: son overrides de reglas base (.tutor-form-layout,
+   .tutor-form-aside, .tutor-form-actions, .tutor-form-actions-right) que
+   se definen más arriba en este mismo archivo. Con la misma especificidad,
+   la regla que aparece DESPUÉS en el archivo gana en cascada sin importar
+   si está dentro de un @media que sí aplica — un override puesto ANTES de
+   su propia regla base (ya sea en el bloque general de arriba, o incluso
+   en un bloque nuevo puesto en un punto intermedio del archivo) pierde en
+   cascada sin avisar. Bug real, encontrado dos veces seguidas por este
+   motivo antes de aterrizar aquí. */
+@media (max-width: 768px) {
+  /* El grid de 2 columnas nunca colapsaba a una sola — el panel "Resumen"/
+     "Información" (300px fijos) terminaba flotando encima de "Información
+     del propietario" en vez de apilarse debajo. */
+  .tutor-form-layout {
+    grid-template-columns: 1fr;
+  }
+
+  /* Ajuste posterior (pedido del usuario): "Resumen" y el aviso "En este
+     formulario puede agregar..." no aportan nada que la propia pantalla no
+     muestre ya (sin espacio de sobra como en desktop) — se ocultan por
+     completo en vez de apilarse, para no alargar el scroll de una pantalla
+     que ya es larga en mobile. */
+  .tutor-form-aside {
+    display: none;
+  }
+
+  /* Ajuste posterior (pedido del usuario): la leyenda "Capture la
+     información del propietario y sus pacientes." bajo el título grande
+     tampoco aporta nada nuevo en mobile — el título y los campos de abajo
+     ya son autoexplicativos sin el espacio de sobra de desktop. */
+  .tutor-form-heading-text p {
+    display: none;
+  }
+
+  /* Ajuste posterior (pedido del usuario): los 3 botones deben caber en
+     una sola línea en mobile, nunca envolver a una segunda — se reduce
+     tamaño/padding SOLO para estos botones (selector descendiente, nunca
+     toca .btn-primary/.btn-secondary base, usados en todo el sistema). */
+  .tutor-form-actions {
+    padding: 12px;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .tutor-form-actions-right {
+    gap: 6px;
+  }
+
+  .tutor-form-actions .btn-primary,
+  .tutor-form-actions .btn-secondary {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+}
+
+/* Ajuste posterior (pedido del usuario): en el listado de tutores.html, en
+   mobile la columna Estado y la de Pacientes asociados quedaban una junto
+   a la otra pero fuera del ancho visible — había que hacer scroll
+   horizontal para ver los pacientes de cada tutor, que es justo la
+   información que se quiere ver "en la misma línea" que el propietario.
+   Se libera la columna Estado (su badge se duplica dentro de la celda de
+   Propietario, ver .person-cell-status-mobile arriba) para que Pacientes
+   asociados quede más cerca. Mismo criterio de posición al final del
+   archivo que el resto de ajustes mobile de esta sesión — ver
+   [[gotcha_media_query_orden_cascada]]. */
+@media (max-width: 768px) {
+  .tutores-table th:nth-child(2),
+  .tutores-table td:nth-child(2) {
+    display: none;
+  }
+
+  .tutores-table .person-cell-status-mobile {
+    display: inline-flex;
+  }
+
+  .tutores-table th,
+  .tutores-table td {
+    padding: 10px;
+  }
+}
+
+/* Ajuste posterior (pedido del usuario): en Mi Perfil, en mobile, los
+   campos de "Datos personales" (Nombre/Apellidos/Correo/Teléfono) y de
+   "Cambiar contraseña" (Actual/Nueva/Confirmar) deben quedar en una sola
+   columna, uno debajo del otro. `.profile-form-row` es compartida por
+   AMBAS secciones (perfil-form.ejs y perfil-password-form.ejs, únicos dos
+   usos en todo el proyecto) — un solo override de grid resuelve las dos a
+   la vez, y en el orden pedido: Datos personales ya son <label> sueltos
+   hermanos (Nombre, Apellidos, Correo, Teléfono en ese orden al apilarse);
+   Cambiar contraseña ya tiene Actual en la primera columna y Nueva+
+   Confirmar en la segunda (.profile-form-col), así que apilar por columna
+   también da el orden correcto (Actual, Nueva, Confirmar) sin tocar el
+   HTML. */
+@media (max-width: 768px) {
+  .profile-form-row {
+    grid-template-columns: 1fr;
+  }
 }
