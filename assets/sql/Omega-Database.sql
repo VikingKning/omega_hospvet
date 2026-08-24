@@ -211,6 +211,7 @@ CREATE TABLE "envio_archivo" (
 CREATE TABLE "plantillas_whatsapp" (
   "id" serial PRIMARY KEY,
   "intencion" varchar(100) UNIQUE NOT NULL,
+  "slug" varchar(100) UNIQUE NOT NULL,
   "texto_respuesta" text NOT NULL,
   "activo" boolean NOT NULL DEFAULT true,
   "veces_usada" integer NOT NULL DEFAULT 0,

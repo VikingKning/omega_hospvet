@@ -25,13 +25,36 @@ const esEdicion = Boolean(plantilla);
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `plantillas/${plantilla.id}` : 'plantillas' %>"
       hx-target="#plantillaFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
-  <label>
-    Intención
-    <input type="text" name="intencion" value="<%= intencion %>" required maxlength="100" autofocus>
-  </label>
+  <%
+    // Intención (y su slug derivado) son inmutables tras el alta —
+    // decisión explícita del usuario: son la identidad con la que un LLM
+    // matcheará esta plantilla más adelante, y con la que
+    // mensajes_whatsapp.plantilla_id enlaza el histórico. Editar el
+    // significado bajo el mismo id reinterpretaría en silencio mensajes ya
+    // enviados. Por eso en edición se muestran de solo lectura (sin
+    // `name`, para que ni siquiera viajen en el submit — mismo criterio
+    // que el slug de área en area-form.ejs) y solo se puede tocar el
+    // texto de respuesta. Para "cambiar la intención" hay que dar de baja
+    // esta plantilla (switch de abajo) y crear una nueva.
+  %>
+  <% if (esEdicion) { %>
+    <label>
+      Intención
+      <input type="text" value="<%= intencion %>" readonly disabled>
+    </label>
+    <label>
+      Slug (para el LLM)
+      <input type="text" value="<%= slug %>" readonly disabled>
+    </label>
+  <% } else { %>
+    <label>
+      Intención
+      <input type="text" name="intencion" value="<%= intencion %>" required maxlength="100" autofocus>
+    </label>
+  <% } %>
   <label>
     Texto de respuesta
-    <textarea name="texto_respuesta" rows="4" required><%= texto_respuesta %></textarea>
+    <textarea name="texto_respuesta" rows="4" required <%= esEdicion ? 'autofocus' : '' %>><%= texto_respuesta %></textarea>
   </label>
   <%
     // Switch Activo/Inactivo: solo en edición, a petición explícita (no

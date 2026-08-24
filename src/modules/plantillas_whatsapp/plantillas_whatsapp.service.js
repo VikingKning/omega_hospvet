@@ -18,7 +18,7 @@ class DuplicateIntencionError extends Error {
 }
 
 const PAGE_SIZE = 10;
-const SORT_COLUMNS = ['intencion', 'veces_usada', 'estado'];
+const SORT_COLUMNS = ['intencion', 'slug', 'veces_usada', 'estado'];
 const INTENCION_MAX_LENGTH = 100;
 
 function parsePage(rawPage) {
@@ -107,14 +107,43 @@ function normalizeIntencion(intencion) {
   return intencion.normalize('NFD').replace(DIACRITIC_MARKS, '').toLowerCase().replace(/\s+/g, '');
 }
 
-// Trae todas las plantillas (menos excludeId, en edición) y compara
-// intenciones normalizadas en JS — ver el comentario de
-// repository.findAllExcept sobre por qué no se hace con SQL/una extensión
-// de Postgres.
-async function findDuplicado(intencion, excludeId) {
+// Trae todas las plantillas y compara intenciones normalizadas en JS — ver
+// el comentario de repository.findAllExcept sobre por qué no se hace con
+// SQL/una extensión de Postgres. Solo la usa crear(): intención es
+// inmutable tras el alta (ver editar() más abajo), así que editar() ya no
+// necesita comparar contra las demás.
+async function findDuplicado(intencion) {
   const objetivo = normalizeIntencion(intencion);
-  const candidatos = await repository.findAllExcept(excludeId);
+  const candidatos = await repository.findAllExcept();
   return candidatos.find((candidato) => normalizeIntencion(candidato.intencion) === objetivo);
+}
+
+// Mismo slugify que areas.service.js, duplicado a propósito (módulos de
+// dominio independientes entre sí, mismo criterio que
+// areas.repository.js#asegurarPermisosAgenda). El slug es la clave que un
+// LLM usará para elegir esta plantilla — se genera UNA VEZ al crear y
+// nunca se regenera (ver editar() más abajo y la migración
+// 20260824000002).
+function slugify(intencion) {
+  return intencion
+    .normalize('NFD')
+    .replace(DIACRITIC_MARKS, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+async function generateUniqueSlug(intencion) {
+  const base = slugify(intencion);
+  let slug = base;
+  let suffix = 2;
+  // Secuencial a propósito: cada intento depende del resultado del anterior.
+  while (await repository.existsBySlug(slug)) {
+    slug = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return slug;
 }
 
 function validateTexto(rawValor, etiqueta, maxLength) {
@@ -147,11 +176,14 @@ async function crear({ intencion: rawIntencion, texto_respuesta: rawTexto, usuar
     if (existing.activo) {
       throw new DuplicateIntencionError();
     }
+    // Reactivación de una plantilla ya dada de baja: el slug original se
+    // conserva (nunca se regenera), igual que areas.service.js#crear.
     await repository.reactivar(existing.id, intencion, usuarioId);
     return existing.id;
   }
 
-  return repository.create({ intencion, texto_respuesta, usuarioId });
+  const slug = await generateUniqueSlug(intencion);
+  return repository.create({ intencion, slug, texto_respuesta, usuarioId });
 }
 
 // El switch Activo/Inactivo del formulario solo viaja en el body cuando
@@ -162,30 +194,24 @@ function parseActivo(rawActivo) {
   return rawActivo === 'true';
 }
 
-// US-613 AC (ampliada): edición — con id, actualiza intención/texto_respuesta
-// y el estado Activo/Inactivo (switch agregado a petición explícita del
+// US-613 AC (ampliada): edición — con id, actualiza SOLO texto_respuesta y
+// el estado Activo/Inactivo (switch agregado a petición explícita del
 // usuario, no estaba en el AC original de la historia), conserva
-// veces_usada. A diferencia de crear(), aquí SÍ se rechaza contra CUALQUIER
-// otro registro con esa intención, esté activo o no — mismo criterio que
-// areas.service.js#editar (no hay "reactivar por nombre" al editar; el
-// switch de esta misma pantalla ya cubre reactivar/desactivar por id).
-async function editar({
-  id,
-  intencion: rawIntencion,
-  texto_respuesta: rawTexto,
-  activo: rawActivo,
-  usuarioId,
-}) {
-  const intencion = validateTexto(rawIntencion, 'Intención', INTENCION_MAX_LENGTH);
+// veces_usada. `intencion`/`slug` son inmutables después del alta —
+// decisión explícita del usuario: son la identidad con la que el LLM
+// matchea un mensaje de WhatsApp a esta plantilla, y con la que
+// mensajes_whatsapp.plantilla_id enlaza el histórico; si se pudieran
+// editar, un mensaje viejo quedaría re-interpretado en silencio bajo un
+// significado distinto al que tenía cuando realmente se envió. Para
+// "cambiar la intención" hay que dar de baja esta plantilla (switch de
+// esta misma pantalla) y crear una nueva — nunca reescribir esta. Por eso
+// ya no hay chequeo de duplicados aquí (a diferencia de crear()): con
+// intención fija, no hay forma de que una edición choque con otra fila.
+async function editar({ id, texto_respuesta: rawTexto, activo: rawActivo, usuarioId }) {
   const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta');
   const activo = parseActivo(rawActivo);
 
-  const existing = await findDuplicado(intencion, id);
-  if (existing) {
-    throw new DuplicateIntencionError();
-  }
-
-  await repository.update(id, { intencion, texto_respuesta, activo, usuarioId });
+  await repository.update(id, { texto_respuesta, activo, usuarioId });
 }
 
 module.exports = {

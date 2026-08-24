@@ -112,6 +112,7 @@ describe('GET /plantillas.html', () => {
   beforeAll(async () => {
     await db('plantillas_whatsapp').insert({
       intencion: `Confirmar cita ${SUFFIX}`,
+      slug: `confirmar-cita-${SUFFIX.toLowerCase()}`,
       texto_respuesta: 'Tu cita ha sido confirmada.',
       activo: true,
       veces_usada: 12,
@@ -119,6 +120,7 @@ describe('GET /plantillas.html', () => {
     });
     await db('plantillas_whatsapp').insert({
       intencion: `Recordatorio vacuna ${SUFFIX}`,
+      slug: `recordatorio-vacuna-${SUFFIX.toLowerCase()}`,
       texto_respuesta: 'Te recordamos la vacuna de tu mascota.',
       activo: true,
       veces_usada: 3,
@@ -126,6 +128,7 @@ describe('GET /plantillas.html', () => {
     });
     await db('plantillas_whatsapp').insert({
       intencion: `Retirada ${SUFFIX}`,
+      slug: `retirada-${SUFFIX.toLowerCase()}`,
       texto_respuesta: 'Texto de una plantilla dada de baja.',
       activo: false,
       veces_usada: 0,
@@ -133,7 +136,7 @@ describe('GET /plantillas.html', () => {
     });
   });
 
-  it('AC: la carga inicial tiene "Todos" seleccionado por defecto y lista activas E inactivas, con intención/veces_usada/estado', async () => {
+  it('AC: la carga inicial tiene "Todos" seleccionado por defecto y lista activas E inactivas, con intención/slug/veces_usada/estado', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await agent.get('/plantillas.html');
@@ -142,6 +145,7 @@ describe('GET /plantillas.html', () => {
     expect(res.text).toContain(`Confirmar cita ${SUFFIX}`);
     expect(res.text).toContain(`Retirada ${SUFFIX}`); // inactiva, SÍ aparece por defecto (a diferencia de doctores/áreas)
     expect(res.text).toContain('toggle-btn active'); // el toggle "Todos" trae la clase active por defecto
+    expect(res.text).toContain(`confirmar-cita-${SUFFIX.toLowerCase()}`); // columna Slug (LLM)
   });
 
   it('un GET con query string a mano se ignora por completo (privacidad: nunca se lee ni se refleja)', async () => {
@@ -166,6 +170,15 @@ describe('GET /plantillas.html', () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await filtrarPlantillas(agent, { q: 'Recordatorio' });
+
+    expect(res.text).toContain(`Recordatorio vacuna ${SUFFIX}`);
+    expect(res.text).not.toContain(`Confirmar cita ${SUFFIX}`);
+  });
+
+  it('POST con q=recordatorio-vacuna (el slug) también encuentra la plantilla', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { q: 'recordatorio-vacuna' });
 
     expect(res.text).toContain(`Recordatorio vacuna ${SUFFIX}`);
     expect(res.text).not.toContain(`Confirmar cita ${SUFFIX}`);
@@ -263,6 +276,18 @@ describe('GET /plantillas.html', () => {
       expect(idxRetirada).toBeLessThan(idxConfirmar);
     });
 
+    it('sort=slug ordena por slug', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+      const res = await filtrarPlantillas(agent, { estado: 'todos', sort: 'slug', dir: 'asc' });
+
+      const idxConfirmar = res.text.indexOf(`confirmar-cita-${SUFFIX.toLowerCase()}`);
+      const idxRecordatorio = res.text.indexOf(`recordatorio-vacuna-${SUFFIX.toLowerCase()}`);
+      const idxRetirada = res.text.indexOf(`retirada-${SUFFIX.toLowerCase()}`);
+      expect(idxConfirmar).toBeLessThan(idxRecordatorio);
+      expect(idxRecordatorio).toBeLessThan(idxRetirada);
+    });
+
     it('sort=veces_usada ordena numéricamente', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
@@ -310,6 +335,7 @@ describe('GET /plantillas/nuevo y GET /plantillas/:id/editar (US-613 — formula
     const [plantilla] = await db('plantillas_whatsapp')
       .insert({
         intencion: `Formulario ${SUFFIX}`,
+        slug: `formulario-${SUFFIX.toLowerCase()}`,
         texto_respuesta: 'Texto original de la plantilla.',
         activo: true,
         veces_usada: 0,
@@ -329,7 +355,7 @@ describe('GET /plantillas/nuevo y GET /plantillas/:id/editar (US-613 — formula
     expect(res.text).not.toContain('Editar plantilla');
   });
 
-  it('AC: el formulario de edición trae intención/texto_respuesta precargados, título "Editar plantilla"', async () => {
+  it('AC: el formulario de edición trae intención/slug/texto_respuesta precargados, título "Editar plantilla", con intención y slug de solo lectura', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await agent.get(`/plantillas/${plantillaId}/editar`);
@@ -338,6 +364,11 @@ describe('GET /plantillas/nuevo y GET /plantillas/:id/editar (US-613 — formula
     expect(res.text).toContain('Editar plantilla');
     expect(res.text).toContain(`value="Formulario ${SUFFIX}"`);
     expect(res.text).toContain('Texto original de la plantilla.');
+    const plantilla = await db('plantillas_whatsapp').where({ id: plantillaId }).first();
+    expect(res.text).toContain(`value="${plantilla.slug}"`);
+    expect(res.text).toContain('readonly');
+    // "intencion" ya no viaja como campo editable — no hay <input name="intencion"> en edición.
+    expect(res.text).not.toContain('name="intencion"');
   });
 
   it('un usuario sin plantillas.crear no puede abrir el formulario de alta', async () => {
@@ -369,17 +400,20 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
       .send({ intencion, texto_respuesta: texto });
   }
 
-  // activo:'true' por defecto — el switch Activo/Inactivo solo viaja en el
-  // body cuando está marcado, así que sin este default cada edición de
-  // estos tests desactivaría la plantilla como efecto secundario no
-  // buscado (ver los tests dedicados al switch más abajo).
-  async function editarPlantilla(agent, id, intencion, texto = 'Texto editado.', activo = 'true') {
+  // Sin `intencion`: el formulario real ya no la manda en edición (campo
+  // de solo lectura, sin `name`, ver plantilla-form.ejs) — este helper
+  // replica ese comportamiento. activo:'true' por defecto — el switch
+  // Activo/Inactivo solo viaja en el body cuando está marcado, así que sin
+  // este default cada edición de estos tests desactivaría la plantilla
+  // como efecto secundario no buscado (ver los tests dedicados al switch
+  // más abajo).
+  async function editarPlantilla(agent, id, texto = 'Texto editado.', activo = 'true') {
     const csrfToken = await getPlantillasCsrfToken(agent);
     return agent
       .put(`/plantillas/${id}`)
       .type('form')
       .set('x-csrf-token', csrfToken)
-      .send({ intencion, texto_respuesta: texto, activo });
+      .send({ texto_respuesta: texto, activo });
   }
 
   it('AC: alta sin id inserta la plantilla con activo=true, veces_usada=0 y hace el swap out-of-band de la tabla', async () => {
@@ -397,6 +431,18 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     expect(row.activo).toBe(true);
     expect(row.veces_usada).toBe(0);
     expect(row.creado_por).not.toBeNull();
+    expect(row.slug).toBeTruthy(); // generado automáticamente a partir de la intención
+  });
+
+  it('AC: el slug se genera a partir de la intención, sin acentos y en minúsculas', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    await crearPlantilla(agent, `Cambio de Horario ${SUFFIX}`, 'Respuesta.');
+
+    const row = await db('plantillas_whatsapp')
+      .where('intencion', `Cambio de Horario ${SUFFIX}`)
+      .first();
+    expect(row.slug).toBe(`cambio-de-horario-${SUFFIX.toLowerCase()}`);
   });
 
   it('AC: una intención vacía muestra el error y no cierra el modal ni crea el registro', async () => {
@@ -446,7 +492,7 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     expect(Number(count.total)).toBe(1);
   });
 
-  it('AC: la edición actualiza intención/texto_respuesta y conserva veces_usada', async () => {
+  it('AC: la edición actualiza texto_respuesta y conserva veces_usada', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
     await crearPlantilla(agent, `Original ${SUFFIX}`);
     const original = await db('plantillas_whatsapp')
@@ -454,17 +500,45 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
       .first();
     await db('plantillas_whatsapp').where({ id: original.id }).update({ veces_usada: 42 });
 
-    const res = await editarPlantilla(agent, original.id, `Renombrada ${SUFFIX}`, 'Texto nuevo.');
+    const res = await editarPlantilla(agent, original.id, 'Texto nuevo.');
 
     expect(res.status).toBe(200);
     expect(res.headers['hx-trigger']).toBe('closePlantillaModal');
 
     const actualizada = await db('plantillas_whatsapp').where({ id: original.id }).first();
-    expect(actualizada.intencion).toBe(`Renombrada ${SUFFIX}`);
     expect(actualizada.texto_respuesta).toBe('Texto nuevo.');
     expect(actualizada.veces_usada).toBe(42); // no se tocó
     expect(actualizada.actualizado_por).not.toBeNull();
     expect(actualizada.actualizado_en).not.toBeNull();
+  });
+
+  it('AC: la intención y el slug son inmutables — aunque se manden distintos en el body del PUT, se ignoran por completo', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await crearPlantilla(agent, `Inmutable ${SUFFIX}`);
+    const original = await db('plantillas_whatsapp')
+      .where('intencion', `Inmutable ${SUFFIX}`)
+      .first();
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    // Ataque directo al endpoint (no vía el formulario, que ni siquiera
+    // manda este campo en edición): confirma que el backend lo ignora, no
+    // solo que la UI no lo ofrece.
+    const res = await agent
+      .put(`/plantillas/${original.id}`)
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({
+        intencion: `Otra Cosa Totalmente Distinta ${SUFFIX}`,
+        slug: 'otro-slug-cualquiera',
+        texto_respuesta: 'Texto que sí debe guardarse.',
+        activo: 'true',
+      });
+
+    expect(res.status).toBe(200);
+    const actualizada = await db('plantillas_whatsapp').where({ id: original.id }).first();
+    expect(actualizada.intencion).toBe(`Inmutable ${SUFFIX}`); // sin cambios
+    expect(actualizada.slug).toBe(original.slug); // sin cambios
+    expect(actualizada.texto_respuesta).toBe('Texto que sí debe guardarse.'); // esto sí se actualiza
   });
 
   it('AC (switch, a petición del usuario): desmarcar "Activo" al editar desactiva la plantilla (desactivado_por/desactivado_en)', async () => {
@@ -473,7 +547,7 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     await crearPlantilla(agent, intencion);
     const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
 
-    const res = await editarPlantilla(agent, plantilla.id, intencion, 'Texto.', 'false');
+    const res = await editarPlantilla(agent, plantilla.id, 'Texto.', 'false');
 
     expect(res.status).toBe(200);
     const actualizada = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
@@ -487,11 +561,11 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     const intencion = `ReactivarPorSwitch ${SUFFIX}`;
     await crearPlantilla(agent, intencion);
     const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
-    await editarPlantilla(agent, plantilla.id, intencion, 'Texto.', 'false');
+    await editarPlantilla(agent, plantilla.id, 'Texto.', 'false');
     const inactiva = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
     expect(inactiva.activo).toBe(false);
 
-    const res = await editarPlantilla(agent, plantilla.id, intencion, 'Texto.', 'true');
+    const res = await editarPlantilla(agent, plantilla.id, 'Texto.', 'true');
 
     expect(res.status).toBe(200);
     const actualizada = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
@@ -511,34 +585,16 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     expect(res.text).toContain('name="activo" value="true" checked');
   });
 
-  it('AC: editar sin cambiar la intención no choca consigo misma (excluye el propio id del chequeo de duplicados)', async () => {
+  it('AC: editar solo el texto (sin tocar intención) siempre tiene éxito, sin chequeo de duplicados', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
     const intencion = `SinCambios ${SUFFIX}`;
     await crearPlantilla(agent, intencion);
     const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
 
-    const res = await editarPlantilla(agent, plantilla.id, intencion);
+    const res = await editarPlantilla(agent, plantilla.id, 'Texto nuevo.');
 
     expect(res.status).toBe(200);
     expect(res.headers['hx-trigger']).toBe('closePlantillaModal');
-  });
-
-  it('AC: editar a una intención usada por OTRA plantilla activa muestra el error y no actualiza', async () => {
-    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
-    await crearPlantilla(agent, `Ocupada ${SUFFIX}`);
-    await crearPlantilla(agent, `PorEditar ${SUFFIX}`);
-    const porEditar = await db('plantillas_whatsapp')
-      .where('intencion', `PorEditar ${SUFFIX}`)
-      .first();
-
-    const res = await editarPlantilla(agent, porEditar.id, `Ocupada ${SUFFIX}`);
-
-    expect(res.status).toBe(200);
-    expect(res.text).toContain('La intención ya está registrada.');
-    expect(res.headers['hx-trigger']).toBeUndefined();
-
-    const sinCambios = await db('plantillas_whatsapp').where({ id: porEditar.id }).first();
-    expect(sinCambios.intencion).toBe(`PorEditar ${SUFFIX}`);
   });
 
   it('POST /plantillas sin token CSRF es rechazado', async () => {
@@ -602,6 +658,7 @@ describe('DELETE /plantillas/:id (US-614 — baja lógica)', () => {
     const [plantilla] = await db('plantillas_whatsapp')
       .insert({
         intencion: `Baja ${SUFFIX}`,
+        slug: `baja-${SUFFIX.toLowerCase()}`,
         texto_respuesta: 'Texto de la plantilla a dar de baja.',
         activo: true,
         veces_usada: 5,
@@ -613,6 +670,7 @@ describe('DELETE /plantillas/:id (US-614 — baja lógica)', () => {
     const [plantilla2] = await db('plantillas_whatsapp')
       .insert({
         intencion: `Bajado ${SUFFIX}`,
+        slug: `bajado-${SUFFIX.toLowerCase()}`,
         texto_respuesta: 'Otra plantilla.',
         activo: true,
         veces_usada: 0,

@@ -79,6 +79,7 @@ async function editarForm(req, res, next) {
     res.render('partials/plantilla-form', {
       plantilla,
       intencion: plantilla.intencion,
+      slug: plantilla.slug,
       texto_respuesta: plantilla.texto_respuesta,
       activo: plantilla.activo,
       error: null,
@@ -131,10 +132,13 @@ async function crear(req, res, next) {
   return renderExito(req, res, next, csrfToken);
 }
 
-// US-613 AC: edición con id — actualiza intención/texto_respuesta,
-// conserva veces_usada. Mismo manejo de error que crear(), pero
-// conservando la plantilla original en el formulario re-renderizado (sigue
-// en modo "Editar plantilla").
+// US-613 AC: edición con id — actualiza SOLO texto_respuesta/activo,
+// conserva veces_usada. intención/slug nunca se leen del body (son
+// inmutables tras el alta, ver plantillas_whatsapp.service.js#editar) —
+// aunque el cliente mande otro valor, se ignora por completo, ni siquiera
+// llega al service. Mismo manejo de error que crear(), pero conservando la
+// plantilla original (intención/slug de `existing`, nunca de req.body) en
+// el formulario re-renderizado (sigue en modo "Editar plantilla").
 async function editar(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {
@@ -146,7 +150,6 @@ async function editar(req, res, next) {
     try {
       await service.editar({
         id: req.params.id,
-        intencion: req.body.intencion,
         texto_respuesta: req.body.texto_respuesta,
         activo: req.body.activo,
         usuarioId: req.session.user.id,
@@ -155,7 +158,8 @@ async function editar(req, res, next) {
       if (err.status) {
         return res.render('partials/plantilla-form', {
           plantilla: existing,
-          intencion: req.body.intencion ?? '',
+          intencion: existing.intencion,
+          slug: existing.slug,
           texto_respuesta: req.body.texto_respuesta ?? '',
           activo: req.body.activo === 'true',
           error: err.message,

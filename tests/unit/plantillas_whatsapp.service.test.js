@@ -82,12 +82,15 @@ describe('plantillas_whatsapp.service.list', () => {
     expect(result.dir).toBe('asc');
   });
 
-  it.each([['intencion'], ['veces_usada'], ['estado']])('acepta ordenar por %s', async (column) => {
-    await list({ sort: column, dir: 'desc' });
-    expect(repository.findPage).toHaveBeenCalledWith(
-      expect.objectContaining({ sort: column, dir: 'desc' }),
-    );
-  });
+  it.each([['intencion'], ['slug'], ['veces_usada'], ['estado']])(
+    'acepta ordenar por %s',
+    async (column) => {
+      await list({ sort: column, dir: 'desc' });
+      expect(repository.findPage).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: column, dir: 'desc' }),
+      );
+    },
+  );
 
   it('una columna de orden desconocida cae a "intencion", no truena', async () => {
     const result = await list({ sort: 'algo-que-no-existe' });
@@ -139,22 +142,37 @@ describe('plantillas_whatsapp.service.crear (US-613)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repository.findAllExcept.mockResolvedValue([]);
+    repository.existsBySlug.mockResolvedValue(false);
     repository.create.mockResolvedValue(99);
     repository.reactivar.mockResolvedValue();
   });
 
-  it('inserta la plantilla con intención/texto_respuesta recortados', async () => {
+  it('inserta la plantilla con intención/texto_respuesta recortados y un slug generado a partir de la intención', async () => {
     await crear({
-      intencion: '  Confirmar cita  ',
+      intencion: '  Confirmar Cita  ',
       texto_respuesta: '  Tu cita fue confirmada.  ',
       usuarioId: 1,
     });
 
     expect(repository.create).toHaveBeenCalledWith({
-      intencion: 'Confirmar cita',
+      intencion: 'Confirmar Cita',
+      slug: 'confirmar-cita',
       texto_respuesta: 'Tu cita fue confirmada.',
       usuarioId: 1,
     });
+  });
+
+  it('si el slug base ya existe (dos intenciones distintas que normalizan igual), le agrega un sufijo', async () => {
+    repository.existsBySlug
+      .mockResolvedValueOnce(true) // "confirmar-cita" ocupado
+      .mockResolvedValueOnce(true) // "confirmar-cita-2" ocupado
+      .mockResolvedValueOnce(false); // "confirmar-cita-3" libre
+
+    await crear({ intencion: 'Confirmar Cita', texto_respuesta: 'algo', usuarioId: 1 });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'confirmar-cita-3' }),
+    );
   });
 
   it('rechaza una intención vacía sin llegar al repository', async () => {
@@ -214,24 +232,21 @@ describe('plantillas_whatsapp.service.crear (US-613)', () => {
   });
 });
 
-describe('plantillas_whatsapp.service.editar (US-613)', () => {
+describe('plantillas_whatsapp.service.editar (US-613, ampliada: intención/slug inmutables)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    repository.findAllExcept.mockResolvedValue([]);
     repository.update.mockResolvedValue();
   });
 
-  it('actualiza intención/texto_respuesta/activo', async () => {
+  it('actualiza SOLO texto_respuesta/activo — intención/slug no se tocan (no viajan como parámetro siquiera)', async () => {
     await editar({
       id: 5,
-      intencion: 'Nueva intención',
       texto_respuesta: 'Nuevo texto',
       activo: 'true',
       usuarioId: 2,
     });
 
     expect(repository.update).toHaveBeenCalledWith(5, {
-      intencion: 'Nueva intención',
       texto_respuesta: 'Nuevo texto',
       activo: true,
       usuarioId: 2,
@@ -241,7 +256,6 @@ describe('plantillas_whatsapp.service.editar (US-613)', () => {
   it('el switch Activo ausente (desmarcado) se interpreta como false, no como error', async () => {
     await editar({
       id: 5,
-      intencion: 'Nueva intención',
       texto_respuesta: 'Nuevo texto',
       activo: undefined,
       usuarioId: 2,
@@ -250,34 +264,14 @@ describe('plantillas_whatsapp.service.editar (US-613)', () => {
     expect(repository.update).toHaveBeenCalledWith(5, expect.objectContaining({ activo: false }));
   });
 
-  it('excluye el propio id al chequear duplicados', async () => {
-    await editar({ id: 5, intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 2 });
-    expect(repository.findAllExcept).toHaveBeenCalledWith(5);
-  });
-
-  it('rechaza una intención ya usada por otra plantilla activa', async () => {
-    repository.findAllExcept.mockResolvedValue([
-      { id: 7, intencion: 'Confirmar cita', activo: true },
-    ]);
-    await expect(
-      editar({ id: 5, intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 2 }),
-    ).rejects.toThrow(DuplicateIntencionError);
-    expect(repository.update).not.toHaveBeenCalled();
-  });
-
-  it('rechaza una intención ya usada por otra plantilla INACTIVA también (no hay reactivar al editar)', async () => {
-    repository.findAllExcept.mockResolvedValue([
-      { id: 7, intencion: 'Confirmar cita', activo: false },
-    ]);
-    await expect(
-      editar({ id: 5, intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 2 }),
-    ).rejects.toThrow(DuplicateIntencionError);
-    expect(repository.update).not.toHaveBeenCalled();
+  it('nunca consulta el catálogo para chequear duplicados (a diferencia de crear() — intención ya no es editable)', async () => {
+    await editar({ id: 5, texto_respuesta: 'algo', activo: 'true', usuarioId: 2 });
+    expect(repository.findAllExcept).not.toHaveBeenCalled();
   });
 
   it('rechaza un texto de respuesta vacío', async () => {
     await expect(
-      editar({ id: 5, intencion: 'Confirmar cita', texto_respuesta: '', usuarioId: 2 }),
+      editar({ id: 5, texto_respuesta: '', activo: 'true', usuarioId: 2 }),
     ).rejects.toThrow(PlantillaValidationError);
   });
 });

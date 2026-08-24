@@ -44,7 +44,7 @@ function sortVals(column) {
       <div class="lab-toolbar-filters">
         <div class="lab-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" id="plantillas-search" name="q" value="<%= q %>" placeholder="Buscar por intención...">
+          <input type="text" id="plantillas-search" name="q" value="<%= q %>" placeholder="Buscar por intención o slug...">
         </div>
         <div class="toggle-group">
           <button type="button" class="toggle-btn<%= estado === 'activos' ? ' active' : '' %>"
@@ -68,12 +68,12 @@ function sortVals(column) {
       <table class="lab-table">
         <thead>
           <tr>
-            <% ['intencion', 'veces_usada', 'estado'].forEach((column) => { %>
+            <% ['intencion', 'slug', 'veces_usada', 'estado'].forEach((column) => { %>
               <th class="sortable-th">
                 <button type="button" class="sortable-th-link"
                         hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
                         hx-vals='<%- sortVals(column) %>'>
-                  <%= { intencion: 'Intención', veces_usada: 'Veces usada', estado: 'Estado' }[column] %>
+                  <%= { intencion: 'Intención', slug: 'Slug (LLM)', veces_usada: 'Veces usada', estado: 'Estado' }[column] %>
                   <svg class="sort-arrow<%= sort === column ? ' active' : '' %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <% if (sort === column && dir === 'desc') { %>
                       <path d="M6 9l6 6 6-6"/>
@@ -91,6 +91,7 @@ function sortVals(column) {
           <% plantillas.forEach((plantilla) => { %>
             <tr>
               <td><%= plantilla.intencion %></td>
+              <td><span class="area-tag-empty"><%= plantilla.slug %></span></td>
               <td><%= plantilla.veces_usada %></td>
               <td>
                 <span class="status-badge<%= plantilla.activo ? ' is-active' : '' %>"><%= plantilla.activo ? 'Activo' : 'Inactivo' %></span>

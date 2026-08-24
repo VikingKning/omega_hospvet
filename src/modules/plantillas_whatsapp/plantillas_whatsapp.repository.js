@@ -8,7 +8,14 @@ const db = require('../../config/database');
 function baseQuery({ q, activoOnly }) {
   return db('plantillas_whatsapp as p').modify((builder) => {
     if (activoOnly) builder.where('p.activo', true);
-    if (q) builder.whereRaw('p.intencion ILIKE ?', [`%${q}%`]);
+    // Busca por intención o por slug — mismo criterio que
+    // areas.repository.js#baseQuery (nombre o slug), útil ahora que el
+    // slug se le puede compartir a quien configure el matching del LLM.
+    if (q) {
+      builder.where((b) => {
+        b.whereRaw('p.intencion ILIKE ?', [`%${q}%`]).orWhereRaw('p.slug ILIKE ?', [`%${q}%`]);
+      });
+    }
   });
 }
 
@@ -22,6 +29,7 @@ async function count({ q, activoOnly }) {
 // string (mismo principio que doctores.repository.js/areas.repository.js).
 const SORT_EXPRESSIONS = {
   intencion: (dir) => `p.intencion ${dir}`,
+  slug: (dir) => `p.slug ${dir}`,
   veces_usada: (dir) => `p.veces_usada ${dir}`,
   estado: (dir) => `p.activo ${dir}`,
 };
@@ -36,7 +44,7 @@ async function findPage({ q, activoOnly, sort, dir, limit, offset }) {
   return applySort(baseQuery({ q, activoOnly }), { sort, dir })
     .limit(limit)
     .offset(offset)
-    .select('p.id', 'p.intencion', 'p.veces_usada', 'p.activo');
+    .select('p.id', 'p.intencion', 'p.slug', 'p.veces_usada', 'p.activo');
 }
 
 // Independiente de filtros: distingue "el catálogo nunca ha tenido una
@@ -52,25 +60,33 @@ async function findById(id) {
   return db('plantillas_whatsapp').where({ id }).first();
 }
 
-// Trae todas las filas (menos la propia, en edición) para que el service
-// compare intenciones normalizadas (sin acentos/mayúsculas/espacios) en JS
-// — mismo criterio que areas.repository.js#findAllExcept: el catálogo es
-// chico, y así se evita pelear con collations/extensiones de Postgres (ver
-// el fix de duplicados de áreas, US-610).
-async function findAllExcept(excludeId) {
-  return db('plantillas_whatsapp')
-    .modify((builder) => {
-      if (excludeId) builder.whereNot('id', excludeId);
-    })
-    .select('id', 'intencion', 'activo');
+// Trae todas las filas activas o no para que el service compare
+// intenciones normalizadas (sin acentos/mayúsculas/espacios) en JS — mismo
+// criterio que areas.repository.js#findAllExcept: el catálogo es chico, y
+// así se evita pelear con collations/extensiones de Postgres (ver el fix
+// de duplicados de áreas, US-610). Sin parámetro de exclusión: a
+// diferencia de áreas, aquí solo la revisa crear() (intención/slug son
+// inmutables después del alta, editar() ya no compara duplicados).
+async function findAllExcept() {
+  return db('plantillas_whatsapp').select('id', 'intencion', 'activo');
+}
+
+// El slug es único de verdad para siempre (nunca se reutiliza, ni siquiera
+// por una plantilla desactivada) — mismo criterio que areas.repository.js
+// #existsBySlug.
+async function existsBySlug(slug) {
+  const row = await db('plantillas_whatsapp').where({ slug }).first();
+  return Boolean(row);
 }
 
 // US-613 AC: alta — activo=true, veces_usada=0 siempre (nunca lo manda el
-// formulario).
-async function create({ intencion, texto_respuesta, usuarioId }) {
+// formulario). `slug` se genera en el service y nunca vuelve a cambiar
+// (ver el comentario de la migración 20260824000002).
+async function create({ intencion, slug, texto_respuesta, usuarioId }) {
   const [row] = await db('plantillas_whatsapp')
     .insert({
       intencion,
+      slug,
       texto_respuesta,
       activo: true,
       veces_usada: 0,
@@ -81,20 +97,24 @@ async function create({ intencion, texto_respuesta, usuarioId }) {
   return row.id;
 }
 
-// US-613 (ampliada): edición — intención/texto_respuesta +
-// actualizado_por/actualizado_en; veces_usada nunca se toca aquí. El
-// switch Activo/Inactivo del formulario de edición vive en esta misma
-// pantalla (a petición explícita, no estaba en el AC original de la
-// historia) — la transición se calcula contra el valor actual en la base
-// DENTRO de una transacción (no contra lo que el formulario cargó al
-// abrirse), fijando/limpiando desactivado_por/desactivado_en exactamente
-// igual que doctores.repository.js#editar.
-async function update(id, { intencion, texto_respuesta, activo, usuarioId }) {
+// US-613 (ampliada): edición — SOLO texto_respuesta +
+// actualizado_por/actualizado_en; veces_usada nunca se toca aquí, y
+// tampoco intencion/slug (inmutables tras el alta — decisión explícita del
+// usuario: la identidad de la plantilla que el LLM matchea no puede
+// cambiar de significado bajo el mismo id sin dejar mensajes históricos
+// mal interpretados; para "cambiar la intención" hay que dar de baja esta
+// plantilla y crear una nueva). El switch Activo/Inactivo del formulario
+// de edición vive en esta misma pantalla (a petición explícita, no estaba
+// en el AC original de la historia) — la transición se calcula contra el
+// valor actual en la base DENTRO de una transacción (no contra lo que el
+// formulario cargó al abrirse), fijando/limpiando
+// desactivado_por/desactivado_en exactamente igual que
+// doctores.repository.js#editar.
+async function update(id, { texto_respuesta, activo, usuarioId }) {
   await db.transaction(async (trx) => {
     const actual = await trx('plantillas_whatsapp').where({ id }).first('activo');
 
     const cambios = {
-      intencion,
       texto_respuesta,
       actualizado_por: usuarioId,
       actualizado_en: trx.fn.now(),
@@ -148,6 +168,7 @@ module.exports = {
   existsAny,
   findById,
   findAllExcept,
+  existsBySlug,
   create,
   update,
   reactivar,
