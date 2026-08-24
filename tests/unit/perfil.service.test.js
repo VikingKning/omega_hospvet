@@ -121,7 +121,11 @@ describe('perfil.service.actualizar (US-109)', () => {
   it('AC: actualiza nombre/apellidos/telefono/correo con valores válidos', async () => {
     const result = await actualizar(7, base);
 
-    expect(repository.actualizar).toHaveBeenCalledWith(7, { ...base, doctorId: null });
+    expect(repository.actualizar).toHaveBeenCalledWith(7, {
+      ...base,
+      telefono: '5512345678',
+      doctorId: null,
+    });
     expect(result).toEqual(base);
   });
 
@@ -130,7 +134,11 @@ describe('perfil.service.actualizar (US-109)', () => {
 
     await actualizar(7, base);
 
-    expect(repository.actualizar).toHaveBeenCalledWith(7, { ...base, doctorId: 42 });
+    expect(repository.actualizar).toHaveBeenCalledWith(7, {
+      ...base,
+      telefono: '5512345678',
+      doctorId: 42,
+    });
   });
 
   it('AC: rechaza si falta Nombre', async () => {

@@ -59,13 +59,30 @@ function validateCorreo(rawCorreo) {
 // se guarda como NULL.
 const TELEFONO_REGEX = /^\d{2}-\d{4}-\d{4}$/;
 
+// Ajuste posterior, pedido explícito del usuario: el formato NN-NNNN-NNNN
+// es solo "look and feel" — lo que se guarda en `usuarios.telefono` (esta
+// tabla también, vía el mismo repository que Mi Perfil actualiza) son los
+// 10 dígitos, sin guiones (ver migración
+// 20260819000001_normalizar_telefonos_sin_guiones.js). Mismo criterio de
+// independencia entre módulos — duplicado de
+// tutores.service.js#stripTelefono/formatTelefono, no importado.
+function stripTelefono(telefono) {
+  return (telefono ?? '').replace(/\D/g, '');
+}
+
+function formatTelefono(telefono) {
+  const digits = stripTelefono(telefono);
+  if (digits.length !== 10) return telefono;
+  return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+}
+
 function validateTelefono(rawTelefono) {
   const telefono = (rawTelefono ?? '').trim();
   if (!telefono) return null;
   if (!TELEFONO_REGEX.test(telefono)) {
     throw new PerfilValidationError('El teléfono debe tener el formato NN-NNNN-NNNN.');
   }
-  return telefono;
+  return stripTelefono(telefono);
 }
 
 // ---------------------------------------------------------------------
@@ -237,6 +254,7 @@ async function obtener(usuarioId) {
 
   return {
     ...perfil,
+    telefono: formatTelefono(perfil.telefono),
     doctor,
     areasDoctor,
     permisosAsignadosIds,
@@ -273,7 +291,7 @@ async function actualizar(
     correo,
     doctorId: actual.doctor_id,
   });
-  return { nombre, apellidos, telefono, correo };
+  return { nombre, apellidos, telefono: formatTelefono(telefono), correo };
 }
 
 // US-110 AC: "el sistema identifica al usuario exclusivamente a partir de

@@ -23,10 +23,14 @@ const db = require('../../src/config/database');
 
 afterAll(() => db.destroy());
 
+// Ajuste posterior, pedido explícito del usuario: lo que devuelve el
+// repository (y por lo tanto lo que representa este fixture) ya no trae
+// guiones — el formato NN-NNNN-NNNN se guarda sin ellos desde ahora, ver
+// tutores.service.js#stripTelefono/formatTelefono.
 const TUTOR = {
   id: 1,
   nombre: 'Juan Pérez',
-  telefono: '55-5123-4567',
+  telefono: '5551234567',
   correo: 'juan@correo.com',
   activo: true,
 };
@@ -169,7 +173,13 @@ describe('tutores.service.obtenerParaEditar', () => {
 
     const result = await obtenerParaEditar('1');
 
-    expect(result).toEqual({ ...TUTOR, pacientes: [MASCOTA_A, MASCOTA_B] });
+    // Ajuste posterior (pedido del usuario): se reformatea a NN-NNNN-NNNN
+    // para precargar el <input> del formulario de edición.
+    expect(result).toEqual({
+      ...TUTOR,
+      telefono: '55-5123-4567',
+      pacientes: [MASCOTA_A, MASCOTA_B],
+    });
     expect(repository.findMascotasByPropietarioId).toHaveBeenCalledWith(1);
   });
 
@@ -237,8 +247,12 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
 
   it('AC7: sin colisión de teléfono, inserta directo (no reactiva nada)', async () => {
     await crear(DATOS_VALIDOS);
+    // Ajuste posterior (pedido del usuario): lo que se guarda en BD son
+    // solo los 10 dígitos, sin guiones — el input SÍ los trae (look and
+    // feel), pero tutores.service.js#validateTelefono los quita antes de
+    // pasarle el valor al repository.
     expect(repository.crear).toHaveBeenCalledWith(
-      expect.objectContaining({ nombre: 'Juan Pérez', telefono: '55-5123-4567' }),
+      expect.objectContaining({ nombre: 'Juan Pérez', telefono: '5551234567' }),
     );
     expect(repository.reactivar).not.toHaveBeenCalled();
   });
@@ -247,7 +261,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
       nombre: 'Otro',
-      telefono: '55-5123-4567',
+      telefono: '5551234567',
       activo: true,
     });
     await expect(crear(DATOS_VALIDOS)).rejects.toThrow(TutorValidationError);
@@ -259,7 +273,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
       nombre: 'Tutor Inactivo',
-      telefono: '55-5123-4567',
+      telefono: '5551234567',
       activo: false,
     });
 
@@ -274,7 +288,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
       nombre: 'Tutor Inactivo',
-      telefono: '55-5123-4567',
+      telefono: '5551234567',
       activo: false,
     });
 
@@ -283,6 +297,8 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
       throw new Error('no debió llegar aquí');
     } catch (err) {
       expect(err).toBeInstanceOf(RequiereConfirmacionReactivacionError);
+      // El teléfono guardado (5551234567, sin guiones) se reformatea a
+      // NN-NNNN-NNNN solo para mostrarlo en el modal — nunca se guarda así.
       expect(err.tutorExistente).toEqual({ nombre: 'Tutor Inactivo', telefono: '55-5123-4567' });
     }
   });
@@ -291,7 +307,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
       nombre: 'Tutor Inactivo',
-      telefono: '55-5123-4567',
+      telefono: '5551234567',
       activo: false,
     });
     repository.reactivar.mockResolvedValue(5);
@@ -300,7 +316,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
 
     expect(id).toBe(5);
     expect(repository.reactivar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 5, nombre: 'Juan Pérez', telefono: '55-5123-4567' }),
+      expect.objectContaining({ id: 5, nombre: 'Juan Pérez', telefono: '5551234567' }),
     );
     expect(repository.crear).not.toHaveBeenCalled();
   });
@@ -342,24 +358,25 @@ describe('tutores.service.editar (US-156 AC15-AC21)', () => {
   it('actualiza el propietario cuando no hay colisión de teléfono', async () => {
     const id = await editar(DATOS_VALIDOS);
     expect(id).toBe(1);
+    // Ajuste posterior (pedido del usuario): se guarda sin guiones.
     expect(repository.editar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 1, nombre: 'Juan Pérez', telefono: '55-5123-4567' }),
+      expect.objectContaining({ id: 1, nombre: 'Juan Pérez', telefono: '5551234567' }),
     );
   });
 
   it('findByTelefono excluye al propio registro que se está editando', async () => {
     await editar(DATOS_VALIDOS);
-    expect(repository.findByTelefono).toHaveBeenCalledWith('55-5123-4567', 1);
+    expect(repository.findByTelefono).toHaveBeenCalledWith('5551234567', 1);
   });
 
   it('AC5/AC21: teléfono de OTRO propietario activo se rechaza', async () => {
-    repository.findByTelefono.mockResolvedValue({ id: 5, telefono: '55-5123-4567', activo: true });
+    repository.findByTelefono.mockResolvedValue({ id: 5, telefono: '5551234567', activo: true });
     await expect(editar(DATOS_VALIDOS)).rejects.toThrow(TutorValidationError);
     expect(repository.editar).not.toHaveBeenCalled();
   });
 
   it('a diferencia de crear(), editar() NUNCA reactiva — un teléfono de otro propietario INACTIVO también se rechaza, sin pedir confirmación (mismo criterio que areas.service.js#editar)', async () => {
-    repository.findByTelefono.mockResolvedValue({ id: 5, telefono: '55-5123-4567', activo: false });
+    repository.findByTelefono.mockResolvedValue({ id: 5, telefono: '5551234567', activo: false });
     await expect(editar(DATOS_VALIDOS)).rejects.toThrow(TutorValidationError);
     expect(repository.reactivar).not.toHaveBeenCalled();
     expect(repository.editar).not.toHaveBeenCalled();
@@ -403,7 +420,10 @@ describe('tutores.service.buscarPorTelefono (pedido del usuario: búsqueda en vi
   it('sin texto, igual consulta el repository (para mostrar los primeros propietarios)', async () => {
     repository.searchByTelefono.mockResolvedValue([TUTOR]);
     const result = await buscarPorTelefono('');
-    expect(result).toEqual([TUTOR]);
+    // Ajuste posterior (pedido del usuario): lo que devuelve el repository
+    // ya viene sin guiones (TUTOR.telefono); el service lo reformatea a
+    // NN-NNNN-NNNN solo para mostrarlo en el combobox.
+    expect(result).toEqual([{ ...TUTOR, telefono: '55-5123-4567' }]);
     expect(repository.searchByTelefono).toHaveBeenCalledWith('', 8);
   });
 
@@ -422,8 +442,18 @@ describe('tutores.service.buscarPorTelefono (pedido del usuario: búsqueda en vi
   it('con texto, consulta el repository con un límite de resultados', async () => {
     repository.searchByTelefono.mockResolvedValue([TUTOR]);
     const result = await buscarPorTelefono('555');
-    expect(result).toEqual([TUTOR]);
+    expect(result).toEqual([{ ...TUTOR, telefono: '55-5123-4567' }]);
     expect(repository.searchByTelefono).toHaveBeenCalledWith('555', 8);
+  });
+
+  // Ajuste posterior, pedido explícito del usuario: buscar sin guiones
+  // ("5551234567") o con ellos ("55-5123-4567") debe dar el mismo
+  // resultado — el service siempre le manda al repository solo los
+  // dígitos de lo que se escribió.
+  it('quita los guiones de lo escrito antes de consultar al repository', async () => {
+    repository.searchByTelefono.mockResolvedValue([]);
+    await buscarPorTelefono('55-5123-4567');
+    expect(repository.searchByTelefono).toHaveBeenCalledWith('5551234567', 8);
   });
 });
 
@@ -463,12 +493,24 @@ describe('tutores.service.verificarTelefono (ajuste posterior: chequeo exacto en
       tutor: {
         id: TUTOR.id,
         nombre: TUTOR.nombre,
-        telefono: TUTOR.telefono,
+        // Ajuste posterior (pedido del usuario): TUTOR.telefono (lo que
+        // "guarda" el repository mockeado) ya no trae guiones; el service
+        // lo reformatea a NN-NNNN-NNNN solo para el modal de reactivar.
+        telefono: '55-5123-4567',
         correo: TUTOR.correo,
         pacientes: [MASCOTA_A, MASCOTA_B],
       },
     });
     expect(repository.findMascotasByPropietarioId).toHaveBeenCalledWith(TUTOR.id);
+  });
+
+  // Ajuste posterior, pedido explícito del usuario: buscar sin guiones o
+  // con ellos debe encontrar lo mismo — verificarTelefono siempre le manda
+  // al repository solo los dígitos de lo que se escribió.
+  it('quita los guiones de lo escrito antes de consultar al repository', async () => {
+    repository.findByTelefono.mockResolvedValue(undefined);
+    await verificarTelefono('55-5123-4567');
+    expect(repository.findByTelefono).toHaveBeenCalledWith('5551234567');
   });
 
   it('un valor vacío/indefinido no truena, simplemente no encuentra nada', async () => {

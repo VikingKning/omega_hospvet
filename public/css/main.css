@@ -971,6 +971,235 @@ body:has(.app)::after {
   width: auto;
 }
 
+/* Selector de color de área para Google Calendar: un swatch por cada uno
+   de los 11 colores de evento que la API acepta (googleCalendarColors.js),
+   más la opción "Sin color" (NULL en BD, valor por defecto del picker —
+   pedido explícito del usuario, no un hueco por rellenar). No son
+   <input type="radio"> reales (un cuadro de color puro no puede verse
+   "seleccionado" con un simple :checked), así que el estado se sincroniza
+   a mano por JS (ver areas.ejs) contra el input oculto `#areaColorInput`
+   que sí viaja en el submit del form. */
+.color-field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-bottom: 8px;
+}
+
+.color-swatch-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.color-swatch-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.color-swatch-option:hover {
+  background: var(--bg-base);
+}
+
+.color-swatch-option.selected {
+  background: var(--primary-light);
+  border-color: var(--primary);
+}
+
+.color-swatch-box {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--swatch-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: transform 0.13s;
+}
+
+.color-swatch-option:hover .color-swatch-box {
+  transform: scale(1.06);
+}
+
+/* Check de "seleccionado" superpuesto al swatch — mismo criterio que
+   [data-tooltip]::before (contenido vía pseudo-elemento, sin marcado
+   extra por swatch). */
+.color-swatch-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E")
+      center / 18px no-repeat,
+    rgba(0, 0, 0, 0.25);
+}
+
+.color-swatch-option.selected .color-swatch-box::after {
+  opacity: 1;
+}
+
+.color-swatch-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.color-swatch-option.selected .color-swatch-name {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* "Sin color": swatch en blanco con una línea diagonal en vez de un color
+   de fondo — nunca lleva el check de arriba, la línea YA es el indicador
+   de selección (mismo icono, marcado en --primary cuando está elegido). */
+.color-swatch-box-none {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.color-swatch-box-none::after {
+  content: none;
+}
+
+.color-swatch-option.selected .color-swatch-box-none {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Punto de color en la tabla de áreas (solo lectura, sin selección). Sin
+   `--swatch-color` (área sin color asignado) queda como anillo vacío en
+   vez de un punto sólido — mismo criterio visual que color-swatch-box-none. */
+.color-swatch-dot {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--swatch-color, transparent);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  --tooltip-bg: #fff;
+  --tooltip-text: #000;
+  --tooltip-border: #000;
+}
+
+.color-swatch-dot-none {
+  border-style: dashed;
+  border-color: var(--text-muted);
+}
+
+/* Tarjeta "Vista previa en Google Calendar": eventos de ejemplo fijos +
+   uno "en vivo" (id/nombre del área que se está creando/editando) que
+   cambia de color al vuelo por JS (ver areas.ejs) conforme se elige un
+   swatch, sin esperar al submit. */
+.color-preview-card {
+  padding: 12px 14px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.color-preview-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+
+.color-preview-calendar {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.color-preview-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 40px;
+}
+
+.color-preview-day-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.color-preview-day-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-dark);
+  line-height: 1.2;
+}
+
+.color-preview-events {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.color-preview-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--event-color);
+  opacity: 0.4;
+}
+
+.color-preview-event-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
+}
+
+.color-preview-event-live {
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* Sin color elegido: el evento "en vivo" pierde el fondo de color y pasa
+   a un borde punteado neutro (nunca queda transparente sin indicio
+   visual — se seguiría viendo como un evento "vacío" en el calendario real). */
+.color-preview-event-none {
+  background: none;
+  border: 1.5px dashed var(--border);
+  color: var(--text-muted);
+}
+
+.color-preview-event-none .color-preview-event-dot {
+  background: var(--text-muted);
+}
+
 .area-picker-row {
   display: flex;
   gap: 8px;

@@ -93,6 +93,7 @@ CREATE TABLE "areas" (
   "nombre" varchar(100) UNIQUE NOT NULL,
   "slug" varchar(100) UNIQUE NOT NULL,
   "activo" boolean NOT NULL DEFAULT true,
+  "color_google_calendar" varchar(2),
   "creado_por" integer,
   "creado_en" timestamptz NOT NULL,
   "actualizado_por" integer,

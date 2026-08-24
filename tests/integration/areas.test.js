@@ -140,6 +140,7 @@ describe('GET /areas.html', () => {
     expect(res.text).toContain(`cardiologia-${SUFFIX.toLowerCase()}`);
     expect(res.text).toContain(`Dermatología ${SUFFIX}`);
     expect(res.text).not.toContain(`Radiología ${SUFFIX}`); // inactiva, no aparece por defecto
+    expect(res.text).toContain('color-swatch-dot'); // swatch de color por fila
   });
 
   it('un GET con query string a mano se ignora por completo (privacidad: nunca se lee ni se refleja)', async () => {
@@ -422,6 +423,18 @@ describe('GET /areas/nuevo y GET /areas/:id/editar (US-610 — formulario)', () 
     expect(res.text).not.toContain('readonly');
   });
 
+  it('el formulario de alta muestra los 11 swatches de color de Google Calendar más "Sin color", con "Sin color" ya seleccionado por defecto', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/areas/nuevo');
+
+    const matches = res.text.match(/color-swatch-option/g) ?? [];
+    expect(matches).toHaveLength(12); // 11 colores + "Sin color"
+    expect(res.text).toMatch(
+      /class="color-swatch-option color-swatch-none selected"[\s\S]*?data-color-id=""/,
+    );
+  });
+
   it('AC: el formulario de edición trae el nombre precargado, título "Editar área", y el slug de solo lectura', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
@@ -454,14 +467,27 @@ describe('GET /areas/nuevo y GET /areas/:id/editar (US-610 — formulario)', () 
 });
 
 describe('POST /areas y PUT /areas/:id (US-610 — alta y edición)', () => {
-  async function crearArea(agent, nombre) {
+  // `color` distingue "no lo mandé" (undefined, el helper no agrega el
+  // campo) de "mandé explícitamente 'Sin color'" (string vacío '', como lo
+  // hace el hidden input del picker cuando esa es la opción elegida) — la
+  // segunda forma es necesaria para probar que se puede volver a "Sin
+  // color" a propósito, no solo omitiendo el campo.
+  async function crearArea(agent, nombre, color) {
     const csrfToken = await getAreasCsrfToken(agent);
-    return agent.post('/areas').type('form').set('x-csrf-token', csrfToken).send({ nombre });
+    return agent
+      .post('/areas')
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ nombre, ...(color !== undefined ? { color } : {}) });
   }
 
-  async function editarArea(agent, id, nombre) {
+  async function editarArea(agent, id, nombre, color) {
     const csrfToken = await getAreasCsrfToken(agent);
-    return agent.put(`/areas/${id}`).type('form').set('x-csrf-token', csrfToken).send({ nombre });
+    return agent
+      .put(`/areas/${id}`)
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ nombre, ...(color !== undefined ? { color } : {}) });
   }
 
   it('AC: alta sin id genera el slug a partir del nombre y hace el swap out-of-band de la tabla', async () => {
@@ -480,6 +506,52 @@ describe('POST /areas y PUT /areas/:id (US-610 — alta y edición)', () => {
     expect(row.nombre).toBe(`Nutrición Clínica ${SUFFIX}`);
     expect(row.activo).toBe(true);
     expect(row.creado_por).not.toBeNull();
+    expect(row.color_google_calendar).toBeNull(); // sin color explícito, cae a "Sin color"
+  });
+
+  it('AC: el alta guarda el color de Google Calendar elegido', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    await crearArea(agent, `ConColor ${SUFFIX}`, '7');
+
+    const row = await db('areas').where('nombre', `ConColor ${SUFFIX}`).first();
+    expect(row.color_google_calendar).toBe('7');
+  });
+
+  it('un color fuera del catálogo de 11 no truena, cae a "Sin color"', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await crearArea(agent, `ColorInvalido ${SUFFIX}`, '99');
+
+    expect(res.status).toBe(200);
+    const row = await db('areas').where('nombre', `ColorInvalido ${SUFFIX}`).first();
+    expect(row.color_google_calendar).toBeNull();
+  });
+
+  it('AC: la edición actualiza el color guardado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await crearArea(agent, `CambioColor ${SUFFIX}`, '2');
+    const area = await db('areas').where('nombre', `CambioColor ${SUFFIX}`).first();
+    expect(area.color_google_calendar).toBe('2');
+
+    const res = await editarArea(agent, area.id, `CambioColor ${SUFFIX}`, '9');
+
+    expect(res.status).toBe(200);
+    const actualizada = await db('areas').where({ id: area.id }).first();
+    expect(actualizada.color_google_calendar).toBe('9');
+  });
+
+  it('AC: se puede volver a "Sin color" explícitamente en la edición (no solo al crear)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await crearArea(agent, `VuelveASinColor ${SUFFIX}`, '4');
+    const area = await db('areas').where('nombre', `VuelveASinColor ${SUFFIX}`).first();
+    expect(area.color_google_calendar).toBe('4');
+
+    const res = await editarArea(agent, area.id, `VuelveASinColor ${SUFFIX}`, '');
+
+    expect(res.status).toBe(200);
+    const actualizada = await db('areas').where({ id: area.id }).first();
+    expect(actualizada.color_google_calendar).toBeNull();
   });
 
   it('AC: el alta también aprovisiona los 5 permisos de agenda del área nueva (ver/crear/editar/cancelar/confirmar)', async () => {

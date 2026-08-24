@@ -66,6 +66,7 @@ function sortVals(column) {
       <table class="lab-table">
         <thead>
           <tr>
+            <th>Color</th>
             <% ['nombre', 'slug', 'estado'].forEach((column) => { %>
               <th class="sortable-th">
                 <button type="button" class="sortable-th-link"
@@ -88,6 +89,11 @@ function sortVals(column) {
         <tbody>
           <% areas.forEach((area) => { %>
             <tr>
+              <td>
+                <span class="color-swatch-dot<%= area.color.hex ? '' : ' color-swatch-dot-none' %>"
+                      style="<%= area.color.hex ? `--swatch-color: ${area.color.hex};` : '' %>"
+                      data-tooltip="<%= area.color.nombre %>" aria-label="Color: <%= area.color.nombre %>"></span>
+              </td>
               <td><%= area.nombre %></td>
               <td><span class="area-tag-empty"><%= area.slug %></span></td>
               <td>

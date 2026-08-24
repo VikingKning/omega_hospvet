@@ -236,7 +236,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
     const row = await db('usuarios').where({ username: SIN_PERMISOS_USER.username }).first();
     expect(row.nombre).toBe('Sin (editado)');
     expect(row.apellidos).toBe('Permisos US109 (editado)');
-    expect(row.telefono).toBe('81-9876-5432');
+    expect(row.telefono).toBe('8198765432');
   });
 
   it('AC: registra actualizado_por con el ID DEL PROPIO usuario y actualizado_en', async () => {

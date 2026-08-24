@@ -406,7 +406,10 @@ describe('usuarios.service.crear (US-602)', () => {
       nombre: 'Ana',
       apellidos: 'Gómez',
       correo: 'ana@omegavet.test',
-      telefono: '555-1234',
+      // Ajuste posterior (pedido del usuario): el formato NN-NNNN-NNNN es
+      // solo look and feel — se guarda sin guiones (ni ningún otro
+      // carácter no numérico).
+      telefono: '5551234',
       username: 'ana.gomez',
       doctorId: null,
       usuarioId: 1,
@@ -611,7 +614,7 @@ describe('usuarios.service.editar (US-602)', () => {
       nombre: 'Ana',
       apellidos: 'Gómez',
       correo: 'ana@omegavet.test',
-      telefono: '555-1234',
+      telefono: '5551234',
       username: 'ana.gomez',
       estatus: 'activo',
       permissionIds: undefined,

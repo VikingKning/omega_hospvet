@@ -7,6 +7,13 @@
 // `area`: en un re-render por error es lo que el usuario acababa de
 // escribir, no necesariamente lo que ya está guardado.
 const esEdicion = Boolean(area);
+
+// El picker no distingue null/undefined/'' — las tres formas en que "sin
+// color todavía" puede llegar aquí (alta nueva, área existente sin color,
+// o el hidden input tras un re-render por error) resuelven al mismo id
+// vacío, que es el que trae la opción "Sin color" del grid.
+const selectedColorId = color === null || color === undefined ? '' : String(color);
+const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
 %>
 <div class="modal-header">
   <h2><%= esEdicion ? 'Editar área' : 'Nueva área' %></h2>
@@ -34,6 +41,53 @@ const esEdicion = Boolean(area);
       <input type="text" value="<%= area.slug %>" readonly disabled>
     </label>
   <% } %>
+  <div class="color-field">
+    <span class="color-field-label">Color en Google Calendar</span>
+    <div class="color-swatch-picker" role="radiogroup" aria-label="Color en Google Calendar" id="areaColorPicker">
+      <% colores.forEach((c) => { %>
+        <button type="button"
+                class="color-swatch-option<%= selectedColorId === c.id ? ' selected' : '' %>"
+                data-color-id="<%= c.id %>" data-hex="<%= c.hex %>"
+                role="radio" aria-checked="<%= selectedColorId === c.id %>">
+          <span class="color-swatch-box" style="--swatch-color: <%= c.hex %>;" aria-hidden="true"></span>
+          <span class="color-swatch-name"><%= c.nombre %></span>
+        </button>
+      <% }) %>
+      <button type="button"
+              class="color-swatch-option color-swatch-none<%= selectedColorId === '' ? ' selected' : '' %>"
+              data-color-id="" role="radio" aria-checked="<%= selectedColorId === '' %>">
+        <span class="color-swatch-box color-swatch-box-none" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/></svg>
+        </span>
+        <span class="color-swatch-name">Sin color</span>
+      </button>
+    </div>
+    <input type="hidden" name="color" id="areaColorInput" value="<%= selectedColorId %>">
+  </div>
+
+  <div class="color-preview-card">
+    <span class="color-preview-label">Vista previa en Google Calendar</span>
+    <div class="color-preview-calendar">
+      <div class="color-preview-day">
+        <span class="color-preview-day-name">Lun</span>
+        <span class="color-preview-day-num">12</span>
+      </div>
+      <div class="color-preview-events">
+        <div class="color-preview-event" style="--event-color: #7986cb;">
+          <span class="color-preview-event-dot"></span>09:00 — Consulta rutina
+        </div>
+        <div class="color-preview-event color-preview-event-live<%= selectedColorObj ? '' : ' color-preview-event-none' %>"
+             id="areaColorPreviewEvent"
+             style="<%= selectedColorObj ? `--event-color: ${selectedColorObj.hex};` : '' %>">
+          <span class="color-preview-event-dot"></span>
+          <span id="areaColorPreviewName"><%= nombre || 'Área sin nombre' %></span>
+        </div>
+        <div class="color-preview-event" style="--event-color: #0b8043;">
+          <span class="color-preview-event-dot"></span>15:30 — Cirugía programada
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="modal-actions">
     <button type="button" class="btn-secondary" id="areaFormCancel">Cancelar</button>
     <button type="submit" class="btn-primary">Guardar</button>

@@ -12,41 +12,48 @@ const db = require('../../config/database');
 // que también coincidan con la búsqueda). Mismo criterio de "resolver
 // primero QUÉ filas entran, después traer el detalle completo" que
 // matchingDoctorIdsQuery en doctores.repository.js.
-function baseQuery({ q, activoTutores, activoPacientes }) {
+// Ajuste posterior, pedido explícito del usuario: `propietarios.telefono`
+// se guarda sin guiones (ver migración normalizar_telefonos_sin_guiones y
+// tutores.service.js#stripTelefono/formatTelefono) — buscar "5520108565"
+// (o "55-2010-8565", da igual) debe encontrar ese teléfono. `qDigits` son
+// los dígitos de `q` (puede venir vacío si `q` no tenía ninguno, ej. una
+// búsqueda por nombre); esa rama del OR se omite por completo cuando viene
+// vacío, para no matchear cualquier fila con un ILIKE '%%'.
+function baseQuery({ q, qDigits, activoTutores, activoPacientes }) {
   return db('propietarios as p').modify((builder) => {
     if (activoTutores) builder.where('p.activo', true);
     if (q) {
       builder.where((whereBuilder) => {
-        whereBuilder
-          .whereRaw('p.nombre ILIKE ?', [`%${q}%`])
-          .orWhereRaw('p.telefono ILIKE ?', [`%${q}%`])
-          .orWhereRaw('p.correo ILIKE ?', [`%${q}%`])
-          .orWhereExists(function () {
-            this.select(1)
-              .from('mascotas as m')
-              .whereRaw('m.propietario_id = p.id')
-              .modify((mascotaBuilder) => {
-                if (activoPacientes) mascotaBuilder.where('m.activo', true);
-              })
-              .andWhere((mascotaWhere) => {
-                mascotaWhere
-                  .whereRaw('m.nombre ILIKE ?', [`%${q}%`])
-                  .orWhereRaw('m.tipo ILIKE ?', [`%${q}%`])
-                  .orWhereRaw('m.raza ILIKE ?', [`%${q}%`]);
-              });
-          });
+        whereBuilder.whereRaw('p.nombre ILIKE ?', [`%${q}%`]);
+        if (qDigits) whereBuilder.orWhereRaw('p.telefono ILIKE ?', [`%${qDigits}%`]);
+        whereBuilder.orWhereRaw('p.correo ILIKE ?', [`%${q}%`]).orWhereExists(function () {
+          this.select(1)
+            .from('mascotas as m')
+            .whereRaw('m.propietario_id = p.id')
+            .modify((mascotaBuilder) => {
+              if (activoPacientes) mascotaBuilder.where('m.activo', true);
+            })
+            .andWhere((mascotaWhere) => {
+              mascotaWhere
+                .whereRaw('m.nombre ILIKE ?', [`%${q}%`])
+                .orWhereRaw('m.tipo ILIKE ?', [`%${q}%`])
+                .orWhereRaw('m.raza ILIKE ?', [`%${q}%`]);
+            });
+        });
       });
     }
   });
 }
 
-async function count({ q, activoTutores, activoPacientes }) {
-  const row = await baseQuery({ q, activoTutores, activoPacientes }).count('p.id as total').first();
+async function count({ q, qDigits, activoTutores, activoPacientes }) {
+  const row = await baseQuery({ q, qDigits, activoTutores, activoPacientes })
+    .count('p.id as total')
+    .first();
   return Number(row.total);
 }
 
-async function findPage({ q, activoTutores, activoPacientes, limit, offset }) {
-  return baseQuery({ q, activoTutores, activoPacientes })
+async function findPage({ q, qDigits, activoTutores, activoPacientes, limit, offset }) {
+  return baseQuery({ q, qDigits, activoTutores, activoPacientes })
     .select('p.id', 'p.nombre', 'p.telefono', 'p.correo', 'p.activo')
     .orderBy('p.nombre')
     .limit(limit)

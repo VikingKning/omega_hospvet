@@ -122,6 +122,19 @@ describe('areas.service.crear (US-610)', () => {
     );
   });
 
+  it('guarda el color de Google Calendar elegido', async () => {
+    await crear({ nombre: 'Cardiología', color: '7', usuarioId: 1 });
+    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ color: '7' }));
+  });
+
+  it("un color ausente o inválido cae a 'Sin color' (null), no truena", async () => {
+    await crear({ nombre: 'Cardiología', color: 'no-es-un-color', usuarioId: 1 });
+    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ color: null }));
+
+    await crear({ nombre: 'Dermatología', usuarioId: 1 });
+    expect(repository.create).toHaveBeenLastCalledWith(expect.objectContaining({ color: null }));
+  });
+
   it('si el slug base ya existe (dos nombres distintos que normalizan igual), le agrega un sufijo', async () => {
     repository.existsBySlug
       .mockResolvedValueOnce(true) // "cardiologia" ocupado
@@ -165,9 +178,9 @@ describe('areas.service.crear (US-610)', () => {
   it('reactiva (no crea una fila nueva) si el nombre pertenece a un área ya dada de baja', async () => {
     repository.findAllExcept.mockResolvedValue([{ id: 7, nombre: 'Cardiología', activo: false }]);
 
-    const id = await crear({ nombre: 'Cardiología', usuarioId: 1 });
+    const id = await crear({ nombre: 'Cardiología', color: '3', usuarioId: 1 });
 
-    expect(repository.reactivar).toHaveBeenCalledWith(7, 'Cardiología', 1);
+    expect(repository.reactivar).toHaveBeenCalledWith(7, 'Cardiología', '3', 1);
     expect(repository.create).not.toHaveBeenCalled();
     expect(id).toBe(7); // el id del registro reactivado, no uno nuevo
   });
@@ -189,9 +202,14 @@ describe('areas.service.editar (US-610)', () => {
   });
 
   it('actualiza el nombre sin tocar el slug', async () => {
-    await editar({ id: 5, nombre: 'Nuevo Nombre', usuarioId: 2 });
-    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Nuevo Nombre', 2);
+    await editar({ id: 5, nombre: 'Nuevo Nombre', color: '2', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Nuevo Nombre', '2', 2);
     expect(repository.existsBySlug).not.toHaveBeenCalled();
+  });
+
+  it("un color ausente o inválido cae a 'Sin color' (null), no truena", async () => {
+    await editar({ id: 5, nombre: 'Nuevo Nombre', color: 'algo-invalido', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Nuevo Nombre', null, 2);
   });
 
   it('excluye el propio id al chequear duplicados', async () => {

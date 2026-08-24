@@ -1,4 +1,5 @@
 const repository = require('./areas.repository');
+const { isValidColorId, findColor } = require('./googleCalendarColors');
 
 // Mismo patrón de errores con `.status` que auth.service.js — el
 // controller los atrapa para re-renderizar el formulario con el mensaje,
@@ -59,8 +60,17 @@ async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // El repository solo trae el id de color guardado (`color_google_calendar`)
+  // — el hex/nombre para pintar el swatch en la tabla es un dato estático
+  // (googleCalendarColors.js), se resuelve aquí para que la vista no tenga
+  // que conocer el catálogo de colores.
+  const areasConColor = areas.map((area) => ({
+    ...area,
+    color: findColor(area.color_google_calendar),
+  }));
+
   return {
-    areas,
+    areas: areasConColor,
     total,
     catalogoVacio,
     page: Math.min(page, totalPages),
@@ -152,6 +162,14 @@ function validateNombre(rawNombre) {
   return nombre;
 }
 
+// El color es opcional — "Sin color" (NULL en BD) es el valor por defecto
+// del picker, una elección válida, no un hueco a rellenar. Un valor
+// ausente/vacío o que no sea uno de los 11 colorId reales de Google
+// resuelve a NULL en vez de rechazar el alta/edición.
+function validateColor(rawColor) {
+  return isValidColorId(rawColor) ? String(rawColor) : null;
+}
+
 // US-610 AC: alta — sin id, genera el slug a partir del nombre. `nombre`
 // sigue siendo único de verdad a nivel de base de datos (constraint del
 // script original, sin partial index agregado) — así que "reutilizar el
@@ -161,20 +179,21 @@ function validateNombre(rawNombre) {
 // - inactivo -> se REACTIVA ese mismo registro (conserva su slug de
 //   siempre, nunca se regenera ni se crea una fila nueva) en vez de crear
 //   uno paralelo con un slug con sufijo.
-async function crear({ nombre: rawNombre, usuarioId }) {
+async function crear({ nombre: rawNombre, color: rawColor, usuarioId }) {
   const nombre = validateNombre(rawNombre);
+  const color = validateColor(rawColor);
   const existing = await findDuplicado(nombre);
 
   if (existing) {
     if (existing.activo) {
       throw new DuplicateNombreError();
     }
-    await repository.reactivar(existing.id, nombre, usuarioId);
+    await repository.reactivar(existing.id, nombre, color, usuarioId);
     return existing.id;
   }
 
   const slug = await generateUniqueSlug(nombre);
-  return repository.create({ nombre, slug, usuarioId });
+  return repository.create({ nombre, slug, color, usuarioId });
 }
 
 // US-610 AC: edición — con id, actualiza solo nombre (+ actualizado_por/
@@ -183,13 +202,14 @@ async function crear({ nombre: rawNombre, usuarioId }) {
 // no — el `UNIQUE` de la base de datos lo exige de todos modos (no hay
 // "reactivar" al editar: sería fusionar la identidad de dos registros
 // distintos, algo que el AC nunca pidió).
-async function editar({ id, nombre: rawNombre, usuarioId }) {
+async function editar({ id, nombre: rawNombre, color: rawColor, usuarioId }) {
   const nombre = validateNombre(rawNombre);
+  const color = validateColor(rawColor);
   const existing = await findDuplicado(nombre, id);
   if (existing) {
     throw new DuplicateNombreError();
   }
-  await repository.updateNombre(id, nombre, usuarioId);
+  await repository.updateNombre(id, nombre, color, usuarioId);
 }
 
 module.exports = {

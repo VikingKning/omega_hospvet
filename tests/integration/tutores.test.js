@@ -127,8 +127,19 @@ async function createTestUser({ username, password }, permissionCodes) {
 }
 
 async function crearTutor({ nombre, telefono, correo, activo }) {
+  // El servidor guarda `propietarios.telefono` sin guiones (look and feel
+  // solo, ver tutores.service.js#stripTelefono) — este helper inserta
+  // directo a BD saltándose el servicio, así que replica esa misma
+  // normalización a mano para no dejar filas con guiones que ningún flujo
+  // real produciría.
   const [{ id }] = await db('propietarios')
-    .insert({ nombre, telefono, correo, activo, creado_en: db.fn.now() })
+    .insert({
+      nombre,
+      telefono: (telefono ?? '').replace(/-/g, ''),
+      correo,
+      activo,
+      creado_en: db.fn.now(),
+    })
     .returning('id');
   return id;
 }
@@ -152,7 +163,10 @@ beforeAll(async () => {
 
   anaId = await crearTutor({
     nombre: `Ana García ${SUFFIX}`,
-    telefono: `5550001001${SUFFIX}`,
+    // El SUFFIX de aislamiento va en el nombre — un teléfono digit-only no
+    // tiene dónde incrustar letras (y contaminaría las búsquedas por
+    // teléfono si se intentara con solo sus dígitos, ver AC26 más abajo).
+    telefono: '5550001001',
     correo: `ana.garcia.${SUFFIX.toLowerCase()}@correo.test`,
     activo: true,
   });
@@ -171,7 +185,7 @@ beforeAll(async () => {
 
   await crearTutor({
     nombre: `Beto López ${SUFFIX}`,
-    telefono: `5550001002${SUFFIX}`,
+    telefono: '5550001002',
     correo: null,
     activo: true,
   });
@@ -179,7 +193,7 @@ beforeAll(async () => {
 
   carlaId = await crearTutor({
     nombre: `Carla Ruiz ${SUFFIX}`,
-    telefono: `5550001003${SUFFIX}`,
+    telefono: '5550001003',
     correo: null,
     activo: false,
   });
@@ -195,7 +209,7 @@ beforeAll(async () => {
   for (let i = 1; i <= 11; i += 1) {
     await crearTutor({
       nombre: `Filler ${String(i).padStart(2, '0')} ${PAG_SUFFIX}`,
-      telefono: `55500020${String(i).padStart(2, '0')}${PAG_SUFFIX}`,
+      telefono: `55500020${String(i).padStart(2, '0')}`,
       correo: null,
       activo: true,
     });
@@ -287,7 +301,7 @@ describe('POST /tutores.html — búsqueda (US-155 AC8-AC10)', () => {
   it('AC10: el texto también coincide con teléfono y correo del tutor', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-    const porTelefono = await filtrarTutores(agent, { q: `5550001001${SUFFIX}` });
+    const porTelefono = await filtrarTutores(agent, { q: '5550001001' });
     expect(porTelefono.text).toContain(`Ana García ${SUFFIX}`);
 
     const porCorreo = await filtrarTutores(agent, {
@@ -645,6 +659,7 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
   it('AC5 (decidido con el usuario): un teléfono de un propietario INACTIVO pide confirmación antes de reactivar', async () => {
     const agent = await loginAs(SOLO_CREAR_USER);
     const telefono = '55-1000-0003';
+    const telefonoDigits = telefono.replace(/-/g, '');
     const inactivoId = await crearTutor({
       nombre: `Reactivable ${SUFFIX_156}`,
       telefono,
@@ -665,7 +680,10 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
       telefono,
     });
 
-    const noSeCreoNada = await db('propietarios').where({ telefono }).count('id as total').first();
+    const noSeCreoNada = await db('propietarios')
+      .where({ telefono: telefonoDigits })
+      .count('id as total')
+      .first();
     expect(Number(noSeCreoNada.total)).toBe(1); // sigue siendo solo el inactivo original
 
     const confirmado = await postTutor(agent, {
@@ -684,7 +702,10 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     expect(reactivado.desactivado_por).toBeNull();
     expect(reactivado.desactivado_en).toBeNull();
 
-    const totalFinal = await db('propietarios').where({ telefono }).count('id as total').first();
+    const totalFinal = await db('propietarios')
+      .where({ telefono: telefonoDigits })
+      .count('id as total')
+      .first();
     expect(Number(totalFinal.total)).toBe(1); // nunca se insertó un segundo registro
   });
 
@@ -968,7 +989,7 @@ describe('POST /tutores/buscar-telefono (pedido del usuario: búsqueda en vivo e
     const res = await agent
       .post('/tutores/buscar-telefono')
       .set('x-csrf-token', csrfToken)
-      .send({ q: `5550001001${SUFFIX}` });
+      .send({ q: '5550001001' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
@@ -988,7 +1009,7 @@ describe('POST /tutores/buscar-telefono (pedido del usuario: búsqueda en vivo e
     const res = await agent
       .post('/tutores/buscar-telefono')
       .set('x-csrf-token', csrfToken)
-      .send({ q: `5550001003${SUFFIX}` }); // teléfono de Carla Ruiz, inactiva
+      .send({ q: '5550001003' }); // teléfono de Carla Ruiz, inactiva
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
@@ -1032,7 +1053,7 @@ describe('POST /tutores/buscar-telefono (pedido del usuario: búsqueda en vivo e
     const res = await agent
       .post('/tutores/buscar-telefono')
       .set('x-csrf-token', 'no-importa-porque-el-permiso-falla-antes')
-      .send({ q: `5550001001${SUFFIX}` });
+      .send({ q: '5550001001' });
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
@@ -1047,7 +1068,7 @@ describe('POST /tutores/verificar-telefono (ajuste posterior: chequeo exacto en 
     const res = await agent
       .post('/tutores/verificar-telefono')
       .set('x-csrf-token', csrfToken)
-      .send({ telefono: `5550001001${SUFFIX}` });
+      .send({ telefono: '5550001001' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -1067,7 +1088,7 @@ describe('POST /tutores/verificar-telefono (ajuste posterior: chequeo exacto en 
     const res = await agent
       .post('/tutores/verificar-telefono')
       .set('x-csrf-token', csrfToken)
-      .send({ telefono: `5550001003${SUFFIX}` }); // teléfono de Carla Ruiz, inactiva
+      .send({ telefono: '5550001003' }); // teléfono de Carla Ruiz, inactiva
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -1076,7 +1097,7 @@ describe('POST /tutores/verificar-telefono (ajuste posterior: chequeo exacto en 
       tutor: {
         id: carlaId,
         nombre: `Carla Ruiz ${SUFFIX}`,
-        telefono: `5550001003${SUFFIX}`,
+        telefono: '55-5000-1003', // formatTelefono() de '5550001003' — solo look and feel
         correo: null,
         pacientes: [expect.objectContaining({ nombre: `Rocky ${SUFFIX}`, activo: true })],
       },
@@ -1102,7 +1123,7 @@ describe('POST /tutores/verificar-telefono (ajuste posterior: chequeo exacto en 
     const res = await agent
       .post('/tutores/verificar-telefono')
       .set('x-csrf-token', 'no-importa-porque-el-permiso-falla-antes')
-      .send({ telefono: `5550001001${SUFFIX}` });
+      .send({ telefono: '5550001001' });
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
@@ -1111,9 +1132,7 @@ describe('POST /tutores/verificar-telefono (ajuste posterior: chequeo exacto en 
   it('sin token CSRF es rechazado', async () => {
     const agent = await loginAs(SOLO_CREAR_USER);
 
-    const res = await agent
-      .post('/tutores/verificar-telefono')
-      .send({ telefono: `5550001001${SUFFIX}` });
+    const res = await agent.post('/tutores/verificar-telefono').send({ telefono: '5550001001' });
 
     expect(res.status).toBe(403);
   });

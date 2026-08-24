@@ -183,7 +183,7 @@ async function obtener(rawId) {
   const usuario = await repository.findById(id);
   if (!usuario) return undefined;
   const doctor = await repository.findDoctorVinculado(usuario.doctor_id);
-  return { ...usuario, doctor };
+  return { ...usuario, telefono: formatTelefono(usuario.telefono), doctor };
 }
 
 // Catálogo de doctores activos para el listbox de "Doctor vinculado" del
@@ -289,11 +289,29 @@ function validateCorreo(rawCorreo) {
   return correo;
 }
 
+// Ajuste posterior, pedido explícito del usuario: el formato NN-NNNN-NNNN
+// es solo "look and feel" — lo que se guarda en `usuarios.telefono` son
+// los 10 dígitos, sin guiones (ver migración
+// 20260819000001_normalizar_telefonos_sin_guiones.js). Mismo criterio de
+// independencia entre módulos que el resto del proyecto — duplicado de
+// tutores.service.js#stripTelefono/formatTelefono, no importado.
+function stripTelefono(telefono) {
+  return (telefono ?? '').replace(/\D/g, '');
+}
+
+function formatTelefono(telefono) {
+  const digits = stripTelefono(telefono);
+  if (digits.length !== 10) return telefono;
+  return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+}
+
 // Teléfono es opcional en el schema (a diferencia de nombre/apellidos/
 // correo/username) — se recorta igual, pero una cadena vacía se guarda
-// como NULL en vez de rechazarse.
+// como NULL en vez de rechazarse. Este módulo nunca validó el FORMATO del
+// lado del servidor (inconsistencia previa, documentada, no corregida
+// aquí) — solo se quitan los guiones si el valor SÍ trae algo.
 function parseTelefono(rawTelefono) {
-  const telefono = (rawTelefono ?? '').trim();
+  const telefono = stripTelefono(rawTelefono);
   return telefono || null;
 }
 

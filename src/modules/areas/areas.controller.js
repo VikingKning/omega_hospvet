@@ -1,5 +1,6 @@
 const service = require('./areas.service');
 const { generateCsrfToken } = require('../../config/csrf');
+const { GOOGLE_CALENDAR_COLORS } = require('./googleCalendarColors');
 
 // Carga inicial de la página: siempre el estado por defecto, nunca lee
 // query params (mismo criterio de privacidad que doctores.controller.js —
@@ -56,6 +57,8 @@ async function nuevoForm(req, res, next) {
     res.render('partials/area-form', {
       area: null,
       nombre: '',
+      color: null, // "Sin color" preseleccionado por defecto en el alta
+      colores: GOOGLE_CALENDAR_COLORS,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -77,6 +80,8 @@ async function editarForm(req, res, next) {
     res.render('partials/area-form', {
       area,
       nombre: area.nombre,
+      color: area.color_google_calendar,
+      colores: GOOGLE_CALENDAR_COLORS,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -106,12 +111,18 @@ async function renderExito(req, res, next, csrfToken) {
 async function crear(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {
-    await service.crear({ nombre: req.body.nombre, usuarioId: req.session.user.id });
+    await service.crear({
+      nombre: req.body.nombre,
+      color: req.body.color,
+      usuarioId: req.session.user.id,
+    });
   } catch (err) {
     if (err.status) {
       return res.render('partials/area-form', {
         area: null,
         nombre: req.body.nombre ?? '',
+        color: req.body.color ?? '',
+        colores: GOOGLE_CALENDAR_COLORS,
         error: err.message,
         csrfToken,
         user: req.session.user,
@@ -137,6 +148,7 @@ async function editar(req, res, next) {
       await service.editar({
         id: req.params.id,
         nombre: req.body.nombre,
+        color: req.body.color,
         usuarioId: req.session.user.id,
       });
     } catch (err) {
@@ -144,6 +156,8 @@ async function editar(req, res, next) {
         return res.render('partials/area-form', {
           area: existing,
           nombre: req.body.nombre ?? '',
+          color: req.body.color ?? '',
+          colores: GOOGLE_CALENDAR_COLORS,
           error: err.message,
           csrfToken,
           user: req.session.user,

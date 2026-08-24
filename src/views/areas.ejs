@@ -182,6 +182,42 @@
     if (event.target.closest('#areaFormErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();
     }
+
+    // Picker de color (US: color de área para Google Calendar) — un swatch
+    // no es un <input type="radio"> real (así puede pintarse como un
+    // cuadro de color puro-CSS), así que el estado "seleccionado" y el
+    // input oculto que HTMX manda en el submit se sincronizan a mano por
+    // delegación, igual que el resto de este modal. También actualiza en
+    // vivo la tarjeta "Vista previa en Google Calendar" — data-hex viene
+    // vacío en el swatch "Sin color", así que ese caso cae solo al estado
+    // "sin color" de la vista previa.
+    const swatch = event.target.closest('.color-swatch-option');
+    if (swatch) {
+      const picker = swatch.closest('.color-swatch-picker');
+      picker.querySelectorAll('.color-swatch-option').forEach((opt) => {
+        opt.classList.toggle('selected', opt === swatch);
+        opt.setAttribute('aria-checked', opt === swatch ? 'true' : 'false');
+      });
+      areaFormModalBody.querySelector('#areaColorInput').value = swatch.dataset.colorId;
+
+      const previewEvent = areaFormModalBody.querySelector('#areaColorPreviewEvent');
+      const hex = swatch.dataset.hex;
+      if (hex) {
+        previewEvent.style.setProperty('--event-color', hex);
+        previewEvent.classList.remove('color-preview-event-none');
+      } else {
+        previewEvent.style.removeProperty('--event-color');
+        previewEvent.classList.add('color-preview-event-none');
+      }
+    }
+  });
+
+  // Vista previa en vivo del nombre del área (misma delegación: el <input>
+  // se recrea en cada swap de HTMX).
+  areaFormModalBody.addEventListener('input', (event) => {
+    if (!event.target.matches('input[name="nombre"]')) return;
+    const previewName = areaFormModalBody.querySelector('#areaColorPreviewName');
+    if (previewName) previewName.textContent = event.target.value.trim() || 'Área sin nombre';
   });
 
   areaFormModalBackdrop.addEventListener('click', (event) => {

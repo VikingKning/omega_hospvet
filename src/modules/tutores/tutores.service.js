@@ -39,6 +39,24 @@ const FORMATO_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // seguir.
 const TELEFONO_REGEX = /^\d{2}-\d{4}-\d{4}$/;
 
+// Ajuste posterior, pedido explícito del usuario: el formato NN-NNNN-NNNN
+// es solo "look and feel" — lo que se guarda en `propietarios.telefono` son
+// los 10 dígitos, sin guiones (ver migración
+// 20260819000001_normalizar_telefonos_sin_guiones.js para los datos que ya
+// existían). `stripTelefono` se usa antes de guardar/comparar;
+// `formatTelefono` reconstruye el formato solo al devolver un teléfono para
+// MOSTRARLO (listado, formulario precargado, resultados del buscador) —
+// nunca se guarda el resultado de formatTelefono.
+function stripTelefono(telefono) {
+  return (telefono ?? '').replace(/\D/g, '');
+}
+
+function formatTelefono(telefono) {
+  const digits = stripTelefono(telefono);
+  if (digits.length !== 10) return telefono;
+  return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+}
+
 function parsePage(rawPage) {
   const page = Number.parseInt(rawPage, 10);
   return Number.isInteger(page) && page > 0 ? page : 1;
@@ -88,7 +106,7 @@ function validateTelefono(rawTelefono) {
   if (!TELEFONO_REGEX.test(telefono)) {
     throw new TutorValidationError('El teléfono debe tener el formato NN-NNNN-NNNN.');
   }
-  return telefono;
+  return stripTelefono(telefono);
 }
 
 function validateCorreo(rawCorreo) {
@@ -142,11 +160,19 @@ function includes(valor, qLower) {
   return (valor ?? '').toLowerCase().includes(qLower);
 }
 
+// Ajuste posterior, pedido explícito del usuario: buscar "5520108565"
+// (sin guiones) debe encontrar un teléfono guardado como "5520108565"
+// (ahora siempre sin guiones, ver stripTelefono/formatTelefono arriba) aun
+// si lo que el usuario escribió en la caja de búsqueda SÍ traía guiones
+// ("55-2010-8565") — se compara `qDigits` (los dígitos de la búsqueda,
+// puede venir vacío si `q` no tiene ningún dígito) contra el teléfono tal
+// cual está guardado, en vez de comparar el `q` crudo.
+//
 // AC: la búsqueda coincide con nombre/teléfono/correo del tutor.
-function tutorCoincide(tutor, qLower) {
+function tutorCoincide(tutor, qLower, qDigits) {
   return (
     includes(tutor.nombre, qLower) ||
-    includes(tutor.telefono, qLower) ||
+    (qDigits && (tutor.telefono ?? '').includes(qDigits)) ||
     includes(tutor.correo, qLower)
   );
 }
@@ -169,13 +195,19 @@ async function list({
   page: rawPage,
 }) {
   const q = (rawQ ?? '').trim();
+  const qDigits = stripTelefono(q);
   const estadoTutores = normalizeEstado(rawEstadoTutores);
   const estadoPacientes = normalizeEstado(rawEstadoPacientes);
   const activoTutores = estadoTutores === 'activos';
   const activoPacientes = estadoPacientes === 'activos';
   const page = parsePage(rawPage);
 
-  const filtrosTutores = { q: q || undefined, activoTutores, activoPacientes };
+  const filtrosTutores = {
+    q: q || undefined,
+    qDigits: qDigits || undefined,
+    activoTutores,
+    activoPacientes,
+  };
 
   const [total, catalogoVacio] = await Promise.all([
     repository.count(filtrosTutores),
@@ -207,10 +239,10 @@ async function list({
   const qLower = q.toLowerCase();
   const tutores = tutoresRows.map((tutor) => {
     let pacientes = mascotasPorTutor.get(tutor.id) ?? [];
-    if (q && !tutorCoincide(tutor, qLower)) {
+    if (q && !tutorCoincide(tutor, qLower, qDigits)) {
       pacientes = pacientes.filter((mascota) => mascotaCoincide(mascota, qLower));
     }
-    return { ...tutor, pacientes };
+    return { ...tutor, telefono: formatTelefono(tutor.telefono), pacientes };
   });
 
   return {
@@ -236,7 +268,7 @@ async function obtenerParaEditar(rawId) {
   const propietario = await repository.findById(id);
   if (!propietario) return undefined;
   const pacientes = await repository.findMascotasByPropietarioId(id);
-  return { ...propietario, pacientes };
+  return { ...propietario, telefono: formatTelefono(propietario.telefono), pacientes };
 }
 
 // US-156 AC7/AC8/AC9/AC10/AC12/AC13: alta. Si el teléfono ya pertenece a un
@@ -266,7 +298,7 @@ async function crear({
     if (!confirmarReactivacion) {
       throw new RequiereConfirmacionReactivacionError({
         nombre: existente.nombre,
-        telefono: existente.telefono,
+        telefono: formatTelefono(existente.telefono),
       });
     }
     return repository.reactivar({
@@ -320,8 +352,11 @@ const BUSQUEDA_TELEFONO_LIMIT = 8;
 // que "si no tiene nada, salen todos los usuarios" (activos, limitados a
 // BUSQUEDA_TELEFONO_LIMIT).
 async function buscarPorTelefono(rawQ) {
-  const q = (rawQ ?? '').trim();
-  return repository.searchByTelefono(q, BUSQUEDA_TELEFONO_LIMIT);
+  // El combobox manda lo que el usuario ya escribió CON la máscara (guiones
+  // incluidos) — se quitan aquí porque lo guardado en BD ya no los tiene.
+  const q = stripTelefono(rawQ);
+  const resultados = await repository.searchByTelefono(q, BUSQUEDA_TELEFONO_LIMIT);
+  return resultados.map((r) => ({ ...r, telefono: formatTelefono(r.telefono) }));
 }
 
 // US-157 (ajuste posterior, pedido del usuario): chequeo EXACTO del
@@ -335,7 +370,7 @@ async function buscarPorTelefono(rawQ) {
 // precargar el formulario ("mostrar toda su información y mascotas",
 // pedido del usuario) en vez de dejar que el usuario adivine.
 async function verificarTelefono(rawTelefono) {
-  const telefono = (rawTelefono ?? '').trim();
+  const telefono = stripTelefono(rawTelefono);
   const existente = await repository.findByTelefono(telefono);
   if (!existente) return { existe: false };
   if (existente.activo) {
@@ -348,7 +383,7 @@ async function verificarTelefono(rawTelefono) {
     tutor: {
       id: existente.id,
       nombre: existente.nombre,
-      telefono: existente.telefono,
+      telefono: formatTelefono(existente.telefono),
       correo: existente.correo,
       pacientes,
     },

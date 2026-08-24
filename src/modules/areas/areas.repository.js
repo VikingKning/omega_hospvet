@@ -39,7 +39,7 @@ async function findPage({ q, activoOnly, sort, dir, limit, offset }) {
   return applySort(baseQuery({ q, activoOnly }), { sort, dir })
     .limit(limit)
     .offset(offset)
-    .select('a.id', 'a.nombre', 'a.slug', 'a.activo');
+    .select('a.id', 'a.nombre', 'a.slug', 'a.activo', 'a.color_google_calendar');
 }
 
 // Independiente de filtros: distingue "el catálogo nunca ha tenido un área"
@@ -128,10 +128,16 @@ async function asegurarPermisosAgenda(trx, slug, nombre) {
     .ignore();
 }
 
-async function create({ nombre, slug, usuarioId }) {
+async function create({ nombre, slug, color, usuarioId }) {
   return db.transaction(async (trx) => {
     const [row] = await trx('areas')
-      .insert({ nombre, slug, creado_por: usuarioId, creado_en: trx.fn.now() })
+      .insert({
+        nombre,
+        slug,
+        color_google_calendar: color,
+        creado_por: usuarioId,
+        creado_en: trx.fn.now(),
+      })
       .returning('id');
 
     await asegurarPermisosAgenda(trx, slug, nombre);
@@ -141,9 +147,10 @@ async function create({ nombre, slug, usuarioId }) {
 }
 
 // El slug nunca se toca aquí — a propósito, así lo pide la historia.
-async function updateNombre(id, nombre, usuarioId) {
+async function updateNombre(id, nombre, color, usuarioId) {
   await db('areas').where({ id }).update({
     nombre,
+    color_google_calendar: color,
     actualizado_por: usuarioId,
     actualizado_en: db.fn.now(),
   });
@@ -157,11 +164,12 @@ async function updateNombre(id, nombre, usuarioId) {
 // mayúsculas/espacios, por si acaso). También asegura sus permisos de
 // agenda (idempotente): un área dada de alta antes de que existiera esta
 // auto-provisión pudo quedar sin ellos.
-async function reactivar(id, nombre, usuarioId) {
+async function reactivar(id, nombre, color, usuarioId) {
   await db.transaction(async (trx) => {
     const area = await trx('areas').where({ id }).first('slug');
     await trx('areas').where({ id }).update({
       nombre,
+      color_google_calendar: color,
       activo: true,
       // null explícito para limpiar la columna — undefined la deja intacta.
       desactivado_por: null,
