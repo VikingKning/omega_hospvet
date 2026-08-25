@@ -34,6 +34,17 @@ router.get(
   controller.eventos,
 );
 
+// Bloques "ocupado" del doctor filtrado en OTRAS áreas (sin detalle, solo
+// para pintarlos en gris) — pedido explícito del usuario. Mismo permiso de
+// solo lectura que el feed de arriba.
+router.get(
+  '/agenda/:slug/citas/ocupado.json',
+  requireAuth,
+  requirePermission((req) => `agenda.${req.params.slug}.ver`),
+  controller.attachArea,
+  controller.ocupado,
+);
+
 router.get(
   '/agenda/:slug/citas/nueva',
   requireAuth,

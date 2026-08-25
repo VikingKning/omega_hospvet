@@ -8,6 +8,7 @@ const {
   resolverArea,
   resumenDelDia,
   listarEventos,
+  listarOcupado,
   crear,
   editar,
   cancelar,
@@ -117,6 +118,53 @@ describe('agenda.service.listarEventos', () => {
   });
 });
 
+// Pedido explícito del usuario: al filtrar por doctor, marcar en gris (sin
+// detalle) sus horas ya ocupadas en OTRAS áreas — un doctor puede atender
+// varias, y una cita ahí lo bloquea igual (mismo criterio cross-área que ya
+// usa existeTraslape).
+describe('agenda.service.listarOcupado', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('sin doctorId, regresa vacío sin tocar el repository (nadie que preguntar)', async () => {
+    const result = await listarOcupado(9, {
+      desde: '2026-08-24',
+      hasta: '2026-08-31',
+      doctorId: undefined,
+    });
+    expect(result).toEqual([]);
+    expect(repository.findOcupadoPorDoctor).not.toHaveBeenCalled();
+  });
+
+  it('con un doctorId inválido, regresa vacío sin tocar el repository', async () => {
+    const result = await listarOcupado(9, {
+      desde: '2026-08-24',
+      hasta: '2026-08-31',
+      doctorId: 'no-es-un-id',
+    });
+    expect(result).toEqual([]);
+    expect(repository.findOcupadoPorDoctor).not.toHaveBeenCalled();
+  });
+
+  it('con un doctorId válido, consulta el repository excluyendo el área actual', async () => {
+    const bloques = [
+      { id: 1, fecha_hora_inicio: '2026-08-24T10:00:00.000Z', duracion_minutos: 30 },
+    ];
+    repository.findOcupadoPorDoctor.mockResolvedValue(bloques);
+    const result = await listarOcupado(9, {
+      desde: '2026-08-24',
+      hasta: '2026-08-31',
+      doctorId: '67',
+    });
+    expect(repository.findOcupadoPorDoctor).toHaveBeenCalledWith(
+      67,
+      new Date('2026-08-24'),
+      new Date('2026-08-31'),
+      9,
+    );
+    expect(result).toEqual(bloques);
+  });
+});
+
 describe('agenda.service.crear', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -172,6 +220,16 @@ describe('agenda.service.crear', () => {
     await expect(crear({ ...datosValidos, fechaHoraInicio: 'no-es-una-fecha' })).rejects.toThrow(
       CitaValidationError,
     );
+  });
+
+  // Pedido explícito del usuario: no se pueden agendar citas del momento
+  // actual hacia atrás.
+  it('rechaza una fecha/hora en el pasado', async () => {
+    const haceUnaHora = new Date(Date.now() - 60 * 60000).toISOString();
+    await expect(crear({ ...datosValidos, fechaHoraInicio: haceUnaHora })).rejects.toThrow(
+      CitaValidationError,
+    );
+    expect(repository.create).not.toHaveBeenCalled();
   });
 
   it('rechaza una duración fuera de los presets válidos (whitelist real, no solo visual)', async () => {
@@ -255,6 +313,16 @@ describe('agenda.service.editar', () => {
   it('rechaza si el nuevo doctor no atiende esta área', async () => {
     doctoresRepository.findActivosByAreaId.mockResolvedValue([]);
     await expect(editar(datosValidos)).rejects.toThrow(DoctorFueraDeAreaError);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  // Pedido explícito del usuario: reagendar hacia un horario ya pasado
+  // tampoco se permite (misma validación que crear()).
+  it('rechaza reagendar hacia una fecha/hora en el pasado', async () => {
+    const haceUnaHora = new Date(Date.now() - 60 * 60000).toISOString();
+    await expect(editar({ ...datosValidos, fechaHoraInicio: haceUnaHora })).rejects.toThrow(
+      CitaValidationError,
+    );
     expect(repository.update).not.toHaveBeenCalled();
   });
 });

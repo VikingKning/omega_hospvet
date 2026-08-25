@@ -101,65 +101,81 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
         </div>
 
         <div class="agenda-calendar">
+          <%#
+            Pedido explícito del usuario (2do reacomodo): arriba, filtro de
+            doctor junto con "Nueva cita"; abajo, navegación de fecha
+            (prev/hoy/next + rango + ícono de calendario) junto con el
+            switch Semana/Día.
+          %>
           <div class="agenda-toolbar">
-            <div class="agenda-toolbar-nav">
-              <div class="toggle-group">
-                <button type="button" class="toggle-btn toggle-btn-icon" id="agendaPrev" aria-label="Anterior">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                </button>
-                <button type="button" class="toggle-btn" id="agendaHoy">Hoy</button>
-                <button type="button" class="toggle-btn toggle-btn-icon" id="agendaNext" aria-label="Siguiente">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                </button>
+            <div class="agenda-toolbar-row">
+              <%#
+                Filtro por doctor (pedido explícito del usuario): filtra el
+                feed de citas de ESTA área+rango visible por el doctor
+                elegido — mismo catálogo ya embebido (#agendaDoctoresData) que
+                el combobox de doctor del formulario de alta/edición, filtrado
+                en cliente. "Todos los doctores" (data-id vacío) limpia el
+                filtro. No usa <select> nativo (no puede tener esquinas
+                redondeadas en su lista abierta) — mismo patrón .combobox que
+                el resto del sistema.
+              %>
+              <div class="combobox agenda-doctor-filter" id="agendaDoctorFilterCombobox">
+                <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly value="Todos los doctores" aria-label="Filtrar por doctor">
+                <ul class="combobox-list" id="agendaDoctorFilterList" hidden></ul>
               </div>
               <%#
-                Clic en el ícono (no en todo el texto de la fecha) abre el
-                selector NATIVO (<input type="date"> + showPicker(), ver el
-                <script> de abajo) — ya trae navegación por año/mes/día del
-                propio navegador. El input oculto ocupa EXACTAMENTE el mismo
-                rectángulo que el ícono (.agenda-date-trigger,
-                position:relative + input con inset:0) — un input de 0×0 no
-                le da a Chrome un punto de anclaje confiable y el picker
-                terminaba en la esquina superior-izquierda de la página; con
-                un rectángulo real del tamaño del ícono, el picker se abre
-                justo debajo de él. En móvil/tablet showPicker() ya abre la
-                hoja nativa del SO sin importar esta posición.
+                Pedido explícito del usuario: si hay un doctor filtrado, "Nueva
+                cita" debe abrir el formulario con ESE doctor ya seleccionado —
+                por eso ya no es un hx-get estático (no conoce filtroDoctorId
+                en tiempo de render), se abre vía JS igual que select() más
+                abajo, mandando doctorId solo cuando hay filtro activo.
               %>
-              <div class="agenda-date-nav">
-                <span class="agenda-toolbar-title" id="agendaTitle"></span>
-                <div class="agenda-date-trigger">
-                  <button type="button" class="agenda-date-trigger-btn" id="agendaDateTrigger" aria-label="Ir a una fecha">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              <% if (puedeCrear) { %>
+                <button class="btn-primary" type="button" id="agendaNuevaCita">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Nueva cita
+                </button>
+              <% } %>
+            </div>
+            <div class="agenda-toolbar-row">
+              <div class="agenda-toolbar-nav">
+                <div class="toggle-group">
+                  <button type="button" class="toggle-btn toggle-btn-icon" id="agendaPrev" aria-label="Anterior">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
                   </button>
-                  <input type="date" id="agendaDatePicker" class="agenda-date-picker-hidden" tabindex="-1" aria-hidden="true">
+                  <button type="button" class="toggle-btn" id="agendaHoy">Hoy</button>
+                  <button type="button" class="toggle-btn toggle-btn-icon" id="agendaNext" aria-label="Siguiente">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                  </button>
+                </div>
+                <%#
+                  Clic en el ícono (no en todo el texto de la fecha) abre el
+                  selector NATIVO (<input type="date"> + showPicker(), ver el
+                  <script> de abajo) — ya trae navegación por año/mes/día del
+                  propio navegador. El input oculto ocupa EXACTAMENTE el mismo
+                  rectángulo que el ícono (.agenda-date-trigger,
+                  position:relative + input con inset:0) — un input de 0×0 no
+                  le da a Chrome un punto de anclaje confiable y el picker
+                  terminaba en la esquina superior-izquierda de la página; con
+                  un rectángulo real del tamaño del ícono, el picker se abre
+                  justo debajo de él. En móvil/tablet showPicker() ya abre la
+                  hoja nativa del SO sin importar esta posición.
+                %>
+                <div class="agenda-date-nav">
+                  <span class="agenda-toolbar-title" id="agendaTitle"></span>
+                  <div class="agenda-date-trigger">
+                    <button type="button" class="agenda-date-trigger-btn" id="agendaDateTrigger" aria-label="Ir a una fecha">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                    </button>
+                    <input type="date" id="agendaDatePicker" class="agenda-date-picker-hidden" tabindex="-1" aria-hidden="true">
+                  </div>
                 </div>
               </div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn active" id="agendaViewWeek">Semana</button>
+                <button type="button" class="toggle-btn" id="agendaViewDay">Día</button>
+              </div>
             </div>
-            <%#
-              Filtro por doctor (pedido explícito del usuario): filtra el
-              feed de citas de ESTA área+rango visible por el doctor
-              elegido — mismo catálogo ya embebido (#agendaDoctoresData) que
-              el combobox de doctor del formulario de alta/edición, filtrado
-              en cliente. "Todos los doctores" (data-id vacío) limpia el
-              filtro. No usa <select> nativo (no puede tener esquinas
-              redondeadas en su lista abierta) — mismo patrón .combobox que
-              el resto del sistema.
-            %>
-            <div class="combobox agenda-doctor-filter" id="agendaDoctorFilterCombobox">
-              <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly value="Todos los doctores" aria-label="Filtrar por doctor">
-              <ul class="combobox-list" id="agendaDoctorFilterList" hidden></ul>
-            </div>
-            <div class="toggle-group">
-              <button type="button" class="toggle-btn active" id="agendaViewWeek">Semana</button>
-              <button type="button" class="toggle-btn" id="agendaViewDay">Día</button>
-            </div>
-            <% if (puedeCrear) { %>
-              <button class="btn-primary" type="button" id="agendaNuevaCita"
-                      hx-get="agenda/<%= area.slug %>/citas/nueva" hx-target="#citaFormModalBody" hx-swap="innerHTML">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                Nueva cita
-              </button>
-            <% } %>
           </div>
 
           <div class="agenda-calendar-wrap">
@@ -509,6 +525,24 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
   // solo agrega "+ el doctor seleccionado" (agenda.controller.js#eventos).
   let filtroDoctorId = '';
 
+  // Abre el formulario de alta — usado por el botón "Nueva cita" y por
+  // select() (clic/arrastre sobre un slot vacío). Pedido explícito del
+  // usuario: si hay un doctor filtrado, ya viene preseleccionado en el
+  // formulario (agenda.controller.js#nuevoForm valida que pertenezca a
+  // esta área antes de preseleccionarlo).
+  function abrirCitaNueva(inicioIso) {
+    const params = new URLSearchParams();
+    if (inicioIso) params.set('inicio', inicioIso);
+    if (filtroDoctorId) params.set('doctorId', filtroDoctorId);
+    const query = params.toString();
+    htmx.ajax('GET', `agenda/${areaSlug}/citas/nueva${query ? `?${query}` : ''}`, {
+      target: '#citaFormModalBody',
+      swap: 'innerHTML',
+    });
+  }
+
+  document.getElementById('agendaNuevaCita')?.addEventListener('click', () => abrirCitaNueva());
+
   // Con los bundles "global" (script tags, no ESM), core/timegrid/
   // interaction se registran solos en el objeto FullCalendar al cargar —
   // no hace falta (ni se puede) pasar `plugins` aquí.
@@ -523,21 +557,58 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     // encabezado pegado al real) solo estorbaba.
     allDaySlot: false,
     selectable: puedeCrear,
+    // Pedido explícito del usuario: un horario ya marcado "ocupado" (gris,
+    // doctor filtrado con cita en OTRA área) no se puede seleccionar para
+    // agendar — FullCalendar ya trae este gancho para "¿esta selección
+    // puede pisar este evento?"; false SOLO para los bloques de fondo deja
+    // intacta la selección normal sobre cualquier otro hueco libre.
+    selectOverlap: (event) => event.display !== 'background',
+    // Pedido explícito del usuario: no se pueden agendar citas del momento
+    // actual hacia atrás — ni un slot de "hoy más temprano". Mismo límite
+    // que valida el servidor (agenda.service.js#validateFechaHoraInicio),
+    // aquí solo evita el viaje redondo de intentarlo primero.
+    selectAllow: (selectInfo) => selectInfo.start >= new Date(),
     eventColor: eventColor || undefined,
     eventTextColor: <%- JSON.stringify(color.foreground) %> || undefined,
-    events: {
-      url: `agenda/${areaSlug}/citas.json`,
-      extraParams: () => (filtroDoctorId ? { doctorId: filtroDoctorId } : {}),
+    // Tooltip "No disponible" sobre los bloques "ocupado" — mismo patrón
+    // [data-tooltip] de CSS puro que el resto del sistema (main.css), el
+    // propio .fc-bg-event ya viene con position:absolute de FullCalendar,
+    // suficiente como contexto de posicionamiento para el tooltip.
+    eventDidMount(info) {
+      if (info.event.display === 'background') {
+        info.el.setAttribute('data-tooltip', 'No disponible');
+      }
     },
+    eventSources: [
+      {
+        url: `agenda/${areaSlug}/citas.json`,
+        extraParams: () => (filtroDoctorId ? { doctorId: filtroDoctorId } : {}),
+      },
+      // Bloques "ocupado" (pedido explícito del usuario): con un doctor
+      // filtrado, sus citas en OTRAS áreas se pintan en gris y SIN detalle
+      // (el propio feed ya no manda título/mascota/motivo) — el usuario ve
+      // que esa hora ya no está disponible "entre calendarios" y elige
+      // otra. `backgroundColor` en rgba (no `color`, que también fija el
+      // borde) — FullCalendar la aplica como estilo INLINE, que gana
+      // siempre sobre cualquier regla de main.css por especificidad; sin
+      // esto el bloque caía al `eventColor` del área entera (el mismo
+      // cyan de las citas reales) en vez de gris. La traslucidez vive en
+      // el propio alpha del rgba, no en `opacity` del elemento — FullCalendar
+      // pone opacity:0.3 por default en TODO el elemento, lo que también
+      // apaga sus pseudo-elementos (el tooltip ::before/::after se veía
+      // "lavado"); .fc-bg-event en main.css cancela esa opacity a 1.
+      {
+        url: `agenda/${areaSlug}/citas/ocupado.json`,
+        backgroundColor: 'rgba(111, 108, 106, 0.35)',
+        extraParams: () => (filtroDoctorId ? { doctorId: filtroDoctorId } : {}),
+      },
+    ],
     datesSet(info) {
       document.getElementById('agendaTitle').textContent = info.view.title;
     },
     select(info) {
       if (!puedeCrear) return;
-      htmx.ajax('GET', `agenda/${areaSlug}/citas/nueva?inicio=${encodeURIComponent(info.start.toISOString())}`, {
-        target: '#citaFormModalBody',
-        swap: 'innerHTML',
-      });
+      abrirCitaNueva(info.start.toISOString());
       calendar.unselect();
     },
     eventClick(info) {

@@ -87,6 +87,15 @@ async function listarEventos(areaId, { desde, hasta, doctorId }) {
   );
 }
 
+// Bloques "ocupado" (sin detalle) del doctor filtrado en OTRAS áreas —
+// pedido explícito del usuario. Sin doctorId (nadie filtrado todavía) no
+// tiene sentido preguntar por nadie: regresa vacío en vez de tronar.
+async function listarOcupado(areaId, { desde, hasta, doctorId }) {
+  const id = parseId(doctorId);
+  if (id === null) return [];
+  return repository.findOcupadoPorDoctor(id, new Date(desde), new Date(hasta), areaId);
+}
+
 function validateDoctorId(raw) {
   const id = parseId(raw);
   if (id === null) throw new CitaValidationError('Selecciona un doctor.');
@@ -102,11 +111,18 @@ function validateMascotaId(raw) {
 // El cliente arma este valor combinando los <input type="date">/"time"> en
 // hora LOCAL DEL NAVEGADOR y lo convierte a ISO con `Date.toISOString()`
 // (ver agenda.ejs) — aquí solo se parsea, nunca se asume ni se hardcodea
-// ninguna zona horaria del lado del servidor.
+// ninguna zona horaria del lado del servidor. Pedido explícito del usuario:
+// no se pueden agendar citas del momento actual hacia atrás (ni "hoy más
+// temprano") — se comparte esta validación entre crear() y editar(), así
+// que también aplica a reagendar una cita existente hacia un horario ya
+// pasado.
 function validateFechaHoraInicio(raw) {
   const fecha = raw ? new Date(raw) : null;
   if (!fecha || Number.isNaN(fecha.getTime())) {
     throw new CitaValidationError('La fecha y hora de la cita son obligatorias.');
+  }
+  if (fecha < new Date()) {
+    throw new CitaValidationError('No se pueden agendar citas en el pasado.');
   }
   return fecha;
 }
@@ -224,6 +240,7 @@ module.exports = {
   listarDoctoresDelArea,
   resumenDelDia,
   listarEventos,
+  listarOcupado,
   crear,
   editar,
   cancelar,

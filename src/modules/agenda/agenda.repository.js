@@ -52,6 +52,24 @@ async function findEnRango(areaId, desde, hasta, doctorId) {
   ).orderBy('c.fecha_hora_inicio');
 }
 
+// Bloques "ocupado" de un doctor en OTRAS áreas (pedido explícito del
+// usuario: al filtrar el calendario por un doctor, marcar en gris sus
+// horas ya ocupadas "entre calendarios" — un doctor puede atender varias
+// áreas, y una cita en OTRA área lo bloquea igual). `excludeAreaId` es el
+// área que se está viendo — sus propias citas de este doctor ya se ven con
+// detalle real vía findEnRango, no hace falta duplicarlas aquí. Sin JOIN ni
+// detalle (mascota/motivo) a propósito: es solo una franja "ocupado", no
+// información de una cita que el usuario quizá no tiene permiso de ver.
+async function findOcupadoPorDoctor(doctorId, desde, hasta, excludeAreaId) {
+  return db('citas')
+    .where('doctor_id', doctorId)
+    .andWhereNot('estado', 'cancelada')
+    .andWhereNot('area_id', excludeAreaId)
+    .andWhere('fecha_hora_inicio', '<', hasta)
+    .andWhere(FIN_EXPR, '>', desde)
+    .select('id', 'fecha_hora_inicio', 'duracion_minutos');
+}
+
 // "Siguiente cita": la más próxima a partir de ahora, sin acotar a hoy (si
 // ya no queda ninguna hoy, es la primera de mañana) — mismo criterio que la
 // tarjeta "próxima cita" del mockup que esto reemplaza.
@@ -144,6 +162,7 @@ async function cancelar(id, usuarioId) {
 
 module.exports = {
   findEnRango,
+  findOcupadoPorDoctor,
   findSiguiente,
   existeTraslape,
   findById,

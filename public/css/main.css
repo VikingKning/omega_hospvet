@@ -400,7 +400,16 @@ body:has(.app)::after {
   gap: 14px;
 }
 
+/* 2 renglones (pedido explícito del usuario): arriba navegación de
+   fecha+filtro de doctor, abajo Semana/Día (izquierda) y Nueva cita
+   (derecha). */
 .agenda-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agenda-toolbar-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -591,6 +600,28 @@ body:has(.app)::after {
   padding: 2px 4px;
   font-size: 12px;
   cursor: pointer;
+}
+
+/* Bloques "ocupado" (pedido explícito del usuario): ni se pueden
+   seleccionar (selectOverlap en agenda.ejs) ni tiene caso que el cursor
+   invite a hacerlo — su [data-tooltip]="No disponible" (agenda.ejs) usa la
+   regla transversal de tooltips ya definida más abajo en este archivo. El
+   gris translúcido en sí se fija en agenda.ejs (`backgroundColor` rgba del
+   eventSource, aplicado como estilo INLINE por FullCalendar — cualquier
+   `background` de aquí perdería siempre contra un inline por especificidad,
+   así que no se declara aquí). Bug real (reportado por el usuario: "el
+   tooltip no se ve"): el default de FullCalendar es
+   `opacity: var(--fc-bg-event-opacity, 0.3)` en el PROPIO elemento — como
+   opacity afecta también a sus pseudo-elementos, el tooltip
+   (::before/::after, hijo de este mismo .fc-bg-event) se renderizaba al
+   30%, casi invisible. Se cancela con opacity:1 (la traslucidez del bloque
+   ya viene del alpha del rgba, no de esta opacity) — y --tooltip-bg un par
+   de tonos más oscuro que el default (var(--text-dark)), pedido explícito
+   del usuario. */
+.agenda-calendar-wrap .fc-bg-event {
+  cursor: not-allowed;
+  opacity: 1;
+  --tooltip-bg: #2b2c30;
 }
 
 /* Scrollbar delgada y sin flechas de paso (Chromium/WebKit) — el thumb

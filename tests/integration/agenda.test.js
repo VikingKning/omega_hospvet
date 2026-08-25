@@ -201,6 +201,19 @@ describe('GET /agenda/:slug/citas/nueva (permiso .crear)', () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
   });
+
+  // Pedido explícito del usuario: si venía un doctor filtrado en el
+  // calendario, "Nueva cita" lo preselecciona — pero solo si pertenece a
+  // ESTA área (catálogo vacío aquí, así que cualquier id se descarta sin
+  // tronar; el caso "sí pertenece" está cubierto en agenda.service.test.js/
+  // verificación en vivo por la regla de no insertar en `doctores` aquí).
+  it('un doctorId que no pertenece al catálogo de esta área se ignora, no truena', async () => {
+    const agent = await loginAs(SOLO_CREAR);
+
+    const res = await agent.get('/agenda/cirugias/citas/nueva').query({ doctorId: '999999' });
+
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('GET /agenda/:slug/citas/:id/editar (permiso .editar)', () => {
@@ -329,6 +342,36 @@ describe('GET /agenda/:slug/citas.json (feed del calendario)', () => {
     const agent = await loginAs(SIN_PERMISOS);
 
     const res = await agent.get('/agenda/cirugias/citas.json').query({
+      start: new Date().toISOString(),
+      end: new Date().toISOString(),
+    });
+
+    expect(res.status).toBe(302);
+  });
+});
+
+// Pedido explícito del usuario: al filtrar por doctor, marcar en gris (sin
+// detalle) sus horas ya ocupadas en OTRAS áreas. Sin doctor real de por
+// medio (regla ya establecida, ver el comentario del encabezado) solo se
+// cubre aquí el caso "sin doctorId" y los permisos — el filtrado real
+// cross-área está cubierto en agenda.service.test.js (repository mockeado).
+describe('GET /agenda/:slug/citas/ocupado.json (bloques "ocupado" del doctor filtrado)', () => {
+  it('sin doctorId, responde un arreglo vacío (nadie que preguntar)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/agenda/cirugias/citas/ocupado.json').query({
+      start: new Date().toISOString(),
+      end: fechaFutura(24),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('requiere agenda.cirugias.ver', async () => {
+    const agent = await loginAs(SIN_PERMISOS);
+
+    const res = await agent.get('/agenda/cirugias/citas/ocupado.json').query({
       start: new Date().toISOString(),
       end: new Date().toISOString(),
     });

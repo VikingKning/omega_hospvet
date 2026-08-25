@@ -82,18 +82,53 @@ async function eventos(req, res, next) {
   }
 }
 
+// GET /agenda/:slug/citas/ocupado.json?doctorId=&start=&end() — pedido
+// explícito del usuario: al filtrar el calendario por un doctor, pintar en
+// gris (sin detalle) sus horas ya ocupadas en OTRAS áreas — un doctor
+// puede atender varias, y una cita ahí lo bloquea igual (mismo criterio
+// cross-área que ya usa existeTraslape). Sin doctorId, siempre vacío.
+async function ocupado(req, res, next) {
+  try {
+    const bloques = await service.listarOcupado(req.area.id, {
+      desde: req.query.start,
+      hasta: req.query.end,
+      doctorId: req.query.doctorId,
+    });
+    res.json(
+      bloques.map((cita) => {
+        const inicio = new Date(cita.fecha_hora_inicio);
+        const fin = new Date(inicio.getTime() + cita.duracion_minutos * 60000);
+        return {
+          id: `ocupado-${cita.id}`,
+          start: inicio.toISOString(),
+          end: fin.toISOString(),
+          display: 'background',
+        };
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /agenda/:slug/citas/nueva — fragmento HTMX, formulario vacío. `inicio`
 // (query) precarga la fecha/hora si se abrió haciendo clic en un slot del
-// calendario (ver agenda.ejs).
+// calendario. `doctorId` (query) preselecciona el doctor cuando el usuario
+// ya tenía un filtro de doctor activo en el calendario (pedido explícito) —
+// se valida contra el catálogo de ESTA área para no confiar ciegamente en
+// un query param (mismo criterio que cualquier id que llega del cliente).
 async function nuevoForm(req, res, next) {
   try {
     const doctores = await service.listarDoctoresDelArea(req.area.id);
+    const doctorIdSeleccionado = doctores.some((d) => String(d.id) === req.query.doctorId)
+      ? req.query.doctorId
+      : '';
     const csrfToken = generateCsrfToken(req, res);
     res.render('partials/cita-form', {
       area: req.area,
       cita: null,
       doctores,
-      doctorIdSeleccionado: '',
+      doctorIdSeleccionado,
       mascotaSeleccionada: null,
       fechaHoraInicio: req.query.inicio ?? '',
       duracionMinutos: '',
@@ -270,4 +305,14 @@ async function cancelar(req, res, next) {
   }
 }
 
-module.exports = { attachArea, pagina, eventos, nuevoForm, editarForm, crear, editar, cancelar };
+module.exports = {
+  attachArea,
+  pagina,
+  eventos,
+  ocupado,
+  nuevoForm,
+  editarForm,
+  crear,
+  editar,
+  cancelar,
+};
