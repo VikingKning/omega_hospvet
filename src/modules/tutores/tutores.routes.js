@@ -70,6 +70,21 @@ router.post(
   controller.buscarTelefono,
 );
 
+// Agenda: combobox de "Mascota" del formulario de citas (ver agenda.ejs) —
+// vive en este módulo porque `mascotas` es su tabla (mismo criterio que
+// buscar-telefono), pero el permiso NO es `tutores.*`: quien agenda citas
+// no necesariamente tiene acceso al módulo de Tutores, así que se exige el
+// permiso de agenda del área que manda en el body (`agenda.<slug>.crear`),
+// evaluado por request — mismo mecanismo que las rutas de agenda.routes.js.
+router.post(
+  '/tutores/buscar-mascota',
+  requireAuth,
+  requirePermission((req) => `agenda.${req.body.slug}.crear`),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.buscarMascota,
+);
+
 // US-157 (ajuste posterior, pedido del usuario): chequeo exacto del
 // teléfono al salir del campo (blur) en el alta — a diferencia de la
 // búsqueda de arriba (parcial, solo activos), este SÍ revela un

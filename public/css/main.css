@@ -392,18 +392,226 @@ body:has(.app)::after {
   color: var(--primary);
 }
 
-.gcal-embed {
+.agenda-calendar {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.agenda-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.agenda-toolbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Prev/Hoy/Siguiente agrupados en un solo control (reutiliza
+   .toggle-group/.toggle-btn — el mismo patrón que el switch Semana/Día de
+   al lado, pedido explícito del usuario: "mismo estilo y tamaño"). */
+.agenda-toolbar-nav .toggle-group {
+  flex-shrink: 0;
+}
+
+.agenda-toolbar-nav .toggle-btn-icon {
+  padding: 9px 10px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.agenda-toolbar-nav .toggle-btn-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Texto de la fecha (ya no es el elemento clicable — el trigger es el
+   ícono de .agenda-date-trigger-btn a su lado, pedido explícito del
+   usuario para no tener que darle clic a todo el rango de fechas). */
+.agenda-toolbar-title {
+  padding: 6px 0 6px 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+  min-width: 150px;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.agenda-date-nav {
+  display: flex;
+  align-items: center;
+}
+
+/* position:relative acota al tamaño exacto del ícono (32x32) — el input
+   oculto de abajo se estira a ese mismo rectángulo con inset:0, así Chrome
+   tiene un punto de anclaje real (no 0x0) para el picker nativo. */
+.agenda-date-trigger {
+  position: relative;
+  display: inline-flex;
+}
+
+.agenda-date-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.agenda-date-trigger-btn:hover {
+  background: var(--bg-base);
+  color: var(--text-dark);
+}
+
+.agenda-date-trigger-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* input real (necesario para que showPicker()/el evento change funcionen),
+   pero invisible — el usuario nunca ve el campo en sí, solo el picker
+   nativo que showPicker() abre. Bug real: con width/height:0 el picker se
+   abría en la esquina superior-izquierda de la PÁGINA en vez de junto al
+   ícono — Chrome no lo ancla de forma confiable a un elemento sin caja.
+   inset:0 lo estira exactamente sobre .agenda-date-trigger-btn (32x32,
+   invisible encima del ícono real, que sigue siendo el que recibe el clic
+   visualmente pero no el foco/eventos — pointer-events:none). */
+.agenda-date-picker-hidden {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Filtro por doctor (pedido explícito del usuario): mismo .combobox del
+   resto del sistema, pero de solo-selección (input readonly, no filtra al
+   escribir) — la caja/flecha reutilizan .lab-select + .select-trigger-input
+   (mismos que los filtros de laboratorio.ejs y los <select> envueltos de
+   usuarios/doctor-form), no un <select> nativo (no puede tener esquinas
+   redondeadas en su lista abierta). */
+.agenda-doctor-filter {
+  width: 190px;
+  flex-shrink: 0;
+}
+
+.agenda-calendar-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 500px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  /* Sin padding: con un hueco entre el marco redondeado y la grilla (de
+     esquinas rectas) de FullCalendar se veía como un doble margen y la
+     grilla nunca se sentía redondeada — pegada al marco, overflow:hidden
+     recorta sus esquinas rectas al mismo radio del contenedor. */
   overflow: hidden;
 }
 
-.gcal-embed iframe {
+/* Overrides mínimos de FullCalendar para que se sienta parte del mismo
+   sistema visual (tipografía, color primario, radios) en vez de su tema
+   default — el resto de su apariencia se deja tal cual trae la librería. */
+.agenda-calendar-wrap .fc {
+  font-family: inherit;
+  height: 100%;
+  /* Fondo de "hoy" propio (azul-grisáceo claro, del mismo sistema de
+     color) en vez del amarillo por defecto de FullCalendar. */
+  --fc-today-bg-color: var(--primary-light);
+  --fc-border-color: var(--border);
+}
+
+.agenda-calendar-wrap .fc-toolbar {
+  display: none; /* la barra propia (.agenda-toolbar) reemplaza la de FullCalendar */
+}
+
+/* FullCalendar dibuja su PROPIO borde de 1px alrededor de toda la tabla
+   (.fc-theme-standard .fc-scrollgrid) — pegado al borde de .agenda-calendar-wrap
+   (ya sin padding), esos dos bordes se sumaban en los lados rectos
+   (~2px) mientras que en las esquinas el borde recto de la tabla se
+   recorta por el overflow:hidden del wrap, dejando solo el borde de
+   este último (~1px) — pedido explícito del usuario: mismo grosor en
+   todo el contorno. El único borde real que debe quedar es el del wrap. */
+.agenda-calendar-wrap .fc-scrollgrid {
   border: 0;
-  display: block;
+}
+
+.agenda-calendar-wrap .fc-timegrid-slot-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.agenda-calendar-wrap .fc-col-header-cell-cushion {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 10px 4px;
+}
+
+/* Línea inferior del encabezado de días — un poco más marcada que el
+   resto de las líneas de la grilla (pedido explícito del usuario), para
+   separar visualmente los días de las horas. */
+.agenda-calendar-wrap .fc-col-header {
+  border-bottom: 2px solid var(--border);
+}
+
+/* Día de "hoy": además del fondo de columna, el propio encabezado se
+   resalta (texto en --primary) — antes todos los días se veían igual de
+   "neutros" en el header, sin ninguna pista de cuál es hoy. */
+.agenda-calendar-wrap .fc-day-today .fc-col-header-cell-cushion {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.agenda-calendar-wrap .fc-timegrid-now-indicator-line {
+  border-color: var(--danger);
+}
+
+.agenda-calendar-wrap .fc-event {
+  border-radius: 6px;
+  border: none;
+  padding: 2px 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Scrollbar delgada y sin flechas de paso (Chromium/WebKit) — el thumb
+   ancho + botones de paso del scrollbar nativo se leían como "controles"
+   metidos entre los días, robándoles ancho (pedido explícito del
+   usuario: que los días de la semana se vean más amplios). */
+.agenda-calendar-wrap .fc-scroller::-webkit-scrollbar {
+  width: 8px;
+}
+
+.agenda-calendar-wrap .fc-scroller::-webkit-scrollbar-button {
+  display: none;
+}
+
+.agenda-calendar-wrap .fc-scroller::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.agenda-calendar-wrap .fc-scroller::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ---------- Mobile ---------- */
@@ -1169,7 +1377,12 @@ body:has(.app)::after {
   border-radius: 5px;
   font-size: 12px;
   font-weight: 500;
-  color: #fff;
+  /* Los 11 colores de Google Calendar son fondos pastel/claros incluso los
+     "oscuros" (Tomate, Arándano) — texto blanco encima no pasa contraste
+     mínimo. Google usa #1d1d1d para los 11 (mismo valor que
+     googleCalendarColors.js#foreground), así que a diferencia de
+     --event-color (que sí varía por swatch) esto puede quedar fijo. */
+  color: #1d1d1d;
   background: var(--event-color);
   opacity: 0.4;
 }
@@ -1178,7 +1391,7 @@ body:has(.app)::after {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(29, 29, 29, 0.35);
   flex-shrink: 0;
 }
 
@@ -1398,6 +1611,23 @@ body:has(.app)::after {
   font-size: 13px;
 }
 
+/* Agenda: cita ya pasada (soloLectura en cita-form.ejs) — pedido explícito
+   del usuario: "que las citas que ya pasaron no se puedan editar". Mismo
+   layout que los otros dos banners, paleta neutra (ni error ni éxito, solo
+   informativo). */
+.form-info-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 /* US-109: primer uso de un banner de ÉXITO en el sistema — hasta ahora
    solo existía el de error (arriba). Mismo layout, paleta verde
    (var(--success), ya definida y usada en otros lados como el badge
@@ -1483,7 +1713,9 @@ body:has(.app)::after {
 
 .account-status-badge.is-warning {
   background: rgba(242, 169, 0, 0.14);
-  color: var(--warning);
+  /* --warning-text (no --warning): el ámbar original no pasa contraste
+     como texto (~2:1) — revisión de contraste en todo el sistema. */
+  color: var(--warning-text);
 }
 
 .account-status-badge.is-danger {
@@ -2070,9 +2302,13 @@ body:has(.app)::after {
 }
 
 /* US-601: estatus de usuarios.estatus (bloqueo_temp/bloqueado) — activo
-   reusa .is-active de arriba, inactivo se queda con el gris por defecto. */
+   reusa .is-active de arriba, inactivo se queda con el gris por defecto.
+   El texto usa --warning-text (no --warning): el ámbar original no pasa
+   contraste como color de letra sobre --surface (revisión de contraste en
+   todo el sistema) — el puntito de abajo sí puede quedarse con el ámbar
+   brillante original, es una forma pequeña, no texto. */
 .status-badge.is-warning {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .status-badge.is-warning::before {
@@ -2203,12 +2439,15 @@ body:has(.app)::after {
 }
 
 .row-action-reset {
-  color: var(--warning);
+  /* El ícono usa --warning-text (no --warning): el ámbar original no pasa
+     ni el contraste de gráficos/UI (~2:1, mínimo 3:1) sobre el fondo
+     blanco del botón. El tooltip SÍ puede quedarse con --warning de
+     fondo (bg claro, texto oscuro encima — --tooltip-text ya lo resuelve
+     abajo), es la relación inversa (texto oscuro sobre fondo claro, no
+     texto claro sobre fondo claro) — mismo criterio que .btn-danger, que
+     ya usa var(--danger) + texto blanco en el resto del sistema. */
+  color: var(--warning-text);
   --tooltip-bg: var(--warning);
-  /* --warning es un ámbar claro — texto blanco encima no llega al
-     contraste mínimo legible (~2:1 calculado). El resto de las acciones sí
-     funcionan con texto blanco (mismo criterio que .btn-danger, que ya usa
-     var(--danger) + texto blanco en el resto del sistema). */
   --tooltip-text: var(--text-dark);
 }
 

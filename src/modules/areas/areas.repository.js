@@ -65,6 +65,13 @@ async function findById(id) {
   return db('areas').where({ id }).first();
 }
 
+// Agenda: resuelve la página genérica /agenda/:slug.html contra un área
+// real — trae también `color_google_calendar` (el controller la usa para
+// pintar los eventos del calendario de esa área).
+async function findBySlug(slug) {
+  return db('areas').where({ slug }).first();
+}
+
 // Trae todas las filas (menos la propia, en edición) para que el service
 // compare nombres normalizados (sin acentos/mayúsculas/espacios) en JS — el
 // catálogo es chico, así que no vale la pena pelear con collations o
@@ -187,6 +194,7 @@ module.exports = {
   existsAny,
   desactivar,
   findById,
+  findBySlug,
   findAllExcept,
   existsBySlug,
   create,

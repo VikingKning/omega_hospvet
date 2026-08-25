@@ -122,6 +122,20 @@ async function findAreasByIds(ids) {
   return db('areas').whereIn('id', ids).orderBy('nombre').select('id', 'nombre');
 }
 
+// Agenda: dirección área -> doctores (todo lo demás en este archivo va
+// doctor -> áreas). Solo doctores activos, para el combobox de "Doctor" del
+// formulario de citas — un doctor dado de baja no debe poder recibir citas
+// nuevas aunque siga ligado a `doctor_area` (esa fila se conserva por
+// historial, mismo criterio que el resto del sistema).
+async function findActivosByAreaId(areaId) {
+  return db('doctor_area as da')
+    .join('doctores as d', 'd.id', 'da.doctor_id')
+    .where('da.area_id', areaId)
+    .andWhere('d.activo', true)
+    .orderBy(['d.apellidos', 'd.nombre'])
+    .select('d.id', 'd.nombre', 'd.apellidos');
+}
+
 // US-607 AC: alta — inserta el doctor y una fila en doctor_area por cada
 // área seleccionada (puede ser ninguna), todo en una sola transacción: si
 // el insert de doctor_area fallara (p.ej. un id de área que ya no existe),
@@ -191,6 +205,7 @@ module.exports = {
   desactivar,
   findById,
   findAreasByDoctorId,
+  findActivosByAreaId,
   listAreasActivas,
   findAreasByIds,
   crear,

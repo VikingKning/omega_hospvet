@@ -284,6 +284,59 @@ async function searchByTelefono(q, limit) {
     .select('id', 'nombre', 'telefono');
 }
 
+// Agenda: combobox de "Mascota" del formulario de citas — mismo criterio
+// que searchByTelefono (incremental, solo activos), pero busca por el
+// nombre de la mascota (el catálogo puede crecer mucho, a diferencia de
+// áreas/doctores no se precarga entero). Solo mascotas de propietarios
+// también activos — no tendría sentido ofrecer agendar a la mascota de un
+// tutor dado de baja.
+// Agenda: resuelve una mascota por su propio id (no por propietario) —
+// para repoblar el combobox del formulario de citas en dos casos: precargar
+// la edición de una cita existente, y re-mostrar la selección tras un
+// re-render por error de validación (mismo criterio que
+// usuarios.service.js#resolverDoctor).
+async function findMascotaById(id) {
+  return db('mascotas as m')
+    .join('propietarios as p', 'p.id', 'm.propietario_id')
+    .where('m.id', id)
+    .first(
+      'm.id',
+      'm.nombre',
+      'm.tipo',
+      'p.id as propietario_id',
+      'p.nombre as propietario_nombre',
+    );
+}
+
+// Pedido explícito del usuario: buscar por Mascota, Dueño o teléfono —
+// mismo criterio de `qDigits` (dígitos de `q`, rama del OR omitida si viene
+// vacía) que tutores.repository.js#baseQuery.
+async function searchMascotas(q, qDigits, limit) {
+  return db('mascotas as m')
+    .join('propietarios as p', 'p.id', 'm.propietario_id')
+    .where('m.activo', true)
+    .andWhere('p.activo', true)
+    .modify((builder) => {
+      if (q) {
+        builder.andWhere((whereBuilder) => {
+          whereBuilder
+            .whereRaw('m.nombre ILIKE ?', [`%${q}%`])
+            .orWhereRaw('p.nombre ILIKE ?', [`%${q}%`]);
+          if (qDigits) whereBuilder.orWhereRaw('p.telefono ILIKE ?', [`%${qDigits}%`]);
+        });
+      }
+    })
+    .orderBy('m.nombre')
+    .limit(limit)
+    .select(
+      'm.id',
+      'm.nombre',
+      'm.tipo',
+      'p.id as propietario_id',
+      'p.nombre as propietario_nombre',
+    );
+}
+
 // US-157 (ajustado después, pedido del usuario): baja lógica, nunca DELETE
 // físico — el historial de citas/laboratorio sigue referenciando a este
 // propietario vía propietario_id, que nunca se toca. La baja SÍ cascada a
@@ -318,5 +371,7 @@ module.exports = {
   editar,
   reactivar,
   searchByTelefono,
+  findMascotaById,
+  searchMascotas,
   desactivar,
 };

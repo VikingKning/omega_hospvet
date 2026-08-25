@@ -15,6 +15,7 @@ const {
   crear,
   editar,
   buscarPorTelefono,
+  buscarMascotas,
   verificarTelefono,
   TutorValidationError,
   RequiereConfirmacionReactivacionError,
@@ -454,6 +455,59 @@ describe('tutores.service.buscarPorTelefono (pedido del usuario: búsqueda en vi
     repository.searchByTelefono.mockResolvedValue([]);
     await buscarPorTelefono('55-5123-4567');
     expect(repository.searchByTelefono).toHaveBeenCalledWith('5551234567', 8);
+  });
+});
+
+// Agenda: combobox de "Mascota" del formulario de citas. Pedido explícito
+// del usuario: la búsqueda debe cubrir Mascota, Dueño Y teléfono — el
+// service solo recorta espacios y calcula qDigits (mismo criterio que
+// tutores.service.js#list), el filtro real vive en el repository.
+describe('tutores.service.buscarMascotas (pedido del usuario: buscar por mascota, dueño o teléfono)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('sin texto, consulta el repository sin ninguna rama de filtro (trae las primeras mascotas)', async () => {
+    repository.searchMascotas.mockResolvedValue([]);
+    await buscarMascotas('');
+    expect(repository.searchMascotas).toHaveBeenCalledWith(undefined, undefined, 8);
+  });
+
+  it('un q ausente (undefined) se trata igual que vacío, no truena', async () => {
+    repository.searchMascotas.mockResolvedValue([]);
+    await buscarMascotas(undefined);
+    expect(repository.searchMascotas).toHaveBeenCalledWith(undefined, undefined, 8);
+  });
+
+  it('recorta espacios y manda q tal cual (para nombre de mascota/dueño) al repository', async () => {
+    repository.searchMascotas.mockResolvedValue([]);
+    await buscarMascotas('  Guillermo  ');
+    expect(repository.searchMascotas).toHaveBeenCalledWith('Guillermo', undefined, 8);
+  });
+
+  // Un texto sin dígitos (solo nombre) no debe activar la rama de teléfono
+  // en el repository — qDigits viene undefined, no ''.
+  it('un texto sin dígitos no manda qDigits (evita matchear cualquier teléfono con un ILIKE vacío)', async () => {
+    repository.searchMascotas.mockResolvedValue([]);
+    await buscarMascotas('Nissa');
+    expect(repository.searchMascotas).toHaveBeenCalledWith('Nissa', undefined, 8);
+  });
+
+  it('un texto con dígitos (teléfono, con o sin guiones) manda qDigits al repository', async () => {
+    repository.searchMascotas.mockResolvedValue([]);
+    await buscarMascotas('55-3007-7282');
+    expect(repository.searchMascotas).toHaveBeenCalledWith('55-3007-7282', '5530077282', 8);
+  });
+
+  it('devuelve tal cual lo que resuelve el repository', async () => {
+    const MASCOTA = {
+      id: 15,
+      nombre: 'Nissa',
+      tipo: 'Perro',
+      propietario_id: 3,
+      propietario_nombre: 'Guillermo Trujillo',
+    };
+    repository.searchMascotas.mockResolvedValue([MASCOTA]);
+    const result = await buscarMascotas('Guillermo');
+    expect(result).toEqual([MASCOTA]);
   });
 });
 

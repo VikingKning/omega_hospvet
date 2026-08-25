@@ -17,35 +17,34 @@
     currentPage === 'usuarios' ||
     currentPage === 'perfil';
 
-  // Reconstrucción del menú: "Agenda" ya no son 2 links fijos en código —
+  // Reconstrucción del menú: "Agenda" ya no son links fijos en código —
   // cada ÁREA activa de la tabla `areas` es su propia agenda (pedido
   // explícito del usuario), emparejada por slug contra el permiso granular
   // `agenda.<slug>.ver` (módulo `agenda_<slug>` en el catálogo; mismo
   // catálogo que ya alimenta el tab "Agendas" de la matriz de permisos,
-  // ver usuarios.service.js#construirTabAgendas) —
-  // un área nueva aparece sola en el menú de quien tenga su permiso, sin
-  // tocar este archivo. `areasAgendaSidebar` llega vía res.locals
-  // (middlewares/attachSidebarAreas.js, encadenado después de requireAuth
-  // en cada ruta que renderiza una página completa), nunca se consulta
-  // aquí — un partial EJS no puede hacer su propia llamada a BD.
+  // ver usuarios.service.js#construirTabAgendas) — un área nueva aparece
+  // sola en el menú de quien tenga su permiso, sin tocar este archivo.
+  // `areasAgendaSidebar` llega vía res.locals (middlewares/
+  // attachSidebarAreas.js, encadenado después de requireAuth en cada ruta
+  // que renderiza una página completa), nunca se consulta aquí — un
+  // partial EJS no puede hacer su propia llamada a BD.
   //
-  // Solo 2 de las hasta-8 áreas tienen página real construida hoy
-  // (Consultas y Cirugías comparten una sola página combinada,
-  // "agenda.html"; Grooming tiene la suya, "grooming.html") — el resto se
-  // lista igual (el usuario SÍ tiene el permiso, el menú no debe ocultar
-  // eso) pero sin poder navegar, hasta que exista una página real por área
-  // (Decisión 7 de la bitácora, FullCalendar, todavía pendiente).
-  const AGENDA_PAGINAS_REALES = {
-    consultas: { href: 'agenda.html', currentPage: 'agenda' },
-    cirugias: { href: 'agenda.html', currentPage: 'agenda' },
-    grooming: { href: 'grooming.html', currentPage: 'grooming' },
-  };
+  // Con el calendario genérico por área (agenda.routes.js,
+  // /agenda/<slug>.html) las 8 áreas tienen página real desde el día uno —
+  // ya no queda ninguna en "Próximamente" (ese estado y agenda.html/
+  // grooming.html, los mockups que lo forzaban, se retiraron junto con
+  // esto). `currentPage` de cada ítem es `agenda-<slug>` (no un genérico
+  // "agenda" compartido) porque ahora cada área tiene su URL propia, a
+  // diferencia del agenda.html combinado de antes.
   const areasAgenda = areasAgendaSidebar ?? [];
   const agendaItems = areasAgenda
     .filter((area) => has(`agenda.${area.slug}.ver`))
-    .map((area) => ({ area, pagina: AGENDA_PAGINAS_REALES[area.slug] ?? null }));
+    .map((area) => ({
+      area,
+      pagina: { href: `agenda/${area.slug}.html`, currentPage: `agenda-${area.slug}` },
+    }));
   const showAgendaGroup = agendaItems.length > 0;
-  const agendaOpen = agendaItems.some((item) => item.pagina?.currentPage === currentPage);
+  const agendaOpen = agendaItems.some((item) => item.pagina.currentPage === currentPage);
 %>
 <nav class="sidebar-nav" id="sidebar">
   <% if (has('tutores.ver')) { %>
@@ -69,18 +68,10 @@
       </button>
       <div class="submenu<%= agendaOpen ? ' open' : '' %>" id="agenda-menu">
         <% agendaItems.forEach(({ area, pagina }) => { %>
-          <% if (pagina) { %>
-            <a href="<%= pagina.href %>" class="submenu-link<%= currentPage === pagina.currentPage ? ' current' : '' %>">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-              <span><%= area.nombre %></span>
-            </a>
-          <% } else { %>
-            <span class="submenu-link is-disabled">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-              <span><%= area.nombre %></span>
-              <span class="submenu-link-soon">Próximamente</span>
-            </span>
-          <% } %>
+          <a href="<%= pagina.href %>" class="submenu-link<%= currentPage === pagina.currentPage ? ' current' : '' %>">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span><%= area.nombre %></span>
+          </a>
         <% }) %>
       </div>
     </div>

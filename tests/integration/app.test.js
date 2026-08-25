@@ -29,14 +29,16 @@ describe('página de login (pública)', () => {
 });
 
 describe('páginas del panel sin sesión (AC de US-101: nunca públicas)', () => {
-  it.each([['/main.html'], ['/agenda.html'], ['/grooming.html'], ['/laboratorio.html']])(
-    'GET %s sin sesión redirige a /',
-    async (route) => {
-      const res = await request(app).get(route);
-      expect(res.status).toBe(302);
-      expect(res.headers.location).toBe('/');
-    },
-  );
+  it.each([
+    ['/main.html'],
+    ['/agenda/consultas.html'],
+    ['/agenda/grooming.html'],
+    ['/laboratorio.html'],
+  ])('GET %s sin sesión redirige a /', async (route) => {
+    const res = await request(app).get(route);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/');
+  });
 });
 
 describe('POST /login sin token CSRF', () => {
@@ -81,7 +83,11 @@ describe('Content-Security-Policy', () => {
     expect(csp).toBeDefined();
     expect(csp).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+'/);
     expect(csp.match(/script-src[^;]+/)[0]).not.toMatch(/unsafe-inline/);
-    expect(csp).toContain("frame-src 'self' https://calendar.google.com");
+    // El iframe de Google Calendar (mockup de agenda.ejs/grooming.ejs) se
+    // retiró junto con el calendario real por área — frame-src vuelve a
+    // ser solo 'self'.
+    expect(csp).toContain("frame-src 'self'");
+    expect(csp).not.toContain('calendar.google.com');
   });
 
   it('genera un nonce distinto en cada request', async () => {

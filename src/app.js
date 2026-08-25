@@ -20,6 +20,7 @@ const plantillasRoutes = require('./modules/plantillas_whatsapp/plantillas_whats
 const usuariosRoutes = require('./modules/usuarios/usuarios.routes');
 const perfilRoutes = require('./modules/perfil/perfil.routes');
 const tutoresRoutes = require('./modules/tutores/tutores.routes');
+const agendaRoutes = require('./modules/agenda/agenda.routes');
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
@@ -79,14 +80,15 @@ app.use(
         // no en style-src (a lo sumo permite maquetar/ocultar contenido).
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
-        fontSrc: ["'self'"],
+        // 'data:' además de 'self': FullCalendar embebe su fuente de
+        // iconos (flechas de navegación) como data URI dentro de su propio
+        // CSS, no como un archivo servido aparte.
+        fontSrc: ["'self'", 'data:'],
         connectSrc: ["'self'"], // HTMX (selfRequestsOnly) solo pega al mismo origen
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
-        // agenda.ejs/grooming.ejs embeben un iframe de Google Calendar
-        // (mockup actual, ver Bitácora — FullCalendar lo reemplazará).
-        frameSrc: ["'self'", 'https://calendar.google.com'],
+        frameSrc: ["'self'"],
         frameAncestors: ["'self'"],
         upgradeInsecureRequests: [],
       },
@@ -137,22 +139,11 @@ app.get('/main.html', requireAuth, attachSidebarAreas, (req, res) => {
 // US-000) — así una URL directa no puede saltarse lo que el menú ya oculta
 // (AC6 de US-101: nunca confiar en que el frontend oculte el acceso).
 //
-// Reconstrucción del menú (mismo día que sidebar.ejs pasa a listar agendas
-// por área): agenda.html/grooming.html ya NO se protegen con los permisos
-// planos legacy `agenda.ver`/`grooming.ver` (siguen en el catálogo pero
-// nunca se exponen en la matriz de permisos desde US-604 — ver migración
-// 20260817000001), sino con los granulares `agenda.<slug>.ver` que sí son
-// asignables (el módulo de cada permiso en el catálogo es `agenda_<slug>`,
-// con guion bajo, pero su `codigo` real usado en sesión/requirePermission
-// lleva punto: `agenda.<slug>.ver`). agenda.html combina en una sola página
-// las áreas Consultas y
-// Cirugías, así que basta con tener visibilidad de CUALQUIERA de las dos
-// (requirePermission soporta un array con semántica OR).
-const modulePages = [
-  { route: 'agenda', view: 'agenda', permission: ['agenda.consultas.ver', 'agenda.cirugias.ver'] },
-  { route: 'grooming', view: 'grooming', permission: 'agenda.grooming.ver' },
-  { route: 'laboratorio', view: 'laboratorio', permission: 'laboratorio.ver' },
-];
+// agenda.html/grooming.html (mockups estáticos con iframe de Google
+// Calendar) ya no existen — el calendario real por área vive en
+// agenda.routes.js (/agenda/:slug.html, permiso agenda.<slug>.ver dinámico
+// por request). Solo laboratorio.html sigue siendo una página fija.
+const modulePages = [{ route: 'laboratorio', view: 'laboratorio', permission: 'laboratorio.ver' }];
 
 for (const { route, view, permission } of modulePages) {
   app.get(
@@ -171,6 +162,7 @@ app.use('/', plantillasRoutes);
 app.use('/', usuariosRoutes);
 app.use('/', perfilRoutes);
 app.use('/', tutoresRoutes);
+app.use('/', agendaRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

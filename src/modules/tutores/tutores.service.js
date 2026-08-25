@@ -344,6 +344,7 @@ async function editar({
 }
 
 const BUSQUEDA_TELEFONO_LIMIT = 8;
+const BUSQUEDA_MASCOTA_LIMIT = 8;
 
 // US-156 (pedido del usuario, ajustado después): búsqueda incremental
 // mientras se captura el teléfono en el alta — sin texto, sugiere los
@@ -357,6 +358,27 @@ async function buscarPorTelefono(rawQ) {
   const q = stripTelefono(rawQ);
   const resultados = await repository.searchByTelefono(q, BUSQUEDA_TELEFONO_LIMIT);
   return resultados.map((r) => ({ ...r, telefono: formatTelefono(r.telefono) }));
+}
+
+// Agenda: combobox de "Mascota" del formulario de citas — mismo criterio
+// que buscarPorTelefono (incremental, `q` vacío trae los primeros
+// BUSQUEDA_MASCOTA_LIMIT). Pedido explícito del usuario: la búsqueda cubre
+// Mascota, Dueño y teléfono (qDigits, mismo patrón que tutores.service.js#list)
+// — el nombre no lleva máscara que limpiar, el teléfono sí.
+async function buscarMascotas(rawQ) {
+  const q = (rawQ ?? '').trim();
+  const qDigits = stripTelefono(q);
+  return repository.searchMascotas(q || undefined, qDigits || undefined, BUSQUEDA_MASCOTA_LIMIT);
+}
+
+// Agenda: resuelve una mascota por id para repoblar el combobox del
+// formulario de citas (precarga de edición, o re-render tras un error de
+// validación) — mismo criterio que usuarios.service.js#resolverDoctor. Un
+// id vacío/inválido no truena, regresa null.
+async function resolverMascota(rawId) {
+  const id = Number.parseInt(rawId, 10);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return (await repository.findMascotaById(id)) ?? null;
 }
 
 // US-157 (ajuste posterior, pedido del usuario): chequeo EXACTO del
@@ -405,6 +427,8 @@ module.exports = {
   crear,
   editar,
   buscarPorTelefono,
+  buscarMascotas,
+  resolverMascota,
   verificarTelefono,
   desactivar,
   TutorValidationError,

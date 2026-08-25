@@ -13,10 +13,18 @@ const hxRedirect = require('./hxRedirect');
 // navegación, ver sidebar.ejs), así que el acceso a esa página exige
 // agenda_consultas.ver O agenda_cirugias.ver, no ambos — un usuario con
 // visibilidad de solo una de las dos áreas igual debe poder entrar.
+//
+// `code` también acepta una función `(req) => code|code[]`, evaluada en
+// CADA request en vez de una sola vez al registrar la ruta — necesario para
+// rutas con el área en la URL (`/agenda/:slug.html`), donde el código de
+// permiso (`agenda.<slug>.ver`) depende de `req.params.slug`, que no existe
+// todavía cuando se arma el router. Misma extensión mínima/retrocompatible
+// que el soporte de array: ningún caller existente (que pasa un string o
+// array suelto) cambia de comportamiento.
 function requirePermission(code) {
-  const codes = Array.isArray(code) ? code : [code];
-
   return (req, res, next) => {
+    const resolved = typeof code === 'function' ? code(req) : code;
+    const codes = Array.isArray(resolved) ? resolved : [resolved];
     const permissions = req.session.user?.permissions ?? [];
 
     if (!codes.some((c) => permissions.includes(c))) {

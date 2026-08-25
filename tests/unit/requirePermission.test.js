@@ -70,3 +70,74 @@ describe('requirePermission (array, semántica OR)', () => {
     expect(hxRedirect).toHaveBeenCalledWith(req, res, '/main.html');
   });
 });
+
+describe('requirePermission (función, evaluada por request)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('deja pasar si el código construido a partir de req coincide con la sesión', () => {
+    const next = jest.fn();
+    const req = {
+      params: { slug: 'cirugias' },
+      session: { user: { permissions: ['agenda.cirugias.ver'] } },
+    };
+    requirePermission((r) => `agenda.${r.params.slug}.ver`)(req, {}, next);
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('redirige si el código construido a partir de req no está en la sesión', () => {
+    const next = jest.fn();
+    const res = {};
+    const req = {
+      params: { slug: 'cirugias' },
+      session: { user: { permissions: ['agenda.consultas.ver'] } },
+    };
+    requirePermission((r) => `agenda.${r.params.slug}.ver`)(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(hxRedirect).toHaveBeenCalledWith(req, res, '/main.html');
+  });
+
+  it('la función también puede devolver un array (misma semántica OR)', () => {
+    const next = jest.fn();
+    const req = {
+      params: { slug: 'consultas' },
+      session: { user: { permissions: ['agenda.consultas.crear'] } },
+    };
+    requirePermission((r) => [`agenda.${r.params.slug}.ver`, `agenda.${r.params.slug}.crear`])(
+      req,
+      {},
+      next,
+    );
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('se re-evalúa en cada request (no queda "congelada" con el primer req)', () => {
+    const middleware = requirePermission((r) => `agenda.${r.params.slug}.ver`);
+    const next1 = jest.fn();
+    middleware(
+      {
+        params: { slug: 'consultas' },
+        session: { user: { permissions: ['agenda.consultas.ver'] } },
+      },
+      {},
+      next1,
+    );
+    expect(next1).toHaveBeenCalled();
+
+    const next2 = jest.fn();
+    const res2 = {};
+    middleware(
+      {
+        params: { slug: 'cirugias' },
+        session: { user: { permissions: ['agenda.consultas.ver'] } },
+      },
+      res2,
+      next2,
+    );
+    expect(next2).not.toHaveBeenCalled();
+    expect(hxRedirect).toHaveBeenCalledWith(
+      expect.objectContaining({ params: { slug: 'cirugias' } }),
+      res2,
+      '/main.html',
+    );
+  });
+});

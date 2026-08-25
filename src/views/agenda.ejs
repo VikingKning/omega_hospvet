@@ -1,12 +1,46 @@
+<%
+// Agenda: calendario real por área (reemplaza el mockup con iframe de
+// Google Calendar). Una sola vista genérica para las 8 áreas — lo que
+// cambia por request es `area`/`color`/`resumen`/`doctores`, montados por
+// agenda.controller.js#pagina. El feed real de eventos lo pide FullCalendar
+// por su cuenta (GET agenda/<slug>/citas.json) cada vez que cambia el
+// rango visible — este archivo solo arma el shell y lo inicializa.
+const permissions = user?.permissions ?? [];
+const has = (code) => permissions.includes(code);
+const puedeCrear = has(`agenda.${area.slug}.crear`);
+const puedeEditar = has(`agenda.${area.slug}.editar`);
+%>
 <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agenda | Omega Veterinaria & Estética</title>
+<%#
+  Servida un nivel más profundo que la raíz (/agenda/<slug>.html), igual
+  que /tutores/nuevo (ver tutor-form.ejs) — sin <base>, cualquier
+  referencia relativa (las de este archivo, las del partial compartido
+  sidebar.ejs, y los hx-get/hx-post/fetch() de este módulo) resolvería
+  contra /agenda/ en vez de /, rompiendo el menú y el guardado.
+%>
+<base href="/">
+<title>Agenda: <%= area.nombre %> | Omega Veterinaria & Estética</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="css/main.css">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
+<%#
+  Orden importa: @fullcalendar/timegrid depende en tiempo de ejecución de
+  @fullcalendar/daygrid (dependencia real del paquete, no solo de tipos —
+  TimeGrid reutiliza internamente el renderizado de DayGrid para la fila
+  "todo el día" y el encabezado de semana) — sin cargar su bundle global
+  ANTES, FullCalendar truena con "viewType timeGridWeek is not available".
+%>
+<script src="js/fullcalendar-core.min.js" nonce="<%= cspNonce %>"></script>
+<script src="js/fullcalendar-daygrid.min.js" nonce="<%= cspNonce %>"></script>
+<script src="js/fullcalendar-timegrid.min.js" nonce="<%= cspNonce %>"></script>
+<script src="js/fullcalendar-interaction.min.js" nonce="<%= cspNonce %>"></script>
+<script src="js/fullcalendar-locales-all.min.js" nonce="<%= cspNonce %>"></script>
 </head>
 <body>
 
@@ -22,13 +56,13 @@
 
       <header class="topbar">
         <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>
-        <h1 class="topbar-title">Agenda Consultas y Cirugías</h1>
+        <h1 class="topbar-title">Agenda: <%= area.nombre %></h1>
       </header>
     </div>
 
     <div class="body-row">
     <div class="nav-backdrop" id="navBackdrop"></div>
-    <%- include('partials/sidebar', { user, currentPage: 'agenda' }) %>
+    <%- include('partials/sidebar', { user, currentPage: `agenda-${area.slug}` }) %>
 
     <main class="main-content">
       <div class="agenda-layout">
@@ -38,49 +72,137 @@
 
             <div class="stat-card">
               <span class="stat-label">Programadas</span>
-              <span class="stat-value">5</span>
+              <span class="stat-value" id="statProgramadas"><%= resumen.pasadas.length + resumen.pendientes.length %></span>
             </div>
 
             <div class="stat-card">
-              <span class="stat-label">Atendidas</span>
-              <span class="stat-value">2</span>
+              <span class="stat-label">Pasadas</span>
+              <span class="stat-value" id="statPasadas"><%= resumen.pasadas.length %></span>
             </div>
 
             <div class="stat-card">
               <span class="stat-label">Pendientes</span>
-              <span class="stat-value">3</span>
+              <span class="stat-value" id="statPendientes"><%= resumen.pendientes.length %></span>
             </div>
           </div>
 
           <div class="next-appt-card">
             <h3 class="stats-group-title">Próxima cita</h3>
-            <div class="next-appt-time-row">
-              <span class="next-appt-time" id="nextApptTime" data-appt-time="12:30">12:30 pm</span>
-              <span class="semaforo-dot" id="semaforoDot" aria-label="Estado de la cita"></span>
-            </div>
-            <p class="next-appt-detail">Cirugía: <strong>Mastositoma</strong>. Max, Pitbull</p>
+            <% if (resumen.siguiente) { %>
+              <div class="next-appt-time-row">
+                <span class="next-appt-time" id="nextApptTime" data-appt-time="<%= new Date(resumen.siguiente.fecha_hora_inicio).toISOString() %>">&nbsp;</span>
+                <span class="semaforo-dot" id="semaforoDot" aria-label="Estado de la cita"></span>
+              </div>
+              <p class="next-appt-detail"><strong><%= resumen.siguiente.mascota_nombre %></strong> con <%= resumen.siguiente.doctor_nombre %> <%= resumen.siguiente.doctor_apellidos %></p>
+            <% } else { %>
+              <p class="next-appt-detail">No hay citas próximas.</p>
+            <% } %>
           </div>
         </div>
 
-        <div class="gcal-embed">
-          <%#
-            Reemplaza CALENDAR_ID por el ID de tu Google Calendar:
-            Google Calendar > Configuración > (elige el calendario) > "Integrar calendario" > "ID de calendario".
-            Ajusta ctz si tu zona horaria no es America/Mexico_City.
-          %>
-          <iframe
-            src="https://calendar.google.com/calendar/embed?src=CALENDAR_ID%40group.calendar.google.com&ctz=America%2FMexico_City&mode=WEEK&showTitle=0&showPrint=0&showCalendars=0&showTabs=0&showDate=1&showNav=0"
-            width="100%"
-            height="100%"
-            frameborder="0"
-            scrolling="no"
-            title="Google Calendar - Consultas y cirugías">
-          </iframe>
+        <div class="agenda-calendar">
+          <div class="agenda-toolbar">
+            <div class="agenda-toolbar-nav">
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn toggle-btn-icon" id="agendaPrev" aria-label="Anterior">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <button type="button" class="toggle-btn" id="agendaHoy">Hoy</button>
+                <button type="button" class="toggle-btn toggle-btn-icon" id="agendaNext" aria-label="Siguiente">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                </button>
+              </div>
+              <%#
+                Clic en el ícono (no en todo el texto de la fecha) abre el
+                selector NATIVO (<input type="date"> + showPicker(), ver el
+                <script> de abajo) — ya trae navegación por año/mes/día del
+                propio navegador. El input oculto ocupa EXACTAMENTE el mismo
+                rectángulo que el ícono (.agenda-date-trigger,
+                position:relative + input con inset:0) — un input de 0×0 no
+                le da a Chrome un punto de anclaje confiable y el picker
+                terminaba en la esquina superior-izquierda de la página; con
+                un rectángulo real del tamaño del ícono, el picker se abre
+                justo debajo de él. En móvil/tablet showPicker() ya abre la
+                hoja nativa del SO sin importar esta posición.
+              %>
+              <div class="agenda-date-nav">
+                <span class="agenda-toolbar-title" id="agendaTitle"></span>
+                <div class="agenda-date-trigger">
+                  <button type="button" class="agenda-date-trigger-btn" id="agendaDateTrigger" aria-label="Ir a una fecha">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                  </button>
+                  <input type="date" id="agendaDatePicker" class="agenda-date-picker-hidden" tabindex="-1" aria-hidden="true">
+                </div>
+              </div>
+            </div>
+            <%#
+              Filtro por doctor (pedido explícito del usuario): filtra el
+              feed de citas de ESTA área+rango visible por el doctor
+              elegido — mismo catálogo ya embebido (#agendaDoctoresData) que
+              el combobox de doctor del formulario de alta/edición, filtrado
+              en cliente. "Todos los doctores" (data-id vacío) limpia el
+              filtro. No usa <select> nativo (no puede tener esquinas
+              redondeadas en su lista abierta) — mismo patrón .combobox que
+              el resto del sistema.
+            %>
+            <div class="combobox agenda-doctor-filter" id="agendaDoctorFilterCombobox">
+              <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly value="Todos los doctores" aria-label="Filtrar por doctor">
+              <ul class="combobox-list" id="agendaDoctorFilterList" hidden></ul>
+            </div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn active" id="agendaViewWeek">Semana</button>
+              <button type="button" class="toggle-btn" id="agendaViewDay">Día</button>
+            </div>
+            <% if (puedeCrear) { %>
+              <button class="btn-primary" type="button" id="agendaNuevaCita"
+                      hx-get="agenda/<%= area.slug %>/citas/nueva" hx-target="#citaFormModalBody" hx-swap="innerHTML">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                Nueva cita
+              </button>
+            <% } %>
+          </div>
+
+          <div class="agenda-calendar-wrap">
+            <div id="calendar"></div>
+          </div>
         </div>
       </div>
     </main>
     </div>
   </div>
+
+  <%#
+    Modal de alta/edición de citas — mismo patrón que areaFormModalBackdrop/
+    plantillaFormModalBackdrop: vive fuera de #calendar (que se re-dibuja
+    solo, no vía HTMX) así que el modal nunca se destruye a medio uso.
+  %>
+  <div class="modal-backdrop" id="citaFormModalBackdrop">
+    <div class="modal-card" id="citaFormModalBody"></div>
+  </div>
+
+  <%#
+    Modal de confirmación reutilizable para "cancelar cita" — mismo patrón
+    que #confirmModalBackdrop en areas.ejs/plantillas.ejs.
+  %>
+  <div class="modal-backdrop" id="confirmModalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Confirmar acción</h2>
+        <button class="modal-close-btn" type="button" id="confirmModalClose" aria-label="Cerrar">&times;</button>
+      </div>
+      <p id="confirmModalMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="confirmModalCancel">Cancelar</button>
+        <button type="button" class="btn-danger" id="confirmModalConfirm">Cancelar cita</button>
+      </div>
+    </div>
+  </div>
+
+  <%# Isla de datos JSON: doctores activos de esta área, para el combobox del
+      formulario (catálogo chico, se filtra en cliente) — nunca un
+      <script>, HTMX lo borraría al hacer swap del modal (allowScriptTags
+      false). %>
+  <div id="agendaDoctoresData" hidden><%- JSON.stringify(doctores).replace(/</g, '\\u003c') %></div>
 
 <script nonce="<%= cspNonce %>">
   const sidebar = document.getElementById('sidebar');
@@ -121,8 +243,11 @@
     });
   });
 
-  // Semáforo de la próxima cita: verde antes de la hora, amarillo hasta 10 min
-  // después, rojo pasados 10 min y 1 segundo.
+  // Semáforo de la próxima cita: verde antes de la hora, amarillo hasta 10
+  // min después, rojo pasados 10 min y 1 segundo — mismo criterio visual
+  // que el mockup que esto reemplaza, ahora contra una fecha/hora ISO real
+  // (no solo "HH:MM"), para que también funcione si la próxima cita es
+  // mañana.
   const GRACE_PERIOD_MS = 10 * 60 * 1000;
 
   function updateSemaforo() {
@@ -130,13 +255,15 @@
     const dot = document.getElementById('semaforoDot');
     if (!timeEl || !dot) return;
 
-    const [hours, minutes] = timeEl.dataset.apptTime.split(':').map(Number);
-    const now = new Date();
-    const apptTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0);
-    const diffMs = now - apptTime;
+    const apptTime = new Date(timeEl.dataset.apptTime);
+    timeEl.textContent = apptTime.toLocaleString('es-MX', {
+      weekday: apptTime.toDateString() === new Date().toDateString() ? undefined : 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
 
+    const diffMs = Date.now() - apptTime.getTime();
     dot.classList.remove('semaforo-green', 'semaforo-yellow', 'semaforo-red');
-
     if (diffMs <= 0) {
       dot.classList.add('semaforo-green');
     } else if (diffMs <= GRACE_PERIOD_MS) {
@@ -148,6 +275,356 @@
 
   updateSemaforo();
   setInterval(updateSemaforo, 1000);
+
+  // ---- Modal de confirmación (cancelar cita) — mismo patrón que areas.ejs. ----
+  const confirmModalBackdrop = document.getElementById('confirmModalBackdrop');
+  const confirmModalMessage = document.getElementById('confirmModalMessage');
+  let resolveConfirm = null;
+
+  function openConfirmModal(message) {
+    confirmModalMessage.textContent = message;
+    confirmModalBackdrop.classList.add('open');
+    return new Promise((resolve) => { resolveConfirm = resolve; });
+  }
+
+  function closeConfirmModal(result) {
+    confirmModalBackdrop.classList.remove('open');
+    resolveConfirm?.(result);
+    resolveConfirm = null;
+  }
+
+  document.getElementById('confirmModalCancel').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirmModalClose').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirmModalConfirm').addEventListener('click', () => closeConfirmModal(true));
+  confirmModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === confirmModalBackdrop) closeConfirmModal(false);
+  });
+
+  document.body.addEventListener('htmx:confirm', (event) => {
+    if (!event.target.hasAttribute('hx-confirm')) return;
+    event.preventDefault();
+    openConfirmModal(event.detail.question).then((confirmed) => {
+      if (confirmed) event.detail.issueRequest(true);
+    });
+  });
+
+  // ---- Modal de alta/edición de citas — mismo patrón que areaFormModalBody. ----
+  const citaFormModalBackdrop = document.getElementById('citaFormModalBackdrop');
+  const citaFormModalBody = document.getElementById('citaFormModalBody');
+
+  function openCitaFormModal() {
+    citaFormModalBackdrop.classList.add('open');
+  }
+
+  function closeCitaFormModal() {
+    citaFormModalBackdrop.classList.remove('open');
+  }
+
+  // Fecha+hora del formulario: el servidor manda un solo ISO
+  // (#citaFechaHoraInicio) — se separa en los dos <input> nativos EN HORA
+  // LOCAL DEL NAVEGADOR al abrir el form, y se recombina a ISO (también en
+  // hora local, vía el constructor numérico de Date, que la interpreta
+  // correctamente sin tener que adivinar ningún huso horario del lado del
+  // servidor) cada vez que cualquiera de los dos cambia.
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function separarFechaHora() {
+    const hidden = citaFormModalBody.querySelector('#citaFechaHoraInicio');
+    const fechaInput = citaFormModalBody.querySelector('#citaFecha');
+    const horaInput = citaFormModalBody.querySelector('#citaHora');
+    if (!hidden || !fechaInput || !horaInput || !hidden.value) return;
+    const d = new Date(hidden.value);
+    if (Number.isNaN(d.getTime())) return;
+    fechaInput.value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    horaInput.value = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
+
+  function combinarFechaHora() {
+    const hidden = citaFormModalBody.querySelector('#citaFechaHoraInicio');
+    const fechaInput = citaFormModalBody.querySelector('#citaFecha');
+    const horaInput = citaFormModalBody.querySelector('#citaHora');
+    if (!hidden || !fechaInput?.value || !horaInput?.value) return;
+    const [anio, mes, dia] = fechaInput.value.split('-').map(Number);
+    const [hora, minuto] = horaInput.value.split(':').map(Number);
+    hidden.value = new Date(anio, mes - 1, dia, hora, minuto).toISOString();
+  }
+
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target !== citaFormModalBody) return;
+    if (citaFormModalBody.querySelector('form')) {
+      openCitaFormModal();
+      separarFechaHora();
+    }
+  });
+
+  citaFormModalBody.addEventListener('change', (event) => {
+    if (event.target.id === 'citaFecha' || event.target.id === 'citaHora') combinarFechaHora();
+  });
+
+  citaFormModalBody.addEventListener('click', (event) => {
+    if (event.target.closest('#citaFormClose, #citaFormCancel')) {
+      closeCitaFormModal();
+    }
+    if (event.target.closest('#citaFormErrorDismiss')) {
+      event.target.closest('.form-error-banner')?.remove();
+    }
+  });
+
+  // ---- Combobox de Doctor (catálogo chico de esta área, precargado como
+  // isla JSON — se filtra en cliente, mismo patrón que "Doctor vinculado"
+  // en usuario-form.ejs). ----
+  function doctoresCatalogo() {
+    const el = document.getElementById('agendaDoctoresData');
+    return el ? JSON.parse(el.textContent) : [];
+  }
+
+  function renderDoctorList(term) {
+    const list = citaFormModalBody.querySelector('#citaDoctorList');
+    if (!list) return;
+    const t = term.trim().toLowerCase();
+    const filtrados = doctoresCatalogo().filter((d) =>
+      `${d.nombre} ${d.apellidos}`.toLowerCase().includes(t),
+    );
+    list.innerHTML = filtrados.length
+      ? filtrados
+          .map(
+            (d) =>
+              `<li class="combobox-item" data-id="${d.id}" data-label="${d.nombre} ${d.apellidos}">${d.nombre} ${d.apellidos}</li>`,
+          )
+          .join('')
+      : '<li class="combobox-empty">Sin resultados</li>';
+    list.hidden = false;
+  }
+
+  // ---- Combobox de Mascota (búsqueda debounced en servidor — el catálogo
+  // puede ser grande, mismo patrón que el teléfono en tutor-form.ejs). ----
+  let mascotaDebounceTimer = null;
+
+  function buscarMascotas(term) {
+    const combobox = citaFormModalBody.querySelector('#citaMascotaCombobox');
+    const list = citaFormModalBody.querySelector('#citaMascotaList');
+    if (!combobox || !list) return;
+    fetch('tutores/buscar-mascota', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+      body: JSON.stringify({ q: term, slug: combobox.dataset.areaSlug }),
+    })
+      .then((res) => res.json())
+      .then((resultados) => {
+        list.innerHTML = resultados.length
+          ? resultados
+              .map(
+                (m) =>
+                  `<li class="combobox-item" data-id="${m.id}" data-label="${m.nombre} (${m.propietario_nombre})">${m.nombre} — ${m.propietario_nombre}</li>`,
+              )
+              .join('')
+          : '<li class="combobox-empty">Sin resultados</li>';
+        list.hidden = false;
+      });
+  }
+
+  citaFormModalBody.addEventListener('input', (event) => {
+    if (event.target.id === 'citaDoctorInput') {
+      citaFormModalBody.querySelector('#citaDoctorId').value = '';
+      renderDoctorList(event.target.value);
+    }
+    if (event.target.id === 'citaMascotaInput') {
+      citaFormModalBody.querySelector('#citaMascotaId').value = '';
+      clearTimeout(mascotaDebounceTimer);
+      const term = event.target.value;
+      mascotaDebounceTimer = setTimeout(() => buscarMascotas(term), 400);
+    }
+  });
+
+  citaFormModalBody.addEventListener(
+    'focus',
+    (event) => {
+      if (event.target.id === 'citaDoctorInput') renderDoctorList(event.target.value);
+      if (event.target.id === 'citaMascotaInput') buscarMascotas(event.target.value);
+    },
+    true,
+  );
+
+  // Cierra la lista al salir del campo — con un pequeño retraso para que el
+  // click sobre un <li> (que dispara blur primero) alcance a registrarse.
+  citaFormModalBody.addEventListener(
+    'blur',
+    (event) => {
+      if (event.target.id === 'citaDoctorInput') {
+        setTimeout(() => {
+          const list = citaFormModalBody.querySelector('#citaDoctorList');
+          if (list) list.hidden = true;
+        }, 150);
+      }
+      if (event.target.id === 'citaMascotaInput') {
+        setTimeout(() => {
+          const list = citaFormModalBody.querySelector('#citaMascotaList');
+          if (list) list.hidden = true;
+        }, 150);
+      }
+    },
+    true,
+  );
+
+  citaFormModalBody.addEventListener('click', (event) => {
+    const item = event.target.closest('.combobox-item');
+    if (!item) return;
+    const doctorList = citaFormModalBody.querySelector('#citaDoctorList');
+    const mascotaList = citaFormModalBody.querySelector('#citaMascotaList');
+    if (doctorList && doctorList.contains(item)) {
+      citaFormModalBody.querySelector('#citaDoctorId').value = item.dataset.id;
+      citaFormModalBody.querySelector('#citaDoctorInput').value = item.dataset.label;
+      doctorList.hidden = true;
+    }
+    if (mascotaList && mascotaList.contains(item)) {
+      citaFormModalBody.querySelector('#citaMascotaId').value = item.dataset.id;
+      citaFormModalBody.querySelector('#citaMascotaInput').value = item.dataset.label;
+      mascotaList.hidden = true;
+    }
+  });
+
+  citaFormModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === citaFormModalBackdrop) closeCitaFormModal();
+  });
+
+  // HX-Trigger: closeCitaModal (ver agenda.controller.js#renderExito) —
+  // cierra el modal Y le pide a FullCalendar que vuelva a pedir el feed
+  // (la cita recién creada/editada/cancelada ya está en la BD).
+  document.body.addEventListener('closeCitaModal', () => {
+    closeCitaFormModal();
+    calendar.refetchEvents();
+  });
+
+  // ---- FullCalendar ----
+  const calendarEl = document.getElementById('calendar');
+  const areaSlug = <%- JSON.stringify(area.slug) %>;
+  const eventColor = <%- JSON.stringify(color.hex) %>;
+  const puedeCrear = <%- JSON.stringify(puedeCrear) %>;
+  const puedeEditar = <%- JSON.stringify(puedeEditar) %>;
+  const csrfToken = <%- JSON.stringify(csrfToken) %>;
+
+  // Filtro por doctor (pedido explícito del usuario): se manda como
+  // extraParams en CADA fetch del feed (navegación de semana/día incluida,
+  // no solo el primer render) — el servidor ya filtra por área+rango, esto
+  // solo agrega "+ el doctor seleccionado" (agenda.controller.js#eventos).
+  let filtroDoctorId = '';
+
+  // Con los bundles "global" (script tags, no ESM), core/timegrid/
+  // interaction se registran solos en el objeto FullCalendar al cargar —
+  // no hace falta (ni se puede) pasar `plugins` aquí.
+  const calendar = new FullCalendar.Calendar(calendarEl, {
+    initialView: 'timeGridWeek',
+    locale: 'es',
+    headerToolbar: false,
+    height: '100%',
+    nowIndicator: true,
+    // Las citas siempre tienen hora — no existe una noción de "todo el
+    // día" en este calendario, esa fila (que se lee como un segundo
+    // encabezado pegado al real) solo estorbaba.
+    allDaySlot: false,
+    selectable: puedeCrear,
+    eventColor: eventColor || undefined,
+    eventTextColor: <%- JSON.stringify(color.foreground) %> || undefined,
+    events: {
+      url: `agenda/${areaSlug}/citas.json`,
+      extraParams: () => (filtroDoctorId ? { doctorId: filtroDoctorId } : {}),
+    },
+    datesSet(info) {
+      document.getElementById('agendaTitle').textContent = info.view.title;
+    },
+    select(info) {
+      if (!puedeCrear) return;
+      htmx.ajax('GET', `agenda/${areaSlug}/citas/nueva?inicio=${encodeURIComponent(info.start.toISOString())}`, {
+        target: '#citaFormModalBody',
+        swap: 'innerHTML',
+      });
+      calendar.unselect();
+    },
+    eventClick(info) {
+      if (!puedeEditar) return;
+      htmx.ajax('GET', `agenda/${areaSlug}/citas/${info.event.id}/editar`, {
+        target: '#citaFormModalBody',
+        swap: 'innerHTML',
+      });
+    },
+  });
+  calendar.render();
+
+  // FullCalendar solo se re-mide solo ante un evento `resize` de `window`
+  // (opción `handleWindowResize`, activada por default) — pero abrir/cerrar
+  // el sidebar (#sidebarToggle arriba) cambia el ancho de #calendar sin
+  // disparar ese evento (es un cambio de layout de un hermano, la ventana
+  // sigue midiendo lo mismo), así que el calendario se quedaba con el
+  // ancho viejo y dejaba un hueco vacío a la derecha. Un ResizeObserver
+  // sobre el propio contenedor cubre ese caso (y cualquier otro cambio de
+  // layout futuro) sin depender de enganchar el toggle a mano.
+  new ResizeObserver(() => calendar.updateSize()).observe(
+    document.querySelector('.agenda-calendar-wrap'),
+  );
+
+  document.getElementById('agendaPrev').addEventListener('click', () => calendar.prev());
+  document.getElementById('agendaNext').addEventListener('click', () => calendar.next());
+  document.getElementById('agendaHoy').addEventListener('click', () => calendar.today());
+
+  // Clic en el ícono de calendario: abre el selector NATIVO de fecha del
+  // navegador (año/mes/día ya resueltos por el propio navegador, sin
+  // construir un date-picker propio) anclado justo debajo del ícono en
+  // desktop. showPicker() requiere un user-gesture directo — no funciona
+  // si se llama async/con retraso.
+  const agendaDatePicker = document.getElementById('agendaDatePicker');
+  document.getElementById('agendaDateTrigger').addEventListener('click', () => {
+    const actual = calendar.getDate();
+    const pad2 = (n) => String(n).padStart(2, '0');
+    agendaDatePicker.value = `${actual.getFullYear()}-${pad2(actual.getMonth() + 1)}-${pad2(actual.getDate())}`;
+    agendaDatePicker.showPicker?.() ?? agendaDatePicker.click();
+  });
+  agendaDatePicker.addEventListener('change', (event) => {
+    if (event.target.value) calendar.gotoDate(event.target.value);
+  });
+
+  // ---- Filtro por doctor (toolbar) — mismo catálogo/combobox que el
+  // formulario de citas (doctoresCatalogo(), definida más abajo junto al
+  // combobox de "Doctor" del modal), pero de solo-selección: no filtra por
+  // texto al escribir (input readonly), solo abre la lista completa. ----
+  const agendaDoctorFilterInput = document.getElementById('agendaDoctorFilterInput');
+  const agendaDoctorFilterList = document.getElementById('agendaDoctorFilterList');
+
+  function abrirDoctorFilterList() {
+    const items = [
+      '<li class="combobox-item" data-id="" data-label="Todos los doctores">Todos los doctores</li>',
+      ...doctoresCatalogo().map(
+        (d) =>
+          `<li class="combobox-item" data-id="${d.id}" data-label="${d.nombre} ${d.apellidos}">${d.nombre} ${d.apellidos}</li>`,
+      ),
+    ];
+    agendaDoctorFilterList.innerHTML = items.join('');
+    agendaDoctorFilterList.hidden = false;
+  }
+
+  agendaDoctorFilterInput.addEventListener('focus', abrirDoctorFilterList);
+  agendaDoctorFilterInput.addEventListener('click', abrirDoctorFilterList);
+  agendaDoctorFilterInput.addEventListener('blur', () => {
+    setTimeout(() => { agendaDoctorFilterList.hidden = true; }, 150);
+  });
+  agendaDoctorFilterList.addEventListener('click', (event) => {
+    const item = event.target.closest('.combobox-item');
+    if (!item) return;
+    filtroDoctorId = item.dataset.id;
+    agendaDoctorFilterInput.value = item.dataset.label;
+    agendaDoctorFilterList.hidden = true;
+    calendar.refetchEvents();
+  });
+
+  document.getElementById('agendaViewWeek').addEventListener('click', (event) => {
+    calendar.changeView('timeGridWeek');
+    event.currentTarget.classList.add('active');
+    document.getElementById('agendaViewDay').classList.remove('active');
+  });
+  document.getElementById('agendaViewDay').addEventListener('click', (event) => {
+    calendar.changeView('timeGridDay');
+    event.currentTarget.classList.add('active');
+    document.getElementById('agendaViewWeek').classList.remove('active');
+  });
 </script>
 
 </body>

@@ -1,0 +1,117 @@
+<%
+// Agenda: mismo formulario para alta y edición — el modo se decide por si
+// `cita` viene o no (edición trae el registro completo, alta viene null).
+// Este partial se usa tanto para el primer render (GET .../citas/nueva o
+// .../citas/:id/editar) como para el re-render con error (POST/PUT
+// fallidos, ver agenda.controller.js) — por eso fechaHoraInicio/
+// duracionMinutos/doctorIdSeleccionado/mascotaSeleccionada viajan aparte de
+// `cita`: en un re-render por error son lo que el usuario acababa de
+// elegir, no necesariamente lo que ya está guardado.
+//
+// Los combobox de Mascota/Doctor y la combinación Fecha+Hora -> ISO se
+// resuelven con JS delegado en agenda.ejs (este fragmento nunca trae su
+// propio <script> — HTMX lo borraría al hacer swap, allowScriptTags:false).
+const esEdicion = Boolean(cita);
+const permissions = user?.permissions ?? [];
+const has = (code) => permissions.includes(code);
+const puedeCancelar = has(`agenda.${area.slug}.cancelar`);
+// Pedido explícito del usuario: una cita que ya pasó no se puede editar
+// (evita "agenciarse" citas ya ocurridas cambiando doctor/mascota/motivo a
+// posteriori) — el formulario se abre en solo lectura en vez de no abrir
+// nada, para poder seguir viendo sus detalles. `soloLectura` viaja desde
+// agenda.controller.js (siempre false en alta/re-render por error).
+const esSoloLectura = Boolean(soloLectura);
+const disabledAttr = esSoloLectura ? 'disabled' : '';
+
+const DURACIONES = [15, 30, 45, 60, 90];
+const doctorIdSel = String(doctorIdSeleccionado ?? '');
+const doctorSeleccionado = doctores.find((d) => String(d.id) === doctorIdSel);
+const doctorLabel = doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : '';
+const mascotaLabel = mascotaSeleccionada
+  ? `${mascotaSeleccionada.nombre} (${mascotaSeleccionada.propietario_nombre})`
+  : '';
+%>
+<div class="modal-header">
+  <h2><%= esSoloLectura ? 'Detalle de la cita' : (esEdicion ? 'Editar cita' : 'Nueva cita') %></h2>
+  <button class="modal-close-btn" type="button" id="citaFormClose" aria-label="Cerrar">&times;</button>
+</div>
+
+<% if (error) { %>
+  <div class="form-error-banner">
+    <span><%= error %></span>
+    <button type="button" class="modal-close-btn" id="citaFormErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
+  </div>
+<% } %>
+
+<% if (esSoloLectura) { %>
+  <div class="form-info-banner">
+    <span>Esta cita ya pasó — solo se puede consultar, no editar.</span>
+  </div>
+<% } %>
+
+<form class="modal-form" id="citaForm"
+      hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `agenda/${area.slug}/citas/${cita.id}` : `agenda/${area.slug}/citas` %>"
+      hx-target="#citaFormModalBody" hx-swap="innerHTML"
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+  <label>
+    Mascota (paciente)
+    <div class="combobox" id="citaMascotaCombobox" data-area-slug="<%= area.slug %>">
+      <input type="text" id="citaMascotaInput" autocomplete="off" required <%= disabledAttr %>
+             placeholder="Buscar por mascota, dueño o teléfono..." value="<%= mascotaLabel %>">
+      <ul class="combobox-list" id="citaMascotaList" hidden></ul>
+    </div>
+    <input type="hidden" name="mascotaId" id="citaMascotaId" value="<%= mascotaSeleccionada ? mascotaSeleccionada.id : '' %>">
+  </label>
+
+  <label>
+    Doctor
+    <div class="combobox" id="citaDoctorCombobox">
+      <input type="text" id="citaDoctorInput" autocomplete="off" required <%= disabledAttr %>
+             placeholder="Buscar doctor..." value="<%= doctorLabel %>">
+      <ul class="combobox-list" id="citaDoctorList" hidden></ul>
+    </div>
+    <input type="hidden" name="doctorId" id="citaDoctorId" value="<%= doctorIdSel %>">
+  </label>
+
+  <div class="modal-form-columns">
+    <label>
+      Fecha
+      <input type="date" id="citaFecha" required <%= disabledAttr %>>
+    </label>
+    <label>
+      Hora
+      <input type="time" id="citaHora" required <%= disabledAttr %>>
+    </label>
+  </div>
+  <input type="hidden" name="fechaHoraInicio" id="citaFechaHoraInicio" value="<%= fechaHoraInicio %>">
+
+  <label>
+    Duración
+    <select name="duracionMinutos" id="citaDuracion" required <%= disabledAttr %>>
+      <option value="" disabled <%= duracionMinutos ? '' : 'selected' %>>Selecciona...</option>
+      <% DURACIONES.forEach((min) => { %>
+        <option value="<%= min %>" <%= String(min) === String(duracionMinutos) ? 'selected' : '' %>><%= min %> min</option>
+      <% }) %>
+    </select>
+  </label>
+
+  <label>
+    Motivo
+    <textarea name="motivo" rows="3" <%= disabledAttr %>><%= motivo %></textarea>
+  </label>
+
+  <div class="modal-actions">
+    <% if (esEdicion && puedeCancelar) { %>
+      <button type="button" class="btn-danger" id="citaFormCancelarCita"
+              hx-delete="agenda/<%= area.slug %>/citas/<%= cita.id %>"
+              hx-target="#citaFormModalBody" hx-swap="innerHTML"
+              hx-confirm="¿Cancelar esta cita? El registro se conserva en el historial, solo deja de aparecer en el calendario.">
+        Cancelar cita
+      </button>
+    <% } %>
+    <button type="button" class="btn-secondary" id="citaFormCancel">Cerrar</button>
+    <% if (!esSoloLectura) { %>
+      <button type="submit" class="btn-primary">Guardar</button>
+    <% } %>
+  </div>
+</form>

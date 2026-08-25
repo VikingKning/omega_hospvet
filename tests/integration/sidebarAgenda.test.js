@@ -1,12 +1,16 @@
 // Reconstrucción del menú de navegación: el submenú "Agenda" del sidebar
-// ahora lista cada ÁREA activa de la tabla `areas` como su propia fila,
-// filtrada por el permiso granular agenda_<slug>.ver de la sesión — en vez
-// de los 2 links fijos (Consultas/Cirugías, Grooming) de antes. También
-// agrega "Tutores y pacientes" como link de nivel superior (gateado por
+// lista cada ÁREA activa de la tabla `areas` como su propia fila, filtrada
+// por el permiso granular agenda_<slug>.ver de la sesión — en vez de los 2
+// links fijos (Consultas/Cirugías, Grooming) de antes. También agrega
+// "Tutores y pacientes" como link de nivel superior (gateado por
 // tutores.ver; desde US-155 ya navega a una página real, tutores.html —
-// antes de esa historia era un placeholder href="#"). /agenda.html y /grooming.html
-// pasan a protegerse con los permisos granulares (ver
-// migrations/20260817000001_...).
+// antes de esa historia era un placeholder href="#").
+//
+// Ajuste posterior (calendario genérico por área, ver agenda.routes.js):
+// /agenda.html y /grooming.html (mockups combinados/fijos) ya no existen —
+// cada área tiene su propia página real en /agenda/<slug>.html, así que ya
+// no queda ninguna en estado "Próximamente" (ese estado, y los tests que lo
+// cubrían, se retiraron junto con esto).
 const bcrypt = require('bcrypt');
 const request = require('supertest');
 const app = require('../../src/app');
@@ -90,26 +94,32 @@ afterAll(async () => {
 });
 
 describe('Sidebar — submenú "Agenda" dinámico por área', () => {
-  it('AC: un usuario con agenda_consultas.ver ve "Consultas" como link real y puede entrar a /agenda.html', async () => {
+  it('AC: un usuario con agenda_consultas.ver ve "Consultas" como link real y puede entrar a /agenda/consultas.html', async () => {
     const agent = request.agent(app);
     await loginAs(agent, SOLO_CONSULTAS);
 
     const res = await agent.get('/main.html');
-    expect(res.text).toMatch(/<a href="agenda\.html" class="submenu-link[^"]*">[\s\S]*?Consultas/);
+    expect(res.text).toMatch(
+      /<a href="agenda\/consultas\.html" class="submenu-link[^"]*">[\s\S]*?Consultas/,
+    );
 
-    const paginaRes = await agent.get('/agenda.html');
+    const paginaRes = await agent.get('/agenda/consultas.html');
     expect(paginaRes.status).toBe(200);
   });
 
-  it('AC: un usuario con un permiso de área SIN página real (agenda_cardiologia.ver) la ve listada pero deshabilitada', async () => {
+  it('AC: el calendario genérico por área también funciona para un área sin página fija de antes (agenda_cardiologia.ver) — ya no queda ninguna "Próximamente"', async () => {
     const agent = request.agent(app);
     await loginAs(agent, SOLO_CARDIOLOGIA);
 
     const res = await agent.get('/main.html');
-    expect(res.text).toMatch(/<span class="submenu-link is-disabled">[\s\S]*?Cardiología/);
-    expect(res.text).toContain('Próximamente');
-    // No se le ofrece ningún <a> real para Cardiología.
-    expect(res.text).not.toMatch(/<a[^>]*>[\s\S]{0,80}Cardiología/);
+    expect(res.text).toMatch(
+      /<a href="agenda\/cardiologia\.html" class="submenu-link[^"]*">[\s\S]*?Cardiología/,
+    );
+    expect(res.text).not.toContain('Próximamente');
+    expect(res.text).not.toContain('is-disabled');
+
+    const paginaRes = await agent.get('/agenda/cardiologia.html');
+    expect(paginaRes.status).toBe(200);
   });
 
   it('un usuario sin NINGÚN permiso agenda_<slug>.ver no ve el grupo "Agenda" en absoluto', async () => {
@@ -120,22 +130,24 @@ describe('Sidebar — submenú "Agenda" dinámico por área', () => {
     expect(res.text).not.toContain('id="agenda-menu"');
   });
 
-  it('AC: agenda_grooming.ver da acceso real a /grooming.html', async () => {
+  it('AC: agenda_grooming.ver da acceso real a /agenda/grooming.html', async () => {
     const agent = request.agent(app);
     await loginAs(agent, SOLO_GROOMING);
 
     const res = await agent.get('/main.html');
-    expect(res.text).toMatch(/<a href="grooming\.html" class="submenu-link[^"]*">[\s\S]*?Grooming/);
+    expect(res.text).toMatch(
+      /<a href="agenda\/grooming\.html" class="submenu-link[^"]*">[\s\S]*?Grooming/,
+    );
 
-    const paginaRes = await agent.get('/grooming.html');
+    const paginaRes = await agent.get('/agenda/grooming.html');
     expect(paginaRes.status).toBe(200);
   });
 
-  it('un usuario SIN agenda_consultas.ver ni agenda_cirugias.ver no puede acceder a /agenda.html', async () => {
+  it('un usuario SIN agenda_consultas.ver no puede acceder a /agenda/consultas.html (permiso es por área, no compartido)', async () => {
     const agent = request.agent(app);
     await loginAs(agent, SOLO_GROOMING);
 
-    const res = await agent.get('/agenda.html');
+    const res = await agent.get('/agenda/consultas.html');
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
   });

@@ -9,8 +9,21 @@
   --success: #1E8E3E;
   --editable: #144265;
   --warning: #F2A900;
+  /* --warning es un ámbar claro (pensado como acento/fondo de un punto o
+     badge pequeño) — como TEXTO o ícono sobre --surface/--bg-base no pasa
+     contraste mínimo (~2:1 medido). --warning-text es el mismo tono,
+     oscurecido a la mínima luminosidad que sí es legible (~4.8:1), para
+     cualquier lugar donde el ámbar sea el color de una letra o un ícono en
+     vez del relleno de una forma pequeña (revisión de contraste en todo el
+     sistema, ver también --text-muted más abajo). */
+  --warning-text: #946C00;
+  /* Oscurecido de #959391 (~3:1 contra blanco, no pasa WCAG AA de texto)
+     a este tono (~5.2:1) — mismo matiz de gris cálido, solo más oscuro;
+     revisión de contraste en todo el sistema (--text-muted es el color
+     "secundario" usado en decenas de lugares: labels, descripciones,
+     tooltips informativos, texto de tabla no-principal). */
   --text-dark: #35363D;
-  --text-muted: #959391;
+  --text-muted: #6F6C6A;
   --bg-base: #FBFBFD;
   --surface: #FFFFFF;
   --border: #CCCCCC;

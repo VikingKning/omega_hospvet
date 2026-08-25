@@ -128,6 +128,19 @@ async function buscarTelefono(req, res, next) {
 
 // US-157 (ajuste posterior): chequeo exacto del teléfono al salir del
 // campo (blur) en el alta — ver tutores.service.js#verificarTelefono.
+// Agenda: combobox de "Mascota" del formulario de citas — mismo patrón que
+// buscarTelefono (POST con el término en el body, responde JSON). Vive en
+// este módulo porque `mascotas` es su tabla, aunque quien la use en la
+// práctica sea el módulo agenda (ver agenda.routes.js).
+async function buscarMascota(req, res, next) {
+  try {
+    const resultados = await service.buscarMascotas(req.body.q);
+    res.json(resultados);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function verificarTelefono(req, res, next) {
   try {
     const resultado = await service.verificarTelefono(req.body.telefono);
@@ -165,6 +178,7 @@ module.exports = {
   crear,
   editar,
   buscarTelefono,
+  buscarMascota,
   verificarTelefono,
   desactivar,
 };
