@@ -99,6 +99,115 @@ async function findById(id) {
   return db('citas').where({ id }).first();
 }
 
+// Detalle completo de una cita para armar el evento de Google
+// (agenda.googleSync.js#pushCita) — mascota+doctor+color del área. A
+// diferencia de conDetalle() (que asume un area_id externo, ya filtrado en
+// baseQuery), esta trae el area_id/color desde la propia fila: el push no
+// vive dentro del contexto de "esta área" como el resto del repository.
+async function findByIdParaSync(id) {
+  return db('citas as c')
+    .join('mascotas as m', 'm.id', 'c.mascota_id')
+    .join('doctores as d', 'd.id', 'c.doctor_id')
+    .join('areas as a', 'a.id', 'c.area_id')
+    .where('c.id', id)
+    .first(
+      'c.id',
+      'c.fecha_hora_inicio',
+      'c.duracion_minutos',
+      'c.motivo',
+      'c.estado',
+      'c.google_event_id',
+      'm.nombre as mascota_nombre',
+      'd.nombre as doctor_nombre',
+      'd.apellidos as doctor_apellidos',
+      'a.color_google_calendar',
+    );
+}
+
+// Sincronización con Google Calendar (agenda.googleSync.js) — citas que le
+// "deben" un push: nunca se les intentó (sin google_event_id, futura, no
+// cancelada), se editaron después del último push exitoso, o se
+// cancelaron después del último push exitoso (todavía tienen
+// google_event_id, hay que borrar el evento allá). La misma función cubre
+// TANTO el push inmediato (si falló) como los reintentos del job — es la
+// única fuente de "qué le debo a Google todavía".
+async function findPendientesDePush(ahora) {
+  return db('citas as c')
+    .where((builder) => {
+      builder
+        .where((b) =>
+          b
+            .whereNull('c.google_event_id')
+            .andWhereNot('c.estado', 'cancelada')
+            .andWhere('c.fecha_hora_inicio', '>=', ahora),
+        )
+        .orWhere((b) =>
+          b
+            .whereNotNull('c.google_event_id')
+            .andWhereNot('c.estado', 'cancelada')
+            .andWhere('c.actualizado_en', '>', db.ref('c.google_sincronizado_en')),
+        )
+        .orWhere((b) =>
+          b
+            .whereNotNull('c.google_event_id')
+            .andWhere('c.estado', 'cancelada')
+            .andWhere('c.cancelado_en', '>', db.ref('c.google_sincronizado_en')),
+        );
+    })
+    .select('c.id');
+}
+
+// Citas ya reflejadas en Google — para diffear contra lo que reporta el
+// pull (agenda.googleSync.js#sincronizar) y detectar cancelaciones o
+// reagendados hechos directo ahí. Solo futuras y no canceladas de este
+// lado (una ya cancelada aquí no tiene nada que reconciliar).
+async function findSincronizadasFuturas(ahora) {
+  return db('citas')
+    .whereNotNull('google_event_id')
+    .andWhereNot('estado', 'cancelada')
+    .andWhere('fecha_hora_inicio', '>=', ahora)
+    .select(
+      'id',
+      'google_event_id',
+      'fecha_hora_inicio',
+      'duracion_minutos',
+      'actualizado_en',
+      'google_sincronizado_en',
+    );
+}
+
+async function marcarSincronizado(id, googleEventId) {
+  await db('citas').where({ id }).update({
+    google_event_id: googleEventId,
+    google_sincronizado_en: db.fn.now(),
+  });
+}
+
+// Reagendado hecho DIRECTO en Google Calendar — se aplica tal cual, sin
+// pasar por las validaciones de negocio de agenda.service.js#editar
+// (traslape/doctor-en-área): para este cambio puntual, Google ya es la
+// fuente de verdad (pedido explícito del usuario). google_sincronizado_en
+// se actualiza también, para no reprocesar el mismo cambio en el
+// siguiente ciclo del job.
+async function aplicarReagendoDesdeGoogle(id, { fechaHoraInicio, duracionMinutos }) {
+  await db('citas').where({ id }).update({
+    fecha_hora_inicio: fechaHoraInicio,
+    duracion_minutos: duracionMinutos,
+    google_sincronizado_en: db.fn.now(),
+  });
+}
+
+// Cancelación hecha DIRECTO en Google Calendar — misma baja lógica que
+// cancelar() de abajo, pero sin `cancelado_por` (nadie del sistema la
+// canceló) y marcando google_sincronizado_en para no reprocesarla.
+async function aplicarCancelacionDesdeGoogle(id) {
+  await db('citas').where({ id }).update({
+    estado: 'cancelada',
+    cancelado_en: db.fn.now(),
+    google_sincronizado_en: db.fn.now(),
+  });
+}
+
 // Alta desde el portal: siempre nace `confirmada` (decisión explícita del
 // usuario — el personal la agenda directamente, no hace falta un paso de
 // confirmar lo que uno mismo acaba de crear) y `origen='portal'` (el
@@ -166,6 +275,12 @@ module.exports = {
   findSiguiente,
   existeTraslape,
   findById,
+  findByIdParaSync,
+  findPendientesDePush,
+  findSincronizadasFuturas,
+  marcarSincronizado,
+  aplicarReagendoDesdeGoogle,
+  aplicarCancelacionDesdeGoogle,
   create,
   update,
   cancelar,

@@ -460,8 +460,7 @@ body:has(.app)::after {
 }
 
 /* position:relative acota al tamaño exacto del ícono (32x32) — el input
-   oculto de abajo se estira a ese mismo rectángulo con inset:0, así Chrome
-   tiene un punto de anclaje real (no 0x0) para el picker nativo. */
+   oculto de abajo se estira a ese mismo rectángulo con inset:0. */
 .agenda-date-trigger {
   position: relative;
   display: inline-flex;
@@ -480,7 +479,10 @@ body:has(.app)::after {
   cursor: pointer;
 }
 
-.agenda-date-trigger-btn:hover {
+/* El ícono ya no recibe hover directo (el input real está encima,
+   pointer-events:auto) — se resalta cuando el hover cae en cualquier
+   punto del contenedor, input incluido. */
+.agenda-date-trigger:hover .agenda-date-trigger-btn {
   background: var(--bg-base);
   color: var(--text-dark);
 }
@@ -490,14 +492,17 @@ body:has(.app)::after {
   height: 16px;
 }
 
-/* input real (necesario para que showPicker()/el evento change funcionen),
-   pero invisible — el usuario nunca ve el campo en sí, solo el picker
-   nativo que showPicker() abre. Bug real: con width/height:0 el picker se
-   abría en la esquina superior-izquierda de la PÁGINA en vez de junto al
-   ícono — Chrome no lo ancla de forma confiable a un elemento sin caja.
-   inset:0 lo estira exactamente sobre .agenda-date-trigger-btn (32x32,
-   invisible encima del ícono real, que sigue siendo el que recibe el clic
-   visualmente pero no el foco/eventos — pointer-events:none). */
+/* Input real e invisible, pero interactivo (a diferencia de una versión
+   anterior con pointer-events:none): bug real reportado por el usuario,
+   en iPhone el ícono no abría ningún selector (sí en Android, y sí en los
+   <input type="date"> normales del formulario de citas) — Safari/iOS
+   hace cumplir al pie de la letra que showPicker() debe lanzar
+   NotAllowedError si el elemento tiene pointer-events:none, justo como
+   estaba montado antes; Chromium era más permisivo y lo dejaba pasar. Con
+   el input recibiendo el tap directo ya no se llama showPicker() en
+   absoluto (agenda.ejs) — cualquier navegador abre su selector nativo al
+   tocar un <input type="date">, sin JS. inset:0 lo estira exactamente
+   sobre .agenda-date-trigger-btn (32x32). */
 .agenda-date-picker-hidden {
   position: absolute;
   inset: 0;
@@ -506,7 +511,7 @@ body:has(.app)::after {
   padding: 0;
   border: none;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
 }
 
 /* Filtro por doctor (pedido explícito del usuario): mismo .combobox del
@@ -735,6 +740,33 @@ body:has(.app)::after {
 
   .gcal-embed {
     min-height: 500px;
+  }
+
+  /* Bug real (reportado por el usuario: "no se ve el calendario en
+     mobile"): FullCalendar configura `height:'100%'` en su propio
+     elemento (agenda.ejs) — eso necesita que .agenda-calendar-wrap tenga
+     una altura DEFINIDA para resolver el porcentaje contra ella. En
+     desktop la tiene (cae de .agenda-layout con height:100% -> flex:1 en
+     cascada); en mobile .agenda-layout pasa a height:auto arriba, y
+     .agenda-calendar-wrap sigue siendo `flex:1` (flex-basis 0%) dentro de
+     un contenedor auto-alto — sin espacio que repartir, un flex-item con
+     flex-basis distinto de auto IGNORA cualquier `height` propio para el
+     cálculo de tamaño (solo min-height sigue aplicando como piso), así
+     que un simple `height:60vh` aquí no tenía ningún efecto (confirmado
+     con Playwright: seguía midiendo exactamente los 500px del
+     min-height, ni un pixel de los 60vh). Se saca del todo de flex-grow
+     (`flex:none`) para que `height` sí se respete tal cual. */
+  .agenda-calendar-wrap {
+    flex: none;
+    height: 60vh;
+  }
+
+  /* Pedido explícito del usuario: en mobile, la fecha en texto ("25 de
+     agosto de 2026") sobraba — se deja solo <, Hoy, >, el ícono de
+     calendario (sigue abriendo el selector nativo) y el switch
+     Semana/Día. */
+  .agenda-toolbar-title {
+    display: none;
   }
 }
 

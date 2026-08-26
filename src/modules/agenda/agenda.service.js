@@ -1,6 +1,18 @@
 const repository = require('./agenda.repository');
 const areasRepository = require('../areas/areas.repository');
 const doctoresRepository = require('../doctores/doctores.repository');
+const googleSync = require('./agenda.googleSync');
+const logger = require('../../config/logger');
+
+// Push a Google Calendar tras crear/editar/cancelar: best-effort, nunca
+// bloquea la respuesta al usuario (pedido explícito del usuario). pushCita
+// ya atrapa sus propios errores y los loguea — el .catch() de aquí es solo
+// una red de seguridad extra para no dejar una promesa rechazada suelta.
+function dispararSyncGoogle(citaId) {
+  googleSync.pushCita(citaId).catch((err) => {
+    logger.error({ err, citaId }, 'Push a Google Calendar no manejado.');
+  });
+}
 
 // Mismo patrón de errores con `.status` que areas.service.js — el
 // controller los atrapa para re-renderizar el formulario con el mensaje,
@@ -175,7 +187,7 @@ async function crear({
   await validarDoctorEnArea(doctorId, areaId);
   await validarTraslape(doctorId, fechaHoraInicio, fin);
 
-  return repository.create({
+  const id = await repository.create({
     areaId,
     doctorId,
     mascotaId,
@@ -184,6 +196,8 @@ async function crear({
     motivo,
     usuarioId,
   });
+  dispararSyncGoogle(id);
+  return id;
 }
 
 // Editar: puede reagendar (fecha/hora/doctor), cambiar de mascota o motivo
@@ -218,6 +232,7 @@ async function editar({
     motivo,
     usuarioId,
   });
+  dispararSyncGoogle(id);
 }
 
 // "Eliminar" en la UI es cancelar — baja lógica (mismo patrón que todo el
@@ -226,6 +241,7 @@ async function cancelar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
   await repository.cancelar(id, usuarioId);
+  dispararSyncGoogle(id);
 }
 
 // Para precargar el formulario de edición.

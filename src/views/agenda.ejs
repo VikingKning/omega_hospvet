@@ -149,25 +149,31 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
                   </button>
                 </div>
                 <%#
-                  Clic en el ícono (no en todo el texto de la fecha) abre el
-                  selector NATIVO (<input type="date"> + showPicker(), ver el
-                  <script> de abajo) — ya trae navegación por año/mes/día del
-                  propio navegador. El input oculto ocupa EXACTAMENTE el mismo
-                  rectángulo que el ícono (.agenda-date-trigger,
-                  position:relative + input con inset:0) — un input de 0×0 no
-                  le da a Chrome un punto de anclaje confiable y el picker
-                  terminaba en la esquina superior-izquierda de la página; con
-                  un rectángulo real del tamaño del ícono, el picker se abre
-                  justo debajo de él. En móvil/tablet showPicker() ya abre la
-                  hoja nativa del SO sin importar esta posición.
+                  El ícono es decorativo — el <input type="date"> invisible
+                  encima de él (mismo rectángulo, .agenda-date-trigger
+                  position:relative + input con inset:0) es el que de
+                  verdad recibe el clic/tap y abre el selector NATIVO del
+                  navegador con su comportamiento default (sin
+                  showPicker()). Bug real reportado por el usuario: en
+                  iPhone el ícono no abría nada (funcionaba en Android y en
+                  los <input type="date"> normales del formulario de
+                  citas) — Safari/iOS respeta al pie de la letra que
+                  showPicker() debe lanzar NotAllowedError si el elemento
+                  (o un ancestro) tiene pointer-events:none, que es
+                  justamente como estaba montado este input; Chromium
+                  (desktop/Android) es más permisivo y lo dejaba pasar. Con
+                  el input real recibiendo el tap (pointer-events:auto) ya
+                  no hace falta showPicker() en absoluto: cualquier
+                  navegador abre su propio selector al tocar/clicar
+                  cualquier <input type="date">, sin JS.
                 %>
                 <div class="agenda-date-nav">
                   <span class="agenda-toolbar-title" id="agendaTitle"></span>
                   <div class="agenda-date-trigger">
-                    <button type="button" class="agenda-date-trigger-btn" id="agendaDateTrigger" aria-label="Ir a una fecha">
+                    <button type="button" class="agenda-date-trigger-btn" id="agendaDateTrigger" tabindex="-1" aria-hidden="true">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
                     </button>
-                    <input type="date" id="agendaDatePicker" class="agenda-date-picker-hidden" tabindex="-1" aria-hidden="true">
+                    <input type="date" id="agendaDatePicker" class="agenda-date-picker-hidden" aria-label="Ir a una fecha">
                   </div>
                 </div>
               </div>
@@ -556,18 +562,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     // día" en este calendario, esa fila (que se lee como un segundo
     // encabezado pegado al real) solo estorbaba.
     allDaySlot: false,
-    selectable: puedeCrear,
-    // Pedido explícito del usuario: un horario ya marcado "ocupado" (gris,
-    // doctor filtrado con cita en OTRA área) no se puede seleccionar para
-    // agendar — FullCalendar ya trae este gancho para "¿esta selección
-    // puede pisar este evento?"; false SOLO para los bloques de fondo deja
-    // intacta la selección normal sobre cualquier otro hueco libre.
-    selectOverlap: (event) => event.display !== 'background',
-    // Pedido explícito del usuario: no se pueden agendar citas del momento
-    // actual hacia atrás — ni un slot de "hoy más temprano". Mismo límite
-    // que valida el servidor (agenda.service.js#validateFechaHoraInicio),
-    // aquí solo evita el viaje redondo de intentarlo primero.
-    selectAllow: (selectInfo) => selectInfo.start >= new Date(),
     eventColor: eventColor || undefined,
     eventTextColor: <%- JSON.stringify(color.foreground) %> || undefined,
     // Tooltip "No disponible" sobre los bloques "ocupado" — mismo patrón
@@ -606,10 +600,25 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     datesSet(info) {
       document.getElementById('agendaTitle').textContent = info.view.title;
     },
-    select(info) {
+    // Bug real reportado por el usuario: en mobile, dar tap sobre un
+    // horario para agendar no abría nada. Causa: se usaba `select`
+    // (arrastrar para elegir un rango), que en pantallas táctiles
+    // FullCalendar solo activa con un TOQUE SOSTENIDO (~1s, para no
+    // confundirlo con hacer scroll de la grilla) — y aun bajando ese
+    // retraso casi a cero, seguía sin abrir con un tap normal (confirmado
+    // con Playwright + emulación táctil real de iPhone). Como el formulario
+    // nunca usó el FIN del rango seleccionado (la duración se elige aparte,
+    // con un <select>), `select` nunca hacía falta — un solo tap/clic con
+    // `dateClick` abre exactamente lo mismo, sin ningún retraso ni gesto
+    // especial, igual en mouse y en touch.
+    dateClick(info) {
       if (!puedeCrear) return;
-      abrirCitaNueva(info.start.toISOString());
-      calendar.unselect();
+      if (info.date < new Date()) return;
+      const ocupado = calendar
+        .getEvents()
+        .some((ev) => ev.display === 'background' && info.date >= ev.start && info.date < ev.end);
+      if (ocupado) return;
+      abrirCitaNueva(info.date.toISOString());
     },
     eventClick(info) {
       if (!puedeEditar) return;
@@ -637,17 +646,16 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
   document.getElementById('agendaNext').addEventListener('click', () => calendar.next());
   document.getElementById('agendaHoy').addEventListener('click', () => calendar.today());
 
-  // Clic en el ícono de calendario: abre el selector NATIVO de fecha del
-  // navegador (año/mes/día ya resueltos por el propio navegador, sin
-  // construir un date-picker propio) anclado justo debajo del ícono en
-  // desktop. showPicker() requiere un user-gesture directo — no funciona
-  // si se llama async/con retraso.
+  // El <input type="date"> invisible sobre el ícono recibe el tap/clic
+  // directo y abre el selector nativo del navegador por su cuenta (sin
+  // showPicker() — ver el comentario en agenda.ejs sobre por qué en
+  // iPhone showPicker() no abría nada). Solo hace falta sincronizar su
+  // valor a la fecha actual del calendario justo antes de que se abra.
   const agendaDatePicker = document.getElementById('agendaDatePicker');
-  document.getElementById('agendaDateTrigger').addEventListener('click', () => {
+  agendaDatePicker.addEventListener('focus', () => {
     const actual = calendar.getDate();
     const pad2 = (n) => String(n).padStart(2, '0');
     agendaDatePicker.value = `${actual.getFullYear()}-${pad2(actual.getMonth() + 1)}-${pad2(actual.getDate())}`;
-    agendaDatePicker.showPicker?.() ?? agendaDatePicker.click();
   });
   agendaDatePicker.addEventListener('change', (event) => {
     if (event.target.value) calendar.gotoDate(event.target.value);

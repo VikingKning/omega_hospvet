@@ -19,4 +19,16 @@ module.exports = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
   },
+  // Sincronización con Google Calendar (agenda.googleSync.js) — opcionales
+  // a propósito (nunca en `required` de arriba): sin ellas, la app entera
+  // sigue funcionando normal, la sincronización simplemente no se activa
+  // (ver isGoogleSyncConfigured() en config/googleCalendar.js). Una sola
+  // cuenta/calendario para las 8 áreas (decisión explícita del usuario).
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
+    syncIntervalMinutes: Number(process.env.GOOGLE_SYNC_INTERVAL_MINUTES) || 10,
+  },
 };

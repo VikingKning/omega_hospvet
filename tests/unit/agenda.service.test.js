@@ -1,9 +1,11 @@
 jest.mock('../../src/modules/agenda/agenda.repository');
 jest.mock('../../src/modules/areas/areas.repository');
 jest.mock('../../src/modules/doctores/doctores.repository');
+jest.mock('../../src/modules/agenda/agenda.googleSync');
 const repository = require('../../src/modules/agenda/agenda.repository');
 const areasRepository = require('../../src/modules/areas/areas.repository');
 const doctoresRepository = require('../../src/modules/doctores/doctores.repository');
+const googleSync = require('../../src/modules/agenda/agenda.googleSync');
 const {
   resolverArea,
   resumenDelDia,
@@ -19,6 +21,13 @@ const {
 } = require('../../src/modules/agenda/agenda.service');
 
 const DOCTOR_EN_AREA = { id: 5, nombre: 'Ana', apellidos: 'Pérez' };
+
+// jest.clearAllMocks() (en cada describe de abajo) limpia las llamadas
+// registradas pero NO el mockResolvedValue de aquí — se define una sola
+// vez porque dispararSyncGoogle() en agenda.service.js hace
+// `googleSync.pushCita(id).catch(...)`: sin un valor resuelto, el mock
+// automático de Jest regresa `undefined` y `.catch()` truena.
+googleSync.pushCita.mockResolvedValue(undefined);
 
 describe('agenda.service.resolverArea', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -260,6 +269,13 @@ describe('agenda.service.crear', () => {
       undefined,
     );
   });
+
+  // Pedido explícito del usuario: push a Google Calendar tras crear, sin
+  // bloquear la respuesta (dispararSyncGoogle no se espera).
+  it('dispara el push a Google Calendar con el id recién creado', async () => {
+    const id = await crear(datosValidos);
+    expect(googleSync.pushCita).toHaveBeenCalledWith(id);
+  });
 });
 
 describe('agenda.service.editar', () => {
@@ -325,6 +341,11 @@ describe('agenda.service.editar', () => {
     );
     expect(repository.update).not.toHaveBeenCalled();
   });
+
+  it('dispara el push a Google Calendar tras editar', async () => {
+    await editar(datosValidos);
+    expect(googleSync.pushCita).toHaveBeenCalledWith(42);
+  });
 });
 
 describe('agenda.service.cancelar', () => {
@@ -338,6 +359,11 @@ describe('agenda.service.cancelar', () => {
   it('un id inválido no truena y no llega al repository', async () => {
     await cancelar('no-es-un-numero', 42);
     expect(repository.cancelar).not.toHaveBeenCalled();
+  });
+
+  it('dispara el push a Google Calendar tras cancelar', async () => {
+    await cancelar('7', 42);
+    expect(googleSync.pushCita).toHaveBeenCalledWith(7);
   });
 });
 
