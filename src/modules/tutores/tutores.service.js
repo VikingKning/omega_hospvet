@@ -28,6 +28,14 @@ const NOMBRE_TUTOR_MAX = 150;
 const NOMBRE_PACIENTE_MAX = 100;
 const TIPO_PACIENTE_MAX = 20;
 const RAZA_PACIENTE_MAX = 100;
+// Sexo: whitelist real (nunca se confía en que el cliente mande uno de
+// estos 2 valores solo porque el toggle del formulario solo ofrece esos)
+// — mismo criterio que DURACIONES_VALIDAS en agenda.service.js. Edad: en
+// años, un rango 0-40 cubre generosamente perros/gatos (evita capturas
+// claramente erróneas, ej. 200) sin inventar un tope "correcto" que nadie
+// pidió.
+const SEXO_PACIENTE_VALORES = ['Macho', 'Hembra'];
+const EDAD_PACIENTE_MAX = 40;
 const FORMATO_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Mismo formato ya establecido en el resto del sistema para teléfono
 // mexicano (10 dígitos, NN-NNNN-NNNN) — perfil.service.js#TELEFONO_REGEX es
@@ -118,11 +126,67 @@ function validateCorreo(rawCorreo) {
   return correo;
 }
 
-// AC11/AC13: cada paciente capturado necesita como mínimo Nombre (Tipo/Raza
-// opcionales, ver validateTextoOpcional). Un paciente YA existente (trae
-// `id`) respeta el `activo` que mande el cliente (AC17/19: baja/reactivar);
-// uno nuevo siempre nace activo (AC13), sin importar lo que venga en el
-// body — nunca se puede dar de alta un paciente ya inactivo de origen.
+// Pedido explícito del usuario: agrega Sexo (Macho/Hembra) al formulario —
+// opcional a nivel de esquema (mascotas.sexo es NULLABLE, igual que
+// tipo/raza), whitelist real en vez de texto libre (el toggle del
+// formulario ya solo ofrece esos 2 valores, pero el servidor nunca confía
+// en eso).
+function validateSexo(rawValor, etiqueta) {
+  const valor = (rawValor ?? '').trim();
+  if (!valor) return '';
+  if (!SEXO_PACIENTE_VALORES.includes(valor)) {
+    throw new TutorValidationError(`El campo ${etiqueta} no es válido.`);
+  }
+  return valor;
+}
+
+// Pedido explícito del usuario: agrega Edad (años) al formulario — opcional
+// a nivel de esquema (mascotas.anio_nacimiento es NULLABLE). Vacío se valida
+// como `null` (edad desconocida), no como 0 (una edad real) — la conversión
+// a año de nacimiento (edadAAnioNacimiento, más abajo) es quien decide qué
+// se guarda de verdad.
+function validateEdad(rawValor, etiqueta) {
+  const valor = (rawValor ?? '').toString().trim();
+  if (!valor) return null;
+  // Number() (no parseInt) a propósito: parseInt trunca "3.5" a 3 en vez de
+  // rechazarlo — la edad es en años completos, un decimal es una captura
+  // equivocada, no una fracción de año válida a redondear en silencio.
+  const edad = Number(valor);
+  if (!Number.isInteger(edad) || edad < 0 || edad > EDAD_PACIENTE_MAX) {
+    throw new TutorValidationError(
+      `El campo ${etiqueta} debe ser un número entero entre 0 y ${EDAD_PACIENTE_MAX}.`,
+    );
+  }
+  return edad;
+}
+
+// Pedido explícito del usuario: NO se guarda la edad capturada tal cual
+// ("si pongo 13 años, guardar el año -13, así el siguiente año podría verse
+// 14 automáticamente") — se guarda el año de nacimiento implícito, para que
+// la edad mostrada se recalcule sola con el paso del tiempo en vez de
+// quedarse congelada en lo que se capturó el día del registro. El
+// formulario nunca pide/muestra un año de nacimiento, solo "años" — esta
+// conversión (y su inversa, edadDesdeAnioNacimiento) son el único lugar del
+// sistema que sabe que por dentro se guarda distinto de lo que se capturó.
+function edadAAnioNacimiento(edad) {
+  if (edad === null) return null;
+  return new Date().getFullYear() - edad;
+}
+
+// Inversa de edadAAnioNacimiento — usada al precargar el formulario
+// (obtenerParaEditar/verificarTelefono) para volver a mostrar "años" en vez
+// del año de nacimiento guardado.
+function edadDesdeAnioNacimiento(anioNacimiento) {
+  if (anioNacimiento === null || anioNacimiento === undefined) return null;
+  return new Date().getFullYear() - anioNacimiento;
+}
+
+// AC11/AC13: cada paciente capturado necesita como mínimo Nombre (Tipo/Raza/
+// Sexo/Edad opcionales, ver validateTextoOpcional/validateSexo/validateEdad).
+// Un paciente YA existente (trae `id`) respeta el `activo` que mande el
+// cliente (AC17/19: baja/reactivar); uno nuevo siempre nace activo (AC13),
+// sin importar lo que venga en el body — nunca se puede dar de alta un
+// paciente ya inactivo de origen.
 function parsePacientes(rawPacientes) {
   const valores = Array.isArray(rawPacientes) ? rawPacientes : [];
   return valores.map((paciente, index) => {
@@ -141,10 +205,20 @@ function parsePacientes(rawPacientes) {
       `Raza del paciente ${index + 1}`,
       RAZA_PACIENTE_MAX,
     );
+    const sexo = validateSexo(paciente?.sexo, `Sexo del paciente ${index + 1}`);
+    const edad = validateEdad(paciente?.edad, `Edad del paciente ${index + 1}`);
     const id = parseId(paciente?.id);
     const activo = id === null ? true : paciente?.activo !== false;
-    return { id, nombre, tipo, raza, activo };
+    return { id, nombre, tipo, raza, sexo, anioNacimiento: edadAAnioNacimiento(edad), activo };
   });
+}
+
+// Traduce anio_nacimiento -> edad para cualquier lista de pacientes que
+// vuelva hacia el cliente (obtenerParaEditar/verificarTelefono) — el
+// formulario solo conoce "años", nunca el año de nacimiento guardado por
+// dentro (ver edadAAnioNacimiento).
+function pacientesConEdad(pacientes) {
+  return pacientes.map((p) => ({ ...p, edad: edadDesdeAnioNacimiento(p.anio_nacimiento) }));
 }
 
 // Ambos filtros de estado (Tutores/Pacientes) son independientes entre sí
@@ -268,7 +342,11 @@ async function obtenerParaEditar(rawId) {
   const propietario = await repository.findById(id);
   if (!propietario) return undefined;
   const pacientes = await repository.findMascotasByPropietarioId(id);
-  return { ...propietario, telefono: formatTelefono(propietario.telefono), pacientes };
+  return {
+    ...propietario,
+    telefono: formatTelefono(propietario.telefono),
+    pacientes: pacientesConEdad(pacientes),
+  };
 }
 
 // US-156 AC7/AC8/AC9/AC10/AC12/AC13: alta. Si el teléfono ya pertenece a un
@@ -407,9 +485,57 @@ async function verificarTelefono(rawTelefono) {
       nombre: existente.nombre,
       telefono: formatTelefono(existente.telefono),
       correo: existente.correo,
-      pacientes,
+      pacientes: pacientesConEdad(pacientes),
     },
   };
+}
+
+// Laboratorio: "Nuevo registro" arranca de un tutor YA REGISTRADO por su
+// teléfono (pedido explícito del usuario — "si escribo un teléfono, la
+// información se tiene que mostrar") — a diferencia de verificarTelefono()
+// (que revela inactivos porque es el punto de entrada de reactivación),
+// aquí un tutor INACTIVO se trata igual que uno inexistente: Laboratorio no
+// da de alta ni reactiva tutores/pacientes, solo usa los que ya existen y
+// están activos. Solo trae pacientes ACTIVOS (un registro de laboratorio
+// nuevo no tiene sentido para una mascota ya dada de baja).
+async function resolverTutorActivoPorTelefono(rawTelefono) {
+  const telefono = stripTelefono(rawTelefono);
+  if (telefono.length !== 10) return null;
+  const existente = await repository.findByTelefono(telefono);
+  if (!existente || !existente.activo) return null;
+  const pacientes = await repository.findMascotasByPropietarioId(existente.id);
+  return {
+    id: existente.id,
+    nombre: existente.nombre,
+    telefono: formatTelefono(existente.telefono),
+    correo: existente.correo,
+    pacientes: pacientesConEdad(pacientes).filter((p) => p.activo),
+  };
+}
+
+// Laboratorio: combobox de "buscar tutor por nombre" en "Nuevo registro" —
+// pedido explícito del usuario, para cuando no se sabe el teléfono del
+// tutor. Solo tutores ACTIVOS (mismo criterio que
+// resolverTutorActivoPorTelefono). Longitud mínima server-side (además de
+// la del cliente) para no escanear la tabla completa con un ILIKE de una
+// sola letra; resultado acotado a 10, es un combobox de escritura
+// incremental, no un listado.
+async function buscarActivosPorNombre(rawQ) {
+  const q = (rawQ ?? '').trim();
+  if (q.length < 2) return [];
+  const tutores = await repository.findActivosPorNombre(q, 10);
+  return tutores.map((t) => ({ id: t.id, nombre: t.nombre, telefono: formatTelefono(t.telefono) }));
+}
+
+// Laboratorio: precarga del selector de "Paciente" en la pantalla de
+// edición/consulta de una orden ya existente — a diferencia de
+// resolverTutorActivoPorTelefono (que exige un tutor ACTIVO, es el punto de
+// entrada de un alta nueva), aquí el tutor/mascota ya están ligados a un
+// registro real y deben poder mostrarse tal cual aunque alguno haya sido
+// dado de baja después — nunca por teléfono, ya se conoce el id.
+async function obtenerPacientesConEdad(propietarioId) {
+  const pacientes = await repository.findMascotasByPropietarioId(propietarioId);
+  return pacientesConEdad(pacientes);
 }
 
 // US-157: baja lógica (activo=false + desactivado_por/desactivado_en),
@@ -430,6 +556,9 @@ module.exports = {
   buscarMascotas,
   resolverMascota,
   verificarTelefono,
+  resolverTutorActivoPorTelefono,
+  buscarActivosPorNombre,
+  obtenerPacientesConEdad,
   desactivar,
   TutorValidationError,
   RequiereConfirmacionReactivacionError,

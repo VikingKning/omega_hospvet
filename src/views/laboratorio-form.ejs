@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<%#
+  Pedido explícito del usuario: alta/edición/consulta de laboratorio son
+  pantallas completas propias (mismo patrón que tutor-form.ejs — un nivel
+  más profundo que la raíz, /laboratorio/nuevo y /laboratorio/:id/editar),
+  no un modal sobre la tabla como el resto de los módulos del sistema. Mismo
+  motivo del <base> que tutor-form.ejs: sin esto, las referencias relativas
+  de esta página y de partials/sidebar.ejs resolverían contra /laboratorio/
+  en vez de /.
+%>
+<base href="/">
+<title><%= registro ? (soloLectura ? 'Consultar registro' : 'Editar registro') : 'Nuevo registro' %> de laboratorio | Omega Veterinaria & Estética</title>
+<link rel="icon" type="image/png" href="assets/imgs/icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+  <%
+  const esEdicion = Boolean(registro);
+  const titulo = esEdicion ? (soloLectura ? 'Consultar registro' : 'Editar registro') : 'Nuevo registro';
+  const disabledAttr = soloLectura ? 'disabled' : '';
+  // Regla explícita del usuario: en EDICIÓN (no en alta) los datos de tutor,
+  // paciente y fecha de solicitud quedan bloqueados — un registro nace
+  // ligado a un paciente/fecha específicos y no se deben reasignar después.
+  // Doctor solicitante, Agregar estudios y Observaciones siguen editables
+  // (`disabledAttr` normal, solo se bloquean en consulta).
+  const tutorPacienteDisabledAttr = (soloLectura || esEdicion) ? 'disabled' : '';
+  %>
+
+  <div class="app" id="app">
+    <div class="top-row">
+      <div class="sidebar-header">
+        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <span class="sidebar-title">Omega Vet</span>
+        <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+
+      <header class="topbar">
+        <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
+        <h1 class="topbar-title"><span class="topbar-breadcrumb-prefix">Laboratorio &rsaquo; Catálogo &rsaquo; </span><%= titulo %></h1>
+      </header>
+    </div>
+
+    <div class="body-row">
+    <div class="nav-backdrop" id="navBackdrop"></div>
+    <%- include('partials/sidebar', { user, currentPage: 'laboratorio' }) %>
+
+    <main class="main-content">
+      <div class="lab-form-page">
+        <div class="lab-form-heading">
+          <span class="lab-form-heading-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
+          </span>
+          <div class="lab-form-heading-text">
+            <h2><%= titulo %> de laboratorio</h2>
+            <p>Captura la solicitud y agrega uno o varios estudios para el paciente.</p>
+          </div>
+          <a class="btn-secondary" href="laboratorio.html">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Volver
+          </a>
+        </div>
+
+        <span class="form-error-banner" id="labFormError" style="display:none"></span>
+        <span class="form-success-banner" id="labFormSuccess" style="display:none"></span>
+
+        <section class="profile-card">
+          <div class="lab-tutor-card-header">
+            <h3 class="tutor-form-card-title">Datos del tutor y paciente</h3>
+            <% if (!soloLectura && !esEdicion) { %>
+              <button type="button" class="btn-secondary" id="labLimpiarTutorBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+                Borrar tutor y paciente
+              </button>
+            <% } %>
+          </div>
+
+          <h4 class="lab-form-subtitle">Tutor</h4>
+          <div class="modal-form lab-form-grid lab-form-grid-3">
+            <label>
+              Teléfono *
+              <input type="text" id="labTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" <%= tutorPacienteDisabledAttr %>>
+              <span class="error-msg" id="labTelefonoError">Escribe un teléfono para buscar al tutor.</span>
+            </label>
+            <label>
+              Tutor
+              <div class="combobox" id="labTutorNombreCombobox">
+                <input type="text" id="labTutorNombre" autocomplete="off" placeholder="Busqueda por nombre o por telefono" <%= tutorPacienteDisabledAttr %>>
+                <ul class="combobox-list" id="labTutorNombreList" hidden></ul>
+              </div>
+            </label>
+            <label>
+              Correo electrónico
+              <input type="text" id="labTutorCorreo" readonly disabled placeholder="—">
+            </label>
+          </div>
+
+          <h4 class="lab-form-subtitle">Paciente</h4>
+          <div class="modal-form lab-form-grid lab-form-grid-paciente">
+            <label>
+              Paciente *
+              <div class="combobox" id="labPacienteCombobox">
+                <input type="text" id="labPacienteTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Primero busca al tutor por teléfono" disabled>
+                <ul class="combobox-list" id="labPacienteList" hidden></ul>
+              </div>
+              <input type="hidden" id="labPacienteId">
+            </label>
+            <div class="lab-paciente-ficha" id="labPacienteFicha" hidden>
+              <span class="lab-paciente-ficha-item">
+                <span class="lab-paciente-ficha-icon" id="labPacienteEspecieIcon"></span>
+                <span id="labPacienteEspecieLabel">—</span>
+              </span>
+              <span class="lab-paciente-ficha-item">
+                <span class="lab-paciente-ficha-icon" id="labPacienteSexoIcon"></span>
+                <span id="labPacienteSexoLabel">—</span>
+              </span>
+              <span class="lab-paciente-ficha-item">
+                <span class="tutor-resumen-label">Edad</span>
+                <span id="labPacienteEdad">—</span>
+              </span>
+              <span class="lab-paciente-ficha-item">
+                <span class="tutor-resumen-label">Raza</span>
+                <span id="labPacienteRaza">—</span>
+              </span>
+            </div>
+          </div>
+
+          <h4 class="lab-form-subtitle">Doctor y fecha</h4>
+          <div class="modal-form lab-form-grid lab-form-grid-2">
+            <label>
+              Dr. solicitante *
+              <div class="combobox" id="labDoctorCombobox">
+                <input type="text" id="labDoctorInput" autocomplete="off" required placeholder="Buscar doctor..." <%= disabledAttr %>>
+                <ul class="combobox-list" id="labDoctorList" hidden></ul>
+              </div>
+              <input type="hidden" id="labDoctorId">
+            </label>
+            <label>
+              Fecha de solicitud *
+              <input type="date" id="labFecha" required <%= tutorPacienteDisabledAttr %>>
+            </label>
+          </div>
+        </section>
+
+        <section class="profile-card">
+          <h3 class="tutor-form-card-title">Agregar estudios</h3>
+
+          <div class="lab-estudios-layout">
+            <% if (!soloLectura) { %>
+              <div class="lab-estudios-picker modal-form">
+                <h4 class="lab-form-subtitle">Seleccionar estudio</h4>
+                <label>
+                  Categoría
+                  <div class="combobox" id="labCategoriaCombobox">
+                    <input type="text" id="labCategoriaTrigger" autocomplete="off" placeholder="Todas las categorías" value="Todas las categorías">
+                    <ul class="combobox-list" id="labCategoriaList" hidden></ul>
+                  </div>
+                  <input type="hidden" id="labCategoriaId">
+                </label>
+                <label>Buscar estudio
+                  <div class="combobox" id="labEstudioCombobox">
+                    <input type="text" id="labEstudioSearch" placeholder="Ej. biometría, FeLV, radiografía, cortisol..." autocomplete="off">
+                    <input type="hidden" id="labEstudioId">
+                    <ul class="combobox-list" id="labEstudioList" hidden></ul>
+                  </div>
+                </label>
+
+                <div id="labCamposAdicionales">
+                  <label id="labZonaWrap" hidden>Zona anatómica
+                    <div class="combobox" id="labZonaCombobox">
+                      <input type="text" id="labZonaTrigger" autocomplete="off" placeholder="Buscar zona anatómica...">
+                      <ul class="combobox-list" id="labZonaList" hidden></ul>
+                    </div>
+                    <input type="hidden" id="labZonaId">
+                  </label>
+
+                  <div id="labTipoMuestraWrap" hidden>
+                    <label>Tipo de muestra
+                      <input type="text" id="labTipoMuestra" placeholder="Ej. Hisopo de piel, orina por cistocentesis...">
+                    </label>
+                    <label class="switch-field">
+                      <span class="switch">
+                        <input type="checkbox" id="labAntibiograma">
+                        <span class="switch-track"></span>
+                      </span>
+                      <span class="switch-state-on">Con antibiograma</span>
+                      <span class="switch-state-off">Sin antibiograma</span>
+                    </label>
+                  </div>
+
+                  <div id="labTejidoWrap" hidden>
+                    <label>Tejido de origen
+                      <input type="text" id="labTejidoOrigen" placeholder="Ej. Nódulo cutáneo, ganglio poplíteo...">
+                    </label>
+                    <label>Lateralidad
+                      <div class="combobox" id="labLateralidadCombobox">
+                        <input type="text" id="labLateralidadTrigger" class="select-trigger-input" readonly autocomplete="off" value="No aplica">
+                        <ul class="combobox-list" id="labLateralidadList" hidden>
+                          <li class="combobox-item" data-id="">No aplica</li>
+                          <li class="combobox-item" data-id="izquierdo">Izquierdo</li>
+                          <li class="combobox-item" data-id="derecho">Derecho</li>
+                          <li class="combobox-item" data-id="bilateral">Bilateral</li>
+                        </ul>
+                      </div>
+                      <input type="hidden" id="labLateralidadId">
+                    </label>
+                  </div>
+
+                  <div id="labComponentesWrap" hidden>
+                    <span class="modal-col-title" style="font-size: 13px;">Componentes a analizar</span>
+                    <div class="checkbox-grid" id="labComponentesGrid">
+                      <% catalogo.componentesLiquido.forEach((componente) => { %>
+                        <label class="checkbox-field">
+                          <input type="checkbox" name="componentesLiquido" value="<%= componente.valor %>">
+                          <%= componente.etiqueta %>
+                        </label>
+                      <% }) %>
+                    </div>
+                  </div>
+                </div>
+
+                <label>Observaciones del estudio <span class="lab-opcional">(opcional)</span>
+                  <textarea id="labEstudioObservaciones" rows="2" placeholder="Ej. Proyección lateral derecha, ayuno de 8 horas, lesión en miembro posterior..."></textarea>
+                </label>
+
+                <div class="lab-picker-actions">
+                  <button type="button" class="btn-primary" id="btnAddStudy">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    Agregar estudio
+                  </button>
+                </div>
+              </div>
+            <% } %>
+
+            <div class="lab-estudios-solicitados">
+              <h4 class="lab-form-subtitle">Estudios solicitados</h4>
+              <div class="lab-cart-wrap" id="labCartWrap">
+                <p class="lab-cart-empty" id="labCartEmpty">Aún no has agregado ningún estudio.</p>
+                <div class="lab-study-list" id="labCartBody" hidden></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="profile-card">
+          <h3 class="tutor-form-card-title">Observaciones generales</h3>
+          <div class="modal-form">
+            <label>
+              <textarea id="labObservacionesGenerales" rows="3" placeholder="Indicaciones adicionales para el laboratorio, antecedentes relevantes, notas clínicas, etc." <%= disabledAttr %>></textarea>
+            </label>
+          </div>
+        </section>
+
+        <div class="tutor-form-actions">
+          <a class="btn-secondary" href="laboratorio.html">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            Cancelar
+          </a>
+          <% if (!soloLectura) { %>
+            <button type="button" class="btn-primary" id="labGuardarBtn">Guardar registro</button>
+          <% } %>
+        </div>
+      </div>
+    </main>
+    </div>
+  </div>
+
+  <%
+  // Isla de datos JSON inerte (nunca un <script>, esta página no usa HTMX
+  // pero el criterio se mantiene igual por consistencia con el resto del
+  // proyecto — ver doctorFormAreasData en doctor-form.ejs). El carácter "<"
+  // se re-escapa a su forma unicode para que un nombre con `<`/`</div>`
+  // nunca pueda cerrar el div antes de tiempo.
+  %>
+  <div id="labFormData" hidden><%- JSON.stringify({
+    catalogo,
+    doctores,
+    doctorIdPreseleccionado,
+    soloLectura,
+    csrfToken,
+    registro: registro ? {
+      id: registro.id,
+      mascotaId: registro.mascota_id,
+      doctorId: registro.doctor_id,
+      fechaSolicitud: registro.fecha_solicitud,
+      observaciones: registro.observaciones,
+      propietarioId: registro.propietario_id,
+      propietarioNombre: registro.propietario_nombre,
+      propietarioTelefono: registro.propietario_telefono,
+      propietarioCorreo: registro.propietario_correo,
+      pacientesDelTutor: registro.pacientesDelTutor,
+      estudios: registro.estudios,
+    } : null,
+  }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
+
+  <script nonce="<%= cspNonce %>">
+    const sidebar = document.getElementById('sidebar');
+    const app = document.querySelector('.app');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const navBackdrop = document.getElementById('navBackdrop');
+
+    sidebarToggle.addEventListener('click', () => {
+      app.classList.toggle('sidebar-hidden');
+      app.classList.toggle('mobile-menu-open');
+    });
+
+    navBackdrop.addEventListener('click', () => {
+      app.classList.remove('sidebar-hidden');
+      app.classList.remove('mobile-menu-open');
+    });
+
+    document.querySelectorAll('.nav-toggle').forEach((toggle) => {
+      const submenu = document.getElementById(toggle.dataset.target);
+      if (submenu.classList.contains('open')) {
+        submenu.style.maxHeight = `${submenu.scrollHeight}px`;
+      }
+
+      toggle.addEventListener('click', () => {
+        const isOpen = submenu.classList.contains('open');
+
+        document.querySelectorAll('.submenu.open').forEach((open) => {
+          if (open !== submenu) {
+            open.classList.remove('open');
+            open.style.maxHeight = null;
+            open.previousElementSibling?.classList.remove('active');
+          }
+        });
+
+        submenu.classList.toggle('open', !isOpen);
+        toggle.classList.toggle('active', !isOpen);
+        submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
+      });
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text ?? '';
+      return div.innerHTML;
+    }
+
+    // ---- Datos de la isla JSON ----
+    const datosEl = document.getElementById('labFormData');
+    const DATOS = JSON.parse(datosEl.textContent);
+    const csrfToken = DATOS.csrfToken;
+    const CATALOGO = DATOS.catalogo;
+    const DOCTORES = DATOS.doctores;
+    const SOLO_LECTURA = DATOS.soloLectura;
+    // Regla explícita del usuario: en EDICIÓN (no alta) tutor/paciente/fecha
+    // quedan bloqueados — mismo criterio que tutorPacienteDisabledAttr del
+    // lado servidor, para el código que solo corre en cliente (JS de
+    // teléfono/tutor por nombre/paciente).
+    const ES_EDICION = Boolean(DATOS.registro);
+
+    // Mismos íconos ya usados en tutor-form.ejs (Especie/Sexo) — se repiten
+    // aquí porque esta pantalla no comparte <script> con esa (páginas
+    // completas independientes), pedido de consistencia visual del usuario.
+    const DOG_SVG =
+      '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M64 176C80.6 176 94.2 188.6 95.8 204.7L96.1 211.3C97.8 227.4 111.4 240 128 240L307.1 240L448 300.4L448 544C448 561.7 433.7 576 416 576L384 576C366.3 576 352 561.7 352 544L352 412.7C328 425 300.8 432 272 432C243.2 432 216 425 192 412.7L192 544C192 561.7 177.7 576 160 576L128 576C110.3 576 96 561.7 96 544L96 298.4C58.7 285.2 32 249.8 32 208C32 190.3 46.3 176 64 176zM387.8 32C395.5 32 402.7 35.6 407.4 41.8L424 64L476.1 64C488.8 64 501 69.1 510 78.1L528 96L584 96C597.3 96 608 106.7 608 120L608 144C608 188.2 572.2 224 528 224L464 224L457 252L332.3 198.6L363.9 51.4C366.3 40.1 376.2 32 387.8 32zM480 108C469 108 460 117 460 128C460 139 469 148 480 148C491 148 500 139 500 128C500 117 491 108 480 108z"/></svg>';
+    const CAT_SVG =
+      '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M96 160C149 160 192 203 192 256L192 341.8C221.7 297.1 269.8 265.6 325.4 257.8C351 317.8 410.6 359.9 480 359.9C490.9 359.9 501.6 358.8 512 356.8L512 544C512 561.7 497.7 576 480 576C462.3 576 448 561.7 448 544L448 403.2L312 512L368 512C385.7 512 400 526.3 400 544C400 561.7 385.7 576 368 576L224 576C171 576 128 533 128 480L128 256C128 239.4 115.4 225.8 99.3 224.2L92.7 223.9C76.6 222.2 64 208.6 64 192C64 174.3 78.3 160 96 160zM565.8 67.2C576.2 58.5 592 65.9 592 79.5L592 192C592 253.9 541.9 304 480 304C418.1 304 368 253.9 368 192L368 79.5C368 65.9 383.8 58.5 394.2 67.2L448 112L512 112L565.8 67.2zM432 172C421 172 412 181 412 192C412 203 421 212 432 212C443 212 452 203 452 192C452 181 443 172 432 172zM528 172C517 172 508 181 508 192C508 203 517 212 528 212C539 212 548 203 548 192C548 181 539 172 528 172z"/></svg>';
+    const MALE_SVG =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="6"/><path d="M14.5 9.5 20 4"/><path d="M15 4h5v5"/></svg>';
+    const FEMALE_SVG =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M12 15v7"/><path d="M9 19h6"/></svg>';
+
+    function normalizeText(str) {
+      return str.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    }
+
+    // ---- Combobox flotante (mismo patrón que doctores.ejs#positionComboboxList
+    // — esta página nunca sufre el truco de stacking-context de
+    // `.main-content > *` porque no reparenta nada a <body>, así que basta con
+    // position:fixed). ----
+    function positionComboboxList(trigger, list) {
+      const rect = trigger.getBoundingClientRect();
+      list.style.position = 'fixed';
+      list.style.top = `${rect.bottom + 4}px`;
+      list.style.left = `${rect.left}px`;
+      list.style.width = `${rect.width}px`;
+      list.style.right = 'auto';
+      list.style.zIndex = '1000';
+    }
+
+    document.addEventListener('click', (event) => {
+      document.querySelectorAll('.combobox-list').forEach((list) => {
+        if (list.hidden) return;
+        const combobox = list.closest('.combobox');
+        if (combobox && combobox.contains(event.target)) return;
+        list.hidden = true;
+      });
+    });
+
+    function showError(message) {
+      const banner = document.getElementById('labFormError');
+      document.getElementById('labFormSuccess').style.display = 'none';
+      banner.textContent = message;
+      banner.style.display = 'flex';
+      banner.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function hideBanners() {
+      document.getElementById('labFormError').style.display = 'none';
+      document.getElementById('labFormSuccess').style.display = 'none';
+    }
+
+    // ---- Tutor por teléfono ----
+    let tutorActual = null; // { id, nombre, telefono, correo, pacientes }
+
+    function renderTutor() {
+      document.getElementById('labTutorNombre').value = tutorActual ? tutorActual.nombre : '';
+      document.getElementById('labTutorCorreo').value = tutorActual ? (tutorActual.correo || '—') : '';
+    }
+
+    function renderPacienteOptions() {
+      const trigger = document.getElementById('labPacienteTrigger');
+      const list = document.getElementById('labPacienteList');
+      const pacientes = tutorActual ? tutorActual.pacientes : [];
+      trigger.disabled = SOLO_LECTURA || ES_EDICION || pacientes.length === 0;
+      trigger.placeholder = pacientes.length ? 'Selecciona un paciente...' : 'Este tutor no tiene pacientes activos';
+      list.innerHTML = pacientes
+        .map((p) => `<li class="combobox-item" data-id="${p.id}">${escapeHtml(p.nombre)}</li>`)
+        .join('');
+    }
+
+    function limpiarPaciente() {
+      document.getElementById('labPacienteId').value = '';
+      document.getElementById('labPacienteTrigger').value = '';
+      document.getElementById('labPacienteFicha').hidden = true;
+      pacienteEspecieActual = null;
+    }
+
+    function seleccionarPaciente(id) {
+      const paciente = (tutorActual?.pacientes ?? []).find((p) => String(p.id) === String(id));
+      if (!paciente) return;
+      document.getElementById('labPacienteId').value = paciente.id;
+      document.getElementById('labPacienteTrigger').value = paciente.nombre;
+      // Cambiar de paciente puede cambiar de especie — el estudio que
+      // estuviera seleccionado en el picker podría ya no aplicar, así que se
+      // limpia (mismo criterio que un cambio de tutor ya limpiaba el
+      // paciente). También se resetea la categoría elegida — podría ser una
+      // exclusiva de la otra especie (ej. "Enfermedades infecciosas -
+      // Perro"), que ya no aparece en la lista para la especie nueva. No se
+      // toca `selectedStudies` (el carrito), solo el picker.
+      if (paciente.tipo !== pacienteEspecieActual) {
+        pacienteEspecieActual = paciente.tipo || null;
+        if (!SOLO_LECTURA) {
+          categoriaFiltro = '';
+          document.getElementById('labCategoriaTrigger').value = 'Todas las categorías';
+          document.getElementById('labCategoriaId').value = '';
+          clearEstudioSelection();
+        }
+      }
+
+      const especieIcon = document.getElementById('labPacienteEspecieIcon');
+      especieIcon.innerHTML = paciente.tipo === 'Gato' ? CAT_SVG : DOG_SVG;
+      document.getElementById('labPacienteEspecieLabel').textContent = paciente.tipo || '—';
+
+      const sexoIcon = document.getElementById('labPacienteSexoIcon');
+      sexoIcon.innerHTML = paciente.sexo === 'Hembra' ? FEMALE_SVG : MALE_SVG;
+      sexoIcon.style.visibility = paciente.sexo ? 'visible' : 'hidden';
+      document.getElementById('labPacienteSexoLabel').textContent = paciente.sexo || '—';
+
+      document.getElementById('labPacienteEdad').textContent = paciente.edad != null ? `${paciente.edad} años` : '—';
+      document.getElementById('labPacienteRaza').textContent = paciente.raza || '—';
+      document.getElementById('labPacienteFicha').hidden = false;
+    }
+
+    async function buscarTutorPorTelefono(telefono) {
+      const res = await fetch('laboratorio/buscar-tutor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+        body: JSON.stringify({ telefono }),
+      });
+      if (res.redirected) {
+        window.location.href = res.url;
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      const errorMsg = document.getElementById('labTelefonoError');
+      if (data.existe) {
+        tutorActual = data.tutor;
+        errorMsg.classList.remove('show');
+      } else {
+        tutorActual = null;
+        errorMsg.textContent = 'No se encontró ningún tutor activo con ese teléfono.';
+        errorMsg.classList.add('show');
+      }
+      renderTutor();
+      renderPacienteOptions();
+      limpiarPaciente();
+      document.getElementById('labTutorNombreList').hidden = true;
+    }
+
+    // ---- Botón "Borrar tutor y paciente" (pedido explícito del usuario):
+    // por si ya seleccionaron un tutor/paciente y quieren empezar de cero
+    // sin volver a escribir sobre el campo — no toca Doctor/Fecha ni el
+    // carrito de estudios, solo esta sección. ----
+    function limpiarTutorYPaciente() {
+      tutorActual = null;
+      document.getElementById('labTelefono').value = '';
+      document.getElementById('labTelefonoError').classList.remove('show');
+      document.getElementById('labTutorNombreList').hidden = true;
+      renderTutor();
+      renderPacienteOptions();
+      limpiarPaciente();
+    }
+
+    const labLimpiarTutorBtn = document.getElementById('labLimpiarTutorBtn');
+    if (labLimpiarTutorBtn) {
+      labLimpiarTutorBtn.addEventListener('click', limpiarTutorYPaciente);
+    }
+
+    const labTelefonoInput = document.getElementById('labTelefono');
+    if (labTelefonoInput && !SOLO_LECTURA && !ES_EDICION) {
+      let telefonoTimer = null;
+      labTelefonoInput.addEventListener('input', () => {
+        const digitos = labTelefonoInput.value.replace(/\D/g, '').slice(0, 10);
+        const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter((p) => p);
+        labTelefonoInput.value = partes.join('-');
+        document.getElementById('labTelefonoError').classList.remove('show');
+
+        clearTimeout(telefonoTimer);
+        if (digitos.length === 10) {
+          telefonoTimer = setTimeout(() => buscarTutorPorTelefono(digitos), 300);
+        } else {
+          tutorActual = null;
+          renderTutor();
+          renderPacienteOptions();
+          limpiarPaciente();
+        }
+      });
+    }
+
+    // ---- Tutor por nombre: pedido explícito del usuario — Teléfono se
+    // queda como estaba (busca solo por número); el campo Tutor es el que
+    // se vuelve buscable por nombre cuando el doctor no recuerda el
+    // teléfono, en vez de agregar un tercer campo — "no tiene caso que
+    // busque por teléfono y tutor en un mismo campo teniendo teléfono y
+    // tutor para hacer las búsquedas en donde corresponde". Escribir una
+    // letra dispara la búsqueda en servidor (el catálogo de tutores es
+    // grande — no se puede embeber completo como Doctores); elegir un
+    // resultado reutiliza buscarTutorPorTelefono() con el teléfono de ese
+    // tutor, en vez de duplicar la lógica de "tutor activo con sus
+    // pacientes". ----
+    const labTutorNombreInput = document.getElementById('labTutorNombre');
+    const labTutorNombreList = document.getElementById('labTutorNombreList');
+
+    if (labTutorNombreInput && !SOLO_LECTURA && !ES_EDICION) {
+      async function buscarTutoresPorNombre(q) {
+        const res = await fetch('laboratorio/buscar-tutor-nombre', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ q }),
+        });
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = document.getElementById('labTutorNombreList');
+        positionComboboxList(labTutorNombreInput, list);
+        list.innerHTML = data.tutores?.length
+          ? data.tutores
+              .map(
+                (t) =>
+                  `<li class="combobox-item" data-telefono="${escapeHtml(t.telefono)}">${escapeHtml(t.nombre)}<br><span class="lab-cart-observaciones">${escapeHtml(t.telefono)}</span></li>`,
+              )
+              .join('')
+          : '<li class="combobox-empty">Sin resultados</li>';
+        list.hidden = false;
+      }
+
+      let tutorNombreTimer = null;
+      labTutorNombreInput.addEventListener('input', () => {
+        const q = labTutorNombreInput.value.trim();
+        clearTimeout(tutorNombreTimer);
+        if (q.length < 2) {
+          labTutorNombreList.hidden = true;
+          return;
+        }
+        tutorNombreTimer = setTimeout(() => buscarTutoresPorNombre(q), 300);
+      });
+
+      labTutorNombreList.addEventListener('click', (event) => {
+        const item = event.target.closest('.combobox-item[data-telefono]');
+        if (!item) return;
+        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        labTutorNombreList.hidden = true;
+        document.getElementById('labTelefono').value = item.dataset.telefono;
+        document.getElementById('labTelefonoError').classList.remove('show');
+        buscarTutorPorTelefono(item.dataset.telefono.replace(/\D/g, ''));
+      });
+    }
+
+    document.getElementById('labPacienteList').addEventListener('click', (event) => {
+      const item = event.target.closest('.combobox-item');
+      if (!item) return;
+      // El <li> no es un control enfocable y el combobox vive dentro de un
+      // <label> — sin preventDefault(), el navegador reenvía el click al
+      // control asociado del label (el trigger), reenfocándolo justo
+      // después de seleccionar y reabriendo la lista que este mismo click
+      // acaba de cerrar (mismo bug ya documentado para areaPickerList en
+      // doctores.ejs). Bug real, encontrado en vivo: la lista de Paciente
+      // se quedaba abierta encima de la ficha después de elegir.
+      event.preventDefault();
+      seleccionarPaciente(item.dataset.id);
+      document.getElementById('labPacienteList').hidden = true;
+    });
+
+    document.getElementById('labPacienteTrigger').addEventListener('focus', (event) => {
+      if (event.target.disabled) return;
+      const list = document.getElementById('labPacienteList');
+      positionComboboxList(event.target, list);
+      list.hidden = false;
+    });
+
+    // ---- Doctor (catálogo chico embebido, filtrado en cliente — mismo
+    // patrón que citaDoctorCombobox en agenda.ejs). ----
+    function renderDoctorList(term) {
+      const list = document.getElementById('labDoctorList');
+      const t = term.trim().toLowerCase();
+      const filtrados = DOCTORES.filter((d) => `${d.nombre} ${d.apellidos}`.toLowerCase().includes(t));
+      list.innerHTML = filtrados.length
+        ? filtrados
+            .map((d) => `<li class="combobox-item" data-id="${d.id}" data-label="${escapeHtml(`${d.nombre} ${d.apellidos}`)}">${escapeHtml(`${d.nombre} ${d.apellidos}`)}</li>`)
+            .join('')
+        : '<li class="combobox-empty">Sin resultados</li>';
+      list.hidden = false;
+    }
+
+    const labDoctorInput = document.getElementById('labDoctorInput');
+    if (!SOLO_LECTURA) {
+      labDoctorInput.addEventListener('input', () => {
+        document.getElementById('labDoctorId').value = '';
+        renderDoctorList(labDoctorInput.value);
+      });
+      labDoctorInput.addEventListener('focus', () => renderDoctorList(labDoctorInput.value));
+      document.getElementById('labDoctorList').addEventListener('click', (event) => {
+        const item = event.target.closest('.combobox-item[data-id]');
+        if (!item) return;
+        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        document.getElementById('labDoctorId').value = item.dataset.id;
+        labDoctorInput.value = item.dataset.label;
+        document.getElementById('labDoctorList').hidden = true;
+      });
+    }
+
+    function preseleccionarDoctor(doctorId) {
+      const doctor = DOCTORES.find((d) => String(d.id) === String(doctorId));
+      if (!doctor) return;
+      document.getElementById('labDoctorId').value = doctor.id;
+      labDoctorInput.value = `${doctor.nombre} ${doctor.apellidos}`;
+    }
+
+    // ---- Categoría (filtro del combobox de estudio, no se manda al
+    // servidor) — pedido explícito del usuario: buscador con escritura y
+    // filtrado incremental, no una lista fija que solo se abre con clic. ----
+    let categoriaFiltro = '';
+
+    // Categorías que tienen al menos un estudio visible para la especie del
+    // paciente seleccionado — pedido explícito del usuario: no tiene sentido
+    // ofrecer "Enfermedades infecciosas - Perro" con un gato seleccionado.
+    // Sin paciente todavía, se listan todas (mismo criterio que
+    // findEstudiosFiltrados()).
+    function categoriasDisponibles() {
+      if (!pacienteEspecieActual) return CATALOGO.categorias;
+      return CATALOGO.categorias.filter((c) =>
+        c.estudios.some((e) => !e.especie || e.especie === pacienteEspecieActual),
+      );
+    }
+
+    function renderCategoriaList(filterText) {
+      const trigger = document.getElementById('labCategoriaTrigger');
+      const list = document.getElementById('labCategoriaList');
+      const entries = [{ id: '', nombre: 'Todas las categorías' }, ...categoriasDisponibles()];
+      const filtered = filterText
+        ? entries.filter((c) => normalizeText(c.nombre).includes(normalizeText(filterText)))
+        : entries;
+
+      positionComboboxList(trigger, list);
+      list.innerHTML = filtered.length
+        ? filtered.map((c) => `<li class="combobox-item" data-id="${c.id}">${escapeHtml(c.nombre)}</li>`).join('')
+        : '<li class="combobox-empty">Sin resultados</li>';
+      list.hidden = false;
+    }
+
+    if (!SOLO_LECTURA) {
+      const labCategoriaTrigger = document.getElementById('labCategoriaTrigger');
+      // Al abrir (focus) siempre se ve la lista completa sin filtrar — si se
+      // reusara el valor actual del input como filtro, reabrir la lista con
+      // "Todas las categorías" ya escrito ocultaba el resto de categorías
+      // (esa cadena no es substring de ninguna otra). Escribir sí filtra
+      // (evento 'input'), igual que Zona anatómica más abajo.
+      labCategoriaTrigger.addEventListener('focus', () => renderCategoriaList(''));
+      labCategoriaTrigger.addEventListener('input', () => renderCategoriaList(labCategoriaTrigger.value));
+      document.getElementById('labCategoriaList').addEventListener('click', (event) => {
+        const item = event.target.closest('.combobox-item');
+        if (!item) return;
+        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        categoriaFiltro = item.dataset.id;
+        labCategoriaTrigger.value = item.textContent;
+        document.getElementById('labCategoriaId').value = categoriaFiltro;
+        document.getElementById('labCategoriaList').hidden = true;
+        clearEstudioSelection();
+      });
+    }
+
+    // ---- Estudio (búsqueda en todo el catálogo) ----
+    let estudioActiveIndex = -1;
+    // Especie del paciente seleccionado (Perro/Gato) — pedido explícito del
+    // usuario: filtrar el picker de estudios según la especie, mismo
+    // criterio que catalogo_estudios.especie ('Perro'|'Gato'|NULL para
+    // ambas). Sin paciente seleccionado todavía, no se filtra nada.
+    let pacienteEspecieActual = null;
+
+    function findEstudiosFiltrados() {
+      return CATALOGO.categorias
+        .filter((c) => !categoriaFiltro || String(c.id) === String(categoriaFiltro))
+        .flatMap((c) => c.estudios.map((e) => ({ ...e, categoriaId: c.id, categoriaNombre: c.nombre })))
+        .filter((e) => !pacienteEspecieActual || !e.especie || e.especie === pacienteEspecieActual);
+    }
+
+    function findEstudioPorId(id) {
+      for (const categoria of CATALOGO.categorias) {
+        const estudio = categoria.estudios.find((e) => String(e.id) === String(id));
+        if (estudio) return { ...estudio, categoriaId: categoria.id, categoriaNombre: categoria.nombre };
+      }
+      return null;
+    }
+
+    function renderEstudioList(filterText) {
+      const search = document.getElementById('labEstudioSearch');
+      const list = document.getElementById('labEstudioList');
+      const entries = findEstudiosFiltrados();
+      const filtered = filterText
+        ? entries.filter((e) => normalizeText(e.nombre).includes(normalizeText(filterText)))
+        : entries;
+
+      positionComboboxList(search, list);
+      estudioActiveIndex = -1;
+
+      if (filtered.length === 0) {
+        list.innerHTML = '<li class="combobox-empty">Sin resultados</li>';
+        list.hidden = false;
+        return;
+      }
+
+      const showGroups = !categoriaFiltro;
+      let html = '';
+      let lastGroup = null;
+      filtered.forEach((entry) => {
+        if (showGroups && entry.categoriaNombre !== lastGroup) {
+          html += `<li class="combobox-group">${escapeHtml(entry.categoriaNombre)}</li>`;
+          lastGroup = entry.categoriaNombre;
+        }
+        html += `<li class="combobox-item" data-id="${entry.id}" role="option">${escapeHtml(entry.nombre)}</li>`;
+      });
+      list.innerHTML = html;
+      list.hidden = false;
+    }
+
+    function hideEstudioList() {
+      const list = document.getElementById('labEstudioList');
+      if (list) list.hidden = true;
+      estudioActiveIndex = -1;
+    }
+
+    function updateCamposAdicionales() {
+      const estudioId = document.getElementById('labEstudioId').value;
+      const estudio = findEstudioPorId(estudioId);
+      const campo = estudio ? estudio.campoAdicional : null;
+
+      document.getElementById('labZonaWrap').hidden = campo !== 'zona';
+      document.getElementById('labTipoMuestraWrap').hidden = campo !== 'tipo_muestra';
+      document.getElementById('labTejidoWrap').hidden = campo !== 'tejido_lateralidad';
+      document.getElementById('labComponentesWrap').hidden = campo !== 'componentes_liquido';
+
+      if (campo !== 'zona') {
+        document.getElementById('labZonaId').value = '';
+        document.getElementById('labZonaTrigger').value = '';
+      }
+      if (campo !== 'tipo_muestra') {
+        document.getElementById('labTipoMuestra').value = '';
+        document.getElementById('labAntibiograma').checked = false;
+      }
+      if (campo !== 'tejido_lateralidad') {
+        document.getElementById('labTejidoOrigen').value = '';
+        document.getElementById('labLateralidadId').value = '';
+        document.getElementById('labLateralidadTrigger').value = 'No aplica';
+      }
+      if (campo !== 'componentes_liquido') {
+        document.querySelectorAll('#labComponentesGrid input[type=checkbox]').forEach((cb) => { cb.checked = false; });
+      }
+    }
+
+    function selectEstudio(id) {
+      const estudio = findEstudioPorId(id);
+      if (!estudio) return;
+      document.getElementById('labEstudioId').value = estudio.id;
+      document.getElementById('labEstudioSearch').value = estudio.nombre;
+      updateCamposAdicionales();
+    }
+
+    function clearEstudioSelection() {
+      document.getElementById('labEstudioId').value = '';
+      document.getElementById('labEstudioSearch').value = '';
+      document.getElementById('labEstudioObservaciones').value = '';
+      updateCamposAdicionales();
+      hideEstudioList();
+    }
+
+    if (!SOLO_LECTURA) {
+      const labEstudioSearch = document.getElementById('labEstudioSearch');
+      labEstudioSearch.addEventListener('input', () => renderEstudioList(labEstudioSearch.value));
+      labEstudioSearch.addEventListener('focus', () => renderEstudioList(labEstudioSearch.value));
+
+      labEstudioSearch.addEventListener('keydown', (event) => {
+        const list = document.getElementById('labEstudioList');
+        if (list.hidden && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+          renderEstudioList(labEstudioSearch.value);
+          return;
+        }
+        const items = Array.from(list.querySelectorAll('.combobox-item'));
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          estudioActiveIndex = Math.min(estudioActiveIndex + 1, items.length - 1);
+          items.forEach((item, i) => item.classList.toggle('active', i === estudioActiveIndex));
+          items[estudioActiveIndex]?.scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          estudioActiveIndex = Math.max(estudioActiveIndex - 1, 0);
+          items.forEach((item, i) => item.classList.toggle('active', i === estudioActiveIndex));
+          items[estudioActiveIndex]?.scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          const item = items[estudioActiveIndex] || items[0];
+          if (item && item.dataset.id) {
+            selectEstudio(item.dataset.id);
+            hideEstudioList();
+          }
+        } else if (event.key === 'Escape') {
+          hideEstudioList();
+        }
+      });
+
+      document.getElementById('labEstudioList').addEventListener('click', (event) => {
+        const item = event.target.closest('.combobox-item');
+        if (!item || !item.dataset.id) return;
+        event.preventDefault();
+        selectEstudio(item.dataset.id);
+        hideEstudioList();
+      });
+
+      // Pedido explícito del usuario: buscador con escritura y filtrado
+      // incremental (11 zonas, mismo criterio que Categoría arriba).
+      const labZonaTrigger = document.getElementById('labZonaTrigger');
+      function renderZonaList(filterText) {
+        const list = document.getElementById('labZonaList');
+        const entries = CATALOGO.zonasAnatomicas;
+        const filtered = filterText
+          ? entries.filter((z) => normalizeText(z.nombre).includes(normalizeText(filterText)))
+          : entries;
+
+        positionComboboxList(labZonaTrigger, list);
+        list.innerHTML = filtered.length
+          ? filtered.map((z) => `<li class="combobox-item" data-id="${z.id}">${escapeHtml(z.nombre)}</li>`).join('')
+          : '<li class="combobox-empty">Sin resultados</li>';
+        list.hidden = false;
+      }
+      // Mismo motivo que labCategoriaTrigger arriba: al abrir se ve la lista
+      // completa; reabrir con una zona ya elegida no debe filtrar contra su
+      // propio nombre.
+      labZonaTrigger.addEventListener('focus', () => renderZonaList(''));
+      labZonaTrigger.addEventListener('input', () => renderZonaList(labZonaTrigger.value));
+      document.getElementById('labZonaList').addEventListener('click', (event) => {
+        const item = event.target.closest('.combobox-item');
+        if (!item) return;
+        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        document.getElementById('labZonaId').value = item.dataset.id;
+        document.getElementById('labZonaTrigger').value = item.textContent;
+        document.getElementById('labZonaList').hidden = true;
+      });
+
+      document.getElementById('labLateralidadTrigger').addEventListener('focus', (event) => {
+        const list = document.getElementById('labLateralidadList');
+        positionComboboxList(event.target, list);
+        list.hidden = false;
+      });
+      document.getElementById('labLateralidadList').addEventListener('click', (event) => {
+        const item = event.target.closest('.combobox-item');
+        if (!item) return;
+        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        document.getElementById('labLateralidadId').value = item.dataset.id;
+        document.getElementById('labLateralidadTrigger').value = item.textContent;
+        document.getElementById('labLateralidadList').hidden = true;
+      });
+    }
+
+    // ---- Carrito de estudios ----
+    let selectedStudies = [];
+
+    function etiquetaLateralidad(valor) {
+      return { izquierdo: 'Izquierdo', derecho: 'Derecho', bilateral: 'Bilateral' }[valor] || '';
+    }
+
+    // Línea "Categoría · detalle" de cada tarjeta del carrito — pedido
+    // explícito del usuario (mockup HTML): el detalle del campo adicional se
+    // muestra aparte del nombre del estudio, no concatenado a él.
+    function detalleDeFila(fila) {
+      if (fila.zonaAnatomicaId) {
+        const zona = CATALOGO.zonasAnatomicas.find((z) => z.id === fila.zonaAnatomicaId);
+        return `Zona anatómica: ${zona ? zona.nombre : ''}`;
+      }
+      if (fila.tipoMuestra) {
+        return `Muestra: ${fila.tipoMuestra}${fila.antibiograma ? ' · Con antibiograma' : ''}`;
+      }
+      if (fila.tejidoOrigen) {
+        const lateralidad = etiquetaLateralidad(fila.lateralidad);
+        return `Origen: ${fila.tejidoOrigen}${lateralidad ? ` · ${lateralidad}` : ''}`;
+      }
+      if (fila.componentesLiquido && fila.componentesLiquido.length) {
+        return `Componentes: ${fila.componentesLiquido.join(', ')}`;
+      }
+      return '';
+    }
+
+    function renderCart() {
+      const empty = document.getElementById('labCartEmpty');
+      const list = document.getElementById('labCartBody');
+      empty.hidden = selectedStudies.length !== 0;
+      list.hidden = selectedStudies.length === 0;
+      list.innerHTML = selectedStudies
+        .map((s, i) => {
+          const estudio = findEstudioPorId(s.estudioId);
+          const nombre = estudio ? estudio.nombre : 'Estudio';
+          const meta = [estudio ? estudio.categoriaNombre : '', detalleDeFila(s)].filter(Boolean).join(' · ');
+          return `
+            <div class="lab-study-card">
+              <div>
+                <div class="lab-study-title">${escapeHtml(nombre)}</div>
+                ${meta ? `<div class="lab-study-meta">${escapeHtml(meta)}</div>` : ''}
+                ${s.observaciones ? `<div class="lab-study-meta"><strong>Nota:</strong> ${escapeHtml(s.observaciones)}</div>` : ''}
+              </div>
+              ${SOLO_LECTURA ? '' : `
+                <div class="row-actions lab-study-actions">
+                  <button type="button" class="row-action-btn row-action-edit" data-action="editar" data-idx="${i}" data-tooltip="Editar" aria-label="Editar estudio">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  </button>
+                  <button type="button" class="row-action-btn row-action-delete" data-action="eliminar" data-idx="${i}" data-tooltip="Eliminar" aria-label="Eliminar estudio">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+                  </button>
+                </div>`}
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    // ---- Editar un estudio ya agregado: repuebla el picker con sus datos y
+    // lo quita del carrito (pedido explícito del usuario, mismo criterio que
+    // editStudy() en el mockup HTML) — el usuario ajusta y vuelve a agregar. ----
+    function editarEstudioEnCarrito(idx) {
+      const fila = selectedStudies[idx];
+      const estudio = findEstudioPorId(fila.estudioId);
+      if (!estudio) return;
+
+      clearEstudioSelection();
+
+      categoriaFiltro = String(estudio.categoriaId);
+      document.getElementById('labCategoriaId').value = categoriaFiltro;
+      document.getElementById('labCategoriaTrigger').value = estudio.categoriaNombre;
+
+      selectEstudio(estudio.id);
+
+      if (fila.zonaAnatomicaId) {
+        const zona = CATALOGO.zonasAnatomicas.find((z) => z.id === fila.zonaAnatomicaId);
+        document.getElementById('labZonaId').value = fila.zonaAnatomicaId;
+        document.getElementById('labZonaTrigger').value = zona ? zona.nombre : '';
+      }
+      if (fila.tipoMuestra) {
+        document.getElementById('labTipoMuestra').value = fila.tipoMuestra;
+        document.getElementById('labAntibiograma').checked = Boolean(fila.antibiograma);
+      }
+      if (fila.tejidoOrigen) {
+        document.getElementById('labTejidoOrigen').value = fila.tejidoOrigen;
+        if (fila.lateralidad) {
+          document.getElementById('labLateralidadId').value = fila.lateralidad;
+          document.getElementById('labLateralidadTrigger').value = etiquetaLateralidad(fila.lateralidad) || 'No aplica';
+        }
+      }
+      if (fila.componentesLiquido) {
+        document.querySelectorAll('#labComponentesGrid input[type=checkbox]').forEach((cb) => {
+          cb.checked = fila.componentesLiquido.includes(cb.value);
+        });
+      }
+      document.getElementById('labEstudioObservaciones').value = fila.observaciones || '';
+
+      selectedStudies.splice(idx, 1);
+      renderCart();
+      document.querySelector('.lab-estudios-picker')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+
+    if (!SOLO_LECTURA) {
+      document.getElementById('btnAddStudy').addEventListener('click', () => {
+        hideBanners();
+        const estudioId = document.getElementById('labEstudioId').value;
+        const estudio = findEstudioPorId(estudioId);
+        if (!estudio) {
+          document.getElementById('labEstudioSearch').focus();
+          return;
+        }
+
+        const fila = { estudioId: estudio.id };
+
+        if (estudio.campoAdicional === 'zona') {
+          const zonaId = document.getElementById('labZonaId').value;
+          if (!zonaId) {
+            showError(`"${estudio.nombre}" requiere seleccionar una zona anatómica.`);
+            return;
+          }
+          fila.zonaAnatomicaId = Number(zonaId);
+        } else if (estudio.campoAdicional === 'tipo_muestra') {
+          const tipoMuestra = document.getElementById('labTipoMuestra').value.trim();
+          if (!tipoMuestra) {
+            showError(`"${estudio.nombre}" requiere indicar el tipo de muestra.`);
+            return;
+          }
+          fila.tipoMuestra = tipoMuestra;
+          fila.antibiograma = document.getElementById('labAntibiograma').checked;
+        } else if (estudio.campoAdicional === 'tejido_lateralidad') {
+          const tejidoOrigen = document.getElementById('labTejidoOrigen').value.trim();
+          if (!tejidoOrigen) {
+            showError(`"${estudio.nombre}" requiere indicar el tejido de origen.`);
+            return;
+          }
+          fila.tejidoOrigen = tejidoOrigen;
+          const lateralidad = document.getElementById('labLateralidadId').value;
+          if (lateralidad) fila.lateralidad = lateralidad;
+        } else if (estudio.campoAdicional === 'componentes_liquido') {
+          const componentesLiquido = Array.from(document.querySelectorAll('#labComponentesGrid input[type=checkbox]:checked')).map((cb) => cb.value);
+          if (componentesLiquido.length === 0) {
+            showError(`"${estudio.nombre}" requiere seleccionar al menos un componente.`);
+            return;
+          }
+          fila.componentesLiquido = componentesLiquido;
+        }
+
+        const observaciones = document.getElementById('labEstudioObservaciones').value.trim();
+        if (observaciones) fila.observaciones = observaciones;
+
+        selectedStudies.push(fila);
+        renderCart();
+        clearEstudioSelection();
+      });
+
+      document.getElementById('labCartBody').addEventListener('click', (event) => {
+        const btn = event.target.closest('[data-action]');
+        if (!btn) return;
+        const idx = Number(btn.dataset.idx);
+        if (btn.dataset.action === 'eliminar') {
+          selectedStudies.splice(idx, 1);
+          renderCart();
+        } else if (btn.dataset.action === 'editar') {
+          editarEstudioEnCarrito(idx);
+        }
+      });
+    }
+
+    // ---- Precarga (edición/consulta) ----
+    function precargar() {
+      // Los 3 bloques de campo adicional (Zona/Tipo de muestra/Tejido) son
+      // <div>/<label> con el atributo `hidden` en el HTML — pero
+      // #labTipoMuestraWrap/#labTejidoWrap tienen su propio `display:flex`
+      // por id en main.css (necesario para el layout de sus 2 controles),
+      // que GANA por especificidad sobre el `display:none` nativo de
+      // `[hidden]` en cuanto ese id aplica. En el modal anterior esto no se
+      // notaba porque htmx:afterSwap llamaba clearEstudioSelection() al
+      // abrir; esta pantalla nunca lo hacía en el alta — bug real,
+      // encontrado en vivo (los 3 bloques se veían abiertos desde el
+      // primer render, sin ningún estudio seleccionado).
+      if (!SOLO_LECTURA) clearEstudioSelection();
+
+      const registro = DATOS.registro;
+      if (!registro) {
+        document.getElementById('labFecha').value = new Date().toISOString().slice(0, 10);
+        if (DATOS.doctorIdPreseleccionado) preseleccionarDoctor(DATOS.doctorIdPreseleccionado);
+        return;
+      }
+
+      // propietario_telefono llega sin guiones (se guarda así en BD, ver
+      // tutores.service.js#stripTelefono) — se reconstruye el formato
+      // NN-NNNN-NNNN solo para mostrarlo, mismo criterio que
+      // formatTelefono() en el resto del sistema.
+      const digitosTelefono = (registro.propietarioTelefono ?? '').replace(/\D/g, '');
+      document.getElementById('labTelefono').value = [
+        digitosTelefono.slice(0, 2),
+        digitosTelefono.slice(2, 6),
+        digitosTelefono.slice(6, 10),
+      ]
+        .filter((p) => p)
+        .join('-');
+      tutorActual = {
+        id: registro.propietarioId,
+        nombre: registro.propietarioNombre,
+        correo: registro.propietarioCorreo,
+        pacientes: registro.pacientesDelTutor,
+      };
+      renderTutor();
+      renderPacienteOptions();
+      seleccionarPaciente(registro.mascotaId);
+
+      preseleccionarDoctor(registro.doctorId);
+      document.getElementById('labFecha').value = registro.fechaSolicitud
+        ? new Date(registro.fechaSolicitud).toISOString().slice(0, 10)
+        : '';
+      document.getElementById('labObservacionesGenerales').value = registro.observaciones ?? '';
+
+      selectedStudies = registro.estudios.map((e) => {
+        const fila = { estudioId: e.estudio_id };
+
+        if (e.zona_anatomica_id) {
+          fila.zonaAnatomicaId = e.zona_anatomica_id;
+        } else if (e.tipo_muestra) {
+          fila.tipoMuestra = e.tipo_muestra;
+          fila.antibiograma = Boolean(e.antibiograma);
+        } else if (e.tejido_origen) {
+          fila.tejidoOrigen = e.tejido_origen;
+          if (e.lateralidad) fila.lateralidad = e.lateralidad;
+        } else if (e.componentes_liquido) {
+          fila.componentesLiquido = e.componentes_liquido;
+        }
+        if (e.observaciones) fila.observaciones = e.observaciones;
+
+        return fila;
+      });
+      renderCart();
+    }
+
+    // ---- Guardar ----
+    async function guardar() {
+      hideBanners();
+
+      const payload = {
+        mascotaId: document.getElementById('labPacienteId').value,
+        doctorId: document.getElementById('labDoctorId').value,
+        fechaSolicitud: document.getElementById('labFecha').value,
+        observaciones: document.getElementById('labObservacionesGenerales').value,
+        estudios: selectedStudies,
+      };
+
+      if (!payload.mascotaId) return showError('Selecciona un paciente.');
+      if (!payload.doctorId) return showError('Selecciona el doctor solicitante.');
+      if (!payload.fechaSolicitud) return showError('Selecciona la fecha de solicitud.');
+      if (selectedStudies.length === 0) return showError('Agrega al menos un estudio antes de guardar.');
+
+      const btn = document.getElementById('labGuardarBtn');
+      btn.disabled = true;
+
+      const esEdicion = Boolean(DATOS.registro);
+      const res = await fetch(esEdicion ? `laboratorio/${DATOS.registro.id}` : 'laboratorio', {
+        method: esEdicion ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.redirected) {
+        window.location.href = res.url;
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(data.error || 'No se pudo guardar el registro.');
+        btn.disabled = false;
+        return;
+      }
+      window.location.href = data.redirectTo;
+    }
+
+    if (!SOLO_LECTURA) {
+      document.getElementById('labGuardarBtn').addEventListener('click', guardar);
+    }
+
+    precargar();
+    renderCart();
+  </script>
+
+</body>
+</html>

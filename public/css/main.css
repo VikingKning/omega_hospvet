@@ -1111,6 +1111,13 @@ body:has(.app)::after {
   color: var(--success);
 }
 
+/* Laboratorio: registros_laboratorio.estado tiene 3 valores reales
+   (pendiente | cargado | enviado) — el mock solo tenía los 2 extremos. */
+.badge-cargado {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
 .btn-upload {
   display: inline-flex;
   align-items: center;
@@ -1240,6 +1247,33 @@ body:has(.app)::after {
 
 .modal-form label.checkbox-field input[type='checkbox'] {
   width: auto;
+}
+
+/* Laboratorio: los 3 bloques de campo adicional que agrupan más de un
+   control (#labTipoMuestraWrap, #labTejidoWrap) son <div>, no <label> — la
+   regla `.modal-form label { display:flex... }` de arriba no les aplica,
+   así que sin esto sus 2 <label> hijos quedarían pegados entre sí (ningún
+   flex container de por medio para el `gap`). `:not([hidden])` es
+   necesario: un selector por id gana en especificidad sobre el
+   `[hidden] { display:none }` nativo del navegador, así que sin esta
+   exclusión el bloque se quedaba visible aunque JS pusiera `hidden = true`
+   — bug real, encontrado en vivo (el bloque de Tipo de muestra se veía
+   abierto desde el primer render, sin ningún estudio seleccionado). */
+#labTipoMuestraWrap:not([hidden]),
+#labTejidoWrap:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Laboratorio: checklist de componentes a analizar (campo_adicional
+   'componentes_liquido') — 2 columnas para no alargar el modal con ~10
+   checkboxes en una sola fila vertical. */
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin-bottom: 14px;
 }
 
 /* Selector de color de área para Google Calendar: un swatch por cada uno
@@ -1537,7 +1571,17 @@ body:has(.app)::after {
    `.modal-form input:read-only` — sin este override puntual, esa regla
    (más específica) gana y el cursor se queda en "not-allowed". */
 #estatusTrigger,
-#areaPickerTrigger {
+#areaPickerTrigger,
+#labLateralidadTrigger {
+  cursor: pointer;
+}
+
+/* labPacienteTrigger, a diferencia de los de arriba, SÍ puede quedar
+   genuinamente deshabilitado (edición bloquea tutor/paciente/fecha — regla
+   explícita del usuario) — `:not(:disabled)` para que en ese caso real el
+   cursor SÍ vuelva a `not-allowed` en vez de quedarse en "pointer" a la
+   fuerza (un ID normal ganaría siempre, sin importar `:disabled`). */
+#labPacienteTrigger:not(:disabled) {
   cursor: pointer;
 }
 
@@ -1891,6 +1935,16 @@ body:has(.app)::after {
 
 .combobox {
   position: relative;
+}
+
+/* Pedido explícito del usuario: pasar el cursor sobre un combobox
+   deshabilitado (ej. Paciente antes de encontrar al tutor) debe mostrar
+   "no puedes hacer clic aquí" en TODA su caja, no solo sobre el `<input>` —
+   `.modal-form input:disabled` ya pone `cursor:not-allowed` en el input,
+   pero el padding/borde del `.combobox` que lo envuelve quedaba con el
+   cursor default del navegador. */
+.combobox:has(input:disabled) {
+  cursor: not-allowed;
 }
 
 .combobox input[type="text"] {
@@ -2771,25 +2825,6 @@ body:has(.app)::after {
   color: var(--text-muted);
 }
 
-.tutor-form-layout {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 16px;
-  align-items: start;
-}
-
-.tutor-form-main {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-.tutor-form-aside {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
 
 .tutor-form-card-title {
   margin: 0 0 14px;
@@ -2824,9 +2859,20 @@ body:has(.app)::after {
   margin-bottom: 14px;
 }
 
+/* Pedido del usuario (ajuste posterior): "Información del propietario" y
+   "Resumen" van en la misma fila, no uno abajo del otro — mismas
+   proporciones que la columna lateral de 300px original (Resumen no
+   necesita más ancho que eso, Información sí crece con lo que sobre). */
+.tutor-form-top-row {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+  align-items: start;
+}
+
 /* Resumen: mismo patrón label/value que .profile-summary-* de Mi Perfil,
-   pero en una pila vertical (la tarjeta es angosta, a un lado) en vez de un
-   grid horizontal. */
+   en una pila vertical (la tarjeta es angosta, junto a Información del
+   propietario, no un renglón de ancho completo). */
 .tutor-resumen-row {
   display: flex;
   align-items: center;
@@ -2835,6 +2881,23 @@ body:has(.app)::after {
 
 .tutor-resumen-row + .tutor-resumen-row {
   margin-top: 14px;
+}
+
+/* Pedido del usuario (ajuste posterior): Pacientes y Estado en la misma
+   fila (2 columnas) en vez de apiladas, para que "Resumen" quede de la
+   misma altura que "Información del propietario" (2 filas en cada tarjeta
+   — Propietario arriba + este par, en vez de 3 renglones sueltos). */
+.tutor-resumen-row-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* Dentro del par son columnas, no una pila — el margen vertical de arriba
+   (pensado para renglones apilados) no debe separarlas entre sí. */
+.tutor-resumen-row-pair .tutor-resumen-row + .tutor-resumen-row {
+  margin-top: 0;
 }
 
 .tutor-resumen-icon {
@@ -2865,22 +2928,6 @@ body:has(.app)::after {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-dark);
-}
-
-.tutor-form-info {
-  display: flex;
-  gap: 10px;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.tutor-form-info svg {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  color: var(--primary);
-  margin-top: 1px;
 }
 
 .tutor-form-actions {
@@ -2914,6 +2961,13 @@ body:has(.app)::after {
   font-family: inherit;
   color: var(--text-dark);
   background: var(--bg-base);
+}
+
+/* Edad: un número de 1-2 dígitos no necesita el mismo min-width que
+   Nombre/Raza (texto libre) — se angosta para no desperdiciar el espacio
+   que la columna Sexo (2 botones) ya necesita más. */
+.lab-table .paciente-input-edad {
+  min-width: 64px;
 }
 
 .lab-table .paciente-input:focus {
@@ -3013,8 +3067,8 @@ body:has(.app)::after {
 }
 
 /* Ajustes de mobile para tutor-form.ejs — consolidados aquí, al FINAL del
-   archivo, a propósito: son overrides de reglas base (.tutor-form-layout,
-   .tutor-form-aside, .tutor-form-actions, .tutor-form-actions-right) que
+   archivo, a propósito: son overrides de reglas base (.tutor-form-top-row,
+   .tutor-resumen-card, .tutor-form-actions, .tutor-form-actions-right) que
    se definen más arriba en este mismo archivo. Con la misma especificidad,
    la regla que aparece DESPUÉS en el archivo gana en cascada sin importar
    si está dentro de un @media que sí aplica — un override puesto ANTES de
@@ -3023,19 +3077,20 @@ body:has(.app)::after {
    cascada sin avisar. Bug real, encontrado dos veces seguidas por este
    motivo antes de aterrizar aquí. */
 @media (max-width: 768px) {
-  /* El grid de 2 columnas nunca colapsaba a una sola — el panel "Resumen"/
-     "Información" (300px fijos) terminaba flotando encima de "Información
-     del propietario" en vez de apilarse debajo. */
-  .tutor-form-layout {
+  /* El grid de 2 columnas nunca colapsaba a una sola — la tarjeta de
+     Resumen (300px fijos) terminaba flotando encima de "Información del
+     propietario" en vez de apilarse debajo (o dejando una columna vacía
+     reservada una vez que .tutor-resumen-card se oculta más abajo). */
+  .tutor-form-top-row {
     grid-template-columns: 1fr;
   }
 
-  /* Ajuste posterior (pedido del usuario): "Resumen" y el aviso "En este
-     formulario puede agregar..." no aportan nada que la propia pantalla no
-     muestre ya (sin espacio de sobra como en desktop) — se ocultan por
-     completo en vez de apilarse, para no alargar el scroll de una pantalla
-     que ya es larga en mobile. */
-  .tutor-form-aside {
+  /* Ajuste posterior (pedido del usuario, ya existente desde que Resumen
+     vivía en la columna lateral de 300px): no aporta nada que la propia
+     pantalla no muestre ya (sin espacio de sobra como en desktop) — se
+     oculta por completo en vez de apilarse, para no alargar el scroll de
+     una pantalla que ya es larga en mobile. */
+  .tutor-resumen-card {
     display: none;
   }
 
@@ -3109,5 +3164,285 @@ body:has(.app)::after {
 @media (max-width: 768px) {
   .profile-form-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Laboratorio: pantalla completa de alta/edición/consulta (pedido explícito
+   del usuario — mismo patrón que tutor-form.ejs, no un modal como el resto
+   del sistema). Nombres con prefijo `lab-form-` en vez de reutilizar
+   `tutor-form-*` a propósito (son módulos distintos, aunque el CSS sea
+   equivalente) — sí se reutilizan las clases realmente genéricas ya
+   existentes (`.profile-card`, `.modal-form`, `.tutor-form-card-title`,
+   `.tutor-form-actions*`, `.form-error-banner`/`.form-success-banner`/
+   `.form-info-banner`, `.combobox*`, `.tipo-picker*`, `.checkbox-grid`,
+   `.mini-table*`). */
+.lab-form-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Pedido explícito del usuario: botón "Borrar tutor y paciente" del lado
+   derecho, a la altura del título de la tarjeta — el margin-bottom de
+   `.tutor-form-card-title` se pasa al wrapper para que título y botón
+   quedén alineados en la misma fila. */
+.lab-tutor-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.lab-tutor-card-header .tutor-form-card-title {
+  margin-bottom: 0;
+}
+
+.lab-form-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.lab-form-heading-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.lab-form-heading-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.lab-form-heading-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.lab-form-heading-text h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.lab-form-heading-text p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.lab-form-subtitle {
+  margin: 18px 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.lab-form-grid {
+  margin-bottom: 18px;
+}
+
+.lab-form-grid-3,
+.lab-form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* Pedido explícito del usuario: el selector de Paciente y su ficha de
+   solo lectura (Especie/Sexo/Edad/Raza) van en una sola fila, no en dos
+   renglones apilados — `.lab-form-grid-paciente` deja de heredar el
+   flex-column de `.modal-form` (esa regla base es la que apilaba el
+   <label> y la ficha) para volverse una fila propia; el <label> se queda
+   con un ancho fijo (no 100% como el resto de los campos del formulario)
+   para dejarle espacio a la ficha al lado. */
+.lab-form-grid-paciente {
+  display: flex;
+  /* flex-direction: row explícito a propósito: `.modal-form` (compartida
+     con este mismo elemento) ya declara flex-direction:column, y sin
+     pisarlo aquí esa declaración sigue aplicando (display:flex por sí solo
+     no reinicia flex-direction) — bug real, encontrado en vivo: los hijos
+     seguían apilados en columna, y align-items:flex-end (el eje cruzado de
+     una columna es horizontal) los empujaba a la derecha en vez de ponerlos
+     lado a lado. */
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.lab-form-grid-paciente > label {
+  flex: 0 0 320px;
+}
+
+/* :not([hidden]) a propósito, mismo motivo ya documentado para
+   #labTipoMuestraWrap/#labTejidoWrap: `display:flex` de una clase (regla de
+   AUTOR) siempre gana sobre el `[hidden]{display:none}` nativo del
+   navegador (regla de USER-AGENT, la de menor prioridad en la cascada, sin
+   importar el orden de las reglas) — sin este `:not()` la ficha se quedaba
+   visible al volver a poner `hidden=true` (bug real, nunca se había
+   ejercitado este camino hasta el botón "Borrar tutor y paciente": antes de
+   eso, nada volvía a ocultar la ficha una vez mostrada). */
+.lab-paciente-ficha:not([hidden]) {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  /* Mismo alto que el <input> del selector de al lado (getComputedStyle:
+     padding 10px + borde, ver `.modal-form input`) — sin esto la ficha
+     quedaba pegada al borde superior de la fila en vez de centrada con el
+     selector. */
+  padding-bottom: 2px;
+}
+
+.lab-paciente-ficha-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 90px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.lab-paciente-ficha-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--primary);
+}
+
+.lab-paciente-ficha-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.lab-estudios-layout {
+  display: grid;
+  grid-template-columns: 35% 65%;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Marco con fondo gris para delimitar "Seleccionar estudio" (pedido
+   explícito del usuario, mismo estilo que el mockup HTML: `.picker`). */
+.lab-estudios-picker {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--bg-base);
+}
+
+/* "+ Agregar estudio" no debe ocupar el ancho completo — sin este wrapper
+   se estira porque .lab-estudios-picker es un flex column (.modal-form) y
+   el botón, como cualquier otro hijo, hereda align-items:stretch por
+   default. */
+.lab-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.lab-estudios-solicitados {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Consulta (soloLectura): el picker no se renderiza server-side, así que
+   "Estudios solicitados" queda como único hijo del grid — sin esto,
+   quedaría metido en la primera columna (35%) por el auto-placement en vez
+   de ocupar el ancho completo del renglón. */
+.lab-estudios-solicitados:only-child {
+  grid-column: 1 / -1;
+}
+
+.lab-cart-wrap {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  min-height: 120px;
+}
+
+.lab-cart-empty {
+  margin: 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+/* Tarjetas de "Estudios solicitados" (pedido explícito del usuario, mismo
+   layout que el mockup HTML: título + línea de categoría/detalle + nota
+   opcional, con Editar/Eliminar como los .row-action-btn ya establecidos
+   en el resto del sistema en vez de botones de texto). */
+.lab-study-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lab-study-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  background: var(--surface);
+}
+
+.lab-study-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-dark);
+}
+
+.lab-study-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.lab-study-actions {
+  flex-shrink: 0;
+}
+
+.lab-opcional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Ajustes de mobile para laboratorio-form.ejs — al FINAL del archivo a
+   propósito, mismo motivo ya documentado arriba para tutor-form.ejs
+   (cascada: un override puesto ANTES de su propia regla base pierde sin
+   avisar, sin importar si está dentro de un @media que sí aplica). */
+@media (max-width: 768px) {
+  .lab-form-grid-3,
+  .lab-form-grid-2,
+  .lab-estudios-layout {
+    grid-template-columns: 1fr;
+  }
+
+  /* La fila de Paciente (selector + ficha) es la única de esta pantalla
+     con un ancho fijo (320px) en vez de un grid — sin este override se
+     saldría del ancho disponible en mobile. */
+  .lab-form-grid-paciente > label {
+    flex-basis: 100%;
   }
 }

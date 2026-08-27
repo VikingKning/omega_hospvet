@@ -136,6 +136,17 @@ async function findActivosByAreaId(areaId) {
     .select('d.id', 'd.nombre', 'd.apellidos');
 }
 
+// Laboratorio: combobox de "Dr. Solicitante" del formulario de "Nuevo
+// registro" — a diferencia de findActivosByAreaId, aquí no hay área (una
+// orden de laboratorio no pertenece a un área como una cita), así que es
+// simplemente el catálogo completo de doctores activos.
+async function findActivos() {
+  return db('doctores')
+    .where('activo', true)
+    .orderBy(['apellidos', 'nombre'])
+    .select('id', 'nombre', 'apellidos');
+}
+
 // US-607 AC: alta — inserta el doctor y una fila en doctor_area por cada
 // área seleccionada (puede ser ninguna), todo en una sola transacción: si
 // el insert de doctor_area fallara (p.ej. un id de área que ya no existe),
@@ -206,6 +217,7 @@ module.exports = {
   findById,
   findAreasByDoctorId,
   findActivosByAreaId,
+  findActivos,
   listAreasActivas,
   findAreasByIds,
   crear,

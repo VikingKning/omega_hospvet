@@ -143,6 +143,12 @@ async function login(username, password) {
     username: user.username,
     nombre: user.nombre,
     apellidos: user.apellidos,
+    // Pedido explícito del usuario: Laboratorio preselecciona el "Dr.
+    // solicitante" cuando quien registra la orden es, él mismo, un doctor
+    // vinculado (usuarios.doctor_id) — se cachea en sesión igual que
+    // `permissions`, mismo criterio de no volver a golpear la BD en cada
+    // request.
+    doctorId: user.doctor_id,
     permissions,
   };
 }

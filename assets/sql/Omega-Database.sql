@@ -66,6 +66,8 @@ CREATE TABLE "mascotas" (
   "nombre" varchar(100) NOT NULL,
   "tipo" varchar(20),
   "raza" varchar(100),
+  "sexo" varchar(10),
+  "anio_nacimiento" integer,
   "activo" boolean NOT NULL DEFAULT true,
   "creado_por" integer,
   "creado_en" timestamptz NOT NULL,
@@ -146,7 +148,8 @@ CREATE TABLE "registros_laboratorio" (
   "creado_por" integer NOT NULL,
   "creado_en" timestamptz NOT NULL,
   "actualizado_por" integer,
-  "actualizado_en" timestamptz
+  "actualizado_en" timestamptz,
+  "observaciones" text
 );
 
 CREATE TABLE "estudios_solicitados" (
@@ -156,7 +159,13 @@ CREATE TABLE "estudios_solicitados" (
   "zona_anatomica_id" integer,
   "archivo_id" integer,
   "estado" varchar(20) NOT NULL,
-  "creado_en" timestamptz NOT NULL
+  "creado_en" timestamptz NOT NULL,
+  "tipo_muestra" varchar(100),
+  "antibiograma" boolean,
+  "tejido_origen" varchar(200),
+  "lateralidad" varchar(20),
+  "componentes_liquido" text[],
+  "observaciones" text
 );
 
 CREATE TABLE "catalogo_categorias_estudio" (
@@ -170,7 +179,7 @@ CREATE TABLE "catalogo_estudios" (
   "categoria_id" integer NOT NULL,
   "codigo" varchar(50) UNIQUE NOT NULL,
   "nombre" varchar(200) NOT NULL,
-  "requiere_zona" boolean NOT NULL DEFAULT false,
+  "campo_adicional" varchar(30),
   "activo" boolean NOT NULL DEFAULT true
 );
 

@@ -41,6 +41,8 @@ const MASCOTA_A = {
   nombre: 'Firulais',
   tipo: 'Perro',
   raza: 'Labrador',
+  sexo: 'Macho',
+  anio_nacimiento: new Date().getFullYear() - 7,
   activo: true,
 };
 const MASCOTA_B = {
@@ -49,6 +51,8 @@ const MASCOTA_B = {
   nombre: 'Michi',
   tipo: 'Gato',
   raza: 'Siamés',
+  sexo: '',
+  anio_nacimiento: null,
   activo: true,
 };
 
@@ -175,11 +179,16 @@ describe('tutores.service.obtenerParaEditar', () => {
     const result = await obtenerParaEditar('1');
 
     // Ajuste posterior (pedido del usuario): se reformatea a NN-NNNN-NNNN
-    // para precargar el <input> del formulario de edición.
+    // para precargar el <input> del formulario de edición. `edad` se
+    // recalcula desde `anio_nacimiento` en cada lectura (ver
+    // tutores.service.js#pacientesConEdad) — nunca se guarda como tal.
     expect(result).toEqual({
       ...TUTOR,
       telefono: '55-5123-4567',
-      pacientes: [MASCOTA_A, MASCOTA_B],
+      pacientes: [
+        { ...MASCOTA_A, edad: 7 },
+        { ...MASCOTA_B, edad: null },
+      ],
     });
     expect(repository.findMascotasByPropietarioId).toHaveBeenCalledWith(1);
   });
@@ -335,6 +344,57 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     expect(repository.crear).toHaveBeenCalledWith(
       expect.objectContaining({
         pacientes: [expect.objectContaining({ nombre: 'Firulais', activo: true })],
+      }),
+    );
+  });
+
+  // Pedido explícito del usuario: sexo y edad del paciente — ambos opcionales
+  // (mismo criterio que tipo/raza), pero con whitelist/rango real del lado
+  // del servidor en vez de confiar en lo que ofrezca el toggle/input del
+  // formulario.
+  it('sexo y edad son opcionales — un paciente sin ninguno de los dos se guarda igual', async () => {
+    await expect(crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais' }] })).resolves.toBe(1);
+    expect(repository.crear).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pacientes: [expect.objectContaining({ sexo: '', anioNacimiento: null })],
+      }),
+    );
+  });
+
+  it('rechaza un sexo fuera de la whitelist real (Macho/Hembra)', async () => {
+    await expect(
+      crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', sexo: 'Otro' }] }),
+    ).rejects.toThrow(TutorValidationError);
+  });
+
+  it('acepta Macho y Hembra', async () => {
+    await crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', sexo: 'Macho' }] });
+    expect(repository.crear).toHaveBeenCalledWith(
+      expect.objectContaining({ pacientes: [expect.objectContaining({ sexo: 'Macho' })] }),
+    );
+  });
+
+  it('rechaza una edad negativa, no entera o fuera de rango', async () => {
+    await expect(
+      crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', edad: -1 }] }),
+    ).rejects.toThrow(TutorValidationError);
+    await expect(
+      crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', edad: 3.5 }] }),
+    ).rejects.toThrow(TutorValidationError);
+    await expect(
+      crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', edad: 41 }] }),
+    ).rejects.toThrow(TutorValidationError);
+  });
+
+  // Pedido explícito del usuario: no se guarda la edad tal cual, se guarda
+  // el año de nacimiento implícito (año actual - edad) para que la edad se
+  // recalcule sola con el paso del tiempo — ver
+  // tutores.service.js#edadAAnioNacimiento.
+  it('acepta una edad válida dentro del rango 0-40 y la convierte a año de nacimiento', async () => {
+    await crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', edad: 7 }] });
+    expect(repository.crear).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pacientes: [expect.objectContaining({ anioNacimiento: new Date().getFullYear() - 7 })],
       }),
     );
   });
@@ -552,7 +612,12 @@ describe('tutores.service.verificarTelefono (ajuste posterior: chequeo exacto en
         // lo reformatea a NN-NNNN-NNNN solo para el modal de reactivar.
         telefono: '55-5123-4567',
         correo: TUTOR.correo,
-        pacientes: [MASCOTA_A, MASCOTA_B],
+        // `edad` se recalcula desde `anio_nacimiento` en cada lectura (ver
+        // tutores.service.js#pacientesConEdad).
+        pacientes: [
+          { ...MASCOTA_A, edad: 7 },
+          { ...MASCOTA_B, edad: null },
+        ],
       },
     });
     expect(repository.findMascotasByPropietarioId).toHaveBeenCalledWith(TUTOR.id);

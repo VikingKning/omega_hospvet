@@ -10,7 +10,6 @@ const logger = require('./config/logger');
 const { middleware: sessionMiddleware } = require('./config/session');
 const { generateCsrfToken } = require('./config/csrf');
 const requireAuth = require('./middlewares/requireAuth');
-const requirePermission = require('./middlewares/requirePermission');
 const attachSidebarAreas = require('./middlewares/attachSidebarAreas');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const authRoutes = require('./modules/auth/auth.routes');
@@ -21,6 +20,7 @@ const usuariosRoutes = require('./modules/usuarios/usuarios.routes');
 const perfilRoutes = require('./modules/perfil/perfil.routes');
 const tutoresRoutes = require('./modules/tutores/tutores.routes');
 const agendaRoutes = require('./modules/agenda/agenda.routes');
+const laboratorioRoutes = require('./modules/laboratorio/laboratorio.routes');
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
@@ -135,25 +135,10 @@ app.get('/main.html', requireAuth, attachSidebarAreas, (req, res) => {
 });
 
 // Cada módulo del sidebar se protege con requireAuth (sesión válida) y
-// requirePermission (el permiso sembrado exactamente para este módulo en
-// US-000) — así una URL directa no puede saltarse lo que el menú ya oculta
-// (AC6 de US-101: nunca confiar en que el frontend oculte el acceso).
-//
-// agenda.html/grooming.html (mockups estáticos con iframe de Google
-// Calendar) ya no existen — el calendario real por área vive en
-// agenda.routes.js (/agenda/:slug.html, permiso agenda.<slug>.ver dinámico
-// por request). Solo laboratorio.html sigue siendo una página fija.
-const modulePages = [{ route: 'laboratorio', view: 'laboratorio', permission: 'laboratorio.ver' }];
-
-for (const { route, view, permission } of modulePages) {
-  app.get(
-    `/${route}.html`,
-    requireAuth,
-    requirePermission(permission),
-    attachSidebarAreas,
-    (req, res) => res.render(view, { user: req.session.user }),
-  );
-}
+// requirePermission (el permiso sembrado exactamente para ese módulo en
+// US-000), dentro de su propio *.routes.js — así una URL directa no puede
+// saltarse lo que el menú ya oculta (AC6 de US-101: nunca confiar en que el
+// frontend oculte el acceso).
 
 app.use('/', authRoutes);
 app.use('/', doctoresRoutes);
@@ -163,6 +148,7 @@ app.use('/', usuariosRoutes);
 app.use('/', perfilRoutes);
 app.use('/', tutoresRoutes);
 app.use('/', agendaRoutes);
+app.use('/', laboratorioRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

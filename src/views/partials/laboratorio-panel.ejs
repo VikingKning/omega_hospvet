@@ -1,0 +1,221 @@
+<%
+const permissions = user?.permissions ?? [];
+const has = (code) => permissions.includes(code);
+
+const ESTADO_LABEL = { pendiente: 'Pendiente', cargado: 'Cargado', enviado: 'Enviado' };
+
+function idLabel(id) {
+  return `LAB-${String(id).padStart(3, '0')}`;
+}
+
+function formatFecha(fecha) {
+  if (!fecha) return '—';
+  const d = new Date(fecha);
+  const pad2 = (n) => String(n).padStart(2, '0');
+  return `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+}
+%>
+<% if (catalogoVacio) { %>
+  <div class="lab-table-wrap">
+    <div class="empty-state-panel">
+      <span class="empty-state-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
+      </span>
+      <p class="empty-state-title">Todavía no hay órdenes de laboratorio registradas</p>
+      <p class="empty-state-description">Da de alta la primera orden para un paciente, con los estudios que necesite.</p>
+      <% if (has('laboratorio.crear')) { %>
+        <a class="btn-primary" href="laboratorio/nuevo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Registrar primer registro
+        </a>
+      <% } %>
+    </div>
+  </div>
+<% } else { %>
+  <form id="laboratorio-filters"
+        hx-post="laboratorio.html" hx-target="#laboratorio-panel" hx-swap="innerHTML"
+        hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+        hx-trigger="input changed delay:400ms from:#laboratorio-search, submit"
+        hx-vals='{"page":1}'>
+    <input type="hidden" name="sort" value="<%= sort %>">
+    <input type="hidden" name="dir" value="<%= dir %>">
+    <input type="hidden" name="page" value="<%= page %>">
+
+    <div class="lab-toolbar">
+      <div class="lab-toolbar-filters">
+        <div class="lab-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="laboratorio-search" name="q" value="<%= q %>" placeholder="Buscar por mascota, cliente o doctor...">
+        </div>
+        <%
+        // Un <select> nativo no puede tener su lista abierta con esquinas
+        // redondeadas (mismo límite ya documentado en usuarios-panel.ejs
+        // para su filtro Estatus) — mismo patrón de combobox aquí: trigger
+        // de solo lectura + <ul class="combobox-list"> server-renderizada,
+        // cada opción con su propio hx-post/hx-vals (el JS de laboratorio.ejs
+        // solo abre/cierra la lista, HTMX resuelve la selección). El input
+        // oculto es lo que hx-include manda en las DEMÁS acciones (buscar,
+        // ordenar, paginar, eliminar).
+        %>
+        <input type="hidden" name="estado" value="<%= estado %>">
+        <div class="combobox" id="estadoFiltroCombobox">
+          <input type="text" id="estadoFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
+                 value="<%= ESTADO_LABEL[estado] ?? 'Todos los estados' %>">
+          <ul class="combobox-list" id="estadoFiltroList" hidden hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+            <li class="combobox-item"
+                hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
+                hx-vals='{"estado":"","page":1}'>Todos los estados</li>
+            <% Object.entries(ESTADO_LABEL).forEach(([valor, etiqueta]) => { %>
+              <li class="combobox-item"
+                  hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
+                  hx-vals='<%- JSON.stringify({ estado: valor, page: 1 }) %>'><%= etiqueta %></li>
+            <% }) %>
+          </ul>
+        </div>
+        <input type="hidden" name="categoriaId" value="<%= categoriaId %>">
+        <div class="combobox" id="categoriaFiltroCombobox">
+          <input type="text" id="categoriaFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
+                 value="<%= categorias.find((c) => String(c.id) === String(categoriaId))?.nombre ?? 'Todos los estudios' %>">
+          <ul class="combobox-list" id="categoriaFiltroList" hidden hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+            <li class="combobox-item"
+                hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
+                hx-vals='{"categoriaId":"","page":1}'>Todos los estudios</li>
+            <% categorias.forEach((categoria) => { %>
+              <li class="combobox-item"
+                  hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
+                  hx-vals='<%- JSON.stringify({ categoriaId: categoria.id, page: 1 }) %>'><%= categoria.nombre %></li>
+            <% }) %>
+          </ul>
+        </div>
+      </div>
+      <% if (has('laboratorio.crear')) { %>
+        <a id="btnNuevoRegistro" class="btn-primary" href="laboratorio/nuevo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nuevo registro
+        </a>
+      <% } %>
+    </div>
+
+    <div class="lab-table-wrap">
+      <table class="lab-table">
+        <thead>
+          <tr>
+            <th>#ID</th>
+            <th>Mascota/Cliente</th>
+            <th>Tipo de estudio</th>
+            <th>Dr. Solicitante</th>
+            <th>Fecha Solicitud</th>
+            <th>Estado</th>
+            <th>Fecha de Envío</th>
+            <th class="text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% registros.forEach((registro) => { %>
+            <tr>
+              <td><%= idLabel(registro.id) %></td>
+              <td><%= registro.mascota_tipo ?? 'Mascota' %> - <%= registro.mascota_nombre %>, <%= registro.propietario_nombre %></td>
+              <td>
+                <% if (registro.estudios.length > 1) { %>
+                  <details class="lab-studies-details">
+                    <summary>Varios estudios (<%= registro.estudios.length %>)</summary>
+                    <ul class="lab-studies-list"><% registro.estudios.forEach((nombre) => { %><li><%= nombre %></li><% }) %></ul>
+                  </details>
+                <% } else { %>
+                  <%= registro.estudios[0] ?? '—' %>
+                <% } %>
+              </td>
+              <td><%= registro.doctor_nombre ? `${registro.doctor_nombre} ${registro.doctor_apellidos}` : '—' %></td>
+              <td><%= formatFecha(registro.fecha_solicitud) %></td>
+              <td><span class="badge badge-<%= registro.estado %>"><%= ESTADO_LABEL[registro.estado] %></span></td>
+              <td><%= formatFecha(registro.enviado_en) %></td>
+              <td class="text-right">
+                <div class="row-actions">
+                  <%
+                  // Pedido explícito del usuario: alta/edición/consulta
+                  // abren su propia pantalla (mismo patrón que
+                  // tutores-panel.ejs) — laboratorio.editar decide si esa
+                  // pantalla es editable o de solo consulta (mismo id de
+                  // ruta para ambos casos, ver laboratorio.controller.js#editarForm).
+                  const puedeEditar = has('laboratorio.editar');
+                  %>
+                  <% if (puedeEditar) { %>
+                    <%
+                    // Ícono de "ojo" nuevo, pedido explícito del usuario:
+                    // quien SÍ puede editar también puede querer solo
+                    // consultar un registro sin riesgo de modificarlo por
+                    // accidente — misma pantalla que Editar (ver
+                    // laboratorio.controller.js#verForm), pero forzada a
+                    // solo lectura sin importar el permiso.
+                    %>
+                    <a class="row-action-btn" data-tooltip="Ver"
+                       aria-label="Ver orden <%= idLabel(registro.id) %>"
+                       href="laboratorio/<%= registro.id %>/ver">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </a>
+                  <% } %>
+                  <a class="row-action-btn<%= puedeEditar ? ' row-action-edit' : '' %>" data-tooltip="<%= puedeEditar ? 'Editar' : 'Consultar' %>"
+                     aria-label="<%= puedeEditar ? 'Editar' : 'Consultar' %> orden <%= idLabel(registro.id) %>"
+                     href="laboratorio/<%= registro.id %>/editar">
+                    <% if (puedeEditar) { %>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                      </svg>
+                    <% } else { %>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    <% } %>
+                  </a>
+                  <button class="row-action-btn" type="button" disabled data-tooltip="Subir/enviar resultados — próximamente"
+                          aria-label="Subir o enviar resultados de la orden <%= idLabel(registro.id) %>">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 21h14"/></svg>
+                  </button>
+                  <% if (has('laboratorio.eliminar')) { %>
+                    <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
+                            aria-label="Eliminar orden <%= idLabel(registro.id) %>"
+                            hx-delete="laboratorio/<%= registro.id %>" hx-include="#laboratorio-filters"
+                            hx-target="#laboratorio-panel" hx-swap="innerHTML"
+                            hx-confirm='Favor de confirmar la eliminación de la orden <%= idLabel(registro.id) %>.&#10;No se elimina el historial, solo deja de aparecer en el listado.'>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <% if (registros.length === 0) { %>
+        <p class="lab-empty">No hay registros que coincidan con la búsqueda.</p>
+      <% } %>
+
+      <div class="table-footer">
+        <span><%= registros.length %> resultados · <%= total %> registros en total</span>
+        <% if (totalPages > 1) { %>
+          <nav class="pagination" aria-label="Paginación">
+            <button type="button" class="pagination-btn" aria-disabled="<%= page <= 1 %>" <%= page <= 1 ? 'disabled' : '' %>
+                    hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
+                    hx-vals='{"page":<%= Math.max(1, page - 1) %>}' aria-label="Página anterior">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <% for (let p = 1; p <= totalPages; p++) { %>
+              <button type="button" class="pagination-page<%= p === page ? ' current' : '' %>"
+                      hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
+                      hx-vals='{"page":<%= p %>}'><%= p %></button>
+            <% } %>
+            <button type="button" class="pagination-btn" aria-disabled="<%= page >= totalPages %>" <%= page >= totalPages ? 'disabled' : '' %>
+                    hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
+                    hx-vals='{"page":<%= Math.min(totalPages, page + 1) %>}' aria-label="Página siguiente">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </nav>
+        <% } %>
+      </div>
+    </div>
+  </form>
+<% } %>

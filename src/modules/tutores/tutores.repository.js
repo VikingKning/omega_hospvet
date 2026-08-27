@@ -101,6 +101,20 @@ async function findByTelefono(telefono, excludeId) {
     .first();
 }
 
+// Laboratorio: combobox de "buscar tutor por nombre" en "Nuevo registro"
+// (pedido explícito del usuario, para cuando no se sabe el teléfono) — solo
+// tutores ACTIVOS, mismo criterio que findByTelefono() en
+// resolverTutorActivoPorTelefono. Resultado acotado por `limit`: es un
+// combobox de escritura incremental, no un listado paginado.
+async function findActivosPorNombre(q, limit) {
+  return db('propietarios')
+    .where('activo', true)
+    .whereRaw('nombre ILIKE ?', [`%${q}%`])
+    .orderBy('nombre')
+    .limit(limit)
+    .select('id', 'nombre', 'telefono');
+}
+
 // US-156 AC14: mascotas de un propietario para el formulario de edición —
 // a diferencia de mascotasPorPropietarios (listado, US-155), aquí siempre
 // se traen TODAS (activas e inactivas), porque el formulario necesita
@@ -110,7 +124,7 @@ async function findMascotasByPropietarioId(propietarioId) {
   return db('mascotas')
     .where({ propietario_id: propietarioId })
     .orderBy('nombre')
-    .select('id', 'nombre', 'tipo', 'raza', 'activo');
+    .select('id', 'nombre', 'tipo', 'raza', 'sexo', 'anio_nacimiento', 'activo');
 }
 
 // US-156 AC7/AC8/AC12/AC13: alta — inserta el propietario y sus mascotas
@@ -136,6 +150,8 @@ async function crear({ nombre, telefono, correo, pacientes, usuarioId }) {
           nombre: p.nombre,
           tipo: p.tipo || null,
           raza: p.raza || null,
+          sexo: p.sexo || null,
+          anio_nacimiento: p.anioNacimiento ?? null,
           activo: true,
           creado_por: usuarioId,
           creado_en: trx.fn.now(),
@@ -149,7 +165,7 @@ async function crear({ nombre, telefono, correo, pacientes, usuarioId }) {
 
 // US-156 AC15/16/17/19: edición — actualiza el propietario y, por cada
 // paciente que llega en el body: si trae `id`, actualiza esa mascota
-// (nombre/tipo/raza siempre; `activo` solo si hubo una transición real,
+// (nombre/tipo/raza/sexo/anio_nacimiento siempre; `activo` solo si hubo una transición real,
 // comparada contra el valor actual en BD DENTRO de la misma transacción —
 // mismo criterio que doctores.repository.js#editar para no pisar
 // desactivado_por/desactivado_en en cada guardado, solo en una transición
@@ -172,6 +188,8 @@ async function editar({ id, nombre, telefono, correo, pacientes, usuarioId }) {
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
+          sexo: paciente.sexo || null,
+          anio_nacimiento: paciente.anioNacimiento ?? null,
           actualizado_por: usuarioId,
           actualizado_en: trx.fn.now(),
         };
@@ -191,6 +209,8 @@ async function editar({ id, nombre, telefono, correo, pacientes, usuarioId }) {
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
+          sexo: paciente.sexo || null,
+          anio_nacimiento: paciente.anioNacimiento ?? null,
           activo: true,
           creado_por: usuarioId,
           creado_en: trx.fn.now(),
@@ -234,6 +254,8 @@ async function reactivar({ id, nombre, telefono, correo, pacientes, usuarioId })
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
+          sexo: paciente.sexo || null,
+          anio_nacimiento: paciente.anioNacimiento ?? null,
           actualizado_por: usuarioId,
           actualizado_en: trx.fn.now(),
         };
@@ -253,6 +275,8 @@ async function reactivar({ id, nombre, telefono, correo, pacientes, usuarioId })
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
+          sexo: paciente.sexo || null,
+          anio_nacimiento: paciente.anioNacimiento ?? null,
           activo: true,
           creado_por: usuarioId,
           creado_en: trx.fn.now(),
@@ -366,6 +390,7 @@ module.exports = {
   mascotasPorPropietarios,
   findById,
   findByTelefono,
+  findActivosPorNombre,
   findMascotasByPropietarioId,
   crear,
   editar,

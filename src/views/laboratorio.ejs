@@ -7,6 +7,8 @@
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="css/main.css">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
 </head>
 <body>
 
@@ -30,127 +32,35 @@
     <div class="nav-backdrop" id="navBackdrop"></div>
     <%- include('partials/sidebar', { user, currentPage: 'laboratorio' }) %>
 
-    <main class="main-content">
-      <div class="lab-toolbar">
-        <div class="lab-toolbar-filters">
-          <div class="lab-search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input type="text" id="labSearch" placeholder="Buscar por mascota, cliente o doctor...">
-          </div>
-          <select id="labFilterEstado" name="estado" title="estado" class="lab-select">
-            <option value="">Todos los estados</option>
-            <option value="Pendiente">Pendiente</option>
-            <option value="Enviado">Enviado</option>
-          </select>
-          <select id="labFilterTipo" name="tipo" title="tipo" class="lab-select">
-            <option value="">Todos los estudios</option>
-            <option value="sangre">Sangre</option>
-            <option value="orina">Orina</option>
-            <option value="imagenología">Imagenología</option>
-            <option value="heces">Heces</option>
-            <option value="oído">Citología</option>
-          </select>
-        </div>
-        <button id="btnNuevoRegistro" class="btn-primary" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          Nuevo registro
-        </button>
-      </div>
-
-      <div class="lab-table-wrap">
-        <table class="lab-table" id="labTable">
-          <thead>
-            <tr>
-              <th>#ID</th>
-              <th>Mascota/Cliente</th>
-              <th>Tipo de estudio</th>
-              <th>Dr. Solicitante</th>
-              <th>Fecha Solicitud</th>
-              <th>Estado</th>
-              <th>Fecha de Envío</th>
-              <th>Cargar Resultado</th>
-            </tr>
-          </thead>
-          <tbody id="labTableBody"></tbody>
-        </table>
-        <p class="lab-empty" id="labEmpty" hidden>No hay registros que coincidan con la búsqueda.</p>
-      </div>
+    <main class="main-content" id="laboratorio-panel">
+      <%- include('partials/laboratorio-panel', { registros, total, catalogoVacio, page, totalPages, pageSize, q, estado, categoriaId, sort, dir, categorias, user, csrfToken }) %>
     </main>
     </div>
   </div>
 
-  <div class="modal-backdrop" id="modalBackdrop">
-    <div class="modal-card modal-card-wide">
+  <%#
+    Mismo token que ya viaja dentro del panel (hx-headers de #laboratorio-filters)
+    pero SIEMPRE presente, incluso cuando catalogoVacio muestra el estado
+    vacío en vez del toolbar (ese estado no trae ningún <form>) — sin esto,
+    no hay ninguna forma de obtener un token válido para una acción vía
+    fetch() mientras el catálogo está vacío.
+  %>
+  <input type="hidden" id="laboratorioPageCsrfToken" value="<%= csrfToken %>">
+
+  <%# Modal de confirmación reutilizable (eliminar) — mismo patrón que doctores.ejs. %>
+  <div class="modal-backdrop" id="confirmModalBackdrop">
+    <div class="modal-card">
       <div class="modal-header">
-        <h2>Nuevo registro de laboratorio</h2>
-        <button id="modalClose" class="modal-close-btn" type="button" aria-label="Cerrar">&times;</button>
+        <h2>Confirmar acción</h2>
+        <button class="modal-close-btn" type="button" id="confirmModalClose" aria-label="Cerrar">&times;</button>
       </div>
-      <form id="labForm" class="modal-form modal-form-columns">
-        <div class="modal-col">
-          <h3 class="modal-col-title">Datos de la mascota</h3>
-
-          <label>Especie
-            <select id="fPetType" required>
-              <option value="Perro">Perro</option>
-              <option value="Gato">Gato</option>
-            </select>
-          </label>
-          <label>Nombre de la mascota
-            <input type="text" id="fPetName" required placeholder="Ej. Sparky">
-          </label>
-          <label>Raza
-            <input type="text" id="fBreed" required placeholder="Ej. Labrador">
-          </label>
-          <label>Dr. Solicitante
-            <input type="text" id="fDoctor" required placeholder="Ej. Dra. Ana Gómez">
-          </label>
-          <label>Fecha de solicitud
-            <input type="date" id="fDate" required>
-          </label>
-        </div>
-
-        <div class="modal-col">
-          <h3 class="modal-col-title">Estudios</h3>
-
-          <label>Categoría
-            <select id="fCategoria"></select>
-          </label>
-          <label>Estudio
-            <div class="combobox" id="fEstudioCombobox">
-              <input type="text" id="fEstudioSearch" placeholder="Selecciona un estudio..." autocomplete="off">
-              <input type="hidden" id="fEstudio">
-              <ul class="combobox-list" id="fEstudioList" hidden></ul>
-            </div>
-          </label>
-          <label id="fZonaWrap" hidden>Zona anatómica
-            <select id="fZona"></select>
-          </label>
-
-          <button type="button" class="btn-secondary btn-add-study" id="btnAddStudy">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            Agregar estudio
-          </button>
-
-          <div class="mini-table-wrap">
-            <table class="mini-table">
-              <thead>
-                <tr><th>Estudio solicitado</th><th>Acciones</th></tr>
-              </thead>
-              <tbody id="fStudiesBody"></tbody>
-            </table>
-            <p class="mini-table-empty" id="fStudiesEmpty">Aún no has agregado ningún estudio.</p>
-          </div>
-        </div>
-
-        <div class="modal-actions">
-          <button type="button" class="btn-secondary" id="modalCancel">Cancelar</button>
-          <button type="submit" class="btn-primary">Guardar</button>
-        </div>
-      </form>
+      <p id="confirmModalMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="confirmModalCancel">Cancelar</button>
+        <button type="button" class="btn-danger" id="confirmModalConfirm">Eliminar</button>
+      </div>
     </div>
   </div>
-
-  <input type="file" id="resultFileInput" hidden>
 
 <script nonce="<%= cspNonce %>">
   const sidebar = document.getElementById('sidebar');
@@ -191,31 +101,9 @@
     });
   });
 
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  // Cualquier `.combobox-list` de esta vista puede: (a) abrir cerca del
-  // borde de un contenedor con scroll (el modal "Nuevo registro" tiene
-  // `overflow-y:auto`) — un `.combobox-list` con `position:absolute` (el
-  // default de main.css) sigue contando para el área scrolleable de un
-  // ancestro con overflow aunque se vea como un overlay; o (b) terminar
-  // tapada por otro contenido que gana el stacking context — main.css
-  // fuerza `position:relative;z-index:1` a TODOS los hijos directos de
-  // `.main-content` (`.main-content > *`, truco para la marca de agua de
-  // fondo), así que un descendiente `position:fixed` de `.lab-toolbar`
-  // (los filtros) sigue atrapado dentro del stacking context de ese hijo
-  // para pintarse, y pierde contra `.lab-table-wrap` (hermano posterior en
-  // el DOM, mismo z-index:1) sin importar el z-index propio de la lista.
-  // `position:fixed` por sí solo resuelve (a) pero NO (b): solo cambia
-  // respecto a qué ancestro se calculan las coordenadas, no de qué
-  // stacking context depende para pintarse. La única forma de escapar
-  // ambos a la vez es sacar la lista del DOM de su contenedor y colgarla
-  // directo de `<body>` mientras está abierta (un "portal", patrón
-  // estándar en UI flotante) — se recuerda su padre original una sola vez
-  // (`list._homeParent`) para devolverla a su lugar al cerrarla.
+  // ---- Combobox flotante genérico del toolbar de filtros (mismo patrón
+  // que usuarios.ejs/agenda.ejs — un "portal" a <body> para escapar el
+  // stacking context de `.main-content > *`). ----
   function openFloatingList(trigger, list) {
     if (!list._homeParent) list._homeParent = list.parentElement;
     document.body.appendChild(list);
@@ -225,14 +113,6 @@
     list.style.left = `${rect.left}px`;
     list.style.width = `${rect.width}px`;
     list.style.right = 'auto';
-    // Reparentar a <body> saca la lista del stacking context de su
-    // ancestro, pero NO le gana automáticamente a otro contenido que
-    // también sea hijo directo de <body> con su propio z-index — el
-    // z-index:20 por default de .combobox-list (main.css) pierde contra
-    // .modal-backdrop (z-index:100): los combobox del modal "Nuevo
-    // registro" (Tipo de mascota/Categoría/Zona/Estudio) quedaban
-    // pintándose DETRÁS del propio modal que los contiene. Se fuerza un
-    // z-index por encima de cualquier modal del sistema.
     list.style.zIndex = '1000';
     list.hidden = false;
   }
@@ -242,556 +122,72 @@
     if (list._homeParent) list._homeParent.appendChild(list);
   }
 
-  // Pedido de estilo: todo <select> nativo de esta vista se "envuelve" en
-  // tiempo de ejecución con el mismo combobox propio del resto del sistema
-  // (trigger de solo lectura + <ul class="combobox-list"> con esquinas
-  // redondeadas de verdad, algo que un <select> nativo no puede tener). El
-  // <select> original se queda en el DOM — oculto con `.select-hidden-source`
-  // (recorte a 1x1px, NO `hidden`/`display:none`, para no excluirlo de la
-  // validación nativa de los que son `required`) — como única fuente de
-  // verdad: todo el código de más abajo que lee/escribe `.value`/
-  // `.selectedIndex` o repuebla sus <option> sigue funcionando sin cambios,
-  // esta función solo agrega una capa visual encima. Cambios programáticos
-  // (`.selectedIndex = 0`, `.value = ''`, `form.reset()`) no disparan
-  // `change` por sí solos, así que el código que haga esos cambios debe
-  // llamar al `sync()` que esta función devuelve.
-  function enhanceSelect(select) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'combobox';
-    select.insertAdjacentElement('beforebegin', wrapper);
+  // Red de seguridad: si un swap de HTMX ocurre mientras alguna lista sigue
+  // flotando en <body> (mismo motivo documentado en usuarios.ejs).
+  document.body.addEventListener('htmx:beforeSwap', () => {
+    document.querySelectorAll('.combobox-list').forEach((list) => {
+      if (list.parentElement === document.body) list.remove();
+    });
+  });
 
-    const trigger = document.createElement('input');
-    trigger.type = 'text';
-    trigger.readOnly = true;
-    trigger.autocomplete = 'off';
-    trigger.className = `select-trigger-input${select.className ? ` ${select.className}` : ''}`;
-    wrapper.appendChild(trigger);
-
-    select.classList.add('select-hidden-source');
-    select.tabIndex = -1;
-    wrapper.appendChild(select);
-
-    const list = document.createElement('ul');
-    list.className = 'combobox-list';
-    list.hidden = true;
-    wrapper.appendChild(list);
-
-    function sync() {
-      const selected = select.options[select.selectedIndex];
-      trigger.value = selected ? selected.textContent : '';
-      list.innerHTML = Array.from(select.options)
-        .map((opt, i) => `<li class="combobox-item" data-index="${i}">${escapeHtml(opt.textContent)}</li>`)
-        .join('');
-    }
-
-    list.addEventListener('click', (event) => {
-      const item = event.target.closest('.combobox-item');
-      if (!item) return;
-      select.selectedIndex = Number(item.dataset.index);
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      sync();
+  // ---- Filtros del toolbar (Estado / Tipo de estudio): mismo patrón que el
+  // combobox de "Estatus" en usuarios.ejs — cada <li> trae su propio
+  // hx-post, este listener solo abre/cierra la lista. Delegado sobre
+  // document.body porque HTMX reemplaza #laboratorio-panel entero en cada
+  // filtro/orden/página. ----
+  function wireFiltroCombobox(triggerId, listId, comboboxId) {
+    document.body.addEventListener('click', (event) => {
+      const list = document.getElementById(listId);
+      if (!list) return;
+      const trigger = document.getElementById(triggerId);
+      if (event.target.closest(`#${triggerId}`)) {
+        if (list.hidden) openFloatingList(trigger, list);
+        else closeFloatingList(list);
+        return;
+      }
+      const combobox = document.getElementById(comboboxId);
+      if ((combobox && combobox.contains(event.target)) || list.contains(event.target)) return;
       closeFloatingList(list);
     });
-
-    trigger.addEventListener('focus', () => {
-      sync(); // por si las <option> cambiaron desde la última apertura
-      openFloatingList(trigger, list);
-    });
-
-    document.addEventListener('click', (event) => {
-      if (wrapper.contains(event.target) || list.contains(event.target)) return;
-      closeFloatingList(list);
-    });
-
-    sync();
-    return { sync };
   }
 
-  // ---------- Laboratorio: datos, tabla, filtros, alta y carga de resultados ----------
+  wireFiltroCombobox('estadoFiltroTrigger', 'estadoFiltroList', 'estadoFiltroCombobox');
+  wireFiltroCombobox('categoriaFiltroTrigger', 'categoriaFiltroList', 'categoriaFiltroCombobox');
 
-  let nextId = 11;
-  const records = [
-    { id: 1, pet: 'Perro - Sparky, Labrador', studies: ['Biometría hemática'], doctor: 'Dra. Ana Gómez', requested: '2026-07-28', status: 'Enviado', sent: '2026-07-29' },
-    { id: 2, pet: 'Gato - Michi, Siamés', studies: ['Urianálisis general'], doctor: 'Dra. Fernanda López', requested: '2026-07-29', status: 'Pendiente', sent: null },
-    { id: 3, pet: 'Perro - Rocky, Bulldog Francés', studies: ['Radiografía torácica'], doctor: 'Dr. Carlos Ruiz', requested: '2026-07-30', status: 'Enviado', sent: '2026-07-31' },
-    { id: 4, pet: 'Gato - Luna, Persa', studies: ['Perfil tiroideo T4'], doctor: 'Dra. Paola Méndez', requested: '2026-07-30', status: 'Pendiente', sent: null },
-    { id: 5, pet: 'Perro - Toby, Schnauzer', studies: ['Coprológico'], doctor: 'Dr. Luis Torres', requested: '2026-07-31', status: 'Enviado', sent: '2026-08-01' },
-    { id: 6, pet: 'Perro - Max, Pitbull', studies: ['Química sanguínea 6 elementos'], doctor: 'Dra. Ana Gómez', requested: '2026-08-01', status: 'Pendiente', sent: null },
-    { id: 7, pet: 'Gato - Salem, Negro común', studies: ['Urocultivo'], doctor: 'Dra. Fernanda López', requested: '2026-08-01', status: 'Enviado', sent: '2026-08-02' },
-    { id: 8, pet: 'Perro - Hope, Pastor Alemán', studies: ['Ecografía abdominal'], doctor: 'Dr. Carlos Ruiz', requested: '2026-08-02', status: 'Pendiente', sent: null },
-    { id: 9, pet: 'Gato - Kiara, Angora', studies: ['Citología de oído'], doctor: 'Dra. Paola Méndez', requested: '2026-08-02', status: 'Pendiente', sent: null },
-    { id: 10, pet: 'Perro - Firulais, Criollo', studies: ['Prueba de Ehrlichia/Anaplasma'], doctor: 'Dr. Luis Torres', requested: '2026-08-03', status: 'Pendiente', sent: null },
-  ];
+  // ---- Modal de confirmación (eliminar) — patrón htmx:confirm ya
+  // establecido en doctores.ejs/agenda.ejs. ----
+  const confirmModalBackdrop = document.getElementById('confirmModalBackdrop');
+  const confirmModalMessage = document.getElementById('confirmModalMessage');
+  let resolveConfirm = null;
 
-  const tableBody = document.getElementById('labTableBody');
-  const labEmpty = document.getElementById('labEmpty');
-  const searchInput = document.getElementById('labSearch');
-  const estadoFilter = document.getElementById('labFilterEstado');
-  const tipoFilter = document.getElementById('labFilterTipo');
-  enhanceSelect(estadoFilter);
-  enhanceSelect(tipoFilter);
-
-  function formatDate(isoDate) {
-    if (!isoDate) return '—';
-    const [y, m, d] = isoDate.split('-');
-    return `${d}/${m}/${y}`;
-  }
-
-  function idLabel(id) {
-    return `LAB-${String(id).padStart(3, '0')}`;
-  }
-
-  function renderTable() {
-    const search = searchInput.value.trim().toLowerCase();
-    const estado = estadoFilter.value;
-    const tipo = tipoFilter.value.toLowerCase();
-
-    const filtered = records.filter((r) => {
-      const matchesSearch = !search || r.pet.toLowerCase().includes(search) || r.doctor.toLowerCase().includes(search);
-      const matchesEstado = !estado || r.status === estado;
-      const matchesTipo = !tipo || r.studies.some((s) => s.toLowerCase().includes(tipo));
-      return matchesSearch && matchesEstado && matchesTipo;
-    });
-
-    tableBody.innerHTML = '';
-    labEmpty.hidden = filtered.length !== 0;
-
-    filtered.forEach((r) => {
-      const tr = document.createElement('tr');
-
-      const badgeClass = r.status === 'Enviado' ? 'badge-enviado' : 'badge-pendiente';
-      const btnClass = r.status === 'Enviado' ? 'sent' : 'pending';
-      const btnLabel = r.status === 'Enviado' ? 'Ver resultado' : 'Subir resultado';
-
-      const studyCell = r.studies.length > 1
-        ? `<details class="lab-studies-details">
-             <summary>Varios estudios (${r.studies.length})</summary>
-             <ul class="lab-studies-list">${r.studies.map((s) => `<li>${s}</li>`).join('')}</ul>
-           </details>`
-        : r.studies[0];
-
-      tr.innerHTML = `
-        <td>${idLabel(r.id)}</td>
-        <td>${r.pet}</td>
-        <td>${studyCell}</td>
-        <td>${r.doctor}</td>
-        <td>${formatDate(r.requested)}</td>
-        <td><span class="badge ${badgeClass}">${r.status}</span></td>
-        <td>${formatDate(r.sent)}</td>
-        <td><button type="button" class="btn-upload ${btnClass}" data-id="${r.id}">${btnLabel}</button></td>
-      `;
-
-      tableBody.appendChild(tr);
+  function openConfirmModal(message) {
+    confirmModalMessage.textContent = message;
+    confirmModalBackdrop.classList.add('open');
+    return new Promise((resolve) => {
+      resolveConfirm = resolve;
     });
   }
 
-  searchInput.addEventListener('input', renderTable);
-  estadoFilter.addEventListener('change', renderTable);
-  tipoFilter.addEventListener('change', renderTable);
-
-  // ---------- Catálogo de estudios: categoría -> estudio -> zona (condicional) ----------
-
-  const CATALOGO = {
-    categorias: [
-      { id: 'hematologia', nombre: 'Hematología', estudios: [
-        { codigo: 'BH', nombre: 'Biometría hemática completa', requiere_zona: false },
-        { codigo: 'FROTIS', nombre: 'Frotis sanguíneo', requiere_zona: false },
-        { codigo: 'COAG', nombre: 'Tiempo de coagulación (TP, TTPa)', requiere_zona: false },
-        { codigo: 'GRUPO_SANG', nombre: 'Grupo sanguíneo', requiere_zona: false },
-        { codigo: 'RETICULOCITOS', nombre: 'Reticulocitos', requiere_zona: false },
-        { codigo: 'VSG', nombre: 'Velocidad de sedimentación globular', requiere_zona: false },
-      ]},
-      { id: 'bioquimica', nombre: 'Bioquímica sanguínea', estudios: [
-        { codigo: 'RENAL', nombre: 'Perfil renal (BUN/urea, creatinina, fósforo)', requiere_zona: false },
-        { codigo: 'HEPATICO', nombre: 'Perfil hepático (ALT, AST, FA, bilirrubinas, albúmina)', requiere_zona: false },
-        { codigo: 'GLUCOSA', nombre: 'Glucosa', requiere_zona: false },
-        { codigo: 'ELECTROLITOS', nombre: 'Electrolitos (sodio, potasio, cloro)', requiere_zona: false },
-        { codigo: 'LIPIDICO', nombre: 'Perfil lipídico (colesterol, triglicéridos)', requiere_zona: false },
-        { codigo: 'AMILASA_LIPASA', nombre: 'Amilasa y lipasa (pancreatitis)', requiere_zona: false },
-        { codigo: 'PROTEINAS', nombre: 'Proteínas totales y fraccionadas', requiere_zona: false },
-        { codigo: 'ACIDOS_BILIARES', nombre: 'Ácidos biliares', requiere_zona: false },
-        { codigo: 'AMONIACO', nombre: 'Amoniaco', requiere_zona: false },
-        { codigo: 'CK', nombre: 'Creatín cinasa (CK)', requiere_zona: false },
-        { codigo: 'LDH', nombre: 'Deshidrogenasa láctica (LDH)', requiere_zona: false },
-        { codigo: 'CALCIO', nombre: 'Calcio y calcio ionizado', requiere_zona: false },
-        { codigo: 'MAGNESIO', nombre: 'Magnesio', requiere_zona: false },
-        { codigo: 'GASOMETRIA', nombre: 'Gasometría / equilibrio ácido-base', requiere_zona: false },
-      ]},
-      { id: 'endocrinologia', nombre: 'Endocrinología', estudios: [
-        { codigo: 'T4_TSH', nombre: 'T4 y TSH (tiroides)', requiere_zona: false },
-        { codigo: 'CORTISOL_ACTH', nombre: 'Cortisol basal y estimulación con ACTH', requiere_zona: false },
-        { codigo: 'FRUCTOSAMINA', nombre: 'Fructosamina (control de diabetes)', requiere_zona: false },
-        { codigo: 'PROGESTERONA', nombre: 'Progesterona (ciclo reproductivo)', requiere_zona: false },
-        { codigo: 'INSULINA_BASAL', nombre: 'Insulina basal', requiere_zona: false },
-        { codigo: 'CURVA_GLUCOSA', nombre: 'Curva de glucosa', requiere_zona: false },
-        { codigo: 'PANEL_ADDISON', nombre: 'Panel de Addison completo', requiere_zona: false },
-        { codigo: 'AMH', nombre: 'Hormona antimülleriana (AMH)', requiere_zona: false },
-      ]},
-      { id: 'orina', nombre: 'Orina', estudios: [
-        { codigo: 'EGO', nombre: 'Examen general de orina', requiere_zona: false },
-        { codigo: 'UROCULTIVO', nombre: 'Urocultivo con antibiograma', requiere_zona: false },
-        { codigo: 'UPC', nombre: 'Relación proteína/creatinina urinaria', requiere_zona: false },
-        { codigo: 'CORT_CREAT_URINARIA', nombre: 'Cortisol/creatinina urinaria', requiere_zona: false },
-      ]},
-      { id: 'heces', nombre: 'Heces', estudios: [
-        { codigo: 'COPROPARASITOSCOPICO', nombre: 'Coproparasitoscópico', requiere_zona: false },
-        { codigo: 'COPROCULTIVO', nombre: 'Coprocultivo', requiere_zona: false },
-        { codigo: 'SANGRE_OCULTA', nombre: 'Prueba de moco/sangre oculta en heces', requiere_zona: false },
-        { codigo: 'AG_GIARDIA_PARVO_PANLEUCO', nombre: 'Antígeno Giardia/Parvovirus/Panleucopenia', requiere_zona: false },
-      ]},
-      { id: 'serologia_perros', nombre: 'Serología - Perros', estudios: [
-        { codigo: 'PARVOVIRUS_CANINO', nombre: 'Parvovirus canino', requiere_zona: false },
-        { codigo: 'MOQUILLO', nombre: 'Moquillo canino', requiere_zona: false },
-        { codigo: 'EHRLICHIA_ANAPLASMA', nombre: 'Ehrlichia / Anaplasma', requiere_zona: false },
-        { codigo: 'LEISHMANIA', nombre: 'Leishmania', requiere_zona: false },
-        { codigo: 'DIROFILARIA', nombre: 'Dirofilaria (gusano del corazón)', requiere_zona: false },
-        { codigo: 'BRUCELLA_CANINA', nombre: 'Brucella canina', requiere_zona: false },
-        { codigo: 'LEPTOSPIRA', nombre: 'Leptospira', requiere_zona: false },
-        { codigo: 'TEST_4DX', nombre: 'Test 4Dx combinado (Dirofilaria/Ehrlichia/Anaplasma/Lyme)', requiere_zona: false },
-        { codigo: 'LYME_BORRELIA', nombre: 'Enfermedad de Lyme (Borrelia)', requiere_zona: false },
-      ]},
-      { id: 'serologia_gatos', nombre: 'Serología - Gatos', estudios: [
-        { codigo: 'FELV', nombre: 'Leucemia felina (FeLV)', requiere_zona: false },
-        { codigo: 'FIV', nombre: 'Inmunodeficiencia felina (FIV)', requiere_zona: false },
-        { codigo: 'PANLEUCOPENIA_FELINA', nombre: 'Panleucopenia felina', requiere_zona: false },
-        { codigo: 'PIF_FIP', nombre: 'Peritonitis infecciosa felina (PIF/FIP)', requiere_zona: false },
-        { codigo: 'TOXOPLASMA', nombre: 'Toxoplasma', requiere_zona: false },
-        { codigo: 'MICOPLASMA_HEMOFELINO', nombre: 'Micoplasma hemofelino', requiere_zona: false },
-      ]},
-      { id: 'citologia_histopatologia', nombre: 'Citología e histopatología', estudios: [
-        { codigo: 'CITOLOGIA_PIEL_OIDOS', nombre: 'Citología de piel/oídos', requiere_zona: false },
-        { codigo: 'PAAF', nombre: 'Citología por aspiración con aguja fina', requiere_zona: false },
-        { codigo: 'BIOPSIA_HISTOPATOLOGIA', nombre: 'Biopsia con estudio histopatológico', requiere_zona: false },
-        { codigo: 'CULTIVO_HONGOS', nombre: 'Cultivo de hongos (dermatofitosis)', requiere_zona: false },
-        { codigo: 'CULTIVO_BACTERIANO', nombre: 'Cultivo bacteriano con antibiograma', requiere_zona: false },
-        { codigo: 'RASPADO_PROFUNDO', nombre: 'Raspado cutáneo profundo (sarna demodécica)', requiere_zona: false },
-      ]},
-      { id: 'imagenologia', nombre: 'Imagenología', estudios: [
-        { codigo: 'RADIOGRAFIA', nombre: 'Radiografía simple', requiere_zona: true, zonas_permitidas: ['craneo', 'cervical', 'toracica_columna', 'lumbar', 'torax', 'abdomen', 'pelvis', 'miembro_toracico', 'miembro_pelvico'] },
-        { codigo: 'ECOGRAFIA', nombre: 'Ecografía', requiere_zona: true, zonas_permitidas: ['abdomen', 'torax', 'ocular', 'articular'] },
-        { codigo: 'ECOCARDIOGRAMA', nombre: 'Ecocardiograma', requiere_zona: false },
-        { codigo: 'ECG', nombre: 'Electrocardiograma (ECG)', requiere_zona: false },
-        { codigo: 'TAC', nombre: 'Tomografía computarizada', requiere_zona: false },
-        { codigo: 'ENDOSCOPIA', nombre: 'Endoscopía', requiere_zona: false },
-      ]},
-      { id: 'genetica_reproduccion', nombre: 'Genética y reproducción', estudios: [
-        { codigo: 'PERFIL_GESTACION', nombre: 'Perfil de gestación', requiere_zona: false },
-        { codigo: 'ESPERMATOBIOSCOPIA', nombre: 'Espermatobioscopía', requiere_zona: false },
-        { codigo: 'GENETICA_RAZA', nombre: 'Pruebas genéticas de raza', requiere_zona: false },
-      ]},
-    ],
-    zonas_anatomicas: [
-      { codigo: 'craneo', nombre: 'Cráneo' },
-      { codigo: 'cervical', nombre: 'Columna cervical' },
-      { codigo: 'toracica_columna', nombre: 'Columna torácica' },
-      { codigo: 'lumbar', nombre: 'Columna lumbar' },
-      { codigo: 'torax', nombre: 'Tórax' },
-      { codigo: 'abdomen', nombre: 'Abdomen' },
-      { codigo: 'pelvis', nombre: 'Pelvis' },
-      { codigo: 'miembro_toracico', nombre: 'Miembro torácico' },
-      { codigo: 'miembro_pelvico', nombre: 'Miembro pélvico' },
-      { codigo: 'ocular', nombre: 'Ocular' },
-      { codigo: 'articular', nombre: 'Articular' },
-    ],
-  };
-
-  const zonaNombrePorCodigo = Object.fromEntries(CATALOGO.zonas_anatomicas.map((z) => [z.codigo, z.nombre]));
-
-  function findCategoria(categoriaId) {
-    return CATALOGO.categorias.find((c) => c.id === categoriaId);
+  function closeConfirmModal(result) {
+    confirmModalBackdrop.classList.remove('open');
+    resolveConfirm?.(result);
+    resolveConfirm = null;
   }
 
-  function findEstudio(estudioCodigo) {
-    for (const categoria of CATALOGO.categorias) {
-      const estudio = categoria.estudios.find((e) => e.codigo === estudioCodigo);
-      if (estudio) return estudio;
-    }
-    return null;
-  }
+  document.getElementById('confirmModalCancel').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirmModalClose').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirmModalConfirm').addEventListener('click', () => closeConfirmModal(true));
+  confirmModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === confirmModalBackdrop) closeConfirmModal(false);
+  });
 
-  const fPetType = document.getElementById('fPetType');
-  const fCategoria = document.getElementById('fCategoria');
-  const fEstudio = document.getElementById('fEstudio');
-  const fEstudioSearch = document.getElementById('fEstudioSearch');
-  const fEstudioList = document.getElementById('fEstudioList');
-  const fEstudioCombobox = document.getElementById('fEstudioCombobox');
-  const fZonaWrap = document.getElementById('fZonaWrap');
-  const fZona = document.getElementById('fZona');
-  const fPetTypeUI = enhanceSelect(fPetType);
-  const fCategoriaUI = enhanceSelect(fCategoria);
-  const fZonaUI = enhanceSelect(fZona);
-
-  function populateCategorias() {
-    const todasOption = '<option value="">Todas las categorías</option>';
-    const categoriaOptions = CATALOGO.categorias
-      .map((c) => `<option value="${c.id}">${c.nombre}</option>`)
-      .join('');
-    fCategoria.innerHTML = todasOption + categoriaOptions;
-    fCategoriaUI.sync();
-  }
-
-  function getEstudioEntries() {
-    if (fCategoria.value === '') {
-      return CATALOGO.categorias.flatMap((c) => c.estudios.map((e) => ({ ...e, categoriaNombre: c.nombre })));
-    }
-    const categoria = findCategoria(fCategoria.value);
-    return categoria.estudios.map((e) => ({ ...e, categoriaNombre: categoria.nombre }));
-  }
-
-  function selectEstudio(entry) {
-    fEstudio.value = entry.codigo;
-    fEstudioSearch.value = entry.nombre;
-    updateZonaVisibility();
-  }
-
-  function clearEstudioSelection() {
-    fEstudio.value = '';
-    fEstudioSearch.value = '';
-    updateZonaVisibility();
-    hideEstudioList();
-  }
-
-  function populateEstudios() {
-    clearEstudioSelection();
-  }
-
-  let activeIndex = -1;
-
-  function normalizeText(str) {
-    return str.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  }
-
-  function renderEstudioList(filterText) {
-    const entries = getEstudioEntries();
-    const filtered = filterText
-      ? entries.filter((e) => normalizeText(e.nombre).includes(normalizeText(filterText)))
-      : entries;
-
-    openFloatingList(fEstudioSearch, fEstudioList);
-    activeIndex = -1;
-
-    if (filtered.length === 0) {
-      fEstudioList.innerHTML = '<li class="combobox-empty">Sin resultados</li>';
-      fEstudioList.hidden = false;
-      return;
-    }
-
-    const showGroups = fCategoria.value === '';
-    let html = '';
-    let lastGroup = null;
-
-    filtered.forEach((entry) => {
-      if (showGroups && entry.categoriaNombre !== lastGroup) {
-        html += `<li class="combobox-group">${entry.categoriaNombre}</li>`;
-        lastGroup = entry.categoriaNombre;
-      }
-      html += `<li class="combobox-item" data-codigo="${entry.codigo}" role="option">${entry.nombre}</li>`;
+  document.body.addEventListener('htmx:confirm', (event) => {
+    if (!event.target.hasAttribute('hx-confirm')) return;
+    event.preventDefault();
+    openConfirmModal(event.detail.question).then((confirmed) => {
+      if (confirmed) event.detail.issueRequest(true);
     });
-
-    fEstudioList.innerHTML = html;
-    fEstudioList.hidden = false;
-  }
-
-  function hideEstudioList() {
-    closeFloatingList(fEstudioList);
-    activeIndex = -1;
-  }
-
-  function updateActiveItem(items) {
-    items.forEach((item, i) => item.classList.toggle('active', i === activeIndex));
-    items[activeIndex]?.scrollIntoView({ block: 'nearest' });
-  }
-
-  fEstudioSearch.addEventListener('input', () => renderEstudioList(fEstudioSearch.value));
-  fEstudioSearch.addEventListener('focus', () => renderEstudioList(fEstudioSearch.value));
-
-  fEstudioSearch.addEventListener('keydown', (e) => {
-    if (fEstudioList.hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-      renderEstudioList(fEstudioSearch.value);
-      return;
-    }
-
-    const items = Array.from(fEstudioList.querySelectorAll('.combobox-item'));
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      activeIndex = Math.min(activeIndex + 1, items.length - 1);
-      updateActiveItem(items);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      activeIndex = Math.max(activeIndex - 1, 0);
-      updateActiveItem(items);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const item = items[activeIndex] || items[0];
-      if (item) {
-        selectEstudio(findEstudio(item.dataset.codigo));
-        hideEstudioList();
-      }
-    } else if (e.key === 'Escape') {
-      hideEstudioList();
-    }
   });
-
-  fEstudioList.addEventListener('click', (e) => {
-    const item = e.target.closest('.combobox-item');
-    if (!item) return;
-    e.preventDefault();
-    selectEstudio(findEstudio(item.dataset.codigo));
-    hideEstudioList();
-  });
-
-  document.addEventListener('click', (e) => {
-    if (fEstudioCombobox.contains(e.target) || fEstudioList.contains(e.target)) return;
-    hideEstudioList();
-  });
-
-  function updateZonaVisibility() {
-    const estudio = findEstudio(fEstudio.value);
-
-    if (estudio && estudio.requiere_zona) {
-      fZona.innerHTML = estudio.zonas_permitidas
-        .map((codigo) => `<option value="${codigo}">${zonaNombrePorCodigo[codigo]}</option>`)
-        .join('');
-      fZonaWrap.hidden = false;
-      fZona.required = true;
-    } else {
-      fZonaWrap.hidden = true;
-      fZona.required = false;
-      fZona.value = '';
-    }
-    fZonaUI.sync();
-  }
-
-  fCategoria.addEventListener('change', populateEstudios);
-
-  populateCategorias();
-  populateEstudios();
-
-  // Nuevo registro (modal)
-  const modalBackdrop = document.getElementById('modalBackdrop');
-  const labForm = document.getElementById('labForm');
-  const fStudiesBody = document.getElementById('fStudiesBody');
-  const fStudiesEmpty = document.getElementById('fStudiesEmpty');
-
-  let selectedStudies = [];
-
-  function renderSelectedStudies() {
-    fStudiesEmpty.hidden = selectedStudies.length !== 0;
-    fStudiesBody.innerHTML = selectedStudies
-      .map((s, i) => `
-        <tr>
-          <td>${s}</td>
-          <td><button type="button" class="mini-remove" data-idx="${i}" aria-label="Quitar estudio">&times;</button></td>
-        </tr>
-      `)
-      .join('');
-  }
-
-  document.getElementById('btnAddStudy').addEventListener('click', () => {
-    const estudio = findEstudio(fEstudio.value);
-    if (!estudio) {
-      fEstudioSearch.focus();
-      return;
-    }
-
-    const label = estudio.requiere_zona
-      ? `${estudio.nombre} - ${zonaNombrePorCodigo[fZona.value]}`
-      : estudio.nombre;
-
-    selectedStudies.push(label);
-    renderSelectedStudies();
-    clearEstudioSelection();
-  });
-
-  fStudiesBody.addEventListener('click', (e) => {
-    const btn = e.target.closest('.mini-remove');
-    if (!btn) return;
-    selectedStudies.splice(Number(btn.dataset.idx), 1);
-    renderSelectedStudies();
-  });
-
-  function openModal() {
-    document.getElementById('fDate').value = new Date().toISOString().slice(0, 10);
-    fCategoria.selectedIndex = 0;
-    fCategoriaUI.sync();
-    populateEstudios();
-    selectedStudies = [];
-    renderSelectedStudies();
-    modalBackdrop.classList.add('open');
-  }
-
-  function closeModal() {
-    modalBackdrop.classList.remove('open');
-    labForm.reset();
-    // form.reset() no dispara `change` en sus <select> — el combobox propio
-    // de cada uno se queda con el texto viejo hasta que se resincroniza a
-    // mano (mismo motivo que fCategoriaUI.sync() en openModal()).
-    fPetTypeUI.sync();
-    fCategoriaUI.sync();
-    fZonaUI.sync();
-  }
-
-  document.getElementById('btnNuevoRegistro').addEventListener('click', openModal);
-  document.getElementById('modalClose').addEventListener('click', closeModal);
-  document.getElementById('modalCancel').addEventListener('click', closeModal);
-  modalBackdrop.addEventListener('click', (e) => {
-    if (e.target === modalBackdrop) closeModal();
-  });
-
-  labForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-
-    if (selectedStudies.length === 0) {
-      alert('Agrega al menos un estudio antes de guardar.');
-      return;
-    }
-
-    const petType = fPetType.value;
-    const petName = document.getElementById('fPetName').value.trim();
-    const breed = document.getElementById('fBreed').value.trim();
-    const doctor = document.getElementById('fDoctor').value.trim();
-    const date = document.getElementById('fDate').value;
-    const pet = `${petType} - ${petName}, ${breed}`;
-
-    records.unshift({
-      id: nextId++,
-      pet,
-      studies: [...selectedStudies],
-      doctor,
-      requested: date,
-      status: 'Pendiente',
-      sent: null,
-    });
-
-    closeModal();
-    renderTable();
-  });
-
-  // Cargar resultado (simulado con selector de archivo)
-  const resultFileInput = document.getElementById('resultFileInput');
-  let uploadingId = null;
-
-  tableBody.addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-upload');
-    if (!btn) return;
-    uploadingId = Number(btn.dataset.id);
-    resultFileInput.value = '';
-    resultFileInput.click();
-  });
-
-  resultFileInput.addEventListener('change', () => {
-    if (!resultFileInput.files.length || uploadingId === null) return;
-    const record = records.find((r) => r.id === uploadingId);
-    if (record) {
-      record.status = 'Enviado';
-      record.sent = new Date().toISOString().slice(0, 10);
-      renderTable();
-    }
-    uploadingId = null;
-  });
-
-  renderTable();
 </script>
 
 </body>

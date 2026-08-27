@@ -91,96 +91,87 @@
         <span class="form-error-banner" id="tutorFormError" style="display:none"></span>
         <span class="form-success-banner" id="tutorFormSuccess" style="display:none"></span>
 
-        <div class="tutor-form-layout">
-          <div class="tutor-form-main">
-            <section class="profile-card">
-              <h3 class="tutor-form-card-title">Información del propietario</h3>
-              <div class="modal-form tutor-form-grid">
-                <label>
-                  Teléfono *
-                  <%
-                  // Pedido del usuario: el teléfono va primero y, solo en
-                  // alta, permite buscar entre los propietarios ya
-                  // existentes mientras se escribe — si hay coincidencia y
-                  // se selecciona, se navega a editar ESE propietario en
-                  // vez de continuar el alta; si no hay ninguna, no pasa
-                  // nada y se sigue capturando el resto de los campos como
-                  // un alta normal. Mismo patrón .combobox/.combobox-list
-                  // ya usado en el resto del sistema (Doctor vinculado en
-                  // usuario-form.ejs), pero con búsqueda en vivo contra el
-                  // servidor en vez de filtrar una lista ya cargada
-                  // (propietarios puede crecer mucho más que el catálogo
-                  // de doctores).
-                  %>
-                  <%
-                  // Mismo formato de teléfono mexicano (10 dígitos,
-                  // NN-NNNN-NNNN) ya establecido en usuario-form.ejs/
-                  // perfil-form.ejs — mismos atributos (placeholder,
-                  // inputmode, pattern, maxlength, title), pedido explícito
-                  // del usuario para mantenerlo consistente en todos los
-                  // formularios del sistema.
-                  %>
-                  <% if (conBusquedaTelefono) { %>
-                    <div class="combobox" id="tutorTelefonoCombobox">
-                      <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="">
-                      <ul class="combobox-list" id="tutorTelefonoList" hidden></ul>
-                    </div>
-                  <% } else { %>
-                    <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="<%= propietario?.telefono ?? '' %>">
-                  <% } %>
-                  <span class="error-msg" id="tutorTelefonoError">El teléfono es obligatorio.</span>
-                </label>
-                <label>
-                  Nombre completo *
-                  <input type="text" id="tutorNombre" maxlength="150" placeholder="Ej. Juan Pérez López" value="<%= propietario?.nombre ?? '' %>">
-                  <span class="error-msg" id="tutorNombreError">El nombre es obligatorio.</span>
-                </label>
-                <label>
-                  Correo electrónico
-                  <input type="email" id="tutorCorreo" maxlength="150" placeholder="Ej. juan.perez@correo.com" value="<%= propietario?.correo ?? '' %>">
-                </label>
-              </div>
-              <p class="tutor-form-hint">* Campos obligatorios</p>
-            </section>
+        <%
+        // Pedido del usuario: se quita el cuadro de información (ícono ⓘ +
+        // texto) que vivía junto a "Resumen" en la columna lateral de 300px
+        // original — esa columna desaparece para que "Pacientes asociados"
+        // ocupe el 100% del ancho (más espacio para las columnas Sexo/Edad
+        // de la tabla). "Información del propietario" y "Resumen" SÍ se
+        // conservan en la misma fila (ajuste posterior, pedido del
+        // usuario) — .tutor-form-top-row reemplaza la fila de 2 columnas
+        // que existía por debajo de "Pacientes asociados" hasta el ajuste
+        // anterior, un nivel más arriba.
+        %>
+        <div class="tutor-form-top-row">
+          <section class="profile-card">
+            <h3 class="tutor-form-card-title">Información del propietario</h3>
+            <div class="modal-form tutor-form-grid">
+              <label>
+                Teléfono *
+                <%
+                // Pedido del usuario: el teléfono va primero y, solo en
+                // alta, permite buscar entre los propietarios ya
+                // existentes mientras se escribe — si hay coincidencia y
+                // se selecciona, se navega a editar ESE propietario en
+                // vez de continuar el alta; si no hay ninguna, no pasa
+                // nada y se sigue capturando el resto de los campos como
+                // un alta normal. Mismo patrón .combobox/.combobox-list
+                // ya usado en el resto del sistema (Doctor vinculado en
+                // usuario-form.ejs), pero con búsqueda en vivo contra el
+                // servidor en vez de filtrar una lista ya cargada
+                // (propietarios puede crecer mucho más que el catálogo
+                // de doctores).
+                %>
+                <%
+                // Mismo formato de teléfono mexicano (10 dígitos,
+                // NN-NNNN-NNNN) ya establecido en usuario-form.ejs/
+                // perfil-form.ejs — mismos atributos (placeholder,
+                // inputmode, pattern, maxlength, title), pedido explícito
+                // del usuario para mantenerlo consistente en todos los
+                // formularios del sistema.
+                %>
+                <% if (conBusquedaTelefono) { %>
+                  <div class="combobox" id="tutorTelefonoCombobox">
+                    <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="">
+                    <ul class="combobox-list" id="tutorTelefonoList" hidden></ul>
+                  </div>
+                <% } else { %>
+                  <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="<%= propietario?.telefono ?? '' %>">
+                <% } %>
+                <span class="error-msg" id="tutorTelefonoError">El teléfono es obligatorio.</span>
+              </label>
+              <label>
+                Nombre completo *
+                <input type="text" id="tutorNombre" maxlength="150" placeholder="Ej. Juan Pérez López" value="<%= propietario?.nombre ?? '' %>">
+                <span class="error-msg" id="tutorNombreError">El nombre es obligatorio.</span>
+              </label>
+              <label>
+                Correo electrónico
+                <input type="email" id="tutorCorreo" maxlength="150" placeholder="Ej. juan.perez@correo.com" value="<%= propietario?.correo ?? '' %>">
+              </label>
+            </div>
+            <p class="tutor-form-hint">* Campos obligatorios</p>
+          </section>
 
-            <section class="profile-card">
-              <div class="tutor-pacientes-header">
-                <h3 class="tutor-form-card-title" style="margin:0">Pacientes asociados</h3>
-                <button class="btn-primary" type="button" id="agregarPacienteBtn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                  Agregar paciente
-                </button>
-              </div>
-              <div class="lab-table-wrap">
-                <table class="lab-table">
-                  <thead>
-                    <tr>
-                      <th>Especie</th>
-                      <th>Nombre</th>
-                      <th>Raza</th>
-                      <th>Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody id="pacientesTableBody"></tbody>
-                </table>
-                <p class="lab-empty" id="pacientesEmpty" hidden>Todavía no hay pacientes agregados.</p>
-              </div>
-              <p class="tutor-form-hint">Puede agregar tantos pacientes como necesite antes de guardar.</p>
-            </section>
-          </div>
-
-          <aside class="tutor-form-aside">
-            <section class="profile-card">
-              <h3 class="tutor-form-card-title">Resumen</h3>
-              <div class="tutor-resumen-row">
-                <span class="tutor-resumen-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                </span>
-                <span>
-                  <span class="tutor-resumen-label">Propietario</span>
-                  <span class="tutor-resumen-value" id="resumenPropietario"><%= propietario?.nombre || '—' %></span>
-                </span>
-              </div>
+          <section class="profile-card tutor-resumen-card">
+            <h3 class="tutor-form-card-title">Resumen</h3>
+            <div class="tutor-resumen-row">
+              <span class="tutor-resumen-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
+              <span>
+                <span class="tutor-resumen-label">Propietario</span>
+                <span class="tutor-resumen-value" id="resumenPropietario"><%= propietario?.nombre || '—' %></span>
+              </span>
+            </div>
+            <%
+            // Pedido del usuario (ajuste posterior): Pacientes y Estado en
+            // la misma fila (2 columnas) en vez de apilados, para que
+            // "Resumen" quede de la misma altura que "Información del
+            // propietario" (2 filas en cada tarjeta, no 3 en una y 1 en la
+            // otra).
+            %>
+            <div class="tutor-resumen-row-pair">
               <div class="tutor-resumen-row">
                 <span class="tutor-resumen-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
@@ -199,14 +190,36 @@
                   <span class="status-badge is-active">Activo</span>
                 </span>
               </div>
-            </section>
-
-            <section class="profile-card tutor-form-info">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-              <p>En este formulario puede agregar, editar o dar de baja pacientes asociados a este propietario. Los pacientes dados de baja no se eliminan, solo cambian su estado a Inactivo.</p>
-            </section>
-          </aside>
+            </div>
+          </section>
         </div>
+
+        <section class="profile-card">
+          <div class="tutor-pacientes-header">
+            <h3 class="tutor-form-card-title" style="margin:0">Pacientes asociados</h3>
+            <button class="btn-primary" type="button" id="agregarPacienteBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Agregar paciente
+            </button>
+          </div>
+          <div class="lab-table-wrap">
+            <table class="lab-table">
+              <thead>
+                <tr>
+                  <th>Especie</th>
+                  <th>Nombre</th>
+                  <th>Sexo</th>
+                  <th>Edad</th>
+                  <th>Raza</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="pacientesTableBody"></tbody>
+            </table>
+            <p class="lab-empty" id="pacientesEmpty" hidden>Todavía no hay pacientes agregados.</p>
+          </div>
+          <p class="tutor-form-hint">Puede agregar tantos pacientes como necesite antes de guardar.</p>
+        </section>
 
         <div class="tutor-form-actions">
           <a class="btn-secondary" href="tutores.html">
@@ -370,6 +383,17 @@
     const CAT_SVG =
       '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M96 160C149 160 192 203 192 256L192 341.8C221.7 297.1 269.8 265.6 325.4 257.8C351 317.8 410.6 359.9 480 359.9C490.9 359.9 501.6 358.8 512 356.8L512 544C512 561.7 497.7 576 480 576C462.3 576 448 561.7 448 544L448 403.2L312 512L368 512C385.7 512 400 526.3 400 544C400 561.7 385.7 576 368 576L224 576C171 576 128 533 128 480L128 256C128 239.4 115.4 225.8 99.3 224.2L92.7 223.9C76.6 222.2 64 208.6 64 192C64 174.3 78.3 160 96 160zM565.8 67.2C576.2 58.5 592 65.9 592 79.5L592 192C592 253.9 541.9 304 480 304C418.1 304 368 253.9 368 192L368 79.5C368 65.9 383.8 58.5 394.2 67.2L448 112L512 112L565.8 67.2zM432 172C421 172 412 181 412 192C412 203 421 212 432 212C443 212 452 203 452 192C452 181 443 172 432 172zM528 172C517 172 508 181 508 192C508 203 517 212 528 212C539 212 548 203 548 192C548 181 539 172 528 172z"/></svg>';
 
+    // Pedido del usuario: reemplaza el toggle de texto "Macho"/"Hembra" por
+    // el mismo patrón de 2 íconos con tooltip que Especie (arriba) — símbolos
+    // estándar de Marte/Venus, mismo criterio visual de .tipo-picker (a
+    // diferencia de Perro/Gato, aquí sí se reutiliza esa clase tal cual, sin
+    // CSS nuevo: mismo tamaño de botón/ícono, mismo padding para el tooltip
+    // en .lab-table-wrap:has(.tipo-picker)).
+    const MALE_SVG =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="6"/><path d="M14.5 9.5 20 4"/><path d="M15 4h5v5"/></svg>';
+    const FEMALE_SVG =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M12 15v7"/><path d="M9 19h6"/></svg>';
+
     // Ajuste posterior (pedido del usuario): la columna "Acciones" se quita
     // por completo — un paciente nuevo (sin id) ahora muestra una cruz
     // pequeña del lado derecho de su propia celda de Estado (nunca en una
@@ -395,10 +419,10 @@
       successBanner.style.display = 'flex';
     }
 
-    // ---- Pacientes: nombre/tipo/raza siempre editables directamente en la
-    // fila (sin un modo "editar" aparte) — más simple y robusto que
-    // alternar entre texto de solo lectura y un mini-formulario. Un
-    // paciente YA guardado (tiene `id`) usa el switch Activo/Inactivo
+    // ---- Pacientes: nombre/tipo/raza/sexo/edad siempre editables
+    // directamente en la fila (sin un modo "editar" aparte) — más simple y
+    // robusto que alternar entre texto de solo lectura y un mini-formulario.
+    // Un paciente YA guardado (tiene `id`) usa el switch Activo/Inactivo
     // (AC17/19: dar de baja y reactivar son la misma acción, un solo
     // control) y nunca puede quitarse de la lista (nunca se elimina
     // físicamente); uno nuevo (sin `id`) siempre nace Activo (AC13, sin
@@ -413,6 +437,18 @@
             <div class="tipo-picker" role="group" aria-label="Tipo de mascota">
               <button type="button" class="tipo-picker-btn${paciente.tipo === 'Perro' ? ' active' : ''}" data-tipo="Perro" data-index="${index}" data-tooltip="Perro" aria-label="Perro">${DOG_SVG}</button>
               <button type="button" class="tipo-picker-btn${paciente.tipo === 'Gato' ? ' active' : ''}" data-tipo="Gato" data-index="${index}" data-tooltip="Gato" aria-label="Gato">${CAT_SVG}</button>
+            </div>
+          `;
+
+          // Pedido del usuario (ajuste posterior): íconos con tooltip en vez
+          // de texto — mismo patrón exacto que Especie (Perro/Gato) arriba,
+          // reutilizando .tipo-picker/.tipo-picker-btn tal cual. Opcional
+          // (ver tutores.service.js#validateSexo): ningún botón activo es un
+          // estado válido, no solo los 2 valores.
+          const sexoCell = `
+            <div class="tipo-picker" role="group" aria-label="Sexo de la mascota">
+              <button type="button" class="tipo-picker-btn paciente-sexo-btn${paciente.sexo === 'Macho' ? ' active' : ''}" data-sexo="Macho" data-index="${index}" data-tooltip="Macho" aria-label="Macho">${MALE_SVG}</button>
+              <button type="button" class="tipo-picker-btn paciente-sexo-btn${paciente.sexo === 'Hembra' ? ' active' : ''}" data-sexo="Hembra" data-index="${index}" data-tooltip="Hembra" aria-label="Hembra">${FEMALE_SVG}</button>
             </div>
           `;
 
@@ -438,6 +474,8 @@
             <tr>
               <td>${tipoCell}</td>
               <td><input type="text" class="paciente-input" data-field="nombre" data-index="${index}" maxlength="100" placeholder="Ej. Max" value="${escapeHtml(paciente.nombre)}"></td>
+              <td>${sexoCell}</td>
+              <td><input type="number" class="paciente-input paciente-input-edad" data-field="edad" data-index="${index}" min="0" max="40" placeholder="Años" value="${paciente.edad ?? ''}"></td>
               <td><input type="text" class="paciente-input" data-field="raza" data-index="${index}" maxlength="100" placeholder="Ej. Labrador Retriever" value="${escapeHtml(paciente.raza)}"></td>
               <td>${estadoCell}</td>
             </tr>
@@ -463,6 +501,8 @@
         nombre: p.nombre,
         tipo: p.tipo || '',
         raza: p.raza || '',
+        sexo: p.sexo || '',
+        edad: p.edad ?? '',
         activo: p.activo,
       }));
       resumenPropietario.textContent = tutor.nombre || '—';
@@ -493,7 +533,7 @@
     }
 
     document.getElementById('agregarPacienteBtn').addEventListener('click', () => {
-      pacientes.push({ id: null, nombre: '', tipo: '', raza: '', activo: true });
+      pacientes.push({ id: null, nombre: '', tipo: '', raza: '', sexo: '', edad: '', activo: true });
       renderPacientes();
       pacientesTableBody.querySelector('tr:last-child input[data-field="nombre"]')?.focus();
     });
@@ -517,6 +557,25 @@
     });
 
     pacientesTableBody.addEventListener('click', (event) => {
+      // Va ANTES que el picker de Tipo de abajo, y a propósito: los botones
+      // de Sexo reutilizan la clase .tipo-picker-btn (mismo look que
+      // Especie), así que también hacen match ahí — si el picker de Tipo se
+      // revisara primero, `closest('.tipo-picker-btn')` encontraría el botón
+      // de Sexo igual, y `tipoBtn.dataset.tipo` (undefined en un botón de
+      // Sexo) pisaría pacientes[index].tipo con undefined sin llegar nunca a
+      // este bloque (bug real, encontrado en vivo antes de este fix). Mismo
+      // criterio que el picker de Tipo: click en un botón ya activo lo
+      // desmarca (sexo vuelve a quedar sin capturar) en vez de quedarse
+      // pegado — Sexo es opcional (ver tutores.service.js#validateSexo), a
+      // diferencia de Tipo.
+      const sexoBtn = event.target.closest('.paciente-sexo-btn');
+      if (sexoBtn) {
+        const index = Number(sexoBtn.dataset.index);
+        pacientes[index].sexo = pacientes[index].sexo === sexoBtn.dataset.sexo ? '' : sexoBtn.dataset.sexo;
+        renderPacientes();
+        return;
+      }
+
       const tipoBtn = event.target.closest('.tipo-picker-btn');
       if (tipoBtn) {
         const index = Number(tipoBtn.dataset.index);
@@ -714,7 +773,15 @@
         nombre: tutorNombreInput.value,
         telefono: tutorTelefonoInput.value,
         correo: tutorCorreoInput.value,
-        pacientes: pacientes.map((p) => ({ id: p.id, nombre: p.nombre, tipo: p.tipo, raza: p.raza, activo: p.activo })),
+        pacientes: pacientes.map((p) => ({
+          id: p.id,
+          nombre: p.nombre,
+          tipo: p.tipo,
+          raza: p.raza,
+          sexo: p.sexo,
+          edad: p.edad,
+          activo: p.activo,
+        })),
         confirmarReactivacion: Boolean(confirmarReactivacion),
       });
     }
