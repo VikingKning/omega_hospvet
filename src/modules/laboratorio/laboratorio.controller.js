@@ -209,8 +209,12 @@ async function editar(req, res, next) {
 // estudios de la orden.
 async function subirArchivoRegistro(req, res, next) {
   try {
-    await service.subirArchivoParaTodos(req.params.id, req.files, req.session.user.id);
-    res.json({ ok: true });
+    const resultado = await service.subirArchivoParaTodos(
+      req.params.id,
+      req.files,
+      req.session.user.id,
+    );
+    res.json({ ok: true, reutilizado: resultado.reutilizado });
   } catch (err) {
     if (err.status) {
       return res.status(err.status).json({ error: err.message });
@@ -222,13 +226,13 @@ async function subirArchivoRegistro(req, res, next) {
 // Mismo mecanismo, para UN estudio en particular.
 async function subirArchivoEstudio(req, res, next) {
   try {
-    await service.subirArchivoParaEstudio(
+    const resultado = await service.subirArchivoParaEstudio(
       req.params.id,
       req.params.estudioId,
       req.files,
       req.session.user.id,
     );
-    res.json({ ok: true });
+    res.json({ ok: true, reutilizado: resultado.reutilizado });
   } catch (err) {
     if (err.status) {
       return res.status(err.status).json({ error: err.message });
@@ -238,10 +242,12 @@ async function subirArchivoEstudio(req, res, next) {
 }
 
 // Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
-// equivocó el usuario") — no necesita multer, no lleva body.
+// equivocó el usuario") — no necesita multer, no lleva body. `usuarioId`
+// sí hace falta ahora (bug real corregido en US-409 v2: antes no viajaba
+// en absoluto) — retirado_por/retirado_en lo necesitan para auditoría.
 async function eliminarArchivoRegistro(req, res, next) {
   try {
-    await service.eliminarArchivoDeTodos(req.params.id);
+    await service.eliminarArchivoDeTodos(req.params.id, req.session.user.id);
     res.json({ ok: true });
   } catch (err) {
     if (err.status) {
@@ -253,7 +259,11 @@ async function eliminarArchivoRegistro(req, res, next) {
 
 async function eliminarArchivoEstudio(req, res, next) {
   try {
-    await service.eliminarArchivoDeEstudio(req.params.id, req.params.estudioId);
+    await service.eliminarArchivoDeEstudio(
+      req.params.id,
+      req.params.estudioId,
+      req.session.user.id,
+    );
     res.json({ ok: true });
   } catch (err) {
     if (err.status) {

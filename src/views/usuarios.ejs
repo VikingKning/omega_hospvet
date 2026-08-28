@@ -282,6 +282,15 @@
     closeFloatingList(list);
   });
 
+  // Cerrar el banner de error del panel (pedido explícito del usuario) —
+  // delegado sobre document.body por el mismo motivo que el combobox de
+  // arriba: HTMX reemplaza #usuarios-panel entero en cada filtro/orden.
+  document.body.addEventListener('click', (event) => {
+    if (event.target.closest('#usuariosBannerErrorDismiss')) {
+      event.target.closest('.form-error-banner')?.remove();
+    }
+  });
+
   // Modal de alta/edición (US-602). El contenido de #usuarioFormModalBody
   // lo reemplaza HTMX en cada apertura/reintento, así que los botones de
   // adentro (cerrar, cancelar, cerrar el mensaje de error) y el combobox

@@ -344,6 +344,82 @@ function errorRegistroNoEncontrado() {
   return err;
 }
 
+// Réplica exacta, en el servidor, del código que ya se muestra en la tabla
+// y en el formulario de laboratorio (`laboratorio-panel.ejs`/`laboratorio-
+// form.ejs`, 100% client-side, nunca persistido en BD) — para que el
+// mensaje de conflicto de abajo señale el mismo identificador que el
+// usuario ve en la UI.
+function formatearCodigoRegistro(id) {
+  return `LAB-${String(id).padStart(3, '0')}`;
+}
+
+// Arma la frase de conflicto para UN archivo, según si la coincidencia
+// activa vive en este mismo registro (dentro de un lote de 2+, ver abajo)
+// o en otro (siempre bloquea, con el detalle del AC: registro/paciente/
+// doctor solicitante).
+function construirMensajeConflicto(match, registroActualId) {
+  const codigo = formatearCodigoRegistro(match.registro_laboratorio_id);
+  if (match.registro_laboratorio_id === registroActualId) {
+    return `ya se encuentra cargado en este mismo registro (${codigo})`;
+  }
+  const doctor = match.doctor_nombre ? `Dr. ${match.doctor_nombre} ${match.doctor_apellidos}` : '—';
+  return `ya se encuentra asociado a otro registro de laboratorio (${codigo} — paciente ${match.paciente_nombre}, ${doctor})`;
+}
+
+// US-409 v2: detecta si algún archivo del lote ya está ACTIVO (estado
+// cargado/enviado — un archivo retirado es histórico, nunca bloquea) en
+// `archivos_laboratorio`, ANTES de fusionar/guardar nada. El hash se
+// calcula sobre cada archivo CRUDO tal cual llegó (nunca sobre el PDF ya
+// fusionado, que es contenido nuevo que no puede coincidir con nada
+// subido antes).
+//
+// - 1 solo archivo: sin match → sigue el flujo normal (null). Match en
+//   ESTE MISMO registro → no es un conflicto, es "el usuario ya lo tenía
+//   cargado" — se reutiliza la fila existente en vez de crear una nueva
+//   (se regresa `{ archivoIdExistente }`, el llamador decide qué hacer).
+//   Match en OTRO registro → bloqueo duro.
+// - 2+ archivos (se van a fusionar en un PDF nuevo): CUALQUIER match, sea
+//   del mismo registro o de otro, bloquea el LOTE COMPLETO — decisión
+//   explícita del usuario sobre la letra del AC (que solo describe sin
+//   ambigüedad el caso de 1 archivo): el resultado de fusionar siempre es
+//   contenido nuevo, así que "ya estaba cargado" no tiene un equivalente
+//   limpio ahí, y es más simple pedirle al usuario que quite el archivo
+//   repetido del lote y reintente.
+async function resolverConflictoDeHashes(registroId, files) {
+  const hashesPorArchivo = files.map((file) => ({
+    nombre: file.originalname,
+    hash: archivos.calcularHash(file.buffer),
+  }));
+  const hashesUnicos = [...new Set(hashesPorArchivo.map((f) => f.hash))];
+  const activos = await repository.buscarArchivosActivosPorHashes(hashesUnicos);
+  const activoPorHash = new Map(activos.map((row) => [row.hash_contenido, row]));
+
+  if (files.length === 1) {
+    const match = activoPorHash.get(hashesPorArchivo[0].hash);
+    if (!match) return null;
+    if (match.registro_laboratorio_id === registroId) {
+      return { archivoIdExistente: match.id };
+    }
+    throw new LaboratorioValidationError(
+      `Archivo ya registrado: "${hashesPorArchivo[0].nombre}" ${construirMensajeConflicto(match, registroId)} y no puede cargarse nuevamente. Verifica que hayas seleccionado el resultado correspondiente al paciente actual.`,
+    );
+  }
+
+  const enConflicto = hashesPorArchivo
+    .map((f) => ({ ...f, match: activoPorHash.get(f.hash) }))
+    .filter((f) => f.match);
+
+  if (enConflicto.length) {
+    const detalle = enConflicto
+      .map((f) => `"${f.nombre}" ${construirMensajeConflicto(f.match, registroId)}`)
+      .join('; ');
+    throw new LaboratorioValidationError(
+      `Archivo ya registrado: ${detalle} y no puede cargarse nuevamente. Verifica que hayas seleccionado el resultado correspondiente al paciente actual.`,
+    );
+  }
+  return null;
+}
+
 // Carga de archivos de resultados (pedido explícito del usuario) — valida
 // que el registro/estudio exista (mismo criterio que el resto del módulo:
 // nunca se confía en un id que llega del cliente), delega el trabajo
@@ -357,11 +433,34 @@ async function subirArchivoParaTodos(rawRegistroId, files, usuarioId) {
   const registro = await repository.findById(registroId);
   if (!registro) throw errorRegistroNoEncontrado();
 
+  const conflicto = await resolverConflictoDeHashes(registroId, files);
+  if (conflicto) {
+    await repository.reutilizarArchivoParaTodos({
+      registroId,
+      archivoId: conflicto.archivoIdExistente,
+      usuarioId,
+    });
+    return { archivoId: conflicto.archivoIdExistente, reutilizado: true };
+  }
+
   const metadata = await archivos.procesarArchivos({ registroId, files });
-  const archivoId = await repository.crearArchivo({ registroId, ...metadata, usuarioId });
-  await repository.asignarArchivoATodosLosEstudios(registroId, archivoId);
-  await repository.marcarCargadoSiCompleto(registroId);
-  return archivoId;
+  try {
+    const archivoId = await repository.registrarArchivoParaTodos({
+      registroId,
+      metadata,
+      usuarioId,
+    });
+    return { archivoId, reutilizado: false };
+  } catch (err) {
+    await archivos.eliminarFisico(metadata.rutaAlmacenamiento);
+    if (repository.esViolacionHashActivo(err)) {
+      const [ganador] = await repository.buscarArchivosActivosPorHashes([metadata.hashContenido]);
+      throw new LaboratorioValidationError(
+        `Archivo ya registrado: "${metadata.nombreOriginal}" ${construirMensajeConflicto(ganador, registroId)} y no puede cargarse nuevamente. Verifica que hayas seleccionado el resultado correspondiente al paciente actual.`,
+      );
+    }
+    throw err;
+  }
 }
 
 async function subirArchivoParaEstudio(rawRegistroId, rawEstudioId, files, usuarioId) {
@@ -373,27 +472,52 @@ async function subirArchivoParaEstudio(rawRegistroId, rawEstudioId, files, usuar
   const pertenece = registro.estudios.some((estudio) => estudio.id === estudioId);
   if (!pertenece) throw errorRegistroNoEncontrado();
 
+  const conflicto = await resolverConflictoDeHashes(registroId, files);
+  if (conflicto) {
+    await repository.reutilizarArchivoParaEstudio({
+      registroId,
+      estudioId,
+      archivoId: conflicto.archivoIdExistente,
+      usuarioId,
+    });
+    return { archivoId: conflicto.archivoIdExistente, reutilizado: true };
+  }
+
   const metadata = await archivos.procesarArchivos({ registroId, files });
-  const archivoId = await repository.crearArchivo({ registroId, ...metadata, usuarioId });
-  await repository.asignarArchivoAEstudio(estudioId, archivoId);
-  await repository.marcarCargadoSiCompleto(registroId);
-  return archivoId;
+  try {
+    const archivoId = await repository.registrarArchivoParaEstudio({
+      registroId,
+      estudioId,
+      metadata,
+      usuarioId,
+    });
+    return { archivoId, reutilizado: false };
+  } catch (err) {
+    await archivos.eliminarFisico(metadata.rutaAlmacenamiento);
+    if (repository.esViolacionHashActivo(err)) {
+      const [ganador] = await repository.buscarArchivosActivosPorHashes([metadata.hashContenido]);
+      throw new LaboratorioValidationError(
+        `Archivo ya registrado: "${metadata.nombreOriginal}" ${construirMensajeConflicto(ganador, registroId)} y no puede cargarse nuevamente. Verifica que hayas seleccionado el resultado correspondiente al paciente actual.`,
+      );
+    }
+    throw err;
+  }
 }
 
 // Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
 // equivocó el usuario", sin necesidad de reemplazarlo de inmediato por otro)
 // — mismas validaciones de pertenencia que subirArchivoPara*, delega el
-// desvincular en el repository.
-async function eliminarArchivoDeTodos(rawRegistroId) {
+// desvincular + retirar (estado='retirado' + auditoría) en el repository.
+async function eliminarArchivoDeTodos(rawRegistroId, usuarioId) {
   const registroId = parseId(rawRegistroId);
   if (registroId === null) throw errorRegistroNoEncontrado();
   const registro = await repository.findById(registroId);
   if (!registro) throw errorRegistroNoEncontrado();
 
-  await repository.desasignarArchivoDeTodosLosEstudios(registroId);
+  await repository.desasignarArchivoDeTodosLosEstudios(registroId, usuarioId);
 }
 
-async function eliminarArchivoDeEstudio(rawRegistroId, rawEstudioId) {
+async function eliminarArchivoDeEstudio(rawRegistroId, rawEstudioId, usuarioId) {
   const registroId = parseId(rawRegistroId);
   const estudioId = parseId(rawEstudioId);
   if (registroId === null || estudioId === null) throw errorRegistroNoEncontrado();
@@ -402,7 +526,7 @@ async function eliminarArchivoDeEstudio(rawRegistroId, rawEstudioId) {
   const pertenece = registro.estudios.some((estudio) => estudio.id === estudioId);
   if (!pertenece) throw errorRegistroNoEncontrado();
 
-  await repository.desasignarArchivoDeEstudio(estudioId);
+  await repository.desasignarArchivoDeEstudio(estudioId, usuarioId);
   await repository.revertirCargadoSiIncompleto(registroId);
 }
 

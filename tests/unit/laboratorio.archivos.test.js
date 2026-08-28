@@ -7,10 +7,13 @@
 jest.mock('fs/promises');
 const fs = require('fs/promises');
 const { PDFDocument } = require('pdf-lib');
+const crypto = require('crypto');
 const {
   ArchivoValidationError,
+  calcularHash,
   procesarArchivos,
   rutaAbsolutaDeArchivo,
+  eliminarFisico,
 } = require('../../src/modules/laboratorio/laboratorio.archivos');
 
 // Fixtures mínimas reales (1x1 px) — pdf-lib parsea de verdad los bytes al
@@ -154,5 +157,46 @@ describe('laboratorio.archivos.rutaAbsolutaDeArchivo', () => {
     expect(ruta.endsWith(require('path').join('storage', 'laboratorio', '7', 'abc.pdf'))).toBe(
       true,
     );
+  });
+});
+
+// US-409: exportada para que laboratorio.service.js pueda calcularla sobre
+// cada archivo CRUDO del lote, antes de fusionar (ver
+// laboratorio.service.js#resolverConflictoDeHashes) — se valida aquí que
+// sea SHA-256 real (sensible al contenido, no al nombre/tamaño) y
+// determinista, sin depender de ningún mock de fs.
+describe('laboratorio.archivos.calcularHash', () => {
+  it('calcula el SHA-256 real del contenido (mismo resultado que crypto directo)', () => {
+    const esperado = crypto.createHash('sha256').update(PNG_1PX).digest('hex');
+    expect(calcularHash(PNG_1PX)).toBe(esperado);
+  });
+
+  it('es determinista: el mismo contenido siempre da el mismo hash', () => {
+    expect(calcularHash(PNG_1PX)).toBe(calcularHash(Buffer.from(PNG_1PX)));
+  });
+
+  it('contenido distinto da hashes distintos, sin importar el nombre', () => {
+    const otro = Buffer.from('contenido completamente distinto');
+    expect(calcularHash(PNG_1PX)).not.toBe(calcularHash(otro));
+  });
+});
+
+// US-409 v2: limpieza de mejor esfuerzo cuando ya se escribió el binario a
+// disco pero el paso siguiente (crear la fila en BD) truena — usada en el
+// catch de laboratorio.service.js#subirArchivoParaTodos/subirArchivoParaEstudio.
+describe('laboratorio.archivos.eliminarFisico', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('borra el archivo en la ruta absoluta correcta', async () => {
+    fs.unlink.mockResolvedValue(undefined);
+    await eliminarFisico('7/abc.pdf');
+    expect(fs.unlink).toHaveBeenCalledWith(rutaAbsolutaDeArchivo('7/abc.pdf'));
+  });
+
+  it('no truena si fs.unlink rechaza (limpieza de mejor esfuerzo)', async () => {
+    fs.unlink.mockRejectedValue(new Error('ENOENT'));
+    await expect(eliminarFisico('7/abc.pdf')).resolves.toBeUndefined();
   });
 });

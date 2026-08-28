@@ -104,7 +104,10 @@
         // asociados") hace scroll cuando el número de pacientes crece.
         %>
         <div class="lab-form-scroll">
-        <span class="form-error-banner" id="tutorFormError" style="display:none"></span>
+        <span class="form-error-banner" id="tutorFormError" style="display:none">
+          <span id="tutorFormErrorText"></span>
+          <button type="button" class="modal-close-btn" id="tutorFormErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
+        </span>
         <span class="form-success-banner" id="tutorFormSuccess" style="display:none"></span>
 
         <%
@@ -445,7 +448,7 @@
 
     function showError(message) {
       successBanner.style.display = 'none';
-      errorBanner.textContent = message;
+      document.getElementById('tutorFormErrorText').textContent = message;
       errorBanner.style.display = 'flex';
     }
 
@@ -453,6 +456,13 @@
       errorBanner.style.display = 'none';
       successBanner.style.display = 'none';
     }
+
+    // Cerrar el banner de error (pedido explícito del usuario) — esta
+    // pantalla no usa HTMX ni se reemplaza a sí misma, así que un listener
+    // directo sobre el botón (sin delegar) alcanza.
+    document.getElementById('tutorFormErrorDismiss').addEventListener('click', () => {
+      errorBanner.style.display = 'none';
+    });
 
     function showSuccess(message) {
       errorBanner.style.display = 'none';

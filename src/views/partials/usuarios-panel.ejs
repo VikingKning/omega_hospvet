@@ -57,6 +57,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
 <% if (bannerError) { %>
   <div class="form-error-banner">
     <span><%= bannerError %></span>
+    <button type="button" class="modal-close-btn" id="usuariosBannerErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
   </div>
 <% } %>
 <% if (catalogoVacio) { %>

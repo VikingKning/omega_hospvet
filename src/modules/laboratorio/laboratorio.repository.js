@@ -250,20 +250,55 @@ async function findById(id) {
   return { ...registro, estudios };
 }
 
+// US-409 v2: búsqueda GLOBAL por hash_contenido, filtrando SOLO archivos
+// ACTIVOS (cargado/enviado) — un archivo `retirado` es histórico y nunca
+// debe bloquear una carga futura (esa es justo la brecha que exponía el
+// caso real: "quitar" el archivo equivocado de un registro debía liberar
+// el hash para el registro correcto). Se apoya en el índice parcial
+// `archivos_laboratorio_hash_activo_unique` (mismo índice que garantiza a
+// nivel de BD que nunca haya 2 filas activas con el mismo hash). JOIN a
+// registros_laboratorio→mascotas (paciente) y LEFT JOIN a doctores
+// (solicitante) para poder armar el mensaje de conflicto sin una 2ª
+// consulta — el AC pide mostrar esos datos cuando hay bloqueo. Como a lo
+// más hay 1 fila activa por hash, no hace falta desambiguar duplicados.
+async function buscarArchivosActivosPorHashes(hashes) {
+  if (!hashes.length) return [];
+  return db('archivos_laboratorio as a')
+    .join('registros_laboratorio as r', 'r.id', 'a.registro_laboratorio_id')
+    .join('mascotas as m', 'm.id', 'r.mascota_id')
+    .leftJoin('doctores as d', 'd.id', 'r.doctor_id')
+    .whereIn('a.hash_contenido', hashes)
+    .whereIn('a.estado', ['cargado', 'enviado'])
+    .select(
+      'a.id',
+      'a.hash_contenido',
+      'a.registro_laboratorio_id',
+      'm.nombre as paciente_nombre',
+      'd.nombre as doctor_nombre',
+      'd.apellidos as doctor_apellidos',
+    );
+}
+
 // Carga de archivos de resultados (pedido explícito del usuario) — vive
 // aquí (no en laboratorio.archivos.js, que solo habla con disco/pdf-lib)
 // porque son las únicas funciones que tocan `archivos_laboratorio`/
-// `estudios_solicitados.archivo_id` en la base de datos.
-async function crearArchivo({
-  registroId,
-  nombreOriginal,
-  rutaAlmacenamiento,
-  hashContenido,
-  tamanoBytes,
-  consolidado,
-  usuarioId,
-}) {
-  const [row] = await db('archivos_laboratorio')
+// `estudios_solicitados.archivo_id` en la base de datos. Aceptan un `trx`
+// opcional (default `db`) para poder componerse dentro de una transacción
+// más grande (ver registrarArchivoParaTodos/registrarArchivoParaEstudio) o
+// llamarse sueltas como antes.
+async function crearArchivo(
+  {
+    registroId,
+    nombreOriginal,
+    rutaAlmacenamiento,
+    hashContenido,
+    tamanoBytes,
+    consolidado,
+    usuarioId,
+  },
+  trx = db,
+) {
+  const [row] = await trx('archivos_laboratorio')
     .insert({
       registro_laboratorio_id: registroId,
       nombre_original: nombreOriginal,
@@ -271,8 +306,9 @@ async function crearArchivo({
       hash_contenido: hashContenido,
       tamano_bytes: tamanoBytes,
       consolidado,
+      estado: 'cargado',
       cargado_por: usuarioId,
-      cargado_en: db.fn.now(),
+      cargado_en: trx.fn.now(),
     })
     .returning('id');
   return row.id;
@@ -282,8 +318,8 @@ async function findArchivoById(id) {
   return db('archivos_laboratorio').where({ id }).first();
 }
 
-async function asignarArchivoAEstudio(estudioId, archivoId) {
-  await db('estudios_solicitados')
+async function asignarArchivoAEstudio(estudioId, archivoId, trx = db) {
+  await trx('estudios_solicitados')
     .where({ id: estudioId })
     .update({ archivo_id: archivoId, estado: 'cargado' });
 }
@@ -291,8 +327,8 @@ async function asignarArchivoAEstudio(estudioId, archivoId) {
 // "Un archivo para todos" (pedido explícito del usuario) — pisa cualquier
 // archivo individual que ya tuviera cada estudio: representa el reporte
 // combinado del laboratorio, que reemplaza a los parciales.
-async function asignarArchivoATodosLosEstudios(registroId, archivoId) {
-  await db('estudios_solicitados')
+async function asignarArchivoATodosLosEstudios(registroId, archivoId, trx = db) {
+  await trx('estudios_solicitados')
     .where('registro_laboratorio_id', registroId)
     .update({ archivo_id: archivoId, estado: 'cargado' });
 }
@@ -300,58 +336,191 @@ async function asignarArchivoATodosLosEstudios(registroId, archivoId) {
 // Después de cualquier carga, si YA todos los estudios de la orden tienen
 // archivo, el registro completo pasa a 'cargado' (idempotente: si ya
 // estaba, no reescribe cargado_en).
-async function marcarCargadoSiCompleto(registroId) {
-  const pendientes = await db('estudios_solicitados')
+async function marcarCargadoSiCompleto(registroId, trx = db) {
+  const pendientes = await trx('estudios_solicitados')
     .where('registro_laboratorio_id', registroId)
     .whereNull('archivo_id')
-    .first(db.raw('true as existe'));
+    .first(trx.raw('true as existe'));
   if (pendientes) return;
 
-  await db('registros_laboratorio')
+  await trx('registros_laboratorio')
     .where({ id: registroId })
     .andWhere('estado', 'pendiente')
-    .update({ estado: 'cargado', cargado_en: db.fn.now() });
+    .update({ estado: 'cargado', cargado_en: trx.fn.now() });
+}
+
+// US-409 v2: retira un archivo (estado='retirado' + auditoría) SOLO si ya
+// no queda ninguna fila de estudios_solicitados apuntándolo — defensivo,
+// nunca confía en que el llamador ya desvinculó todo antes de invocarla.
+// Es lo que libera un hash para poder reutilizarse en otro registro (el
+// caso real: "quitar" el archivo equivocado de un registro debe permitir
+// cargar el correcto en otro). Siempre dentro de la trx del llamador.
+async function retirarSiNoQuedaEnUso(trx, archivoId, usuarioId) {
+  const enUso = await trx('estudios_solicitados')
+    .where('archivo_id', archivoId)
+    .first(trx.raw('true as existe'));
+  if (enUso) return;
+
+  await trx('archivos_laboratorio')
+    .where({ id: archivoId })
+    .update({ estado: 'retirado', retirado_por: usuarioId, retirado_en: trx.fn.now() });
+}
+
+// Primer catch de un código de error de Postgres en el proyecto (el patrón
+// establecido en el resto del código es "pre-check antes del insert",
+// nunca catch-and-translate) — excepción deliberada: un pre-check por sí
+// solo no puede cerrar una carrera real entre 2 transacciones concurrentes
+// insertando el mismo hash activo en registros distintos (AC explícito del
+// usuario); el índice único parcial + este catch sí lo garantizan.
+function esViolacionHashActivo(err) {
+  return err.code === '23505' && err.constraint === 'archivos_laboratorio_hash_activo_unique';
+}
+
+// US-409 v2: crea el archivo NUEVO y lo asigna, todo en una sola
+// transacción — si algún paso truena (incluida la violación del índice
+// único parcial por una carrera real), nada queda a medias en BD. Antes de
+// asignar, toma una foto de qué archivo(s) quedaban activos para este
+// registro/estudio: si la nueva asignación los desplaza y ya no los
+// referencia nadie más, se retiran (cierra el hueco de "Reemplazar" que
+// dejaba archivos viejos huérfanos pero eternamente 'cargado').
+async function registrarArchivoParaTodos({ registroId, metadata, usuarioId }) {
+  return db.transaction(async (trx) => {
+    const previos = await trx('estudios_solicitados')
+      .where('registro_laboratorio_id', registroId)
+      .whereNotNull('archivo_id')
+      .distinct('archivo_id')
+      .pluck('archivo_id');
+
+    const archivoId = await crearArchivo({ registroId, ...metadata, usuarioId }, trx);
+    await asignarArchivoATodosLosEstudios(registroId, archivoId, trx);
+    await marcarCargadoSiCompleto(registroId, trx);
+
+    for (const idPrevio of previos) {
+      if (idPrevio !== archivoId) await retirarSiNoQuedaEnUso(trx, idPrevio, usuarioId);
+    }
+    return archivoId;
+  });
+}
+
+async function registrarArchivoParaEstudio({ registroId, estudioId, metadata, usuarioId }) {
+  return db.transaction(async (trx) => {
+    const estudioPrevio = await trx('estudios_solicitados')
+      .where({ id: estudioId })
+      .first('archivo_id');
+
+    const archivoId = await crearArchivo({ registroId, ...metadata, usuarioId }, trx);
+    await asignarArchivoAEstudio(estudioId, archivoId, trx);
+    await marcarCargadoSiCompleto(registroId, trx);
+
+    if (estudioPrevio?.archivo_id && estudioPrevio.archivo_id !== archivoId) {
+      await retirarSiNoQuedaEnUso(trx, estudioPrevio.archivo_id, usuarioId);
+    }
+    return archivoId;
+  });
+}
+
+// US-409 v2: mismo flujo que arriba pero SIN crear una fila nueva — el
+// contenido ya existe activo en este mismo registro (validado por
+// laboratorio.service.js#resolverConflictoDeHashes), así que solo se
+// reasigna. Cubre también el caso de reutilizar, dentro del mismo
+// registro, un archivo que estaba activo en OTRO estudio de esa misma
+// orden.
+async function reutilizarArchivoParaTodos({ registroId, archivoId, usuarioId }) {
+  return db.transaction(async (trx) => {
+    const previos = await trx('estudios_solicitados')
+      .where('registro_laboratorio_id', registroId)
+      .whereNotNull('archivo_id')
+      .distinct('archivo_id')
+      .pluck('archivo_id');
+
+    await asignarArchivoATodosLosEstudios(registroId, archivoId, trx);
+    await marcarCargadoSiCompleto(registroId, trx);
+
+    for (const idPrevio of previos) {
+      if (idPrevio !== archivoId) await retirarSiNoQuedaEnUso(trx, idPrevio, usuarioId);
+    }
+  });
+}
+
+async function reutilizarArchivoParaEstudio({ registroId, estudioId, archivoId, usuarioId }) {
+  return db.transaction(async (trx) => {
+    const estudioPrevio = await trx('estudios_solicitados')
+      .where({ id: estudioId })
+      .first('archivo_id');
+
+    await asignarArchivoAEstudio(estudioId, archivoId, trx);
+    await marcarCargadoSiCompleto(registroId, trx);
+
+    if (estudioPrevio?.archivo_id && estudioPrevio.archivo_id !== archivoId) {
+      await retirarSiNoQuedaEnUso(trx, estudioPrevio.archivo_id, usuarioId);
+    }
+  });
 }
 
 // Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
 // equivocó el usuario") — nunca borra la fila de `archivos_laboratorio`
-// (esta tabla no tiene baja lógica, se queda huérfana pero recuperable,
-// mismo criterio que "Reemplazar"), solo desvincula. Reversa exacta de
-// asignarArchivoATodosLosEstudios + marcarCargadoSiCompleto: al quitar el
-// compartido, TODOS los estudios se sabe con certeza que se quedan sin
-// archivo, así que el registro puede fijarse directo a 'pendiente'.
+// (esta tabla no tiene baja lógica física, se conserva como histórico,
+// mismo criterio que "Reemplazar"): pasa a estado='retirado' + auditoría
+// (retirado_por/retirado_en) en vez de quedar simplemente huérfana. Reversa
+// exacta de asignarArchivoATodosLosEstudios + marcarCargadoSiCompleto: al
+// quitar el compartido, TODOS los estudios se sabe con certeza que se
+// quedan sin archivo, así que el registro puede fijarse directo a
+// 'pendiente'.
 //
 // Reutilizada tal cual para "Quitar todos los archivos" (botón a nivel de
 // "Estudios solicitados", pedido explícito del usuario) — limpiar
 // archivo_id en TODOS los estudios de la orden es lo mismo sin importar si
-// venían de un archivo compartido o de uno distinto por estudio.
-async function desasignarArchivoDeTodosLosEstudios(registroId) {
-  await db('estudios_solicitados')
-    .where('registro_laboratorio_id', registroId)
-    .update({ archivo_id: null, estado: 'pendiente' });
-  await db('registros_laboratorio')
-    .where({ id: registroId })
-    .update({ estado: 'pendiente', cargado_en: null });
+// venían de un archivo compartido o de varios distintos por estudio (por
+// eso el retiro es por cada id distinto encontrado, no uno solo).
+async function desasignarArchivoDeTodosLosEstudios(registroId, usuarioId) {
+  return db.transaction(async (trx) => {
+    const archivoIds = await trx('estudios_solicitados')
+      .where('registro_laboratorio_id', registroId)
+      .whereNotNull('archivo_id')
+      .distinct('archivo_id')
+      .pluck('archivo_id');
+
+    await trx('estudios_solicitados')
+      .where('registro_laboratorio_id', registroId)
+      .update({ archivo_id: null, estado: 'pendiente' });
+    await trx('registros_laboratorio')
+      .where({ id: registroId })
+      .update({ estado: 'pendiente', cargado_en: null });
+
+    for (const archivoId of archivoIds) {
+      await retirarSiNoQuedaEnUso(trx, archivoId, usuarioId);
+    }
+  });
 }
 
-async function desasignarArchivoDeEstudio(estudioId) {
-  await db('estudios_solicitados')
-    .where({ id: estudioId })
-    .update({ archivo_id: null, estado: 'pendiente' });
+async function desasignarArchivoDeEstudio(estudioId, usuarioId) {
+  return db.transaction(async (trx) => {
+    const estudioPrevio = await trx('estudios_solicitados')
+      .where({ id: estudioId })
+      .first('archivo_id');
+
+    await trx('estudios_solicitados')
+      .where({ id: estudioId })
+      .update({ archivo_id: null, estado: 'pendiente' });
+
+    if (estudioPrevio?.archivo_id) {
+      await retirarSiNoQuedaEnUso(trx, estudioPrevio.archivo_id, usuarioId);
+    }
+  });
 }
 
 // Reversa de marcarCargadoSiCompleto — a diferencia de "quitar de todos",
 // aquí no se sabe de antemano si los DEMÁS estudios siguen teniendo archivo
 // (carga individual), así que hay que volver a consultar antes de decidir
 // si el registro deja de estar 'cargado'.
-async function revertirCargadoSiIncompleto(registroId) {
-  const pendientes = await db('estudios_solicitados')
+async function revertirCargadoSiIncompleto(registroId, trx = db) {
+  const pendientes = await trx('estudios_solicitados')
     .where('registro_laboratorio_id', registroId)
     .whereNull('archivo_id')
-    .first(db.raw('true as existe'));
+    .first(trx.raw('true as existe'));
   if (!pendientes) return;
 
-  await db('registros_laboratorio')
+  await trx('registros_laboratorio')
     .where({ id: registroId })
     .andWhere('estado', 'cargado')
     .update({ estado: 'pendiente', cargado_en: null });
@@ -410,11 +579,18 @@ module.exports = {
   findById,
   actualizarRegistro,
   eliminar,
+  buscarArchivosActivosPorHashes,
   crearArchivo,
   findArchivoById,
   asignarArchivoAEstudio,
   asignarArchivoATodosLosEstudios,
   marcarCargadoSiCompleto,
+  retirarSiNoQuedaEnUso,
+  esViolacionHashActivo,
+  registrarArchivoParaTodos,
+  registrarArchivoParaEstudio,
+  reutilizarArchivoParaTodos,
+  reutilizarArchivoParaEstudio,
   desasignarArchivoDeTodosLosEstudios,
   desasignarArchivoDeEstudio,
   revertirCargadoSiIncompleto,

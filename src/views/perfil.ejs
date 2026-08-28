@@ -114,6 +114,15 @@
   // para los 3 botones vía data-input-id/data-eye-icon-id, en vez de
   // repetirlo 3 veces con ids fijos.
   document.getElementById('perfil-panel').addEventListener('click', (event) => {
+    // Cerrar el banner de error (pedido explícito del usuario) — mismo
+    // motivo de delegación que el resto de este listener: los fragmentos
+    // de "Datos personales"/"Cambiar contraseña" se reemplazan completos
+    // en cada guardado.
+    if (event.target.closest('#perfilFormErrorDismiss, #perfilPasswordFormErrorDismiss')) {
+      event.target.closest('.form-error-banner')?.remove();
+      return;
+    }
+
     const toggle = event.target.closest('.toggle-pass');
     if (!toggle) return;
 

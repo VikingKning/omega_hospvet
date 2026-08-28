@@ -476,6 +476,11 @@ describe('laboratorio.service.subirArchivoParaTodos', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repository.findById.mockResolvedValue({ id: 7, estudios: [{ id: 100 }, { id: 101 }] });
+    // US-409 v2: sin coincidencias activas por default — cada test de
+    // duplicados de abajo sobreescribe esto explícitamente con lo que
+    // necesite.
+    archivos.calcularHash.mockReturnValue('hash-sin-conflicto');
+    repository.buscarArchivosActivosPorHashes.mockResolvedValue([]);
     archivos.procesarArchivos.mockResolvedValue({
       nombreOriginal: 'resultado.pdf',
       rutaAlmacenamiento: '7/abc.pdf',
@@ -483,7 +488,7 @@ describe('laboratorio.service.subirArchivoParaTodos', () => {
       tamanoBytes: 123,
       consolidado: false,
     });
-    repository.crearArchivo.mockResolvedValue(55);
+    repository.registrarArchivoParaTodos.mockResolvedValue(55);
   });
 
   it('rechaza un id de registro inválido', async () => {
@@ -498,18 +503,18 @@ describe('laboratorio.service.subirArchivoParaTodos', () => {
   });
 
   it('crea el archivo, lo asigna a TODOS los estudios y marca cargado si completa', async () => {
-    const archivoId = await subirArchivoParaTodos('7', [{ originalname: 'a.pdf' }], 9);
+    const resultado = await subirArchivoParaTodos('7', [{ originalname: 'a.pdf' }], 9);
 
-    expect(archivoId).toBe(55);
+    expect(resultado).toEqual({ archivoId: 55, reutilizado: false });
     expect(archivos.procesarArchivos).toHaveBeenCalledWith({
       registroId: 7,
       files: [{ originalname: 'a.pdf' }],
     });
-    expect(repository.crearArchivo).toHaveBeenCalledWith(
-      expect.objectContaining({ registroId: 7, usuarioId: 9, nombreOriginal: 'resultado.pdf' }),
-    );
-    expect(repository.asignarArchivoATodosLosEstudios).toHaveBeenCalledWith(7, 55);
-    expect(repository.marcarCargadoSiCompleto).toHaveBeenCalledWith(7);
+    expect(repository.registrarArchivoParaTodos).toHaveBeenCalledWith({
+      registroId: 7,
+      usuarioId: 9,
+      metadata: expect.objectContaining({ nombreOriginal: 'resultado.pdf' }),
+    });
   });
 
   it('propaga el error de validación de laboratorio.archivos.js (ej. video mezclado con otro archivo)', async () => {
@@ -517,7 +522,152 @@ describe('laboratorio.service.subirArchivoParaTodos', () => {
       Object.assign(new Error('Tipo no permitido'), { status: 400 }),
     );
     await expect(subirArchivoParaTodos('7', [{}], 1)).rejects.toThrow('Tipo no permitido');
-    expect(repository.crearArchivo).not.toHaveBeenCalled();
+    expect(repository.registrarArchivoParaTodos).not.toHaveBeenCalled();
+  });
+
+  // US-409 v2: detección de duplicados por hash — solo ACTIVOS
+  // (cargado/enviado), GLOBAL (sin filtrar por tutor/paciente/estudio),
+  // con el modelo de estado CARGADO/ENVIADO/RETIRADO.
+  describe('US-409: detección de duplicados por hash', () => {
+    it('el mismo hash ya activo en ESTE registro (7) se reutiliza — no crea archivo ni fila nueva', async () => {
+      archivos.calcularHash.mockReturnValue('hash-repetido');
+      repository.buscarArchivosActivosPorHashes.mockResolvedValue([
+        { id: 44, hash_contenido: 'hash-repetido', registro_laboratorio_id: 7 },
+      ]);
+
+      const resultado = await subirArchivoParaTodos('7', [{ originalname: 'a.pdf' }], 9);
+
+      expect(resultado).toEqual({ archivoId: 44, reutilizado: true });
+      expect(archivos.procesarArchivos).not.toHaveBeenCalled();
+      expect(repository.registrarArchivoParaTodos).not.toHaveBeenCalled();
+      expect(repository.reutilizarArchivoParaTodos).toHaveBeenCalledWith({
+        registroId: 7,
+        archivoId: 44,
+        usuarioId: 9,
+      });
+    });
+
+    it('el mismo hash activo en OTRO registro (99) rechaza el lote, sin crear nada, y el mensaje trae registro/paciente/doctor', async () => {
+      archivos.calcularHash.mockReturnValue('hash-ajeno');
+      repository.buscarArchivosActivosPorHashes.mockResolvedValue([
+        {
+          id: 44,
+          hash_contenido: 'hash-ajeno',
+          registro_laboratorio_id: 99,
+          paciente_nombre: 'Nissa',
+          doctor_nombre: 'Juan',
+          doctor_apellidos: 'Pérez',
+        },
+      ]);
+
+      await expect(
+        subirArchivoParaTodos('7', [{ originalname: 'resultado.pdf' }], 9),
+      ).rejects.toThrow(
+        '"resultado.pdf" ya se encuentra asociado a otro registro de laboratorio (LAB-099 — paciente Nissa, Dr. Juan Pérez)',
+      );
+      expect(archivos.procesarArchivos).not.toHaveBeenCalled();
+      expect(repository.registrarArchivoParaTodos).not.toHaveBeenCalled();
+      expect(repository.reutilizarArchivoParaTodos).not.toHaveBeenCalled();
+    });
+
+    it('en un lote de 2+ archivos, un duplicado activo del MISMO registro también bloquea el lote completo (decisión del usuario)', async () => {
+      archivos.calcularHash.mockImplementation((buffer) =>
+        buffer === 'buffer-repetido' ? 'hash-repetido' : 'hash-nuevo',
+      );
+      repository.buscarArchivosActivosPorHashes.mockResolvedValue([
+        { id: 44, hash_contenido: 'hash-repetido', registro_laboratorio_id: 7 },
+      ]);
+      const files = [
+        { originalname: 'nuevo.jpg', buffer: 'buffer-nuevo' },
+        { originalname: 'repetido.jpg', buffer: 'buffer-repetido' },
+      ];
+
+      await expect(subirArchivoParaTodos('7', files, 9)).rejects.toThrow(
+        '"repetido.jpg" ya se encuentra cargado en este mismo registro (LAB-007)',
+      );
+      expect(archivos.procesarArchivos).not.toHaveBeenCalled();
+      expect(repository.registrarArchivoParaTodos).not.toHaveBeenCalled();
+    });
+
+    it('en un lote de varios archivos, si SOLO uno pertenece a otro registro, rechaza el LOTE COMPLETO nombrando ese archivo (pedido explícito del usuario)', async () => {
+      archivos.calcularHash.mockImplementation((buffer) =>
+        buffer === 'buffer-ajeno' ? 'hash-ajeno' : 'hash-propio',
+      );
+      repository.buscarArchivosActivosPorHashes.mockResolvedValue([
+        {
+          id: 44,
+          hash_contenido: 'hash-ajeno',
+          registro_laboratorio_id: 99,
+          paciente_nombre: 'Nissa',
+        },
+      ]);
+      const files = [
+        { originalname: 'ok-1.jpg', buffer: 'buffer-ok-1' },
+        { originalname: 'ajeno.jpg', buffer: 'buffer-ajeno' },
+        { originalname: 'ok-2.jpg', buffer: 'buffer-ok-2' },
+      ];
+
+      await expect(subirArchivoParaTodos('7', files, 9)).rejects.toThrow('"ajeno.jpg"');
+      expect(archivos.procesarArchivos).not.toHaveBeenCalled();
+      expect(repository.registrarArchivoParaTodos).not.toHaveBeenCalled();
+    });
+
+    it('consulta buscarArchivosActivosPorHashes con los hashes ÚNICOS de todos los archivos del lote de un jalón (nunca uno por uno)', async () => {
+      archivos.calcularHash.mockImplementation((buffer) => `hash-de-${buffer}`);
+      const files = [
+        { originalname: 'a.jpg', buffer: 'buf-a' },
+        { originalname: 'b.jpg', buffer: 'buf-b' },
+      ];
+
+      await subirArchivoParaTodos('7', files, 9);
+
+      expect(repository.buscarArchivosActivosPorHashes).toHaveBeenCalledTimes(1);
+      expect(repository.buscarArchivosActivosPorHashes).toHaveBeenCalledWith([
+        'hash-de-buf-a',
+        'hash-de-buf-b',
+      ]);
+    });
+
+    // US-409 v2: la carrera real que cierra el índice único parcial — 2
+    // cargas concurrentes con el mismo hash en registros distintos. El
+    // pre-check ya pasó limpio (por eso llegamos a registrarArchivoParaTodos),
+    // pero la transacción truena con la violación del índice.
+    it('si registrarArchivoParaTodos truena por una carrera real (índice único), borra el archivo físico y relanza un error de conflicto', async () => {
+      const errorCarrera = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'archivos_laboratorio_hash_activo_unique',
+      });
+      repository.registrarArchivoParaTodos.mockRejectedValue(errorCarrera);
+      repository.esViolacionHashActivo.mockReturnValue(true);
+      repository.buscarArchivosActivosPorHashes
+        .mockResolvedValueOnce([]) // pre-check normal, sin conflicto
+        .mockResolvedValueOnce([
+          {
+            id: 77,
+            hash_contenido: 'hash',
+            registro_laboratorio_id: 99,
+            paciente_nombre: 'Nissa',
+            doctor_nombre: 'Juan',
+            doctor_apellidos: 'Pérez',
+          },
+        ]);
+
+      await expect(subirArchivoParaTodos('7', [{ originalname: 'a.pdf' }], 9)).rejects.toThrow(
+        'ya se encuentra asociado a otro registro de laboratorio (LAB-099',
+      );
+      expect(archivos.eliminarFisico).toHaveBeenCalledWith('7/abc.pdf');
+    });
+
+    it('si registrarArchivoParaTodos truena por cualquier OTRO motivo, borra el archivo físico y relanza el error original sin traducirlo', async () => {
+      const errorInesperado = new Error('la BD se cayó');
+      repository.registrarArchivoParaTodos.mockRejectedValue(errorInesperado);
+      repository.esViolacionHashActivo.mockReturnValue(false);
+
+      await expect(subirArchivoParaTodos('7', [{ originalname: 'a.pdf' }], 9)).rejects.toThrow(
+        'la BD se cayó',
+      );
+      expect(archivos.eliminarFisico).toHaveBeenCalledWith('7/abc.pdf');
+    });
   });
 });
 
@@ -525,6 +675,8 @@ describe('laboratorio.service.subirArchivoParaEstudio', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repository.findById.mockResolvedValue({ id: 7, estudios: [{ id: 100 }, { id: 101 }] });
+    archivos.calcularHash.mockReturnValue('hash-sin-conflicto');
+    repository.buscarArchivosActivosPorHashes.mockResolvedValue([]);
     archivos.procesarArchivos.mockResolvedValue({
       nombreOriginal: 'radiografia.jpg',
       rutaAlmacenamiento: '7/def.jpg',
@@ -532,23 +684,63 @@ describe('laboratorio.service.subirArchivoParaEstudio', () => {
       tamanoBytes: 456,
       consolidado: false,
     });
-    repository.crearArchivo.mockResolvedValue(56);
+    repository.registrarArchivoParaEstudio.mockResolvedValue(56);
   });
 
   it('rechaza si el estudio no pertenece a ese registro', async () => {
     await expect(subirArchivoParaEstudio('7', '999', [{}], 1)).rejects.toThrow(
       'Registro no encontrado.',
     );
-    expect(repository.asignarArchivoAEstudio).not.toHaveBeenCalled();
+    expect(repository.registrarArchivoParaEstudio).not.toHaveBeenCalled();
   });
 
   it('crea el archivo y lo asigna SOLO a ese estudio (no a los demás de la orden)', async () => {
-    const archivoId = await subirArchivoParaEstudio('7', '101', [{ originalname: 'x.jpg' }], 9);
+    const resultado = await subirArchivoParaEstudio('7', '101', [{ originalname: 'x.jpg' }], 9);
 
-    expect(archivoId).toBe(56);
-    expect(repository.asignarArchivoAEstudio).toHaveBeenCalledWith(101, 56);
-    expect(repository.asignarArchivoATodosLosEstudios).not.toHaveBeenCalled();
-    expect(repository.marcarCargadoSiCompleto).toHaveBeenCalledWith(7);
+    expect(resultado).toEqual({ archivoId: 56, reutilizado: false });
+    expect(repository.registrarArchivoParaEstudio).toHaveBeenCalledWith({
+      registroId: 7,
+      estudioId: 101,
+      usuarioId: 9,
+      metadata: expect.objectContaining({ nombreOriginal: 'radiografia.jpg' }),
+    });
+  });
+
+  // US-409: misma validación que subirArchivoParaTodos — un solo test aquí
+  // basta para confirmar que también está conectada en este 2do camino de
+  // carga (la lógica en sí ya se cubrió exhaustivamente arriba).
+  it('US-409: un hash activo en OTRO registro también rechaza la carga por estudio', async () => {
+    archivos.calcularHash.mockReturnValue('hash-ajeno');
+    repository.buscarArchivosActivosPorHashes.mockResolvedValue([
+      {
+        id: 44,
+        hash_contenido: 'hash-ajeno',
+        registro_laboratorio_id: 99,
+        paciente_nombre: 'Nissa',
+      },
+    ]);
+
+    await expect(
+      subirArchivoParaEstudio('7', '101', [{ originalname: 'x.jpg' }], 9),
+    ).rejects.toThrow('ya se encuentra asociado a otro registro de laboratorio');
+    expect(repository.registrarArchivoParaEstudio).not.toHaveBeenCalled();
+  });
+
+  it('un hash activo en ESTE registro se reutiliza y se asigna a este estudio', async () => {
+    archivos.calcularHash.mockReturnValue('hash-repetido');
+    repository.buscarArchivosActivosPorHashes.mockResolvedValue([
+      { id: 44, hash_contenido: 'hash-repetido', registro_laboratorio_id: 7 },
+    ]);
+
+    const resultado = await subirArchivoParaEstudio('7', '101', [{ originalname: 'x.jpg' }], 9);
+
+    expect(resultado).toEqual({ archivoId: 44, reutilizado: true });
+    expect(repository.reutilizarArchivoParaEstudio).toHaveBeenCalledWith({
+      registroId: 7,
+      estudioId: 101,
+      archivoId: 44,
+      usuarioId: 9,
+    });
   });
 });
 
@@ -559,17 +751,19 @@ describe('laboratorio.service.eliminarArchivoDeTodos', () => {
   });
 
   it('rechaza un id de registro inválido', async () => {
-    await expect(eliminarArchivoDeTodos('no-es-numero')).rejects.toThrow('Registro no encontrado.');
+    await expect(eliminarArchivoDeTodos('no-es-numero', 9)).rejects.toThrow(
+      'Registro no encontrado.',
+    );
   });
 
   it('rechaza si el registro no existe', async () => {
     repository.findById.mockResolvedValue(undefined);
-    await expect(eliminarArchivoDeTodos('7')).rejects.toThrow('Registro no encontrado.');
+    await expect(eliminarArchivoDeTodos('7', 9)).rejects.toThrow('Registro no encontrado.');
   });
 
-  it('desvincula el archivo de TODOS los estudios de la orden', async () => {
-    await eliminarArchivoDeTodos('7');
-    expect(repository.desasignarArchivoDeTodosLosEstudios).toHaveBeenCalledWith(7);
+  it('desvincula el archivo de TODOS los estudios de la orden, pasando el usuario para la auditoría del retiro', async () => {
+    await eliminarArchivoDeTodos('7', 9);
+    expect(repository.desasignarArchivoDeTodosLosEstudios).toHaveBeenCalledWith(7, 9);
   });
 });
 
@@ -580,13 +774,15 @@ describe('laboratorio.service.eliminarArchivoDeEstudio', () => {
   });
 
   it('rechaza si el estudio no pertenece a ese registro', async () => {
-    await expect(eliminarArchivoDeEstudio('7', '999')).rejects.toThrow('Registro no encontrado.');
+    await expect(eliminarArchivoDeEstudio('7', '999', 9)).rejects.toThrow(
+      'Registro no encontrado.',
+    );
     expect(repository.desasignarArchivoDeEstudio).not.toHaveBeenCalled();
   });
 
-  it('desvincula el archivo de ese estudio y revisa si el registro debe volver a pendiente', async () => {
-    await eliminarArchivoDeEstudio('7', '101');
-    expect(repository.desasignarArchivoDeEstudio).toHaveBeenCalledWith(101);
+  it('desvincula el archivo de ese estudio (pasando el usuario) y revisa si el registro debe volver a pendiente', async () => {
+    await eliminarArchivoDeEstudio('7', '101', 9);
+    expect(repository.desasignarArchivoDeEstudio).toHaveBeenCalledWith(101, 9);
     expect(repository.revertirCargadoSiIncompleto).toHaveBeenCalledWith(7);
   });
 });

@@ -86,8 +86,19 @@ async function fusionarEnPdf(files) {
   return Buffer.from(await pdf.save());
 }
 
+// US-409: SHA-256 del contenido binario tal cual (nunca del nombre/ruta/
+// fecha) — exportada para poder calcularse ANTES de fusionar (laboratorio.
+// service.js#validarArchivosNoDuplicados la usa sobre cada archivo crudo
+// del lote, antes de que exista el PDF consolidado) y reutilizada aquí
+// para el hash del contenido final ya guardado (crudo si es 1 solo
+// archivo, del PDF fusionado si son 2+) — mismo algoritmo, dos momentos
+// distintos del mismo flujo.
+function calcularHash(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
 async function guardarEnDisco({ registroId, buffer, nombreOriginal, consolidado }) {
-  const hashContenido = crypto.createHash('sha256').update(buffer).digest('hex');
+  const hashContenido = calcularHash(buffer);
   const carpeta = path.join(STORAGE_ROOT, String(registroId));
   await fs.mkdir(carpeta, { recursive: true });
   const extension = consolidado ? '.pdf' : path.extname(nombreOriginal);
@@ -133,9 +144,21 @@ function rutaAbsolutaDeArchivo(rutaAlmacenamiento) {
   return path.join(STORAGE_ROOT, rutaAlmacenamiento);
 }
 
+// US-409 v2: limpieza de mejor esfuerzo cuando `procesarArchivos` ya
+// escribió el binario a disco pero el paso siguiente (crear la fila en
+// `archivos_laboratorio`) truena — por ejemplo, la carrera real que cierra
+// el índice único parcial sobre hash_contenido. Nunca debe tapar el error
+// real que se está propagando, por eso traga cualquier fallo del propio
+// unlink (archivo ya borrado, permisos, lo que sea).
+async function eliminarFisico(rutaAlmacenamiento) {
+  await fs.unlink(rutaAbsolutaDeArchivo(rutaAlmacenamiento)).catch(() => {});
+}
+
 module.exports = {
   ArchivoValidationError,
   TIPOS_PERMITIDOS,
+  calcularHash,
   procesarArchivos,
   rutaAbsolutaDeArchivo,
+  eliminarFisico,
 };

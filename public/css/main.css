@@ -3951,18 +3951,26 @@ body:has(.app)::after {
   transform: translateY(0);
 }
 
+/* Reporte real del usuario: a diferencia de .form-error-banner (empujado
+   en el flujo normal, siempre sobre el fondo neutro de la página), el
+   toast es `position:fixed` y flota ENCIMA de contenido arbitrario (aquí,
+   el nombre/avatar del usuario en el header) — un fondo `rgba(...)` con
+   alpha bajo deja ver ese contenido de fondo A TRAVÉS del toast, tapando
+   el mensaje. Fix: mismo tono que antes pero SÓLIDO (sin alpha) — se ve
+   igual sobre una página en blanco, pero ahora es legible sin importar
+   qué haya debajo. */
 .toast--warning {
-  background: rgba(242, 169, 0, 0.15);
+  background: #fdf2d9;
   color: var(--warning-text);
 }
 
 .toast--success {
-  background: rgba(30, 142, 62, 0.15);
+  background: #ddeee2;
   color: var(--success);
 }
 
 .toast--danger {
-  background: rgba(240, 15, 53, 0.15);
+  background: #fddbe1;
   color: var(--danger);
 }
 
