@@ -29,6 +29,7 @@ const SIN_PERMISOS = {
   username: 'laboratorio.sinpermiso.test',
   password: 'LaboratorioSinPermisoTest123!',
 };
+const SOLO_CARGAR = { username: 'laboratorio.cargar.test', password: 'LaboratorioCargarTest123!' };
 
 async function getCsrfToken(agent) {
   const res = await agent.get('/');
@@ -60,6 +61,7 @@ async function cleanup() {
     SOLO_CREAR.username,
     SOLO_ELIMINAR.username,
     SIN_PERMISOS.username,
+    SOLO_CARGAR.username,
   ];
   const usuarioIds = await db('usuarios').whereIn('username', usernames).pluck('id');
   if (usuarioIds.length) {
@@ -98,6 +100,7 @@ beforeAll(async () => {
   await createTestUser(SOLO_CREAR, ['laboratorio.ver', 'laboratorio.crear']);
   await createTestUser(SOLO_ELIMINAR, ['laboratorio.ver', 'laboratorio.eliminar']);
   await createTestUser(SIN_PERMISOS, []);
+  await createTestUser(SOLO_CARGAR, ['laboratorio.ver', 'laboratorio.cargar']);
 });
 
 afterAll(async () => {
@@ -280,6 +283,142 @@ describe('GET /laboratorio/:id/ver', () => {
     const agent = await loginAs(SIN_PERMISOS);
 
     const res = await agent.get('/laboratorio/999999/ver');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+// Pantalla dedicada para "Subir resultados" (corrección explícita del
+// usuario: NO es /ver — esa se queda puramente informativa). Permiso
+// propio `laboratorio.cargar`, no `laboratorio.ver`.
+describe('GET /laboratorio/:id/cargar', () => {
+  it('AC: laboratorio.cargar alcanza para abrir la pantalla', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+
+    const res = await agent.get('/laboratorio/999999/cargar');
+
+    expect(res.status).toBe(404);
+  });
+
+  it('un usuario sin laboratorio.cargar es rebotado a /main.html (aunque tenga laboratorio.ver)', async () => {
+    const agent = await loginAs(SOLO_VER);
+
+    const res = await agent.get('/laboratorio/999999/cargar');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+// Carga de archivos de resultados (pedido explícito del usuario) — solo
+// permisos aquí (404 en id inexistente confirma que sí llegó al
+// controller); la cobertura real de fusionar/guardar archivos vive en
+// laboratorio.archivos.test.js y laboratorio.service.test.js (repository
+// mockeado) — este archivo nunca inserta en `doctores` ni hace uploads
+// reales, mismo criterio que el resto de la suite de integración.
+describe('POST /laboratorio/:id/archivos', () => {
+  it('AC: laboratorio.cargar alcanza para llegar al controller (404 en id inexistente)', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio/999999/archivos').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('un usuario sin laboratorio.cargar es rebotado a /main.html (aunque tenga laboratorio.ver)', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio/999999/archivos').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+describe('POST /laboratorio/:id/estudios/:estudioId/archivo', () => {
+  it('AC: laboratorio.cargar alcanza para llegar al controller (404 en id inexistente)', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('un usuario sin laboratorio.cargar es rebotado a /main.html', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+// Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
+// equivocó el usuario") — mismo criterio de gateo que subirlo.
+describe('DELETE /laboratorio/:id/archivos', () => {
+  it('AC: laboratorio.cargar alcanza para llegar al controller (404 en id inexistente)', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.delete('/laboratorio/999999/archivos').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('un usuario sin laboratorio.cargar es rebotado a /main.html (aunque tenga laboratorio.ver)', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.delete('/laboratorio/999999/archivos').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+describe('DELETE /laboratorio/:id/estudios/:estudioId/archivo', () => {
+  it('AC: laboratorio.cargar alcanza para llegar al controller (404 en id inexistente)', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.delete('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('un usuario sin laboratorio.cargar es rebotado a /main.html', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.delete('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+// Descarga autenticada — nunca por static serving directo (ver comentario
+// del .gitignore); laboratorio.ver alcanza (igual que abrir /ver), no
+// hace falta laboratorio.cargar para descargar un resultado ya subido.
+describe('GET /laboratorio/archivos/:archivoId', () => {
+  it('AC: laboratorio.ver alcanza para llegar al controller (404 en id inexistente)', async () => {
+    const agent = await loginAs(SOLO_VER);
+
+    const res = await agent.get('/laboratorio/archivos/999999');
+
+    expect(res.status).toBe(404);
+  });
+
+  it('un usuario sin laboratorio.ver es rebotado a /main.html', async () => {
+    const agent = await loginAs(SIN_PERMISOS);
+
+    const res = await agent.get('/laboratorio/archivos/999999');
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');

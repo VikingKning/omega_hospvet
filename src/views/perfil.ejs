@@ -27,6 +27,12 @@
           <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/></svg>
         </span>
         <h1 class="topbar-title">Mi perfil</h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
+            <img src="assets/imgs/<%= user.avatar %>.png" alt="">
+          </span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
       </header>
     </div>
 
@@ -79,17 +85,26 @@
     });
   });
 
-  // Misma máscara de teléfono mexicano (NN-NNNN-NNNN) que usuarios.ejs —
-  // delegado sobre #perfil-panel (nunca se reemplaza a sí mismo, solo su
+  // Pedido explícito del usuario: la máscara depende del prefijo — 55/56
+  // (CDMX/Edomex, lada de 2 dígitos) usa NN-NNNN-NNNN; cualquier otro
+  // prefijo usa NNN-NNN-NNNN (lada de 3 dígitos). Mismo criterio duplicado
+  // en tutor-form.ejs#formatearTelefono/usuarios.ejs#formatearTelefono
+  // (esta pantalla no comparte <script> con esas).
+  function formatearTelefono(digitos) {
+    const esCDMXEdomex = digitos.slice(0, 2) === '55' || digitos.slice(0, 2) === '56';
+    const grupos = esCDMXEdomex
+      ? [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)]
+      : [digitos.slice(0, 3), digitos.slice(3, 6), digitos.slice(6, 10)];
+    return grupos.filter((parte) => parte).join('-');
+  }
+
+  // Delegado sobre #perfil-panel (nunca se reemplaza a sí mismo, solo su
   // contenido) porque HTMX reemplaza el <form> completo en cada guardado.
   document.getElementById('perfil-panel').addEventListener('input', (event) => {
     if (event.target.id !== 'telefonoInput') return;
 
     const digitos = event.target.value.replace(/\D/g, '').slice(0, 10);
-    const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter(
-      (parte) => parte,
-    );
-    event.target.value = partes.join('-');
+    event.target.value = formatearTelefono(digitos);
   });
 
   // Ojo de mostrar/ocultar de los 3 campos de "Cambiar contraseña" — mismo

@@ -32,6 +32,8 @@ async function mostrarForm(req, res, next) {
       telefono: perfil.telefono ?? '',
       correo: perfil.correo,
       username: perfil.username,
+      avatar: perfil.avatar,
+      avataresDisponibles: service.AVATARES_VALIDOS,
       ...datosDeCuenta(perfil),
       mensaje: null,
       error: null,
@@ -53,14 +55,16 @@ async function actualizar(req, res, next) {
       apellidos: req.body.apellidos,
       telefono: req.body.telefono,
       correo: req.body.correo,
+      avatar: req.body.avatar,
     });
 
     // Mantiene la sesión en sincronía — evita que el resto de la app siga
-    // mostrando el nombre/apellidos viejos hasta el próximo login (hoy
-    // ninguna otra pantalla los muestra, pero req.session.user es la
-    // fuente que usaría cualquier futura que sí lo haga).
+    // mostrando el nombre/apellidos/ícono viejos hasta el próximo login
+    // (la barra de título SÍ los muestra, ver partials del topbar en cada
+    // vista — req.session.user es la fuente que usan).
     req.session.user.nombre = guardado.nombre;
     req.session.user.apellidos = guardado.apellidos;
+    req.session.user.avatar = guardado.avatar;
 
     const perfil = await service.obtener(req.session.user.id);
     return res.render('partials/perfil-form', {
@@ -69,6 +73,8 @@ async function actualizar(req, res, next) {
       telefono: guardado.telefono ?? '',
       correo: guardado.correo,
       username: req.session.user.username,
+      avatar: guardado.avatar,
+      avataresDisponibles: service.AVATARES_VALIDOS,
       ...datosDeCuenta(perfil),
       mensaje: 'Perfil actualizado correctamente.',
       error: null,
@@ -83,6 +89,8 @@ async function actualizar(req, res, next) {
         telefono: req.body.telefono ?? '',
         correo: req.body.correo ?? '',
         username: req.session.user.username,
+        avatar: req.body.avatar ?? perfil.avatar,
+        avataresDisponibles: service.AVATARES_VALIDOS,
         ...datosDeCuenta(perfil),
         mensaje: null,
         error: err.message,

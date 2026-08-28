@@ -83,6 +83,8 @@ async function cleanup() {
   const propietarioIds = await db('propietarios')
     .where('nombre', 'like', `%${SUFFIX}%`)
     .orWhere('nombre', 'like', `%${SUFFIX_156}%`)
+    .orWhere('apellidos', 'like', `%${SUFFIX}%`)
+    .orWhere('apellidos', 'like', `%${SUFFIX_156}%`)
     .pluck('id');
   if (propietarioIds.length) {
     await db('mascotas').whereIn('propietario_id', propietarioIds).del();
@@ -126,7 +128,7 @@ async function createTestUser({ username, password }, permissionCodes) {
   }
 }
 
-async function crearTutor({ nombre, telefono, correo, activo }) {
+async function crearTutor({ nombre, apellidos, telefono, correo, activo }) {
   // El servidor guarda `propietarios.telefono` sin guiones (look and feel
   // solo, ver tutores.service.js#stripTelefono) — este helper inserta
   // directo a BD saltándose el servicio, así que replica esa misma
@@ -135,6 +137,7 @@ async function crearTutor({ nombre, telefono, correo, activo }) {
   const [{ id }] = await db('propietarios')
     .insert({
       nombre,
+      apellidos,
       telefono: (telefono ?? '').replace(/-/g, ''),
       correo,
       activo,
@@ -162,10 +165,11 @@ beforeAll(async () => {
   await createTestUser(SOLO_EDITAR_USER, ['tutores.ver', 'tutores.editar']);
 
   anaId = await crearTutor({
-    nombre: `Ana García ${SUFFIX}`,
-    // El SUFFIX de aislamiento va en el nombre — un teléfono digit-only no
+    nombre: 'Ana',
+    // El SUFFIX de aislamiento va en apellidos — un teléfono digit-only no
     // tiene dónde incrustar letras (y contaminaría las búsquedas por
     // teléfono si se intentara con solo sus dígitos, ver AC26 más abajo).
+    apellidos: `García ${SUFFIX}`,
     telefono: '5550001001',
     correo: `ana.garcia.${SUFFIX.toLowerCase()}@correo.test`,
     activo: true,
@@ -184,7 +188,8 @@ beforeAll(async () => {
   });
 
   await crearTutor({
-    nombre: `Beto López ${SUFFIX}`,
+    nombre: 'Beto',
+    apellidos: `López ${SUFFIX}`,
     telefono: '5550001002',
     correo: null,
     activo: true,
@@ -192,7 +197,8 @@ beforeAll(async () => {
   // Beto no tiene pacientes — AC7 ("No hay pacientes para mostrar.").
 
   carlaId = await crearTutor({
-    nombre: `Carla Ruiz ${SUFFIX}`,
+    nombre: 'Carla',
+    apellidos: `Ruiz ${SUFFIX}`,
     telefono: '5550001003',
     correo: null,
     activo: false,
@@ -208,7 +214,8 @@ beforeAll(async () => {
   // para la paginación — 10 en la página 1, 1 en la página 2.
   for (let i = 1; i <= 11; i += 1) {
     await crearTutor({
-      nombre: `Filler ${String(i).padStart(2, '0')} ${PAG_SUFFIX}`,
+      nombre: 'Filler',
+      apellidos: `${String(i).padStart(2, '0')} ${PAG_SUFFIX}`,
       telefono: `55500020${String(i).padStart(2, '0')}`,
       correo: null,
       activo: true,
@@ -546,7 +553,11 @@ describe('GET /tutores/nuevo y GET /tutores/:id/editar (US-156 AC1/AC2 — formu
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('Editar propietario');
-    expect(res.text).toContain(`Ana García ${SUFFIX}`);
+    // nombre/apellidos precargan como 2 inputs separados (ver
+    // tutor-form.ejs) — ya no hay un "Resumen" que los concatene en un
+    // solo texto.
+    expect(res.text).toContain('value="Ana"');
+    expect(res.text).toContain(`value="García ${SUFFIX}"`);
     expect(res.text).toContain(`Firulais ${SUFFIX}`); // isla de datos con las mascotas precargadas
   });
 
@@ -582,7 +593,8 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     const agent = await loginAs(SOLO_CREAR_USER);
 
     const res = await postTutor(agent, {
-      nombre: `Alta Sin Pacientes ${SUFFIX_156}`,
+      nombre: 'Alta',
+      apellidos: `Sin Pacientes ${SUFFIX_156}`,
       telefono: '55-1000-0001',
       correo: '',
       pacientes: [],
@@ -606,20 +618,22 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     const agent = await loginAs(SOLO_CREAR_USER);
 
     const res = await postTutor(agent, {
-      nombre: `Formato Invalido ${SUFFIX_156}`,
+      nombre: 'Formato',
+      apellidos: `Invalido ${SUFFIX_156}`,
       telefono: '5510000099', // sin guiones — mismo dato, formato distinto
       pacientes: [],
     });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('El teléfono debe tener el formato NN-NNNN-NNNN.');
+    expect(res.body.error).toBe('El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.');
   });
 
   it('AC9/AC10/AC12/AC13: alta con varios pacientes los crea activos y asociados por propietario_id', async () => {
     const agent = await loginAs(SOLO_CREAR_USER);
 
     const res = await postTutor(agent, {
-      nombre: `Alta Con Pacientes ${SUFFIX_156}`,
+      nombre: 'Alta',
+      apellidos: `Con Pacientes ${SUFFIX_156}`,
       telefono: '55-1000-0002',
       pacientes: [
         { nombre: 'Firulais', tipo: 'Perro', raza: 'Labrador' },
@@ -640,14 +654,16 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     const agent = await loginAs(SOLO_CREAR_USER);
     const telefono = '55-1000-0005';
     await crearTutor({
-      nombre: `Existente Activo ${SUFFIX_156}`,
+      nombre: 'Existente',
+      apellidos: `Activo ${SUFFIX_156}`,
       telefono,
       correo: null,
       activo: true,
     });
 
     const res = await postTutor(agent, {
-      nombre: `Duplicado ${SUFFIX_156}`,
+      nombre: 'Duplicado',
+      apellidos: SUFFIX_156,
       telefono,
       pacientes: [],
     });
@@ -661,14 +677,16 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     const telefono = '55-1000-0003';
     const telefonoDigits = telefono.replace(/-/g, '');
     const inactivoId = await crearTutor({
-      nombre: `Reactivable ${SUFFIX_156}`,
+      nombre: 'Reactivable',
+      apellidos: SUFFIX_156,
       telefono,
       correo: null,
       activo: false,
     });
 
     const sinConfirmar = await postTutor(agent, {
-      nombre: `Nombre Nuevo ${SUFFIX_156}`,
+      nombre: 'Nombre',
+      apellidos: `Nuevo ${SUFFIX_156}`,
       telefono,
       pacientes: [],
     });
@@ -676,7 +694,8 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     expect(sinConfirmar.status).toBe(200);
     expect(sinConfirmar.body.requiereConfirmacion).toBe(true);
     expect(sinConfirmar.body.tutorExistente).toEqual({
-      nombre: `Reactivable ${SUFFIX_156}`,
+      nombre: 'Reactivable',
+      apellidos: SUFFIX_156,
       telefono,
     });
 
@@ -687,7 +706,8 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     expect(Number(noSeCreoNada.total)).toBe(1); // sigue siendo solo el inactivo original
 
     const confirmado = await postTutor(agent, {
-      nombre: `Nombre Nuevo ${SUFFIX_156}`,
+      nombre: 'Nombre',
+      apellidos: `Nuevo ${SUFFIX_156}`,
       telefono,
       pacientes: [{ nombre: 'Nueva Mascota' }],
       confirmarReactivacion: true,
@@ -698,7 +718,8 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
 
     const reactivado = await db('propietarios').where({ id: inactivoId }).first();
     expect(reactivado.activo).toBe(true);
-    expect(reactivado.nombre).toBe(`Nombre Nuevo ${SUFFIX_156}`);
+    expect(reactivado.nombre).toBe('Nombre');
+    expect(reactivado.apellidos).toBe(`Nuevo ${SUFFIX_156}`);
     expect(reactivado.desactivado_por).toBeNull();
     expect(reactivado.desactivado_en).toBeNull();
 
@@ -719,7 +740,8 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     const agent = await loginAs(SOLO_CREAR_USER);
     const telefono = '55-1000-0009';
     const inactivoId = await crearTutor({
-      nombre: `ReactivableConMascota ${SUFFIX_156}`,
+      nombre: 'ReactivableConMascota',
+      apellidos: SUFFIX_156,
       telefono,
       correo: null,
       activo: false,
@@ -732,7 +754,8 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     });
 
     const confirmado = await postTutor(agent, {
-      nombre: `ReactivableConMascota ${SUFFIX_156}`,
+      nombre: 'ReactivableConMascota',
+      apellidos: SUFFIX_156,
       telefono,
       correo: null,
       pacientes: [
@@ -788,7 +811,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
 
   beforeEach(async () => {
     tutorId = await crearTutor({
-      nombre: `Editable ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
       telefono: '55-1000-0010',
       correo: null,
       activo: true,
@@ -815,7 +839,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     const res = await putTutor(agent, tutorId, {
-      nombre: `Editado ${SUFFIX_156}`,
+      nombre: 'Editado',
+      apellidos: SUFFIX_156,
       telefono: '55-1000-0010',
       correo: 'editado@correo.test',
       pacientes: [{ id: mascotaId, nombre: 'Rocky', tipo: 'Perro', raza: 'Poodle', activo: true }],
@@ -823,7 +848,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
 
     expect(res.status).toBe(200);
     const row = await db('propietarios').where({ id: tutorId }).first();
-    expect(row.nombre).toBe(`Editado ${SUFFIX_156}`);
+    expect(row.nombre).toBe('Editado');
+    expect(row.apellidos).toBe(SUFFIX_156);
     expect(row.correo).toBe('editado@correo.test');
     expect(row.actualizado_por).not.toBeNull();
     expect(row.actualizado_en).not.toBeNull();
@@ -839,7 +865,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     await putTutor(agent, tutorId, {
-      nombre: `Editable ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
       telefono: '55-1000-0010',
       pacientes: [
         { id: mascotaId, nombre: 'Rocky Editado', tipo: 'Perro', raza: 'Poodle Toy', activo: true },
@@ -860,7 +887,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     const res = await putTutor(agent, tutorId, {
-      nombre: `Editable ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
       telefono: '55-1000-0010',
       pacientes: [
         { id: mascotaId, nombre: 'Rocky', tipo: 'Perro', raza: 'Poodle', activo: true },
@@ -879,7 +907,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     await putTutor(agent, tutorId, {
-      nombre: `Editable ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
       telefono: '55-1000-0010',
       pacientes: [{ id: mascotaId, nombre: 'Rocky', tipo: 'Perro', raza: 'Poodle', activo: false }],
     });
@@ -900,7 +929,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     const res = await putTutor(agent, tutorId, {
-      nombre: `Editable ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
       telefono: '55-1000-0010',
       pacientes: [{ id: mascotaId, nombre: 'Rocky', tipo: 'Perro', raza: 'Poodle', activo: true }],
     });
@@ -918,14 +948,16 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
   it('AC5/AC21 (edición NUNCA reactiva, a diferencia de alta): un teléfono de otro propietario, activo o inactivo, siempre se rechaza', async () => {
     const otroActivoTelefono = '55-1000-0011';
     await crearTutor({
-      nombre: `Otro Activo ${SUFFIX_156}`,
+      nombre: 'Otro',
+      apellidos: `Activo ${SUFFIX_156}`,
       telefono: otroActivoTelefono,
       correo: null,
       activo: true,
     });
     const otroInactivoTelefono = '55-1000-0012';
     await crearTutor({
-      nombre: `Otro Inactivo ${SUFFIX_156}`,
+      nombre: 'Otro',
+      apellidos: `Inactivo ${SUFFIX_156}`,
       telefono: otroInactivoTelefono,
       correo: null,
       activo: false,
@@ -933,14 +965,16 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     const contraActivo = await putTutor(agent, tutorId, {
-      nombre: `Editable ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
       telefono: otroActivoTelefono,
       pacientes: [],
     });
     expect(contraActivo.status).toBe(400);
 
     const contraInactivo = await putTutor(agent, tutorId, {
-      nombre: `Editable ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
       telefono: otroInactivoTelefono,
       pacientes: [],
     });
@@ -952,7 +986,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     const res = await putTutor(agent, tutorId, {
-      nombre: `Editable Renombrado ${SUFFIX_156}`,
+      nombre: 'Editable',
+      apellidos: `Renombrado ${SUFFIX_156}`,
       telefono: '55-1000-0010', // el mismo que ya tenía
       pacientes: [{ id: mascotaId, nombre: 'Rocky', tipo: 'Perro', raza: 'Poodle', activo: true }],
     });
@@ -977,7 +1012,8 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
     expect(res.headers.location).toBe('/main.html');
 
     const row = await db('propietarios').where({ id: tutorId }).first();
-    expect(row.nombre).toBe(`Editable ${SUFFIX_156}`); // sin cambios
+    expect(row.nombre).toBe('Editable'); // sin cambios
+    expect(row.apellidos).toBe(SUFFIX_156); // sin cambios
   });
 });
 
@@ -993,7 +1029,7 @@ describe('POST /tutores/buscar-telefono (pedido del usuario: búsqueda en vivo e
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
-      expect.objectContaining({ id: anaId, nombre: `Ana García ${SUFFIX}` }),
+      expect.objectContaining({ id: anaId, nombre: 'Ana', apellidos: `García ${SUFFIX}` }),
     ]);
   });
 
@@ -1074,7 +1110,7 @@ describe('POST /tutores/verificar-telefono (ajuste posterior: chequeo exacto en 
     expect(res.body).toEqual({
       existe: true,
       activo: true,
-      tutor: { id: anaId, nombre: `Ana García ${SUFFIX}` },
+      tutor: { id: anaId, nombre: 'Ana', apellidos: `García ${SUFFIX}` },
     });
   });
 
@@ -1096,7 +1132,8 @@ describe('POST /tutores/verificar-telefono (ajuste posterior: chequeo exacto en 
       activo: false,
       tutor: {
         id: carlaId,
-        nombre: `Carla Ruiz ${SUFFIX}`,
+        nombre: 'Carla',
+        apellidos: `Ruiz ${SUFFIX}`,
         telefono: '55-5000-1003', // formatTelefono() de '5550001003' — solo look and feel
         correo: null,
         pacientes: [expect.objectContaining({ nombre: `Rocky ${SUFFIX}`, activo: true })],
@@ -1149,13 +1186,15 @@ describe('DELETE /tutores/:id (US-157 — baja lógica)', () => {
   // no como body — un test que solo mandara el body no detectaría ese bug.
   beforeAll(async () => {
     tutorBajaId = await crearTutor({
-      nombre: `Baja Tutor ${SUFFIX_156}`,
+      nombre: 'Baja',
+      apellidos: `Tutor ${SUFFIX_156}`,
       telefono: '55-1000-0020',
       correo: null,
       activo: true,
     });
     tutorBajadoId = await crearTutor({
-      nombre: `Baja Tutor Activo ${SUFFIX_156}`,
+      nombre: 'Baja',
+      apellidos: `Tutor Activo ${SUFFIX_156}`,
       telefono: '55-1000-0021',
       correo: null,
       activo: true,

@@ -206,6 +206,7 @@ describe('GET /mi-perfil.html — datos ligados a la cuenta (extensión US-109)'
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${CON_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
     expect(okRes.text).toContain('Catálogo de doctores');
 
@@ -214,6 +215,7 @@ describe('GET /mi-perfil.html — datos ligados a la cuenta (extensión US-109)'
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${CON_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
     expect(errorRes.text).toContain('Catálogo de doctores');
   });
@@ -228,6 +230,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109 (editado)',
       telefono: '81-9876-5432',
       correo: `${SIN_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_cat',
     });
 
     expect(res.status).toBe(200);
@@ -237,6 +240,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
     expect(row.nombre).toBe('Sin (editado)');
     expect(row.apellidos).toBe('Permisos US109 (editado)');
     expect(row.telefono).toBe('8198765432');
+    expect(row.avatar).toBe('icon_cat');
   });
 
   it('AC: registra actualizado_por con el ID DEL PROPIO usuario y actualizado_en', async () => {
@@ -248,6 +252,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${SIN_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
 
     const row = await db('usuarios').where({ username: SIN_PERMISOS_USER.username }).first();
@@ -263,6 +268,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${SIN_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
 
     const row = await db('usuarios').where({ username: SIN_PERMISOS_USER.username }).first();
@@ -278,10 +284,11 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109',
       telefono: '5512345678',
       correo: `${SIN_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('El teléfono debe tener el formato NN-NNNN-NNNN.');
+    expect(res.text).toContain('El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.');
     const despues = await db('usuarios').where({ username: SIN_PERMISOS_USER.username }).first();
     expect(despues.telefono).toBe(antes.telefono);
   });
@@ -295,6 +302,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${SIN_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
 
     expect(res.status).toBe(200);
@@ -312,6 +320,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${OTRO_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
 
     expect(res.status).toBe(200);
@@ -328,6 +337,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${SIN_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
       username: 'username.forjado.us109',
     });
 
@@ -347,6 +357,7 @@ describe('POST /mi-perfil.html (US-109)', () => {
       apellidos: 'Permisos US109',
       telefono: '',
       correo: `${SIN_PERMISOS_USER.username}@omegavet.test`,
+      avatar: 'icon_hospvet',
     });
 
     const otroDespues = await db('usuarios').where({ username: OTRO_USER.username }).first();

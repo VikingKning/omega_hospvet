@@ -22,6 +22,12 @@
 
       <header class="topbar">
         <h1 class="topbar-title">Panel administrativo</h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
+            <img src="assets/imgs/<%= user.avatar %>.png" alt="">
+          </span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
       </header>
     </div>
 

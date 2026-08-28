@@ -24,7 +24,18 @@ function baseQuery({ q, qDigits, activoTutores, activoPacientes }) {
     if (activoTutores) builder.where('p.activo', true);
     if (q) {
       builder.where((whereBuilder) => {
-        whereBuilder.whereRaw('p.nombre ILIKE ?', [`%${q}%`]);
+        // `p.apellidos` ahora es su propia columna (antes venía pegada
+        // dentro de `nombre`) — el OR por cada campo cubre buscar SOLO por
+        // nombre o SOLO por apellido; el `(nombre || ' ' || apellidos)`
+        // (mismo patrón ya usado para el doctor en
+        // laboratorio.repository.js#baseQuery) cubre buscar el nombre
+        // completo de un jalón (ej. "Juan Pérez") — sin él, una búsqueda
+        // que abarque ambas palabras dejaría de encontrar al tutor, una
+        // regresión real del split.
+        whereBuilder
+          .whereRaw('p.nombre ILIKE ?', [`%${q}%`])
+          .orWhereRaw('p.apellidos ILIKE ?', [`%${q}%`])
+          .orWhereRaw("(p.nombre || ' ' || p.apellidos) ILIKE ?", [`%${q}%`]);
         if (qDigits) whereBuilder.orWhereRaw('p.telefono ILIKE ?', [`%${qDigits}%`]);
         whereBuilder.orWhereRaw('p.correo ILIKE ?', [`%${q}%`]).orWhereExists(function () {
           this.select(1)
@@ -54,8 +65,8 @@ async function count({ q, qDigits, activoTutores, activoPacientes }) {
 
 async function findPage({ q, qDigits, activoTutores, activoPacientes, limit, offset }) {
   return baseQuery({ q, qDigits, activoTutores, activoPacientes })
-    .select('p.id', 'p.nombre', 'p.telefono', 'p.correo', 'p.activo')
-    .orderBy('p.nombre')
+    .select('p.id', 'p.nombre', 'p.apellidos', 'p.telefono', 'p.correo', 'p.activo')
+    .orderBy(['p.nombre', 'p.apellidos'])
     .limit(limit)
     .offset(offset);
 }
@@ -109,10 +120,15 @@ async function findByTelefono(telefono, excludeId) {
 async function findActivosPorNombre(q, limit) {
   return db('propietarios')
     .where('activo', true)
-    .whereRaw('nombre ILIKE ?', [`%${q}%`])
-    .orderBy('nombre')
+    .where((builder) => {
+      builder
+        .whereRaw('nombre ILIKE ?', [`%${q}%`])
+        .orWhereRaw('apellidos ILIKE ?', [`%${q}%`])
+        .orWhereRaw("(nombre || ' ' || apellidos) ILIKE ?", [`%${q}%`]);
+    })
+    .orderBy(['nombre', 'apellidos'])
     .limit(limit)
-    .select('id', 'nombre', 'telefono');
+    .select('id', 'nombre', 'apellidos', 'telefono');
 }
 
 // US-156 AC14: mascotas de un propietario para el formulario de edición —
@@ -130,11 +146,12 @@ async function findMascotasByPropietarioId(propietarioId) {
 // US-156 AC7/AC8/AC12/AC13: alta — inserta el propietario y sus mascotas
 // (puede ser ninguna) en una sola transacción (AC23: si algo falla, no
 // debe quedar ni el propietario ni ninguna mascota a medias).
-async function crear({ nombre, telefono, correo, pacientes, usuarioId }) {
+async function crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId }) {
   return db.transaction(async (trx) => {
     const [row] = await trx('propietarios')
       .insert({
         nombre,
+        apellidos,
         telefono,
         correo,
         activo: true,
@@ -171,15 +188,41 @@ async function crear({ nombre, telefono, correo, pacientes, usuarioId }) {
 // desactivado_por/desactivado_en en cada guardado, solo en una transición
 // de verdad); si no trae `id`, es una mascota nueva (activo=true siempre,
 // AC13). Todo en una transacción (AC23).
-async function editar({ id, nombre, telefono, correo, pacientes, usuarioId }) {
+//
+// Pedido explícito del usuario: `activo` del propietario (switch de
+// Estado, ver tutor-form.ejs) sigue el MISMO criterio de transición-real
+// que cada mascota de abajo — nunca cascada a las mascotas (a diferencia
+// de desactivar(), más abajo, que sí las da de baja junto con el
+// propietario): cada mascota ya se controla con su propio switch en esta
+// misma pantalla, tocarlas también desde aquí las pisaría en silencio.
+// `activo === undefined` (no vino en el body, ver
+// tutores.service.js#normalizeActivoOpcional) dejar el estado actual tal
+// cual, sin comparar ni tocar desactivado_por/desactivado_en.
+async function editar({ id, nombre, apellidos, telefono, correo, activo, pacientes, usuarioId }) {
   await db.transaction(async (trx) => {
-    await trx('propietarios').where({ id }).update({
+    const update = {
       nombre,
+      apellidos,
       telefono,
       correo,
       actualizado_por: usuarioId,
       actualizado_en: trx.fn.now(),
-    });
+    };
+
+    if (activo !== undefined) {
+      const actual = await trx('propietarios').where({ id }).first('activo');
+      if (actual.activo && !activo) {
+        update.activo = false;
+        update.desactivado_por = usuarioId;
+        update.desactivado_en = trx.fn.now();
+      } else if (!actual.activo && activo) {
+        update.activo = true;
+        update.desactivado_por = null;
+        update.desactivado_en = null;
+      }
+    }
+
+    await trx('propietarios').where({ id }).update(update);
 
     for (const paciente of pacientes) {
       if (paciente.id) {
@@ -234,10 +277,11 @@ async function editar({ id, nombre, telefono, correo, pacientes, usuarioId }) {
 // información y mascotas" antes de reactivar). Un INSERT ciego de todo el
 // arreglo las hubiera duplicado; el mismo criterio de editar() de arriba
 // (con `id` → UPDATE, sin `id` → INSERT nueva) evita eso.
-async function reactivar({ id, nombre, telefono, correo, pacientes, usuarioId }) {
+async function reactivar({ id, nombre, apellidos, telefono, correo, pacientes, usuarioId }) {
   return db.transaction(async (trx) => {
     await trx('propietarios').where({ id }).update({
       nombre,
+      apellidos,
       telefono,
       correo,
       activo: true,
@@ -305,7 +349,7 @@ async function searchByTelefono(q, limit) {
     })
     .orderBy('telefono')
     .limit(limit)
-    .select('id', 'nombre', 'telefono');
+    .select('id', 'nombre', 'apellidos', 'telefono');
 }
 
 // Agenda: combobox de "Mascota" del formulario de citas — mismo criterio
@@ -329,6 +373,7 @@ async function findMascotaById(id) {
       'm.tipo',
       'p.id as propietario_id',
       'p.nombre as propietario_nombre',
+      'p.apellidos as propietario_apellidos',
     );
 }
 
@@ -345,7 +390,9 @@ async function searchMascotas(q, qDigits, limit) {
         builder.andWhere((whereBuilder) => {
           whereBuilder
             .whereRaw('m.nombre ILIKE ?', [`%${q}%`])
-            .orWhereRaw('p.nombre ILIKE ?', [`%${q}%`]);
+            .orWhereRaw('p.nombre ILIKE ?', [`%${q}%`])
+            .orWhereRaw('p.apellidos ILIKE ?', [`%${q}%`])
+            .orWhereRaw("(p.nombre || ' ' || p.apellidos) ILIKE ?", [`%${q}%`]);
           if (qDigits) whereBuilder.orWhereRaw('p.telefono ILIKE ?', [`%${qDigits}%`]);
         });
       }
@@ -358,6 +405,7 @@ async function searchMascotas(q, qDigits, limit) {
       'm.tipo',
       'p.id as propietario_id',
       'p.nombre as propietario_nombre',
+      'p.apellidos as propietario_apellidos',
     );
 }
 

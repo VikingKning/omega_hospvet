@@ -94,11 +94,19 @@ body::after {
   margin-bottom: 24px;
 }
 
+/* Pedido explícito del usuario: el logo real no es cuadrado (icon.png
+   mide 733×504, un rectángulo apaisado) NI un círculo — recortarlo en
+   círculo (border-radius:50%, como estaba) le cortaba el texto "OMEGA
+   HOSPITAL VETERINARIO" del emblema por los lados. Rectangular con
+   esquinas redondeadas, en vez de cuadrado: el ancho ahora sigue la
+   proporción real de la imagen (733:504 ≈ 1.45) para que quepa completa
+   sin recortar ni con `cover` ni con `contain` — mismo criterio en el
+   logo del sidebar (ver .sidebar-header img en main.css). */
 .login-brand img {
-  width: 76px;
+  width: 110px;
   height: 76px;
-  border-radius: 50%;
-  object-fit: cover;
+  border-radius: var(--radius);
+  object-fit: contain;
   box-shadow: 0 6px 20px rgba(46, 80, 144, 0.35);
   background: var(--primary-light);
   padding: 6px;

@@ -35,6 +35,17 @@ body:has(.app)::after {
   min-height: 0;
 }
 
+/* Pedido explícito del usuario: menu_background.png como fondo del menú
+   lateral — mismo tratamiento en .sidebar-header y .sidebar-nav (abajo).
+   Ajuste posterior (pedido del usuario): `cover` se veía "muy grande" —
+   en una franja angosta (260px) pero potencialmente muy alta, `cover`
+   escala según la dimensión que MÁS crezca (el alto, en pantallas altas),
+   agrandando el patrón mucho más de lo necesario. Se fija el ancho exacto
+   al del menú (260px, alto automático según la proporción real de la
+   imagen, 941×1672) y se repite verticalmente en vez de recortar/estirar
+   — mismo tamaño "natural" en ambas reglas para que la imagen se vea
+   igual de escala en las dos. `background-color` se queda como respaldo
+   (imagen no cargada aún, o con error) — mismo tono que ya tenía. */
 .sidebar-header {
   width: 260px;
   flex-shrink: 0;
@@ -42,18 +53,30 @@ body:has(.app)::after {
   align-items: center;
   gap: 12px;
   padding: 0 20px;
-  background: var(--primary-active);
+  background-color: var(--primary-active);
+  background-image: url("../assets/imgs/menu_background.png");
+  background-size: 260px auto;
+  background-position: top center;
+  background-repeat: repeat-y;
   color: #fff;
   overflow: hidden;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+/* Pedido explícito del usuario: el logo real no es cuadrado (icon.png
+   mide 733×504, un rectángulo apaisado) NI un círculo — recortarlo en
+   círculo (border-radius:50%, como estaba) le cortaba el texto "OMEGA
+   HOSPITAL VETERINARIO" del emblema por los lados. Rectangular con
+   esquinas redondeadas, en vez de cuadrado: el ancho ahora sigue la
+   proporción real de la imagen (733:504 ≈ 1.45) para que quepa completa
+   sin recortar ni con `cover` ni con `contain` — mismo criterio en el
+   logo del login (ver .login-brand img en styles.css). */
 .sidebar-header img {
-  width: 40px;
+  width: 58px;
   height: 40px;
   flex-shrink: 0;
-  border-radius: 50%;
-  object-fit: cover;
+  border-radius: 8px;
+  object-fit: contain;
   background: #fff;
   padding: 3px;
 }
@@ -73,8 +96,21 @@ body:has(.app)::after {
   flex-direction: column;
   gap: 4px;
   background-color: var(--primary-active);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'%3E%3Cg fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' opacity='0.08'%3E%3Cg transform='translate(40,45) rotate(-12)'%3E%3Ccircle r='9' cy='2'/%3E%3Cpath d='M-9 -4c-5-4-6-11-2-13'/%3E%3Cpath d='M9 -4c5-4 6-11 2-13'/%3E%3Ccircle r='1.4' cy='9' fill='white' stroke='none'/%3E%3C/g%3E%3Cg transform='translate(160,30) rotate(8)'%3E%3Cellipse rx='7' ry='5.5' cy='6'/%3E%3Ccircle cx='-9' cy='-3' r='2.6'/%3E%3Ccircle cx='-4' cy='-9' r='2.8'/%3E%3Ccircle cx='4' cy='-9' r='2.8'/%3E%3Ccircle cx='9' cy='-3' r='2.6'/%3E%3C/g%3E%3Cg transform='translate(250,70) rotate(15)'%3E%3Cellipse rx='9' ry='7' cy='8'/%3E%3Ccircle cx='-11' cy='-3' r='3.6'/%3E%3Ccircle cx='-4' cy='-11' r='4'/%3E%3Ccircle cx='4' cy='-11' r='4'/%3E%3Ccircle cx='11' cy='-3' r='3.6'/%3E%3C/g%3E%3Cg transform='translate(90,130) rotate(-6)'%3E%3Ccircle r='8' cy='2'/%3E%3Cpath d='M-6 -5 L-10 -13 L-2 -8 Z'/%3E%3Cpath d='M6 -5 L10 -13 L2 -8 Z'/%3E%3Cpath d='M-8 3h-4M-8 5h-4M8 3h4M8 5h4'/%3E%3C/g%3E%3Cg transform='translate(220,150) rotate(20)'%3E%3Ccircle cx='-11' cy='-3' r='3'/%3E%3Ccircle cx='-11' cy='3' r='3'/%3E%3Ccircle cx='11' cy='-3' r='3'/%3E%3Ccircle cx='11' cy='3' r='3'/%3E%3Cpath d='M-11 -3h22M-11 3h22'/%3E%3C/g%3E%3Cg transform='translate(30,190) rotate(10)'%3E%3Cellipse rx='7' ry='5.5' cy='6'/%3E%3Ccircle cx='-9' cy='-3' r='2.6'/%3E%3Ccircle cx='-4' cy='-9' r='2.8'/%3E%3Ccircle cx='4' cy='-9' r='2.8'/%3E%3Ccircle cx='9' cy='-3' r='2.6'/%3E%3C/g%3E%3Cg transform='translate(140,220) rotate(-15)'%3E%3Ccircle r='9' cy='2'/%3E%3Cpath d='M-9 -4c-5-4-6-11-2-13'/%3E%3Cpath d='M9 -4c5-4 6-11 2-13'/%3E%3Ccircle r='1.4' cy='9' fill='white' stroke='none'/%3E%3C/g%3E%3Cg transform='translate(260,240) rotate(5)'%3E%3Ccircle r='8' cy='2'/%3E%3Cpath d='M-6 -5 L-10 -13 L-2 -8 Z'/%3E%3Cpath d='M6 -5 L10 -13 L2 -8 Z'/%3E%3Cpath d='M-8 3h-4M-8 5h-4M8 3h4M8 5h4'/%3E%3C/g%3E%3Cg transform='translate(70,270) rotate(12)'%3E%3Cellipse rx='9' ry='7' cy='8'/%3E%3Ccircle cx='-11' cy='-3' r='3.6'/%3E%3Ccircle cx='-4' cy='-11' r='4'/%3E%3Ccircle cx='4' cy='-11' r='4'/%3E%3Ccircle cx='11' cy='-3' r='3.6'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-  background-repeat: repeat;
+  background-image: url("../assets/imgs/menu_background.png");
+  background-size: 260px auto;
+  /* `top left`, no `center`: con `background-attachment: fixed` la
+     posición se calcula contra el VIEWPORT completo, no contra los 260px
+     de este elemento — "center" centraba la imagen a la mitad de TODA la
+     pantalla (~720px), muy a la derecha del menú, dejándolo sin patrón
+     visible. El menú siempre arranca en x=0 (pegado al borde izquierdo),
+     así que "left" sí coincide con su propio borde. */
+  background-position: top left;
+  background-repeat: repeat-y;
+  /* `overflow-y: auto` de aquí abajo hace que este contenedor pueda
+     scrollear (lista de enlaces larga) — sin `fixed`, el fondo se
+     scrollearía junto con los enlaces y dejaría el navy plano una vez que
+     la imagen se sale de vista por arriba. */
+  background-attachment: fixed;
   color: #fff;
   overflow-y: auto;
   overflow-x: hidden;
@@ -209,6 +245,7 @@ body:has(.app)::after {
 }
 
 .topbar {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -218,6 +255,28 @@ body:has(.app)::after {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   overflow: hidden;
+}
+
+/* Pedido explícito del usuario: la barra de título se veía "muy vacía" —
+   mismo fondo_background.png que .main-content, mismo patrón `::before` +
+   `> *` con z-index (ver más abajo), pero con más opacidad (la barra es
+   angosta, 68px, así que a 0.35 casi no se notaba) — el usuario pidió
+   explícitamente que se viera más que el fondo normal, mientras el título
+   siga siendo legible encima. */
+.topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("../assets/imgs/fondo_background.png") no-repeat center center;
+  background-size: cover;
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.topbar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-toggle-btn {
@@ -244,11 +303,19 @@ body:has(.app)::after {
   height: 22px;
 }
 
+/* Pedido explícito del usuario: la barra de título se divide en 2 —
+   título (crece con `flex:1`, empujando el bloque de usuario de abajo
+   hasta el borde derecho) y, del lado derecho, ícono+nombre del usuario
+   logueado. */
 .topbar-title {
+  flex: 1;
+  min-width: 0;
   font-size: 18px;
   font-weight: 700;
   color: var(--text-dark);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-icon {
@@ -256,6 +323,51 @@ body:has(.app)::after {
   height: 22px;
   flex-shrink: 0;
   color: var(--primary);
+}
+
+/* Pedido explícito del usuario: ícono+nombre del usuario logueado del
+   lado derecho de la barra de título, siempre visible, que lleve a "Mi
+   perfil" al hacer clic — mismo criterio "sin permiso propio" que esa
+   página (ver partials/sidebar.ejs). */
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 4px 12px 4px 4px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text-dark);
+  transition: background 0.15s;
+}
+
+.topbar-user:hover {
+  background: var(--bg-base);
+}
+
+.topbar-user-avatar {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 3px;
+}
+
+.topbar-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.topbar-user-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .main-content {
@@ -267,13 +379,22 @@ body:has(.app)::after {
   overflow-y: auto;
 }
 
+/* Pedido explícito del usuario: fondo_background.png como fondo de la
+   zona de trabajo — reemplaza el watermark de icon_black.png. `cover`
+   por ser una imagen "wallpaper" (1254×1254) que debe cubrir toda el área
+   de trabajo sin importar el alto de la pantalla, no un logo pequeño
+   centrado como antes.
+   Ajuste posterior (pedido del usuario): a plena opacidad se veía "muy
+   gris" detrás de las tarjetas blancas — opacity:0.35 la aclara para que
+   lea como un fondo sutil/blanquecino en vez de un panel gris sólido,
+   sin perder del todo el patrón. */
 .main-content::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: url("../assets/imgs/icon_black.png") no-repeat center center;
-  background-size: 45% auto;
-  opacity: 0.05;
+  background: url("../assets/imgs/fondo_background.png") no-repeat center center;
+  background-size: cover;
+  opacity: 0.35;
   pointer-events: none;
   z-index: 0;
 }
@@ -285,6 +406,45 @@ body:has(.app)::after {
 
 .nav-backdrop {
   display: none;
+}
+
+/* Impresión: reset genérico del app shell — .app/.main-content viven en un
+   layout de altura fija (100dvh) con overflow-y:auto pensado para
+   pantalla; sin este reset, imprimir recortaría el contenido al alto de
+   una sola pantalla en vez de fluir a varias páginas. Regla a nivel de app
+   (no de una sola página) porque cualquier pantalla del sistema puede
+   llegar a necesitar imprimirse, no solo laboratorio-form.ejs (que es
+   donde se pidió explícitamente por primera vez). */
+@media print {
+  /* `body` trae el degradado azul del login (styles.css, pensado para la
+     tarjeta centrada de esa pantalla) — normalmente invisible porque .app
+     lo cubre por completo con su propio fondo opaco, pero al quitarle la
+     altura fija de arriba deja de taparlo entero y el degradado se asoma
+     debajo/después del contenido impreso. */
+  body:has(.app) {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .app {
+    height: auto;
+  }
+
+  .top-row,
+  #sidebar,
+  .nav-backdrop {
+    display: none;
+  }
+
+  .main-content {
+    overflow: visible;
+    padding: 0;
+  }
+
+  .main-content::before {
+    display: none;
+  }
 }
 
 /* ---------- Agenda: stats + Google Calendar embed ---------- */
@@ -672,6 +832,18 @@ body:has(.app)::after {
      hace falta preocuparse por el orden de cascada con otra regla. */
   .topbar-breadcrumb-prefix {
     display: none;
+  }
+
+  /* Pedido del usuario (ajuste posterior, mismo criterio que el
+     breadcrumb de arriba): en mobile no hay espacio de sobra para el
+     nombre completo junto al título — se deja solo el avatar, que sigue
+     llevando a "Mi perfil" igual. */
+  .topbar-user-name {
+    display: none;
+  }
+
+  .topbar-user {
+    padding: 4px;
   }
 
   .body-row {
@@ -1101,9 +1273,15 @@ body:has(.app)::after {
   white-space: nowrap;
 }
 
+/* Pedido explícito del usuario: Pendiente=rojo, Cargado=amarillo,
+   Enviado=verde (antes: pendiente ámbar, cargado azul/primary) — mismo
+   patrón fondo-claro/texto-de-marca que ya tenía .badge-enviado, aplicado
+   a las otras 2. Texto en --warning-text (nunca --warning directo, regla
+   de contraste ya establecida en todo el sistema), --danger sí sirve
+   directo como texto (ya usado así en otros lados del proyecto). */
 .badge-pendiente {
-  background: rgba(242, 169, 0, 0.15);
-  color: #8a6400;
+  background: rgba(240, 15, 53, 0.15);
+  color: var(--danger);
 }
 
 .badge-enviado {
@@ -1114,8 +1292,8 @@ body:has(.app)::after {
 /* Laboratorio: registros_laboratorio.estado tiene 3 valores reales
    (pendiente | cargado | enviado) — el mock solo tenía los 2 extremos. */
 .badge-cargado {
-  background: var(--primary-light);
-  color: var(--primary);
+  background: rgba(242, 169, 0, 0.15);
+  color: var(--warning-text);
 }
 
 .btn-upload {
@@ -1886,6 +2064,117 @@ body:has(.app)::after {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+/* Pedido explícito del usuario: picker de 5 íconos fijos (ver
+   partials/perfil-form.ejs) — mismo círculo azul del avatar de la barra
+   de título (.topbar-user-avatar), pero clickeable y con anillo cuando
+   está seleccionado. El `<input>` real vive oculto (.select-hidden-source)
+   dentro de cada `<label>`; `:has()` decide el anillo sin necesitar JS ni
+   una clase calculada en el servidor. */
+.avatar-picker-field {
+  margin-top: 4px;
+}
+
+.avatar-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.avatar-picker-option {
+  cursor: pointer;
+}
+
+.avatar-picker-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--primary);
+  padding: 4px;
+  border: 3px solid transparent;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.avatar-picker-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Ajuste posterior (pedido del usuario): un color distinto por ícono en
+   vez del mismo --primary parejo para los 5 — elegidos para contrastar
+   con los colores propios de cada dibujo (ej. img_doctora ya trae un
+   uniforme celeste, por eso va en rosa en vez de otro azul; img_doctor
+   pidió explícitamente un azul más claro que --primary). Mismas clases en
+   .topbar-user-avatar (la barra de título) para que el círculo del avatar
+   elegido se vea igual ahí que en el picker de Mi Perfil — declaradas
+   DESPUÉS de ambas reglas base (.topbar-user-avatar arriba,
+   .avatar-picker-circle aquí mismo) para ganar en cascada: misma
+   especificidad (una sola clase), gana quien aparece después en el
+   archivo. */
+.avatar-color-icon_hospvet {
+  background: #e8a33d;
+}
+
+.avatar-color-icon_cat {
+  background: #2fa88a;
+}
+
+.avatar-color-icon_dog {
+  background: #8b6fc4;
+}
+
+.avatar-color-img_doctor {
+  background: #5b9bd5;
+}
+
+.avatar-color-img_doctora {
+  background: #ec6fa6;
+}
+
+.avatar-picker-option:hover .avatar-picker-circle {
+  transform: scale(1.06);
+}
+
+/* Ajuste posterior (pedido del usuario): --primary-active (#14294F) casi
+   no se distinguía del propio círculo azul (--primary, #2E5090) — de
+   lejos se leía como un borde negro, no como un anillo de selección.
+   --success (verde, ya usado en el resto del sistema para "activo"/
+   confirmado) contrasta mucho más contra el azul. Se agrega además una
+   marca de check en la esquina — el color solo a veces no basta como
+   única señal (contraste/daltonismo), doble refuerzo visual. */
+.avatar-picker-option:has(input:checked) .avatar-picker-circle {
+  border-color: var(--success);
+  box-shadow: 0 0 0 3px rgba(30, 142, 62, 0.3);
+  transform: scale(1.06);
+}
+
+.avatar-picker-option {
+  position: relative;
+}
+
+.avatar-picker-check {
+  display: none;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--surface);
+}
+
+.avatar-picker-option:has(input:checked) .avatar-picker-check {
+  display: flex;
 }
 
 /* US-110: columna de "Cambiar contraseña" — a diferencia de las filas de
@@ -2778,10 +3067,21 @@ body:has(.app)::after {
 /* Ajuste posterior (pedido explícito del usuario): esta página siempre debe
    ocupar el 100% del ancho disponible, igual que el resto del sistema — el
    max-width:1100px original dejaba ~1400px sin usar en pantallas anchas. */
+/* Pedido explícito del usuario: encabezado y footer siempre visibles,
+   solo la franja de en medio (.lab-form-scroll, reutilizada tal cual de
+   laboratorio-form.ejs) hace scroll — mismo criterio y mismas 2 reglas
+   .main-content:has()/.lab-form-page > que ya existían para esa pantalla,
+   ver más abajo en este archivo. */
 .tutor-form-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  height: 100%;
+}
+
+.tutor-form-page > .tutor-form-heading,
+.tutor-form-page > .tutor-form-actions {
+  flex-shrink: 0;
 }
 
 .tutor-form-heading {
@@ -2845,6 +3145,17 @@ body:has(.app)::after {
   gap: 14px;
 }
 
+/* Pedido del usuario: en edición, Teléfono/Nombre(s)/Apellidos/Correo/
+   Estado deben caber siempre en un solo renglón — Estado nunca debe
+   empujarse solo a una segunda fila. Columnas explícitas (en vez del
+   auto-fit genérico de arriba, que reserva 200px parejos para las 5 y no
+   alcanza): las primeras 3 se angostan un poco, Correo se queda con más
+   aire y Estado solo toma el ancho de su propio contenido (el switch es
+   angosto, forzarlo a 1fr desperdiciaría espacio). */
+.tutor-form-grid-con-estado {
+  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(160px, 1.6fr) auto;
+}
+
 .tutor-form-hint {
   margin: 10px 0 0;
   font-size: 12px;
@@ -2857,77 +3168,6 @@ body:has(.app)::after {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
-}
-
-/* Pedido del usuario (ajuste posterior): "Información del propietario" y
-   "Resumen" van en la misma fila, no uno abajo del otro — mismas
-   proporciones que la columna lateral de 300px original (Resumen no
-   necesita más ancho que eso, Información sí crece con lo que sobre). */
-.tutor-form-top-row {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 16px;
-  align-items: start;
-}
-
-/* Resumen: mismo patrón label/value que .profile-summary-* de Mi Perfil,
-   en una pila vertical (la tarjeta es angosta, junto a Información del
-   propietario, no un renglón de ancho completo). */
-.tutor-resumen-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.tutor-resumen-row + .tutor-resumen-row {
-  margin-top: 14px;
-}
-
-/* Pedido del usuario (ajuste posterior): Pacientes y Estado en la misma
-   fila (2 columnas) en vez de apiladas, para que "Resumen" quede de la
-   misma altura que "Información del propietario" (2 filas en cada tarjeta
-   — Propietario arriba + este par, en vez de 3 renglones sueltos). */
-.tutor-resumen-row-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-/* Dentro del par son columnas, no una pila — el margen vertical de arriba
-   (pensado para renglones apilados) no debe separarlas entre sí. */
-.tutor-resumen-row-pair .tutor-resumen-row + .tutor-resumen-row {
-  margin-top: 0;
-}
-
-.tutor-resumen-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 8px;
-  background: var(--bg-base);
-  color: var(--primary);
-}
-
-.tutor-resumen-icon svg {
-  width: 15px;
-  height: 15px;
-}
-
-.tutor-resumen-label {
-  display: block;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.tutor-resumen-value {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dark);
 }
 
 .tutor-form-actions {
@@ -3067,31 +3307,21 @@ body:has(.app)::after {
 }
 
 /* Ajustes de mobile para tutor-form.ejs — consolidados aquí, al FINAL del
-   archivo, a propósito: son overrides de reglas base (.tutor-form-top-row,
-   .tutor-resumen-card, .tutor-form-actions, .tutor-form-actions-right) que
-   se definen más arriba en este mismo archivo. Con la misma especificidad,
-   la regla que aparece DESPUÉS en el archivo gana en cascada sin importar
-   si está dentro de un @media que sí aplica — un override puesto ANTES de
-   su propia regla base (ya sea en el bloque general de arriba, o incluso
-   en un bloque nuevo puesto en un punto intermedio del archivo) pierde en
-   cascada sin avisar. Bug real, encontrado dos veces seguidas por este
-   motivo antes de aterrizar aquí. */
+   archivo, a propósito: son overrides de reglas base (.tutor-form-actions,
+   .tutor-form-actions-right) que se definen más arriba en este mismo
+   archivo. Con la misma especificidad, la regla que aparece DESPUÉS en el
+   archivo gana en cascada sin importar si está dentro de un @media que sí
+   aplica — un override puesto ANTES de su propia regla base (ya sea en el
+   bloque general de arriba, o incluso en un bloque nuevo puesto en un
+   punto intermedio del archivo) pierde en cascada sin avisar. Bug real,
+   encontrado dos veces seguidas por este motivo antes de aterrizar aquí. */
 @media (max-width: 768px) {
-  /* El grid de 2 columnas nunca colapsaba a una sola — la tarjeta de
-     Resumen (300px fijos) terminaba flotando encima de "Información del
-     propietario" en vez de apilarse debajo (o dejando una columna vacía
-     reservada una vez que .tutor-resumen-card se oculta más abajo). */
-  .tutor-form-top-row {
+  /* .tutor-form-grid-con-estado usa columnas explícitas (no auto-fit) para
+     forzar las 5 en un solo renglón en desktop — en mobile no hay ancho
+     de sobra para eso, así que se apila a 1 columna igual que el
+     auto-fit de .tutor-form-grid ya hace solo por quedarse sin espacio. */
+  .tutor-form-grid-con-estado {
     grid-template-columns: 1fr;
-  }
-
-  /* Ajuste posterior (pedido del usuario, ya existente desde que Resumen
-     vivía en la columna lateral de 300px): no aporta nada que la propia
-     pantalla no muestre ya (sin espacio de sobra como en desktop) — se
-     oculta por completo en vez de apilarse, para no alargar el scroll de
-     una pantalla que ya es larga en mobile. */
-  .tutor-resumen-card {
-    display: none;
   }
 
   /* Ajuste posterior (pedido del usuario): la leyenda "Capture la
@@ -3180,6 +3410,45 @@ body:has(.app)::after {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Pedido explícito del usuario: encabezado y footer siempre visibles,
+     solo la franja de en medio hace scroll — .lab-form-page pasa a llenar
+     TODO el alto disponible de .main-content (que por eso deja de ser el
+     que hace scroll, ver la regla de .main-content:has() más abajo) en vez
+     de crecer con el contenido. */
+  height: 100%;
+}
+
+/* El encabezado (título/Volver) y el footer de acciones NUNCA se encogen —
+   son los 2 renglones fijos de la columna; `.lab-form-scroll` (flex:1) es
+   la única que cede/gana espacio entre ambos. Selector scopeado a esta
+   pantalla a propósito: `.tutor-form-actions` también la usa
+   tutor-form.ejs, que no vive dentro de este layout de 3 renglones. */
+.lab-form-page > .lab-form-heading,
+.lab-form-page > .tutor-form-actions {
+  flex-shrink: 0;
+}
+
+.lab-form-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* Un poco de aire para que la barra de scroll (en navegadores que la
+     dibujan encima del contenido) no quede pegada al borde de las
+     tarjetas. */
+  padding-right: 4px;
+}
+
+/* .main-content ya no es quien hace scroll en esta pantalla —
+   .lab-form-page/.tutor-form-page llenan su alto completo y delegan el
+   scroll a .lab-form-scroll (compartida entre ambas, ver tutor-form.ejs).
+   :has() scopea el cambio SOLO a estas 2 pantallas, el resto (que sí
+   dependen de que .main-content scrollee completo) no se tocan. */
+.main-content:has(.lab-form-page),
+.main-content:has(.tutor-form-page) {
+  overflow: hidden;
 }
 
 /* Pedido explícito del usuario: botón "Borrar tutor y paciente" del lado
@@ -3190,6 +3459,7 @@ body:has(.app)::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -3224,6 +3494,15 @@ body:has(.app)::after {
 .lab-form-heading-text {
   flex: 1;
   min-width: 0;
+}
+
+/* Pedido explícito del usuario: el badge de Estado (ver laboratorio-form.ejs)
+   va junto al título de Consultar/Cargar resultados, no debajo. */
+.lab-form-heading-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .lab-form-heading-text h2 {
@@ -3331,9 +3610,22 @@ body:has(.app)::after {
   height: 16px;
 }
 
+/* `35% 65%` sumaba exactamente el 100% del ancho, sin dejar nada para el
+   `gap: 20px` de este grid — el MISMO patrón de bug que ya se encontró una
+   vez en .lab-study-card (ver ese comentario más abajo), pero un nivel más
+   arriba: cuando "Estudios solicitados" hace `grid-column: 1 / -1` (único
+   hijo en /cargar y /ver, sin el picker), su ancho terminaba siendo
+   35%+65%+20px = 100%+20px, un desborde real de exactamente 20px — esta
+   SÍ era la causa raíz confirmada del reporte del usuario (comparando
+   getBoundingClientRect(): "Estudios solicitados" medía 20px más ancho que
+   "Archivo para todos"/Observaciones/el resto de la pantalla, que sí
+   respetan el margen). `fr` en vez de `%`: a diferencia de los porcentajes,
+   las unidades `fr` de CSS Grid SÍ reparten el espacio ya descontado el
+   gap — no pueden desbordar por este motivo, sin importar el gap o el
+   ancho. */
 .lab-estudios-layout {
   display: grid;
-  grid-template-columns: 35% 65%;
+  grid-template-columns: minmax(0, 35fr) minmax(0, 65fr);
   gap: 20px;
   align-items: start;
 }
@@ -3370,10 +3662,10 @@ body:has(.app)::after {
   grid-column: 1 / -1;
 }
 
+/* Pedido explícito del usuario: quitar el recuadro punteado que agrupaba
+   toda la lista — las tarjetas de .lab-study-list ya tienen su propio
+   borde, no hace falta un segundo contenedor visual alrededor. */
 .lab-cart-wrap {
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
   min-height: 120px;
 }
 
@@ -3399,6 +3691,7 @@ body:has(.app)::after {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -3423,9 +3716,254 @@ body:has(.app)::after {
   flex-shrink: 0;
 }
 
+/* `flex-basis: 0` en vez de `auto` (mismo motivo ya documentado abajo para
+   .lab-study-card--archivos): con `auto`, un texto de meta largo sin
+   espacio para envolver a tiempo puede hacer que TODA la fila (texto +
+   íconos Editar/Eliminar) se considere "no cabe" y los íconos caigan a su
+   propio renglón abajo en vez de quedarse fijos en la esquina superior
+   derecha — reportado con captura real (2 tarjetas, la de meta más larga
+   con los íconos desplazados abajo-izquierda). Con basis 0 el navegador
+   reparte el espacio YA descontado el de `.lab-study-actions` (ancho fijo,
+   flex-shrink:0, nunca crece) — el texto se queda con todo lo demás y
+   envuelve libremente sin desplazar los íconos. */
+.lab-study-card-info {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .lab-opcional {
   font-weight: 400;
   color: var(--text-muted);
+}
+
+/* Carga de archivos de resultados (pedido explícito del usuario) — caja
+   "Archivo para todos los estudios" arriba de "Agregar estudios", mismo
+   estilo de marco gris que .lab-estudios-picker para que se lea como una
+   sub-sección propia. */
+.lab-archivo-todos-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--bg-base);
+  margin-bottom: 18px;
+}
+
+.lab-archivo-todos-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lab-archivo-uploader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Botón de "Elegir archivo(s)" (pedido explícito del usuario: el `<input
+   type=file>` nativo "se ve feo") — el input real vive oculto (`hidden`)
+   dentro del propio `<label>`; un label sigue reenviando el click a su
+   input aunque esté hidden, así que abre el selector de archivos sin JS.
+   Reutiliza el mismo look que los íconos de Editar/Eliminar del sistema
+   (.row-action-btn), con su mismo mecanismo de tooltip vía [data-tooltip]. */
+.lab-archivo-picker-btn {
+  cursor: pointer;
+  flex-shrink: 0;
+  color: var(--text-dark);
+}
+
+/* Deshabilitado mientras sube (evita doble envío) o por exclusión mutua con
+   el otro camino de carga (pedido explícito del usuario). */
+.lab-archivo-picker-btn:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.lab-archivo-picker-estado {
+  flex: 1;
+  min-width: 140px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lab-archivo-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lab-archivo-chip a {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.lab-archivo-chip a:hover {
+  text-decoration: underline;
+}
+
+/* Botón "x" junto al nombre del archivo (pedido explícito del usuario) —
+   más chico que .row-action-btn (30px, pensado para filas de tabla): este
+   vive inline junto a un link de texto, no tiene sentido que sea tan grande. */
+.lab-archivo-quitar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger);
+  --tooltip-bg: var(--danger);
+  cursor: pointer;
+}
+
+.lab-archivo-quitar svg {
+  width: 13px;
+  height: 13px;
+}
+
+.lab-archivo-quitar:hover {
+  background: rgba(240, 15, 53, 0.1);
+}
+
+.lab-archivo-quitar:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+}
+
+/* Slot de archivo dentro de cada .lab-study-card (modo cargar) — pedido
+   explícito del usuario: columna a la derecha del título/meta (en vez de su
+   propio renglón completo abajo) para reducir el alto de cada tarjeta, en
+   proporción fija 60/40 (look and feel).
+   Historial de esta regla — dos intentos previos NO robustos que el usuario
+   detectó con capturas reales:
+   1) `max-width: 220px` fijo → un nombre de archivo largo sin espacios
+      (ej. "SC_VETMED_HHFriends_08_4000_150.webp") se salía porque no tenía
+      dónde envolver (overflow-wrap:anywhere en el link es lo que de verdad
+      resuelve ESE caso, ver `.lab-archivo-chip a` arriba).
+   2) `flex: 0 1 calc(60% - 8px)` / `calc(40% - 8px)` → a ciertos anchos de
+      pantalla reales (scrollbar clásico vs. overlay, zoom fraccionario del
+      navegador) la resta fija de 8px no alcanzaba a cubrir el `gap: 12px`
+      real y el bloque de archivo se desbordaba hacia la derecha — nunca se
+      pudo reproducir en Playwright a ningún ancho de viewport probado,
+      justo porque dependía del scrollbar/zoom real del navegador, no del
+      ancho en sí.
+   Fix robusto de verdad (este): `flex-basis: 0` + `flex-grow` en proporción
+   3:2 — con basis en 0, el navegador reparte el espacio DISPONIBLE (ya
+   descontado el gap, en la fase de "distribuir espacio libre", no en la de
+   "decidir si cabe") entre los dos hijos según su peso de flex-grow.
+   Matemáticamente NUNCA puede sumar más del 100% disponible, sin importar
+   el ancho exacto ni el gap — a diferencia de cualquier resta fija en px,
+   que siempre puede quedarse corta en el caso límite equivocado.
+   Solo aplica cuando el slot de archivo va a mostrarse de verdad
+   (.lab-study-card--archivos, agregado por renderCart() solo si
+   PUEDE_CARGAR_ARCHIVOS) — en /nuevo y /editar (íconos de Editar/Eliminar,
+   angostos) se deja el flex por default de .lab-study-card, sin forzar
+   ninguna proporción. */
+.lab-study-card--archivos > .lab-study-card-info {
+  flex: 3 1 0;
+  min-width: 0;
+}
+
+.lab-study-card--archivos > .lab-archivo-uploader,
+.lab-study-card--archivos > .lab-archivo-chip {
+  flex: 2 1 0;
+  min-width: 0;
+}
+
+.lab-study-card .lab-archivo-picker-estado {
+  min-width: 0;
+}
+
+/* Pedido explícito del usuario: todo el bloque de archivo/botones pegado al
+   borde derecho de su columna (tanto el picker vacío como el chip ya
+   subido), no a la izquierda. */
+.lab-study-card .lab-archivo-uploader {
+  justify-content: flex-end;
+}
+
+/* Pedido explícito del usuario: dentro de la tarjeta, "Reemplazar" va
+   ARRIBA y el nombre del archivo + la "x" van ABAJO (apiladas), alineados a
+   la derecha — a diferencia de "Archivo para todos" (una sola fila, le
+   sobra ancho). */
+.lab-study-card .lab-archivo-chip {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.lab-archivo-chip-nombre {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Pedido explícito del usuario: confirmación "Guardando… -> Guardado" tras
+   subir un archivo (que se sube solo, sin botón "Guardar" que el usuario
+   pueda buscar) — flotante y se desvanece sola, primer toast del proyecto
+   (a diferencia de .form-success-banner, que empuja el layout y se queda
+   fijo hasta que el usuario lo cierra). Oculto por `opacity`/`translateY`
+   en vez de `display:none` para poder animar la transición; `pointer-events:
+   none` porque nunca es interactivo, no debe robarle clics a nada debajo. */
+/* Ajuste posterior (pedido del usuario): más grande, arriba a la derecha
+   (no abajo) y un color por estado en vez de un cuadro neutro único —
+   mismas 3 variantes semánticas ya usadas en el resto del sistema
+   (warning/success/danger), fondo claro + texto de marca como los badges
+   (nunca el color sólido como fondo: ese SÍ falla contraste con texto
+   blanco encima, ver .badge-* más arriba — regla de contraste ya
+   establecida en todo el proyecto). */
+.toast {
+  position: fixed;
+  right: 24px;
+  /* Centrado dentro de .top-row (68px, siempre en y=0..68 sin importar
+     scroll — measurado en vivo con Playwright): el título/breadcrumb
+     ocupa como mucho ~700px de los 1440px del viewport de referencia,
+     deja de sobra la mitad derecha libre. Puesto ahí a propósito, no
+     debajo del encabezado de la página — ese espacio SÍ se mueve cuando
+     aparece el banner de error (empuja el layout hacia abajo) y el toast
+     terminaba encimado con él. */
+  top: 14px;
+  z-index: 200;
+  min-width: 220px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast--warning {
+  background: rgba(242, 169, 0, 0.15);
+  color: var(--warning-text);
+}
+
+.toast--success {
+  background: rgba(30, 142, 62, 0.15);
+  color: var(--success);
+}
+
+.toast--danger {
+  background: rgba(240, 15, 53, 0.15);
+  color: var(--danger);
 }
 
 /* Ajustes de mobile para laboratorio-form.ejs — al FINAL del archivo a
@@ -3444,5 +3982,165 @@ body:has(.app)::after {
      saldría del ancho disponible en mobile. */
   .lab-form-grid-paciente > label {
     flex-basis: 100%;
+  }
+}
+
+/* Documento de impresión de laboratorio-form.ejs — pedido explícito del
+   usuario tras ver un primer intento que solo reusaba el look de
+   tarjetas/formulario ("no se ve bien, ¿hay algo mejor?"): no reformatear
+   la pantalla para el papel, sino un documento propio (orden de
+   laboratorio). `.lab-print-only` vive siempre en el DOM pero invisible en
+   pantalla; en @media print se oculta TODO lo demás dentro de
+   `.lab-form-page` (un solo selector cubre botones/picker/banners/carrito
+   sin enumerarlos uno por uno) y se muestra únicamente el documento. */
+.lab-print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  /* El layout de encabezado/footer fijos + franja central con scroll
+     (pedido explícito del usuario, ver .lab-form-scroll arriba) es
+     SOLO de pantalla — .lab-form-page fijaba su `height` a 100% del alto
+     de .main-content, que en papel debe fluir a varias páginas, no
+     recortarse a una sola. */
+  .lab-form-page {
+    height: auto;
+  }
+
+  .lab-form-page > *:not(.lab-print-only) {
+    display: none !important;
+  }
+
+  .lab-print-only {
+    display: block;
+    color: #000;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .lab-print-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+
+  .lab-print-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .lab-print-brand img {
+    width: 40px;
+    height: 40px;
+  }
+
+  .lab-print-brand strong {
+    display: block;
+    font-size: 16px;
+  }
+
+  .lab-print-brand span {
+    display: block;
+    font-size: 13px;
+    color: #444;
+  }
+
+  .lab-print-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .lab-print-section {
+    margin-bottom: 18px;
+    break-inside: avoid;
+  }
+
+  .lab-print-section h3 {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #444;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 4px;
+    margin-bottom: 10px;
+  }
+
+  .lab-print-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px 28px;
+  }
+
+  .lab-print-grid > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .lab-print-grid span {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #666;
+  }
+
+  .lab-print-grid strong {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .lab-print-estudios {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lab-print-estudio {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 8px 10px;
+    break-inside: avoid;
+  }
+
+  .lab-print-estudio strong {
+    display: block;
+    font-size: 13px;
+  }
+
+  .lab-print-estudio div {
+    font-size: 11px;
+    color: #444;
+    margin-top: 2px;
+  }
+
+  #labPrintObservaciones {
+    white-space: pre-wrap;
+  }
+
+  .lab-print-firma {
+    margin-top: 56px;
+  }
+
+  .lab-print-firma-line {
+    width: 260px;
+    border-top: 1px solid #000;
+    padding-top: 6px;
+    font-size: 11px;
+    text-align: center;
+    color: #444;
   }
 }

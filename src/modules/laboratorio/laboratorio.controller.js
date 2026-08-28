@@ -1,5 +1,6 @@
 const service = require('./laboratorio.service');
 const { generateCsrfToken } = require('../../config/csrf');
+const fs = require('fs');
 
 // Carga inicial de la página: siempre el estado por defecto, nunca lee query
 // params (mismo criterio que doctores.controller.js#list — así una URL
@@ -75,6 +76,7 @@ async function nuevoForm(req, res, next) {
       // preselecciona como "Dr. solicitante"; si no, se deja en blanco.
       doctorIdPreseleccionado: req.session.user.doctorId ?? null,
       soloLectura: false,
+      modoCargarArchivos: false,
       catalogo,
       doctores,
       csrfToken,
@@ -85,17 +87,21 @@ async function nuevoForm(req, res, next) {
   }
 }
 
-// Misma pantalla para /editar y /ver — pedido explícito del usuario:
-// "usar el mismo de agregar/editar para ver la información, solo ocultar
-// los botones y el formulario de seleccionar estudio", que es exactamente
-// lo que ya hace `soloLectura` (oculta el picker server-side, el botón
-// Guardar, y deshabilita todos los campos). `forzarSoloLectura` distingue
-// las dos rutas: /editar respeta el permiso real del usuario (si no tiene
-// laboratorio.editar, cae en solo lectura de todos modos, como ya hacía);
-// /ver SIEMPRE es de solo lectura sin importar el permiso — es el ícono de
-// "ojo" nuevo en la tabla, para que alguien con permiso de editar pueda
-// abrir un registro solo para consultarlo sin riesgo de modificarlo.
-async function formularioDeRegistro(req, res, next, forzarSoloLectura) {
+// Misma pantalla para /editar, /ver y /cargar — pedido explícito del
+// usuario: "usar el mismo de agregar/editar para ver la información, solo
+// ocultar los botones y el formulario de seleccionar estudio", que es
+// exactamente lo que ya hace `soloLectura` (oculta el picker server-side,
+// el botón Guardar, y deshabilita todos los campos). `forzarSoloLectura`
+// distingue las rutas: /editar respeta el permiso real del usuario (si no
+// tiene laboratorio.editar, cae en solo lectura de todos modos, como ya
+// hacía); /ver y /cargar SIEMPRE son de solo lectura sin importar el
+// permiso de editar. `modoCargarArchivos` es la diferencia entre esas dos
+// últimas — corrección explícita del usuario: "Ver" es PURAMENTE
+// informativa (qué se mandó, a quién, cuándo), nunca debe ofrecer subir
+// nada; el ícono de "Subir resultados" de la tabla abre /cargar, la única
+// ruta que muestra los controles de carga (ver laboratorio-form.ejs,
+// puedeCargarArchivos ya no depende de soloLectura genérico).
+async function formularioDeRegistro(req, res, next, { forzarSoloLectura, modoCargarArchivos }) {
   try {
     const registro = await service.obtenerParaEditar(req.params.id);
     if (!registro) {
@@ -111,6 +117,7 @@ async function formularioDeRegistro(req, res, next, forzarSoloLectura) {
       registro,
       doctorIdPreseleccionado: null,
       soloLectura: forzarSoloLectura || !permissions.includes('laboratorio.editar'),
+      modoCargarArchivos: Boolean(modoCargarArchivos),
       catalogo,
       doctores,
       csrfToken,
@@ -122,11 +129,17 @@ async function formularioDeRegistro(req, res, next, forzarSoloLectura) {
 }
 
 async function editarForm(req, res, next) {
-  return formularioDeRegistro(req, res, next, false);
+  return formularioDeRegistro(req, res, next, { forzarSoloLectura: false, modoCargarArchivos: false });
 }
 
 async function verForm(req, res, next) {
-  return formularioDeRegistro(req, res, next, true);
+  return formularioDeRegistro(req, res, next, { forzarSoloLectura: true, modoCargarArchivos: false });
+}
+
+// Ícono "Subir resultados" de la tabla — pedido explícito del usuario, en
+// vez de la pantalla de Ver (que se queda puramente informativa).
+async function cargarForm(req, res, next) {
+  return formularioDeRegistro(req, res, next, { forzarSoloLectura: true, modoCargarArchivos: true });
 }
 
 // Búsqueda de tutor por teléfono para el formulario de "Nuevo registro"
@@ -182,6 +195,74 @@ async function editar(req, res, next) {
   }
 }
 
+// Carga de archivos de resultados (pedido explícito del usuario) — un
+// archivo (o varios, que el service fusiona en un PDF) para TODOS los
+// estudios de la orden.
+async function subirArchivoRegistro(req, res, next) {
+  try {
+    await service.subirArchivoParaTodos(req.params.id, req.files, req.session.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return next(err);
+  }
+}
+
+// Mismo mecanismo, para UN estudio en particular.
+async function subirArchivoEstudio(req, res, next) {
+  try {
+    await service.subirArchivoParaEstudio(req.params.id, req.params.estudioId, req.files, req.session.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return next(err);
+  }
+}
+
+// Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
+// equivocó el usuario") — no necesita multer, no lleva body.
+async function eliminarArchivoRegistro(req, res, next) {
+  try {
+    await service.eliminarArchivoDeTodos(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return next(err);
+  }
+}
+
+async function eliminarArchivoEstudio(req, res, next) {
+  try {
+    await service.eliminarArchivoDeEstudio(req.params.id, req.params.estudioId);
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return next(err);
+  }
+}
+
+// Descarga autenticada — nunca por static serving directo (ver comentario
+// del .gitignore, son resultados médicos de pacientes).
+async function descargarArchivo(req, res, next) {
+  try {
+    const archivo = await service.obtenerArchivoParaDescarga(req.params.archivoId);
+    if (!archivo || !fs.existsSync(archivo.rutaAbsoluta)) {
+      return res.status(404).send('Archivo no encontrado');
+    }
+    res.download(archivo.rutaAbsoluta, archivo.nombreOriginal);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   pagina,
   filter,
@@ -189,8 +270,14 @@ module.exports = {
   nuevoForm,
   editarForm,
   verForm,
+  cargarForm,
   buscarTutor,
   buscarTutorPorNombre,
   crear,
   editar,
+  subirArchivoRegistro,
+  subirArchivoEstudio,
+  eliminarArchivoRegistro,
+  eliminarArchivoEstudio,
+  descargarArchivo,
 };

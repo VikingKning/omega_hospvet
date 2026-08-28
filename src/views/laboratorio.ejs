@@ -25,6 +25,12 @@
       <header class="topbar">
         <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
         <h1 class="topbar-title">Laboratorio</h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
+            <img src="assets/imgs/<%= user.avatar %>.png" alt="">
+          </span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
       </header>
     </div>
 

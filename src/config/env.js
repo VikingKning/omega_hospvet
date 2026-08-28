@@ -1,6 +1,14 @@
 require('dotenv').config({ quiet: true });
 
-const required = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD', 'SESSION_SECRET'];
+const required = [
+  'DB_HOST',
+  'DB_PORT',
+  'DB_NAME',
+  'DB_USER',
+  'DB_PASSWORD',
+  'SESSION_SECRET',
+  'LABS_RESULT_FILE_STORAGE',
+];
 
 for (const key of required) {
   if (!process.env[key]) {
@@ -12,6 +20,13 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 3000,
   sessionSecret: process.env.SESSION_SECRET,
+  // Carpeta donde se guardan los archivos de resultados de laboratorio
+  // (laboratorio.archivos.js) — pedido explícito del usuario: antes vivía
+  // fija dentro del proyecto (`storage/laboratorio/`), ahora cada entorno
+  // decide su propia ruta (puede ser fuera del repo por completo). Sigue
+  // sin servirse nunca por static serving directo, sin importar dónde
+  // apunte esta variable.
+  labsResultFileStorage: process.env.LABS_RESULT_FILE_STORAGE,
   db: {
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),

@@ -2,14 +2,12 @@
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 
-// propietarios.nombre es un solo campo de texto libre (a diferencia de
-// doctores, que tiene nombre/apellidos separados) — las iniciales se
-// calculan de las 2 primeras palabras si las hay, o de las 2 primeras
-// letras si el tutor solo capturó una palabra.
-function initialesTutor(nombre) {
-  const partes = (nombre || '').trim().split(/\s+/).filter(Boolean);
-  if (partes.length >= 2) return `${partes[0].charAt(0)}${partes[1].charAt(0)}`.toUpperCase();
-  return (partes[0] || '').slice(0, 2).toUpperCase();
+// propietarios.nombre/apellidos ya están separados (mismo criterio que
+// doctores) — ya no hace falta el heurístico de "2 palabras o 2 letras".
+function initialesTutor(nombre, apellidos) {
+  const inicialNombre = (nombre || '').charAt(0);
+  const inicialApellido = (apellidos || '').charAt(0);
+  return `${inicialNombre}${inicialApellido}`.toUpperCase() || '—';
 }
 %>
 <% if (catalogoVacio) { %>
@@ -98,12 +96,13 @@ function initialesTutor(nombre) {
         </thead>
         <tbody>
           <% tutores.forEach((tutor) => { %>
+            <% const nombreCompletoTutor = `${tutor.nombre} ${tutor.apellidos}`; %>
             <tr>
               <td>
                 <div class="person-cell">
-                  <span class="avatar-circle"><%= initialesTutor(tutor.nombre) %></span>
+                  <span class="avatar-circle"><%= initialesTutor(tutor.nombre, tutor.apellidos) %></span>
                   <div>
-                    <div class="person-cell-name"><%= tutor.nombre %></div>
+                    <div class="person-cell-name"><%= nombreCompletoTutor %></div>
                     <div class="person-cell-subtitle"><%= tutor.telefono %></div>
                     <span class="status-badge person-cell-status-mobile<%= tutor.activo ? ' is-active' : '' %>"><%= tutor.activo ? 'Activo' : 'Inactivo' %></span>
                   </div>
@@ -140,7 +139,7 @@ function initialesTutor(nombre) {
                 <div class="row-actions">
                   <% if (has('tutores.editar')) { %>
                     <a class="row-action-btn row-action-edit" data-tooltip="Editar"
-                       aria-label="Editar tutor <%= tutor.nombre %>" href="tutores/<%= tutor.id %>/editar">
+                       aria-label="Editar tutor <%= nombreCompletoTutor %>" href="tutores/<%= tutor.id %>/editar">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
                       </svg>
@@ -148,10 +147,10 @@ function initialesTutor(nombre) {
                   <% } %>
                   <% if (has('tutores.eliminar') && tutor.activo) { %>
                     <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
-                            aria-label="Dar de baja a <%= tutor.nombre %>"
+                            aria-label="Dar de baja a <%= nombreCompletoTutor %>"
                             hx-delete="tutores/<%= tutor.id %>" hx-include="#tutores-filters"
                             hx-target="#tutores-panel" hx-swap="innerHTML"
-                            hx-confirm='Favor de confirmar la baja del propietario <%= tutor.nombre %>.&#10;No se elimina su información ni la de sus pacientes, ni su historial de citas o laboratorio — solo deja de aparecer como propietario activo.'>
+                            hx-confirm='Favor de confirmar la baja del propietario <%= nombreCompletoTutor %>.&#10;No se elimina su información ni la de sus pacientes, ni su historial de citas o laboratorio — solo deja de aparecer como propietario activo.'>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
                       </svg>

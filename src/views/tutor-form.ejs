@@ -65,6 +65,12 @@
           "Editar propietario" visible.
         %>
         <h1 class="topbar-title"><span class="topbar-breadcrumb-prefix">Tutores y Pacientes &rsaquo; Catálogo &rsaquo; </span><%= esEdicion ? 'Editar propietario' : 'Nuevo propietario' %></h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
+            <img src="assets/imgs/<%= user.avatar %>.png" alt="">
+          </span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
       </header>
     </div>
 
@@ -88,111 +94,127 @@
           </a>
         </div>
 
+        <%
+        // Pedido explícito del usuario: encabezado ("Editar propietario"/
+        // "Regresar al listado") y footer (Cancelar/Guardar) siempre
+        // visibles — mismo patrón ya usado en laboratorio-form.ejs
+        // (.lab-form-page/.lab-form-scroll, reutilizados tal cual aquí en
+        // vez de duplicar el CSS): solo esta franja de en medio
+        // (banners + "Información del propietario" + "Pacientes
+        // asociados") hace scroll cuando el número de pacientes crece.
+        %>
+        <div class="lab-form-scroll">
         <span class="form-error-banner" id="tutorFormError" style="display:none"></span>
         <span class="form-success-banner" id="tutorFormSuccess" style="display:none"></span>
 
         <%
-        // Pedido del usuario: se quita el cuadro de información (ícono ⓘ +
-        // texto) que vivía junto a "Resumen" en la columna lateral de 300px
-        // original — esa columna desaparece para que "Pacientes asociados"
-        // ocupe el 100% del ancho (más espacio para las columnas Sexo/Edad
-        // de la tabla). "Información del propietario" y "Resumen" SÍ se
-        // conservan en la misma fila (ajuste posterior, pedido del
-        // usuario) — .tutor-form-top-row reemplaza la fila de 2 columnas
-        // que existía por debajo de "Pacientes asociados" hasta el ajuste
-        // anterior, un nivel más arriba.
+        // Pedido del usuario (ajuste posterior): se quita "Resumen" —
+        // solo repetía datos que el propio formulario ya muestra (nombre/
+        // apellidos capturados arriba, conteo de pacientes visible en la
+        // tabla de abajo) y le robaba ancho a "Información del
+        // propietario" con una columna fija de 300px. La sección ahora
+        // ocupa el 100% del ancho, igual que "Pacientes asociados" debajo
+        // — .tutor-form-grid (auto-fit) acomoda más campos por fila solo
+        // con el ancho de sobra, sin tocar su CSS.
         %>
-        <div class="tutor-form-top-row">
-          <section class="profile-card">
-            <h3 class="tutor-form-card-title">Información del propietario</h3>
-            <div class="modal-form tutor-form-grid">
-              <label>
-                Teléfono *
-                <%
-                // Pedido del usuario: el teléfono va primero y, solo en
-                // alta, permite buscar entre los propietarios ya
-                // existentes mientras se escribe — si hay coincidencia y
-                // se selecciona, se navega a editar ESE propietario en
-                // vez de continuar el alta; si no hay ninguna, no pasa
-                // nada y se sigue capturando el resto de los campos como
-                // un alta normal. Mismo patrón .combobox/.combobox-list
-                // ya usado en el resto del sistema (Doctor vinculado en
-                // usuario-form.ejs), pero con búsqueda en vivo contra el
-                // servidor en vez de filtrar una lista ya cargada
-                // (propietarios puede crecer mucho más que el catálogo
-                // de doctores).
-                %>
-                <%
-                // Mismo formato de teléfono mexicano (10 dígitos,
-                // NN-NNNN-NNNN) ya establecido en usuario-form.ejs/
-                // perfil-form.ejs — mismos atributos (placeholder,
-                // inputmode, pattern, maxlength, title), pedido explícito
-                // del usuario para mantenerlo consistente en todos los
-                // formularios del sistema.
-                %>
-                <% if (conBusquedaTelefono) { %>
-                  <div class="combobox" id="tutorTelefonoCombobox">
-                    <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="">
-                    <ul class="combobox-list" id="tutorTelefonoList" hidden></ul>
-                  </div>
-                <% } else { %>
-                  <input type="text" id="tutorTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" value="<%= propietario?.telefono ?? '' %>">
-                <% } %>
-                <span class="error-msg" id="tutorTelefonoError">El teléfono es obligatorio.</span>
-              </label>
-              <label>
-                Nombre completo *
-                <input type="text" id="tutorNombre" maxlength="150" placeholder="Ej. Juan Pérez López" value="<%= propietario?.nombre ?? '' %>">
-                <span class="error-msg" id="tutorNombreError">El nombre es obligatorio.</span>
-              </label>
-              <label>
-                Correo electrónico
-                <input type="email" id="tutorCorreo" maxlength="150" placeholder="Ej. juan.perez@correo.com" value="<%= propietario?.correo ?? '' %>">
-              </label>
-            </div>
-            <p class="tutor-form-hint">* Campos obligatorios</p>
-          </section>
-
-          <section class="profile-card tutor-resumen-card">
-            <h3 class="tutor-form-card-title">Resumen</h3>
-            <div class="tutor-resumen-row">
-              <span class="tutor-resumen-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              </span>
-              <span>
-                <span class="tutor-resumen-label">Propietario</span>
-                <span class="tutor-resumen-value" id="resumenPropietario"><%= propietario?.nombre || '—' %></span>
-              </span>
-            </div>
+        <section class="profile-card">
+          <h3 class="tutor-form-card-title">Información del propietario</h3>
+          <%
+          // Pedido del usuario: Teléfono/Nombre(s)/Apellidos/Correo/Estado
+          // deben caber siempre en el mismo renglón (nunca dejar que
+          // Estado se vaya solo a una segunda fila) — el auto-fit genérico
+          // de .tutor-form-grid (bueno para las 4 columnas de la alta) no
+          // alcanza a acomodar una 5ta columna angosta sin ese empuje. Solo
+          // en edición: la alta (4 campos) sigue con el auto-fit tal cual.
+          %>
+          <div class="modal-form tutor-form-grid<%= esEdicion ? ' tutor-form-grid-con-estado' : '' %>">
+            <label>
+              Teléfono *
+              <%
+              // Pedido del usuario: el teléfono va primero y, solo en
+              // alta, permite buscar entre los propietarios ya
+              // existentes mientras se escribe — si hay coincidencia y
+              // se selecciona, se navega a editar ESE propietario en
+              // vez de continuar el alta; si no hay ninguna, no pasa
+              // nada y se sigue capturando el resto de los campos como
+              // un alta normal. Mismo patrón .combobox/.combobox-list
+              // ya usado en el resto del sistema (Doctor vinculado en
+              // usuario-form.ejs), pero con búsqueda en vivo contra el
+              // servidor en vez de filtrar una lista ya cargada
+              // (propietarios puede crecer mucho más que el catálogo
+              // de doctores).
+              %>
+              <%
+              // Mismo formato de teléfono mexicano (10 dígitos,
+              // NN-NNNN-NNNN) ya establecido en usuario-form.ejs/
+              // perfil-form.ejs — mismos atributos (placeholder,
+              // inputmode, pattern, maxlength, title), pedido explícito
+              // del usuario para mantenerlo consistente en todos los
+              // formularios del sistema.
+              %>
+              <% if (conBusquedaTelefono) { %>
+                <div class="combobox" id="tutorTelefonoCombobox">
+                  <input type="text" id="tutorTelefono" placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off" pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)" value="">
+                  <ul class="combobox-list" id="tutorTelefonoList" hidden></ul>
+                </div>
+              <% } else { %>
+                <input type="text" id="tutorTelefono" placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off" pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)" value="<%= propietario?.telefono ?? '' %>">
+              <% } %>
+              <span class="error-msg" id="tutorTelefonoError">El teléfono es obligatorio.</span>
+            </label>
+            <label>
+              Nombre(s) *
+              <input type="text" id="tutorNombre" maxlength="150" placeholder="Ej. Juan" value="<%= propietario?.nombre ?? '' %>">
+              <span class="error-msg" id="tutorNombreError">El nombre es obligatorio.</span>
+            </label>
+            <label>
+              Apellidos *
+              <input type="text" id="tutorApellidos" maxlength="150" placeholder="Ej. Pérez López" value="<%= propietario?.apellidos ?? '' %>">
+              <span class="error-msg" id="tutorApellidosError">Los apellidos son obligatorios.</span>
+            </label>
+            <label>
+              Correo electrónico
+              <input type="email" id="tutorCorreo" maxlength="150" placeholder="Ej. juan.perez@correo.com" value="<%= propietario?.correo ?? '' %>">
+            </label>
             <%
-            // Pedido del usuario (ajuste posterior): Pacientes y Estado en
-            // la misma fila (2 columnas) en vez de apilados, para que
-            // "Resumen" quede de la misma altura que "Información del
-            // propietario" (2 filas en cada tarjeta, no 3 en una y 1 en la
-            // otra).
+            // Pedido del usuario: reemplaza el badge fijo ("Activo" a
+            // secas, sin leer el dato real) que vivía en "Resumen" —
+            // mismo patrón .switch-field ya usado en doctor-form.ejs/
+            // plantilla-form.ejs. Solo en edición (mismo criterio que
+            // plantillas, no el de doctores): un alta siempre nace
+            // activo=true (tutores.service.js#crear), no tiene sentido
+            // mostrarlo ahí. Convive con el ícono de baja/reactivar del
+            // listado sin fusionarse — mismo "dos caminos hacia activo"
+            // ya usado en plantillas (US-613/614).
             %>
-            <div class="tutor-resumen-row-pair">
-              <div class="tutor-resumen-row">
-                <span class="tutor-resumen-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
+            <%
+            // Envuelto en un <label> normal (caption "Estado" arriba,
+            // como el resto de los campos de esta grilla) con el
+            // .switch-field ya conocido ADENTRO, en vez de ponerle a ese
+            // mismo <label> la clase .switch-field directo (como en
+            // doctor-form.ejs/plantilla-form.ejs, que no viven dentro de
+            // una grilla) — así conserva la fila caption-arriba/control-
+            // abajo de sus vecinos sin pisar el `display:inline-flex`
+            // propio de .switch-field con el `display:flex;
+            // flex-direction:column` de `.modal-form label` (misma regla,
+            // mayor especificidad al incluir el elemento).
+            %>
+            <% if (esEdicion) { %>
+              <label>
+                Estado
+                <span class="switch-field">
+                  <span class="switch">
+                    <input type="checkbox" id="tutorActivo" <%= propietario.activo ? 'checked' : '' %>>
+                    <span class="switch-track"></span>
+                  </span>
+                  <span class="switch-state-on">Activo</span>
+                  <span class="switch-state-off">Inactivo</span>
                 </span>
-                <span>
-                  <span class="tutor-resumen-label">Pacientes</span>
-                  <span class="tutor-resumen-value" id="resumenPacientes">0</span>
-                </span>
-              </div>
-              <div class="tutor-resumen-row">
-                <span class="tutor-resumen-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
-                </span>
-                <span>
-                  <span class="tutor-resumen-label">Estado</span>
-                  <span class="status-badge is-active">Activo</span>
-                </span>
-              </div>
-            </div>
-          </section>
-        </div>
+              </label>
+            <% } %>
+          </div>
+          <p class="tutor-form-hint">* Campos obligatorios</p>
+        </section>
 
         <section class="profile-card">
           <div class="tutor-pacientes-header">
@@ -220,6 +242,7 @@
           </div>
           <p class="tutor-form-hint">Puede agregar tantos pacientes como necesite antes de guardar.</p>
         </section>
+        </div>
 
         <div class="tutor-form-actions">
           <a class="btn-secondary" href="tutores.html">
@@ -338,12 +361,27 @@
       return div.innerHTML;
     }
 
-    // Mismo formato NN-NNNN-NNNN validado del lado del servidor
+    // Mismo formato validado del lado del servidor
     // (tutores.service.js#TELEFONO_REGEX) — duplicado aquí a propósito
     // (cliente vs. servidor son casos de uso distintos, mismo criterio de
     // "cada capa valida lo suyo" del resto del proyecto), solo para evitar
-    // un viaje de red en el caso más común.
-    const TELEFONO_REGEX = /^\d{2}-\d{4}-\d{4}$/;
+    // un viaje de red en el caso más común. Acepta las 2 máscaras (ver
+    // formatearTelefono() más abajo); no repite la regla del prefijo.
+    const TELEFONO_REGEX = /^(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})$/;
+
+    // Pedido explícito del usuario: la máscara depende del prefijo — 55/56
+    // (CDMX/Edomex, lada de 2 dígitos) usa NN-NNNN-NNNN; cualquier otro
+    // prefijo usa NNN-NNN-NNNN (lada de 3 dígitos). Recibe los DÍGITOS ya
+    // recortados a 10 (nunca el valor con guiones) para poder decidir el
+    // agrupamiento a partir de los primeros 2 caracteres sin importar
+    // cuántos guiones traía antes.
+    function formatearTelefono(digitos) {
+      const esCDMXEdomex = digitos.slice(0, 2) === '55' || digitos.slice(0, 2) === '56';
+      const grupos = esCDMXEdomex
+        ? [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)]
+        : [digitos.slice(0, 3), digitos.slice(3, 6), digitos.slice(6, 10)];
+      return grupos.filter((parte) => parte).join('-');
+    }
 
     // ---- Estado del formulario ----
     // `tutorId` empieza como el id de edición (o null en alta) y se
@@ -365,12 +403,15 @@
     let telefonoVerificado = null;
 
     const tutorNombreInput = document.getElementById('tutorNombre');
+    const tutorApellidosInput = document.getElementById('tutorApellidos');
     const tutorTelefonoInput = document.getElementById('tutorTelefono');
     const tutorCorreoInput = document.getElementById('tutorCorreo');
+    // Solo existe en edición (ver tutor-form.ejs, el <label> es
+    // condicional a esEdicion) — null en alta, donde el propietario
+    // siempre nace activo por definición (tutores.service.js#crear).
+    const tutorActivoInput = document.getElementById('tutorActivo');
     const pacientesTableBody = document.getElementById('pacientesTableBody');
     const pacientesEmpty = document.getElementById('pacientesEmpty');
-    const resumenPropietario = document.getElementById('resumenPropietario');
-    const resumenPacientes = document.getElementById('resumenPacientes');
     const errorBanner = document.getElementById('tutorFormError');
     const successBanner = document.getElementById('tutorFormSuccess');
 
@@ -429,7 +470,6 @@
     // switch) y sí puede quitarse antes de guardar (nada se creó todavía).
     function renderPacientes() {
       pacientesEmpty.hidden = pacientes.length !== 0;
-      resumenPacientes.textContent = String(pacientes.length);
 
       pacientesTableBody.innerHTML = pacientes
         .map((paciente, index) => {
@@ -495,6 +535,9 @@
       tutorNombreInput.value = tutor.nombre;
       tutorNombreInput.classList.remove('invalid');
       document.getElementById('tutorNombreError').classList.remove('show');
+      tutorApellidosInput.value = tutor.apellidos;
+      tutorApellidosInput.classList.remove('invalid');
+      document.getElementById('tutorApellidosError').classList.remove('show');
       tutorCorreoInput.value = tutor.correo || '';
       pacientes = tutor.pacientes.map((p) => ({
         id: p.id,
@@ -505,7 +548,6 @@
         edad: p.edad ?? '',
         activo: p.activo,
       }));
-      resumenPropietario.textContent = tutor.nombre || '—';
       renderPacientes();
     }
 
@@ -521,6 +563,9 @@
       tutorNombreInput.value = '';
       tutorNombreInput.classList.remove('invalid');
       document.getElementById('tutorNombreError').classList.remove('show');
+      tutorApellidosInput.value = '';
+      tutorApellidosInput.classList.remove('invalid');
+      document.getElementById('tutorApellidosError').classList.remove('show');
       tutorTelefonoInput.value = '';
       tutorTelefonoInput.classList.remove('invalid');
       document.getElementById('tutorTelefonoError').classList.remove('show');
@@ -528,7 +573,6 @@
       pacientes = [];
       reactivandoId = null;
       telefonoVerificado = null;
-      resumenPropietario.textContent = '—';
       renderPacientes();
     }
 
@@ -595,9 +639,13 @@
     });
 
     tutorNombreInput.addEventListener('input', () => {
-      resumenPropietario.textContent = tutorNombreInput.value.trim() || '—';
       tutorNombreInput.classList.remove('invalid');
       document.getElementById('tutorNombreError').classList.remove('show');
+    });
+
+    tutorApellidosInput.addEventListener('input', () => {
+      tutorApellidosInput.classList.remove('invalid');
+      document.getElementById('tutorApellidosError').classList.remove('show');
     });
 
     // Misma máscara de teléfono mexicano (NN-NNNN-NNNN) que usuarios.ejs/
@@ -609,10 +657,7 @@
     // búsqueda ya lee el valor con máscara aplicada, nunca el crudo.
     tutorTelefonoInput.addEventListener('input', () => {
       const digitos = tutorTelefonoInput.value.replace(/\D/g, '').slice(0, 10);
-      const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter(
-        (parte) => parte,
-      );
-      tutorTelefonoInput.value = partes.join('-');
+      tutorTelefonoInput.value = formatearTelefono(digitos);
       tutorTelefonoInput.classList.remove('invalid');
       document.getElementById('tutorTelefonoError').classList.remove('show');
       // El número cambió: cualquier verificación/confirmación de reactivar
@@ -646,7 +691,7 @@
           return;
         }
         tutorTelefonoList.innerHTML = resultados
-          .map((r) => `<li class="combobox-item" data-id="${r.id}">${escapeHtml(r.nombre)} — ${escapeHtml(r.telefono)}</li>`)
+          .map((r) => `<li class="combobox-item" data-id="${r.id}">${escapeHtml(r.nombre)} ${escapeHtml(r.apellidos)} — ${escapeHtml(r.telefono)}</li>`)
           .join('');
         tutorTelefonoList.hidden = false;
       }
@@ -746,6 +791,11 @@
         document.getElementById('tutorNombreError').classList.add('show');
         valido = false;
       }
+      if (!tutorApellidosInput.value.trim()) {
+        tutorApellidosInput.classList.add('invalid');
+        document.getElementById('tutorApellidosError').classList.add('show');
+        valido = false;
+      }
       const tutorTelefonoError = document.getElementById('tutorTelefonoError');
       if (!tutorTelefonoInput.value.trim()) {
         tutorTelefonoInput.classList.add('invalid');
@@ -754,7 +804,7 @@
         valido = false;
       } else if (!TELEFONO_REGEX.test(tutorTelefonoInput.value.trim())) {
         tutorTelefonoInput.classList.add('invalid');
-        tutorTelefonoError.textContent = 'El teléfono debe tener el formato NN-NNNN-NNNN.';
+        tutorTelefonoError.textContent = 'El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.';
         tutorTelefonoError.classList.add('show');
         valido = false;
       }
@@ -771,8 +821,13 @@
     function construirBody(confirmarReactivacion) {
       return JSON.stringify({
         nombre: tutorNombreInput.value,
+        apellidos: tutorApellidosInput.value,
         telefono: tutorTelefonoInput.value,
         correo: tutorCorreoInput.value,
+        // Solo en edición (tutorActivoInput es null en alta, ver arriba)
+        // — un alta siempre nace activo=true del lado del servidor
+        // (tutores.service.js#crear), sin importar lo que viaje aquí.
+        ...(tutorActivoInput ? { activo: tutorActivoInput.checked } : {}),
         pacientes: pacientes.map((p) => ({
           id: p.id,
           nombre: p.nombre,
@@ -793,7 +848,7 @@
     let resolveReactivar = null;
 
     function abrirReactivarModal(tutorExistente) {
-      document.getElementById('reactivarModalNombre').textContent = tutorExistente.nombre;
+      document.getElementById('reactivarModalNombre').textContent = `${tutorExistente.nombre} ${tutorExistente.apellidos}`;
       document.getElementById('reactivarModalTelefono').textContent = tutorExistente.telefono;
       reactivarModalBackdrop.classList.add('open');
       return new Promise((resolve) => {
@@ -822,7 +877,7 @@
     let resolveTelefonoActivo = null;
 
     function abrirTelefonoActivoModal(tutorExistente) {
-      document.getElementById('telefonoActivoModalNombre').textContent = tutorExistente.nombre;
+      document.getElementById('telefonoActivoModalNombre').textContent = `${tutorExistente.nombre} ${tutorExistente.apellidos}`;
       telefonoActivoModalBackdrop.classList.add('open');
       return new Promise((resolve) => {
         resolveTelefonoActivo = resolve;

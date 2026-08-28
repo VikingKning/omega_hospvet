@@ -69,6 +69,7 @@ async function crear(req, res, next) {
   try {
     const id = await service.crear({
       nombre: req.body.nombre,
+      apellidos: req.body.apellidos,
       telefono: req.body.telefono,
       correo: req.body.correo,
       pacientes: req.body.pacientes,
@@ -98,8 +99,10 @@ async function editar(req, res, next) {
     const id = await service.editar({
       id: req.params.id,
       nombre: req.body.nombre,
+      apellidos: req.body.apellidos,
       telefono: req.body.telefono,
       correo: req.body.correo,
+      activo: req.body.activo,
       pacientes: req.body.pacientes,
       usuarioId: req.session.user.id,
     });

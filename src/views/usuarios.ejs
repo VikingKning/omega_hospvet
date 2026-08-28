@@ -27,6 +27,12 @@
           <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         </span>
         <h1 class="topbar-title">Gestión de usuarios</h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
+            <img src="assets/imgs/<%= user.avatar %>.png" alt="">
+          </span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
       </header>
     </div>
 
@@ -306,6 +312,19 @@
     return div.innerHTML;
   }
 
+  // Pedido explícito del usuario: la máscara depende del prefijo — 55/56
+  // (CDMX/Edomex, lada de 2 dígitos) usa NN-NNNN-NNNN; cualquier otro
+  // prefijo usa NNN-NNN-NNNN (lada de 3 dígitos). Mismo criterio duplicado
+  // en tutor-form.ejs#formatearTelefono (esta pantalla no comparte
+  // <script> con esa).
+  function formatearTelefono(digitos) {
+    const esCDMXEdomex = digitos.slice(0, 2) === '55' || digitos.slice(0, 2) === '56';
+    const grupos = esCDMXEdomex
+      ? [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)]
+      : [digitos.slice(0, 3), digitos.slice(3, 6), digitos.slice(6, 10)];
+    return grupos.filter((parte) => parte).join('-');
+  }
+
   // Catálogo de doctores activos para el combobox: vive en JS, no en el
   // DOM, para no depender de que HTMX re-ejecute scripts al hacer swap
   // (ver el <script type="application/json"> inerte en usuario-form.ejs).
@@ -544,16 +563,13 @@
     }
 
     if (event.target.id === 'telefonoInput') {
-      // Formato de teléfono en México: 10 dígitos, NN-NNNN-NNNN. Se
-      // reconstruye el valor completo en cada tecla (no solo se insertan
-      // guiones) para que borrar un dígito de en medio también recorra los
-      // guiones correctamente, en vez de dejarlos "pegados" en su posición
+      // Formato de teléfono en México: 10 dígitos. Se reconstruye el valor
+      // completo en cada tecla (no solo se insertan guiones) para que
+      // borrar un dígito de en medio también recorra los guiones
+      // correctamente, en vez de dejarlos "pegados" en su posición
       // original.
       const digitos = event.target.value.replace(/\D/g, '').slice(0, 10);
-      const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter(
-        (parte) => parte,
-      );
-      event.target.value = partes.join('-');
+      event.target.value = formatearTelefono(digitos);
       return;
     }
 

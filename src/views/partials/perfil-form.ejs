@@ -143,11 +143,39 @@ function formatearUltimoAcceso(fecha) {
           <label>
             Teléfono
             <input type="text" name="telefono" id="telefonoInput" value="<%= telefono %>"
-                   placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off"
-                   pattern="\d{2}-\d{4}-\d{4}" maxlength="12"
-                   title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)">
+                   placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off"
+                   pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12"
+                   title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)">
           </label>
         </div>
+        <%
+        // Pedido explícito del usuario: 5 íconos fijos (avataresDisponibles,
+        // ver perfil.service.js#AVATARES_VALIDOS) para elegir cómo se ve el
+        // usuario en la barra de título — radios reales (no botones+JS como
+        // .tipo-picker en tutor-form.ejs) para que HTMX los serialice solo
+        // con el guardado normal del formulario, sin JS adicional. El input
+        // se oculta con .select-hidden-source (ya usado en el resto del
+        // proyecto para "oculto pero sigue participando en el submit"), el
+        // estado de seleccionado se resuelve en CSS con :has(), sin
+        // necesidad de una clase calculada aquí.
+        %>
+        <label class="avatar-picker-field">
+          Ícono de perfil
+          <div class="avatar-picker" role="radiogroup" aria-label="Ícono de perfil">
+            <% avataresDisponibles.forEach((opcion) => { %>
+              <label class="avatar-picker-option">
+                <input type="radio" name="avatar" value="<%= opcion %>" class="select-hidden-source"
+                       <%= avatar === opcion ? 'checked' : '' %>>
+                <span class="avatar-picker-circle avatar-color-<%= opcion %>">
+                  <img src="assets/imgs/<%= opcion %>.png" alt="">
+                </span>
+                <span class="avatar-picker-check" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" width="11" height="11"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+              </label>
+            <% }) %>
+          </div>
+        </label>
         <div class="modal-actions">
           <button type="submit" class="btn-primary">Guardar cambios</button>
         </div>

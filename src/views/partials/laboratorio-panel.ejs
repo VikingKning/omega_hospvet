@@ -14,6 +14,14 @@ function formatFecha(fecha) {
   const pad2 = (n) => String(n).padStart(2, '0');
   return `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }
+
+// Pedido explícito del usuario: acortar Cliente/Dr. Solicitante en la tabla
+// para ahorrar espacio — solo la primera palabra de cada campo (un nombre y
+// un apellido), nunca el nombre completo. "Dr." fijo para ambos sexos: no
+// existe un campo de género en `doctores`, no se inventa uno solo para esto.
+function primeraPalabra(texto) {
+  return (texto || '').trim().split(/\s+/)[0] || '';
+}
 %>
 <% if (catalogoVacio) { %>
   <div class="lab-table-wrap">
@@ -106,7 +114,7 @@ function formatFecha(fecha) {
             <th>Dr. Solicitante</th>
             <th>Fecha Solicitud</th>
             <th>Estado</th>
-            <th>Fecha de Envío</th>
+            <!--th>Fecha de Envío</th-->
             <th class="text-right">Acciones</th>
           </tr>
         </thead>
@@ -114,21 +122,21 @@ function formatFecha(fecha) {
           <% registros.forEach((registro) => { %>
             <tr>
               <td><%= idLabel(registro.id) %></td>
-              <td><%= registro.mascota_tipo ?? 'Mascota' %> - <%= registro.mascota_nombre %>, <%= registro.propietario_nombre %></td>
+              <td><%= registro.mascota_tipo ?? 'Mascota' %> - <%= registro.mascota_nombre %>, <%= primeraPalabra(registro.propietario_nombre) %> <%= primeraPalabra(registro.propietario_apellidos) %></td>
               <td>
                 <% if (registro.estudios.length > 1) { %>
                   <details class="lab-studies-details">
-                    <summary>Varios estudios (<%= registro.estudios.length %>)</summary>
+                    <summary>Varios (<%= registro.estudios.length %>)</summary>
                     <ul class="lab-studies-list"><% registro.estudios.forEach((nombre) => { %><li><%= nombre %></li><% }) %></ul>
                   </details>
                 <% } else { %>
                   <%= registro.estudios[0] ?? '—' %>
                 <% } %>
               </td>
-              <td><%= registro.doctor_nombre ? `${registro.doctor_nombre} ${registro.doctor_apellidos}` : '—' %></td>
+              <td><%= registro.doctor_nombre ? `Dr. ${primeraPalabra(registro.doctor_nombre)} ${primeraPalabra(registro.doctor_apellidos)}` : '—' %></td>
               <td><%= formatFecha(registro.fecha_solicitud) %></td>
               <td><span class="badge badge-<%= registro.estado %>"><%= ESTADO_LABEL[registro.estado] %></span></td>
-              <td><%= formatFecha(registro.enviado_en) %></td>
+              <!--td>< %= formatFecha(registro.enviado_en) %></td-->
               <td class="text-right">
                 <div class="row-actions">
                   <%
@@ -169,10 +177,26 @@ function formatFecha(fecha) {
                       </svg>
                     <% } %>
                   </a>
-                  <button class="row-action-btn" type="button" disabled data-tooltip="Subir/enviar resultados — próximamente"
-                          aria-label="Subir o enviar resultados de la orden <%= idLabel(registro.id) %>">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 21h14"/></svg>
-                  </button>
+                  <%
+                  // Pedido explícito del usuario: este ícono abre su propia
+                  // pantalla (/cargar, parecida a /ver pero con los
+                  // controles de carga) — "enviar" (correo/WhatsApp,
+                  // envios_laboratorio/envio_archivo) sigue sin
+                  // implementar, permiso laboratorio.enviar ya sembrado
+                  // pero reservado para una iteración futura.
+                  %>
+                  <% if (has('laboratorio.cargar')) { %>
+                    <a class="row-action-btn" data-tooltip="Subir resultados"
+                       aria-label="Subir resultados de la orden <%= idLabel(registro.id) %>"
+                       href="laboratorio/<%= registro.id %>/cargar">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 21h14"/></svg>
+                    </a>
+                  <% } else { %>
+                    <button class="row-action-btn" type="button" disabled data-tooltip="Subir resultados — sin permiso"
+                            aria-label="Subir resultados de la orden <%= idLabel(registro.id) %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 21h14"/></svg>
+                    </button>
+                  <% } %>
                   <% if (has('laboratorio.eliminar')) { %>
                     <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
                             aria-label="Eliminar orden <%= idLabel(registro.id) %>"

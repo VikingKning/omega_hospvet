@@ -149,6 +149,10 @@ async function login(username, password) {
     // `permissions`, mismo criterio de no volver a golpear la BD en cada
     // request.
     doctorId: user.doctor_id,
+    // Pedido explícito del usuario: ícono elegido en Mi Perfil (barra de
+    // título, ver partials del topbar en cada vista) — mismo criterio de
+    // cacheo en sesión que el resto de estos campos.
+    avatar: user.avatar,
     permissions,
   };
 }

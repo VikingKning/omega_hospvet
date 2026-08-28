@@ -12,8 +12,12 @@ coverage/
 *.pid
 
 # Archivos de resultados de laboratorio: nunca viven en el repo (Decisión 8
-# de la bitácora técnica; datos clínicos de pacientes)
-public/uploads/
+# de la bitácora técnica; datos clínicos de pacientes). Fuera de public/ a
+# propósito (no en public/uploads/, el placeholder original de esta regla):
+# express.static sirve TODO public/ sin autenticación, y estos son
+# resultados médicos — se sirven por una ruta propia autenticada en vez de
+# depender de que nadie adivine la URL.
+storage/
 
 # Sistema operativo
 .DS_Store

@@ -30,7 +30,8 @@ afterAll(() => db.destroy());
 // tutores.service.js#stripTelefono/formatTelefono.
 const TUTOR = {
   id: 1,
-  nombre: 'Juan Pérez',
+  nombre: 'Juan',
+  apellidos: 'Pérez',
   telefono: '5551234567',
   correo: 'juan@correo.com',
   activo: true,
@@ -208,7 +209,8 @@ describe('tutores.service.obtenerParaEditar', () => {
 
 describe('tutores.service.crear (US-156 AC7-AC13)', () => {
   const DATOS_VALIDOS = {
-    nombre: 'Juan Pérez',
+    nombre: 'Juan',
+    apellidos: 'Pérez',
     telefono: '55-5123-4567',
     correo: 'juan@correo.com',
     pacientes: [],
@@ -225,6 +227,10 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     await expect(crear({ ...DATOS_VALIDOS, nombre: '  ' })).rejects.toThrow(TutorValidationError);
   });
 
+  it('los apellidos son obligatorios', async () => {
+    await expect(crear({ ...DATOS_VALIDOS, apellidos: '  ' })).rejects.toThrow(TutorValidationError);
+  });
+
   it('AC3: el teléfono es obligatorio', async () => {
     await expect(crear({ ...DATOS_VALIDOS, telefono: '' })).rejects.toThrow(TutorValidationError);
   });
@@ -235,13 +241,24 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
   // en tutores es obligatorio, pero el FORMATO en sí es idéntico.
   it('un teléfono con formato inválido se rechaza con el mensaje exacto', async () => {
     await expect(crear({ ...DATOS_VALIDOS, telefono: '5551234567' })).rejects.toThrow(
-      'El teléfono debe tener el formato NN-NNNN-NNNN.',
+      'El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.',
     );
   });
 
   it('un teléfono incompleto (menos de 10 dígitos) se rechaza', async () => {
     await expect(crear({ ...DATOS_VALIDOS, telefono: '55-1234' })).rejects.toThrow(
       TutorValidationError,
+    );
+  });
+
+  // Pedido explícito del usuario: la máscara depende del prefijo — un
+  // teléfono que NO empieza con 55/56 se captura como NNN-NNN-NNNN, no
+  // NN-NNNN-NNNN, y el servidor debe aceptarlo igual (se guardan solo los
+  // 10 dígitos, sin importar el agrupamiento con el que llegó).
+  it('un teléfono NNN-NNN-NNNN (prefijo distinto de 55/56) se acepta', async () => {
+    await crear({ ...DATOS_VALIDOS, telefono: '811-234-5678' });
+    expect(repository.crear).toHaveBeenCalledWith(
+      expect.objectContaining({ telefono: '8112345678' }),
     );
   });
 
@@ -262,7 +279,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     // feel), pero tutores.service.js#validateTelefono los quita antes de
     // pasarle el valor al repository.
     expect(repository.crear).toHaveBeenCalledWith(
-      expect.objectContaining({ nombre: 'Juan Pérez', telefono: '5551234567' }),
+      expect.objectContaining({ nombre: 'Juan', apellidos: 'Pérez', telefono: '5551234567' }),
     );
     expect(repository.reactivar).not.toHaveBeenCalled();
   });
@@ -271,6 +288,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
       nombre: 'Otro',
+      apellidos: 'Existente',
       telefono: '5551234567',
       activo: true,
     });
@@ -282,7 +300,8 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
   it('AC5 (decidido con el usuario): teléfono de un propietario INACTIVO, sin confirmar, pide confirmación en vez de guardar', async () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
-      nombre: 'Tutor Inactivo',
+      nombre: 'Tutor',
+      apellidos: 'Inactivo',
       telefono: '5551234567',
       activo: false,
     });
@@ -297,7 +316,8 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
   it('el error de confirmación trae el nombre/teléfono del propietario existente, para mostrarlos en el modal', async () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
-      nombre: 'Tutor Inactivo',
+      nombre: 'Tutor',
+      apellidos: 'Inactivo',
       telefono: '5551234567',
       activo: false,
     });
@@ -309,14 +329,15 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
       expect(err).toBeInstanceOf(RequiereConfirmacionReactivacionError);
       // El teléfono guardado (5551234567, sin guiones) se reformatea a
       // NN-NNNN-NNNN solo para mostrarlo en el modal — nunca se guarda así.
-      expect(err.tutorExistente).toEqual({ nombre: 'Tutor Inactivo', telefono: '55-5123-4567' });
+      expect(err.tutorExistente).toEqual({ nombre: 'Tutor', apellidos: 'Inactivo', telefono: '55-5123-4567' });
     }
   });
 
   it('AC5 (decidido con el usuario): con confirmarReactivacion=true, reactiva el registro existente en vez de insertar uno nuevo', async () => {
     repository.findByTelefono.mockResolvedValue({
       id: 5,
-      nombre: 'Tutor Inactivo',
+      nombre: 'Tutor',
+      apellidos: 'Inactivo',
       telefono: '5551234567',
       activo: false,
     });
@@ -326,7 +347,7 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
 
     expect(id).toBe(5);
     expect(repository.reactivar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 5, nombre: 'Juan Pérez', telefono: '5551234567' }),
+      expect.objectContaining({ id: 5, nombre: 'Juan', apellidos: 'Pérez', telefono: '5551234567' }),
     );
     expect(repository.crear).not.toHaveBeenCalled();
   });
@@ -403,7 +424,8 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
 describe('tutores.service.editar (US-156 AC15-AC21)', () => {
   const DATOS_VALIDOS = {
     id: '1',
-    nombre: 'Juan Pérez',
+    nombre: 'Juan',
+    apellidos: 'Pérez',
     telefono: '55-5123-4567',
     correo: 'juan@correo.com',
     pacientes: [],
@@ -416,12 +438,16 @@ describe('tutores.service.editar (US-156 AC15-AC21)', () => {
     repository.editar.mockResolvedValue(undefined);
   });
 
+  it('los apellidos son obligatorios', async () => {
+    await expect(editar({ ...DATOS_VALIDOS, apellidos: '  ' })).rejects.toThrow(TutorValidationError);
+  });
+
   it('actualiza el propietario cuando no hay colisión de teléfono', async () => {
     const id = await editar(DATOS_VALIDOS);
     expect(id).toBe(1);
     // Ajuste posterior (pedido del usuario): se guarda sin guiones.
     expect(repository.editar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 1, nombre: 'Juan Pérez', telefono: '5551234567' }),
+      expect.objectContaining({ id: 1, nombre: 'Juan', apellidos: 'Pérez', telefono: '5551234567' }),
     );
   });
 
@@ -486,6 +512,15 @@ describe('tutores.service.buscarPorTelefono (pedido del usuario: búsqueda en vi
     // NN-NNNN-NNNN solo para mostrarlo en el combobox.
     expect(result).toEqual([{ ...TUTOR, telefono: '55-5123-4567' }]);
     expect(repository.searchByTelefono).toHaveBeenCalledWith('', 8);
+  });
+
+  // Pedido explícito del usuario: la máscara depende del prefijo — 55/56
+  // (CDMX/Edomex) usa NN-NNNN-NNNN; cualquier otro prefijo (ej. 81, Nuevo
+  // León) usa NNN-NNN-NNNN.
+  it('un teléfono que NO empieza con 55/56 se reformatea como NNN-NNN-NNNN', async () => {
+    repository.searchByTelefono.mockResolvedValue([{ ...TUTOR, telefono: '8112345678' }]);
+    const result = await buscarPorTelefono('811');
+    expect(result).toEqual([{ ...TUTOR, telefono: '811-234-5678' }]);
   });
 
   it('un q ausente (undefined) se trata igual que vacío, no truena', async () => {
@@ -592,7 +627,7 @@ describe('tutores.service.verificarTelefono (ajuste posterior: chequeo exacto en
     expect(result).toEqual({
       existe: true,
       activo: true,
-      tutor: { id: TUTOR.id, nombre: TUTOR.nombre },
+      tutor: { id: TUTOR.id, nombre: TUTOR.nombre, apellidos: TUTOR.apellidos },
     });
     expect(repository.findMascotasByPropietarioId).not.toHaveBeenCalled();
   });
@@ -607,6 +642,7 @@ describe('tutores.service.verificarTelefono (ajuste posterior: chequeo exacto en
       tutor: {
         id: TUTOR.id,
         nombre: TUTOR.nombre,
+        apellidos: TUTOR.apellidos,
         // Ajuste posterior (pedido del usuario): TUTOR.telefono (lo que
         // "guarda" el repository mockeado) ya no trae guiones; el service
         // lo reformatea a NN-NNNN-NNNN solo para el modal de reactivar.

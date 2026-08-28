@@ -289,7 +289,7 @@ function validateCorreo(rawCorreo) {
   return correo;
 }
 
-// Ajuste posterior, pedido explícito del usuario: el formato NN-NNNN-NNNN
+// Ajuste posterior, pedido explícito del usuario: el formato con guiones
 // es solo "look and feel" — lo que se guarda en `usuarios.telefono` son
 // los 10 dígitos, sin guiones (ver migración
 // 20260819000001_normalizar_telefonos_sin_guiones.js). Mismo criterio de
@@ -299,10 +299,18 @@ function stripTelefono(telefono) {
   return (telefono ?? '').replace(/\D/g, '');
 }
 
+// Ajuste posterior, pedido explícito del usuario: la máscara ya NO es fija
+// — un teléfono que empieza con 55 o 56 (CDMX/Edomex) se muestra
+// NN-NNNN-NNNN (2-4-4); cualquier otro prefijo, NNN-NNN-NNNN (3-3-4).
+// Mismo criterio duplicado en tutores.service.js#formatTelefono.
 function formatTelefono(telefono) {
   const digits = stripTelefono(telefono);
   if (digits.length !== 10) return telefono;
-  return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  const prefijo = digits.slice(0, 2);
+  if (prefijo === '55' || prefijo === '56') {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
 }
 
 // Teléfono es opcional en el schema (a diferencia de nombre/apellidos/

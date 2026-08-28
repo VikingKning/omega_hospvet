@@ -23,6 +23,7 @@ async function findById(id) {
       'doctor_id',
       'estatus',
       'ultimo_login_en',
+      'avatar',
     );
 }
 
@@ -77,10 +78,10 @@ async function findByCorreo(correo, excludeId) {
     .first('id');
 }
 
-// US-109 AC: actualiza ÚNICAMENTE nombre/apellidos/telefono/correo — nunca
-// username, estatus, doctor_id, password_hash ni ninguna otra columna,
-// aunque llegara algo más en el objeto de cambios (esta función ni
-// siquiera acepta esos parámetros, para que sea imposible colarlos por
+// US-109 AC: actualiza ÚNICAMENTE nombre/apellidos/telefono/correo/avatar
+// — nunca username, estatus, doctor_id, password_hash ni ninguna otra
+// columna, aunque llegara algo más en el objeto de cambios (esta función
+// ni siquiera acepta esos parámetros, para que sea imposible colarlos por
 // descuido). Registra actualizado_por/actualizado_en con el propio id: es
 // el único caso del sistema, junto con auth.repository.js#completarCambioPassword,
 // donde actualizado_por es el mismo usuario que se está actualizando.
@@ -92,13 +93,14 @@ async function findByCorreo(correo, excludeId) {
 // del doctor (nunca su `activo`, que es un dato que solo se toca desde el
 // catálogo de doctores), con su propio actualizado_por/actualizado_en.
 // Correo/Teléfono NO se replican: `doctores` no tiene esas columnas.
-async function actualizar(id, { nombre, apellidos, telefono, correo, doctorId }) {
+async function actualizar(id, { nombre, apellidos, telefono, correo, avatar, doctorId }) {
   await db.transaction(async (trx) => {
     await trx('usuarios').where({ id }).update({
       nombre,
       apellidos,
       telefono,
       correo,
+      avatar,
       actualizado_por: id,
       actualizado_en: trx.fn.now(),
     });

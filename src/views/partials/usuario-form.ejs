@@ -129,9 +129,9 @@ function estaMarcado(permiso) {
     <label>
       Teléfono
       <input type="text" name="telefono" id="telefonoInput" value="<%= telefono %>"
-             placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off"
-             pattern="\d{2}-\d{4}-\d{4}" maxlength="12"
-             title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)">
+             placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off"
+             pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12"
+             title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)">
     </label>
     <label>
       Username

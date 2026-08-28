@@ -28,7 +28,7 @@ const doctorIdSel = String(doctorIdSeleccionado ?? '');
 const doctorSeleccionado = doctores.find((d) => String(d.id) === doctorIdSel);
 const doctorLabel = doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : '';
 const mascotaLabel = mascotaSeleccionada
-  ? `${mascotaSeleccionada.nombre} (${mascotaSeleccionada.propietario_nombre})`
+  ? `${mascotaSeleccionada.nombre} (${mascotaSeleccionada.propietario_nombre} ${mascotaSeleccionada.propietario_apellidos})`
   : '';
 %>
 <div class="modal-header">

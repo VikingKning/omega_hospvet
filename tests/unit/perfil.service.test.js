@@ -109,6 +109,7 @@ describe('perfil.service.actualizar (US-109)', () => {
     apellidos: 'Gómez',
     telefono: '55-1234-5678',
     correo: 'ana@omegavet.test',
+    avatar: 'icon_cat',
   };
 
   beforeEach(() => {
@@ -196,6 +197,33 @@ describe('perfil.service.actualizar (US-109)', () => {
     await expect(actualizar(7, base)).rejects.toBeInstanceOf(DuplicateCorreoError);
     expect(repository.findByCorreo).toHaveBeenCalledWith(base.correo, 7);
     expect(repository.actualizar).not.toHaveBeenCalled();
+  });
+
+  // Pedido explícito del usuario: whitelist real de 5 íconos fijos — nunca
+  // se confía en que el cliente mande uno de esos 5 valores solo porque el
+  // picker del formulario solo ofrece esos (mismo criterio que
+  // tutores.service.js#validateSexo).
+  it('acepta cualquiera de los 5 íconos válidos', async () => {
+    for (const avatar of ['icon_hospvet', 'icon_cat', 'icon_dog', 'img_doctor', 'img_doctora']) {
+      const result = await actualizar(7, { ...base, avatar });
+      expect(result.avatar).toBe(avatar);
+    }
+  });
+
+  it('rechaza un ícono que no está en la whitelist', async () => {
+    await expect(actualizar(7, { ...base, avatar: 'icon_pinguino' })).rejects.toBeInstanceOf(
+      PerfilValidationError,
+    );
+    expect(repository.actualizar).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un avatar vacío/ausente (no hay un default implícito del lado del servidor)', async () => {
+    await expect(actualizar(7, { ...base, avatar: '' })).rejects.toBeInstanceOf(
+      PerfilValidationError,
+    );
+    await expect(actualizar(7, { nombre: base.nombre, apellidos: base.apellidos, telefono: base.telefono, correo: base.correo })).rejects.toBeInstanceOf(
+      PerfilValidationError,
+    );
   });
 });
 

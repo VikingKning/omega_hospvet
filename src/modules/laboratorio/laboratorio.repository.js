@@ -77,7 +77,7 @@ function baseQuery({ q, estado, categoriaId }) {
         builder.andWhere((whereBuilder) => {
           whereBuilder
             .whereRaw('m.nombre ILIKE ?', [`%${q}%`])
-            .orWhereRaw('p.nombre ILIKE ?', [`%${q}%`])
+            .orWhereRaw("(p.nombre || ' ' || p.apellidos) ILIKE ?", [`%${q}%`])
             .orWhereRaw("(d.nombre || ' ' || d.apellidos) ILIKE ?", [`%${q}%`]);
         });
       }
@@ -112,6 +112,7 @@ async function findPage({ q, estado, categoriaId, sort, dir, limit, offset }) {
       'm.nombre as mascota_nombre',
       'm.tipo as mascota_tipo',
       'p.nombre as propietario_nombre',
+      'p.apellidos as propietario_apellidos',
       'd.nombre as doctor_nombre',
       'd.apellidos as doctor_apellidos',
     );
@@ -218,27 +219,128 @@ async function findById(id) {
       'm.raza as mascota_raza',
       'p.id as propietario_id',
       'p.nombre as propietario_nombre',
+      'p.apellidos as propietario_apellidos',
       'p.telefono as propietario_telefono',
       'p.correo as propietario_correo',
     );
   if (!registro) return undefined;
 
-  const estudios = await db('estudios_solicitados')
-    .where('registro_laboratorio_id', id)
-    .orderBy('id')
+  // LEFT JOIN a archivos_laboratorio (pedido explícito del usuario: mostrar
+  // en "Ver" el archivo ya cargado de cada estudio, si tiene) — antes este
+  // SELECT ni siquiera traía `archivo_id`.
+  const estudios = await db('estudios_solicitados as es')
+    .leftJoin('archivos_laboratorio as a', 'a.id', 'es.archivo_id')
+    .where('es.registro_laboratorio_id', id)
+    .orderBy('es.id')
     .select(
-      'id',
-      'estudio_id',
-      'zona_anatomica_id',
-      'tipo_muestra',
-      'antibiograma',
-      'tejido_origen',
-      'lateralidad',
-      'componentes_liquido',
-      'observaciones',
+      'es.id',
+      'es.estudio_id',
+      'es.zona_anatomica_id',
+      'es.tipo_muestra',
+      'es.antibiograma',
+      'es.tejido_origen',
+      'es.lateralidad',
+      'es.componentes_liquido',
+      'es.observaciones',
+      'es.archivo_id',
+      'a.nombre_original as archivo_nombre',
+      'a.cargado_en as archivo_cargado_en',
     );
 
   return { ...registro, estudios };
+}
+
+// Carga de archivos de resultados (pedido explícito del usuario) — vive
+// aquí (no en laboratorio.archivos.js, que solo habla con disco/pdf-lib)
+// porque son las únicas funciones que tocan `archivos_laboratorio`/
+// `estudios_solicitados.archivo_id` en la base de datos.
+async function crearArchivo({ registroId, nombreOriginal, rutaAlmacenamiento, hashContenido, tamanoBytes, consolidado, usuarioId }) {
+  const [row] = await db('archivos_laboratorio')
+    .insert({
+      registro_laboratorio_id: registroId,
+      nombre_original: nombreOriginal,
+      ruta_almacenamiento: rutaAlmacenamiento,
+      hash_contenido: hashContenido,
+      tamano_bytes: tamanoBytes,
+      consolidado,
+      cargado_por: usuarioId,
+      cargado_en: db.fn.now(),
+    })
+    .returning('id');
+  return row.id;
+}
+
+async function findArchivoById(id) {
+  return db('archivos_laboratorio').where({ id }).first();
+}
+
+async function asignarArchivoAEstudio(estudioId, archivoId) {
+  await db('estudios_solicitados').where({ id: estudioId }).update({ archivo_id: archivoId, estado: 'cargado' });
+}
+
+// "Un archivo para todos" (pedido explícito del usuario) — pisa cualquier
+// archivo individual que ya tuviera cada estudio: representa el reporte
+// combinado del laboratorio, que reemplaza a los parciales.
+async function asignarArchivoATodosLosEstudios(registroId, archivoId) {
+  await db('estudios_solicitados')
+    .where('registro_laboratorio_id', registroId)
+    .update({ archivo_id: archivoId, estado: 'cargado' });
+}
+
+// Después de cualquier carga, si YA todos los estudios de la orden tienen
+// archivo, el registro completo pasa a 'cargado' (idempotente: si ya
+// estaba, no reescribe cargado_en).
+async function marcarCargadoSiCompleto(registroId) {
+  const pendientes = await db('estudios_solicitados')
+    .where('registro_laboratorio_id', registroId)
+    .whereNull('archivo_id')
+    .first(db.raw('true as existe'));
+  if (pendientes) return;
+
+  await db('registros_laboratorio')
+    .where({ id: registroId })
+    .andWhere('estado', 'pendiente')
+    .update({ estado: 'cargado', cargado_en: db.fn.now() });
+}
+
+// Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
+// equivocó el usuario") — nunca borra la fila de `archivos_laboratorio`
+// (esta tabla no tiene baja lógica, se queda huérfana pero recuperable,
+// mismo criterio que "Reemplazar"), solo desvincula. Reversa exacta de
+// asignarArchivoATodosLosEstudios + marcarCargadoSiCompleto: al quitar el
+// compartido, TODOS los estudios se sabe con certeza que se quedan sin
+// archivo, así que el registro puede fijarse directo a 'pendiente'.
+//
+// Reutilizada tal cual para "Quitar todos los archivos" (botón a nivel de
+// "Estudios solicitados", pedido explícito del usuario) — limpiar
+// archivo_id en TODOS los estudios de la orden es lo mismo sin importar si
+// venían de un archivo compartido o de uno distinto por estudio.
+async function desasignarArchivoDeTodosLosEstudios(registroId) {
+  await db('estudios_solicitados')
+    .where('registro_laboratorio_id', registroId)
+    .update({ archivo_id: null, estado: 'pendiente' });
+  await db('registros_laboratorio').where({ id: registroId }).update({ estado: 'pendiente', cargado_en: null });
+}
+
+async function desasignarArchivoDeEstudio(estudioId) {
+  await db('estudios_solicitados').where({ id: estudioId }).update({ archivo_id: null, estado: 'pendiente' });
+}
+
+// Reversa de marcarCargadoSiCompleto — a diferencia de "quitar de todos",
+// aquí no se sabe de antemano si los DEMÁS estudios siguen teniendo archivo
+// (carga individual), así que hay que volver a consultar antes de decidir
+// si el registro deja de estar 'cargado'.
+async function revertirCargadoSiIncompleto(registroId) {
+  const pendientes = await db('estudios_solicitados')
+    .where('registro_laboratorio_id', registroId)
+    .whereNull('archivo_id')
+    .first(db.raw('true as existe'));
+  if (!pendientes) return;
+
+  await db('registros_laboratorio')
+    .where({ id: registroId })
+    .andWhere('estado', 'cargado')
+    .update({ estado: 'pendiente', cargado_en: null });
 }
 
 // Edición: reemplaza los estudios por completo (delete + insert dentro de
@@ -294,4 +396,12 @@ module.exports = {
   findById,
   actualizarRegistro,
   eliminar,
+  crearArchivo,
+  findArchivoById,
+  asignarArchivoAEstudio,
+  asignarArchivoATodosLosEstudios,
+  marcarCargadoSiCompleto,
+  desasignarArchivoDeTodosLosEstudios,
+  desasignarArchivoDeEstudio,
+  revertirCargadoSiIncompleto,
 };

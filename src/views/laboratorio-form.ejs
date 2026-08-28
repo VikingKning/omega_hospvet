@@ -21,8 +21,24 @@
 <body>
 
   <%
+  // Pedido explícito del usuario: el badge de Estado (Pendiente/Cargado/
+  // Enviado) que ya existía en el listado también debe verse en Consultar
+  // y Cargar resultados (misma vista, ver el switch de `titulo` más abajo)
+  // — mismo patrón exacto que laboratorio-panel.ejs (badge + ESTADO_LABEL),
+  // declarado también aquí porque esta vista no comparte ese <script> con
+  // el partial del listado.
+  const ESTADO_LABEL = { pendiente: 'Pendiente', cargado: 'Cargado', enviado: 'Enviado' };
   const esEdicion = Boolean(registro);
-  const titulo = esEdicion ? (soloLectura ? 'Consultar registro' : 'Editar registro') : 'Nuevo registro';
+  // Corrección explícita del usuario: "Ver" es PURAMENTE informativa (qué
+  // se mandó, a quién, cuándo) — nunca debe ofrecer subir archivos. Esa
+  // opción vive en su propia pantalla, /cargar (ícono "Subir resultados"
+  // de la tabla), que el controller también renderiza en solo lectura
+  // (mismos campos bloqueados que /ver) pero con `modoCargarArchivos` en
+  // true — es la ÚNICA condición que activa los controles de carga, ya no
+  // depende de soloLectura genérico.
+  const titulo = esEdicion
+    ? (modoCargarArchivos ? 'Cargar resultados' : (soloLectura ? 'Consultar registro' : 'Editar registro'))
+    : 'Nuevo registro';
   const disabledAttr = soloLectura ? 'disabled' : '';
   // Regla explícita del usuario: en EDICIÓN (no en alta) los datos de tutor,
   // paciente y fecha de solicitud quedan bloqueados — un registro nace
@@ -30,6 +46,7 @@
   // Doctor solicitante, Agregar estudios y Observaciones siguen editables
   // (`disabledAttr` normal, solo se bloquean en consulta).
   const tutorPacienteDisabledAttr = (soloLectura || esEdicion) ? 'disabled' : '';
+  const puedeCargarArchivos = Boolean(modoCargarArchivos);
   %>
 
   <div class="app" id="app">
@@ -45,6 +62,12 @@
       <header class="topbar">
         <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
         <h1 class="topbar-title"><span class="topbar-breadcrumb-prefix">Laboratorio &rsaquo; Catálogo &rsaquo; </span><%= titulo %></h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
+            <img src="assets/imgs/<%= user.avatar %>.png" alt="">
+          </span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
       </header>
     </div>
 
@@ -59,7 +82,12 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
           </span>
           <div class="lab-form-heading-text">
-            <h2><%= titulo %> de laboratorio</h2>
+            <div class="lab-form-heading-title-row">
+              <h2><%= titulo %> de laboratorio</h2>
+              <% if (esEdicion) { %>
+                <span class="badge badge-<%= registro.estado %>"><%= ESTADO_LABEL[registro.estado] %></span>
+              <% } %>
+            </div>
             <p>Captura la solicitud y agrega uno o varios estudios para el paciente.</p>
           </div>
           <a class="btn-secondary" href="laboratorio.html">
@@ -68,6 +96,15 @@
           </a>
         </div>
 
+        <%
+        // Pedido explícito del usuario: encabezado (título/Volver) y footer
+        // (Cancelar/Guardar/Imprimir) siempre visibles — solo esta franja de
+        // en medio (banners + las 3 tarjetas) hace scroll. `.lab-form-scroll`
+        // es la ÚNICA parte con overflow-y en esta pantalla; `.lab-form-page`
+        // pasa a llenar el alto disponible como columna flex de 3 renglones
+        // (encabezado/scroll/footer), ver main.css.
+        %>
+        <div class="lab-form-scroll">
         <span class="form-error-banner" id="labFormError" style="display:none"></span>
         <span class="form-success-banner" id="labFormSuccess" style="display:none"></span>
 
@@ -86,7 +123,7 @@
           <div class="modal-form lab-form-grid lab-form-grid-3">
             <label>
               Teléfono *
-              <input type="text" id="labTelefono" placeholder="NN-NNNN-NNNN" inputmode="numeric" autocomplete="off" pattern="\d{2}-\d{4}-\d{4}" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN)" <%= tutorPacienteDisabledAttr %>>
+              <input type="text" id="labTelefono" placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off" pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)" <%= tutorPacienteDisabledAttr %>>
               <span class="error-msg" id="labTelefonoError">Escribe un teléfono para buscar al tutor.</span>
             </label>
             <label>
@@ -150,11 +187,24 @@
         </section>
 
         <section class="profile-card">
-          <h3 class="tutor-form-card-title">Agregar estudios</h3>
-
+          <%
+          // Pedido explícito del usuario: "Agregar estudios" y "Estudios
+          // solicitados" son 2 zonas propias, cada una con su título al
+          // mismo nivel (antes "Agregar estudios" era el título de TODA la
+          // tarjeta, con "Estudios solicitados" como subtítulo chico
+          // adentro — en /ver y /cargar, donde el picker no se renderiza,
+          // eso dejaba un título "Agregar estudios" encabezando una
+          // pantalla donde no se puede agregar nada). Ahora cada columna
+          // del grid empieza con su propio <h3>, alineadas verticalmente
+          // por diseño (mismo estilo/margen en ambas, primer hijo de su
+          // columna) — en /ver y /cargar, sin picker, "Estudios
+          // solicitados" queda como único título visible de esta tarjeta.
+          %>
           <div class="lab-estudios-layout">
             <% if (!soloLectura) { %>
-              <div class="lab-estudios-picker modal-form">
+              <div class="lab-estudios-picker-zone">
+                <h3 class="tutor-form-card-title">Agregar estudios</h3>
+                <div class="lab-estudios-picker modal-form">
                 <h4 class="lab-form-subtitle">Seleccionar estudio</h4>
                 <label>
                   Categoría
@@ -233,14 +283,47 @@
                 <div class="lab-picker-actions">
                   <button type="button" class="btn-primary" id="btnAddStudy">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                    Agregar estudio
+                    <span id="btnAddStudyLabel">Agregar estudio</span>
                   </button>
+                </div>
                 </div>
               </div>
             <% } %>
 
             <div class="lab-estudios-solicitados">
-              <h4 class="lab-form-subtitle">Estudios solicitados</h4>
+              <div class="lab-tutor-card-header">
+                <h3 class="tutor-form-card-title">Estudios solicitados</h3>
+                <% if (puedeCargarArchivos) { %>
+                  <%
+                  // Pedido explícito del usuario: quitar de un solo clic
+                  // TODOS los archivos subidos uno por uno (no toca "Archivo
+                  // para todos" — ese ya tiene su propia x en su chip).
+                  // Empieza deshabilitado, igual que "Enviar resultados";
+                  // actualizarEstadosBotonesArchivo() lo habilita solo
+                  // cuando el camino individual está en uso (modoIndividual).
+                  %>
+                  <button type="button" class="btn-secondary" id="labQuitarTodosIndividualesBtn" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+                    Quitar todos los archivos
+                  </button>
+                <% } %>
+              </div>
+
+              <%
+              // Movida aquí (antes vivía arriba de las 2 columnas, bajo el
+              // título "Agregar estudios" que ya no existe) — pedido
+              // explícito del usuario: solo tiene sentido junto a "Estudios
+              // solicitados", que es la única zona visible en /cargar
+              // (donde el picker de "Agregar estudios" no se renderiza).
+              %>
+              <% if (puedeCargarArchivos) { %>
+                <div class="lab-archivo-todos-card">
+                  <h4 class="lab-form-subtitle">Archivo para todos los estudios</h4>
+                  <p class="lab-archivo-todos-hint">Si el laboratorio mandó un solo archivo con los resultados de todos los estudios de esta orden, súbelo aquí. Si prefieres subir un archivo distinto por cada estudio, hazlo desde su propia tarjeta más abajo.</p>
+                  <div id="labArchivoTodosWrap"></div>
+                </div>
+              <% } %>
+
               <div class="lab-cart-wrap" id="labCartWrap">
                 <p class="lab-cart-empty" id="labCartEmpty">Aún no has agregado ningún estudio.</p>
                 <div class="lab-study-list" id="labCartBody" hidden></div>
@@ -257,6 +340,7 @@
             </label>
           </div>
         </section>
+        </div>
 
         <div class="tutor-form-actions">
           <a class="btn-secondary" href="laboratorio.html">
@@ -266,11 +350,127 @@
           <% if (!soloLectura) { %>
             <button type="button" class="btn-primary" id="labGuardarBtn">Guardar registro</button>
           <% } %>
+          <% if (puedeCargarArchivos) { %>
+            <%
+            // "Enviar resultados" — pedido explícito del usuario: vive en
+            // el footer fijo (junto a Cancelar/Imprimir) para que quede
+            // siempre visible aunque el usuario haga scroll dentro de
+            // "Agregar estudios". De momento solo un stub (modal "Enviando
+            // resultados", se cierra solo a los 5s): el envío real por
+            // correo/WhatsApp (envios_laboratorio/envio_archivo) sigue sin
+            // implementar. Empieza deshabilitado; se activa client-side
+            // según actualizarEstadosBotonesArchivo() — solo cuando TODOS
+            // los estudios ya tienen archivo (por "todos" o uno por uno).
+            %>
+            <button type="button" class="btn-primary" id="labEnviarResultadosBtn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+              Enviar resultados
+            </button>
+          <% } %>
+          <button type="button" class="btn-secondary" id="labImprimirBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Imprimir
+          </button>
+        </div>
+
+        <%#
+          Documento de impresión — pedido explícito del usuario: no quería
+          "la pantalla impresa" (reusar el look de tarjetas/formulario), sino
+          algo que se vea como un documento real (orden de laboratorio) para
+          entregar o archivar. Invisible en pantalla (`.lab-print-only`),
+          solo se muestra dentro de @media print — ahí también se oculta
+          TODO lo demás dentro de `.lab-form-page` (ver main.css). El
+          contenido se llena en cliente justo antes de imprimir
+          (prepararDocumentoImpresion()), leyendo lo que ya está en pantalla
+          — funciona igual en alta/edición/consulta sin duplicar lógica de
+          dónde vive cada dato.
+        %>
+        <div class="lab-print-only" id="labPrintDocument">
+          <header class="lab-print-header">
+            <div class="lab-print-brand">
+              <img src="assets/imgs/icon.png" alt="">
+              <div>
+                <strong>Omega Veterinaria &amp; Estética</strong>
+                <span>Orden de laboratorio</span>
+              </div>
+            </div>
+            <div class="lab-print-meta">
+              <span>Folio: <strong id="labPrintFolio">—</strong></span>
+              <span>Fecha de impresión: <strong id="labPrintFechaImpresion">—</strong></span>
+            </div>
+          </header>
+
+          <section class="lab-print-section">
+            <h3>Datos del tutor y paciente</h3>
+            <div class="lab-print-grid">
+              <div><span>Tutor</span><strong id="labPrintTutor">—</strong></div>
+              <div><span>Teléfono</span><strong id="labPrintTelefono">—</strong></div>
+              <div><span>Correo electrónico</span><strong id="labPrintCorreo">—</strong></div>
+              <div><span>Paciente</span><strong id="labPrintPaciente">—</strong></div>
+              <div><span>Especie</span><strong id="labPrintEspecie">—</strong></div>
+              <div><span>Sexo</span><strong id="labPrintSexo">—</strong></div>
+              <div><span>Edad</span><strong id="labPrintEdad">—</strong></div>
+              <div><span>Raza</span><strong id="labPrintRaza">—</strong></div>
+            </div>
+          </section>
+
+          <section class="lab-print-section">
+            <h3>Doctor y fecha</h3>
+            <div class="lab-print-grid">
+              <div><span>Dr. solicitante</span><strong id="labPrintDoctor">—</strong></div>
+              <div><span>Fecha de solicitud</span><strong id="labPrintFecha">—</strong></div>
+            </div>
+          </section>
+
+          <section class="lab-print-section">
+            <h3>Estudios solicitados</h3>
+            <div class="lab-print-estudios" id="labPrintEstudios"></div>
+          </section>
+
+          <section class="lab-print-section" id="labPrintObservacionesSection">
+            <h3>Observaciones generales</h3>
+            <p id="labPrintObservaciones"></p>
+          </section>
+
+          <footer class="lab-print-firma">
+            <div class="lab-print-firma-line">Firma del médico solicitante</div>
+          </footer>
         </div>
       </div>
     </main>
     </div>
   </div>
+
+  <% if (puedeCargarArchivos) { %>
+    <%
+    // "Enviar resultados" (pedido explícito del usuario) — de momento un
+    // stub: solo muestra este modal y se cierra solo a los 5s, sin enviar
+    // nada de verdad todavía. Mismo patrón visual que #confirmModalBackdrop
+    // (.modal-backdrop/.modal-card/.modal-header, ya usado en el resto del
+    // sistema), sin botones de acción porque no hay nada que confirmar.
+    %>
+    <div class="modal-backdrop" id="labEnviarModalBackdrop">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Enviando resultados</h2>
+          <button class="modal-close-btn" type="button" id="labEnviarModalClose" aria-label="Cerrar">&times;</button>
+        </div>
+        <p>Enviando documentos al tutor…</p>
+      </div>
+    </div>
+
+    <%
+    // Pedido explícito del usuario: tras subir un archivo (que se sube
+    // solo, sin un botón "Guardar" — ver manejarSeleccionArchivoParaSubir
+    // más abajo) hay que confirmarle al usuario que ya quedó almacenado,
+    // para que no se quede buscando ese botón inexistente. Estilo toast
+    // (flotante, se desvanece solo) en vez de reusar .form-success-banner
+    // (ese empuja el layout y se queda fijo hasta que el usuario lo
+    // cierra — pensado para errores de validación, no para una
+    // confirmación de paso). Primer toast del proyecto.
+    %>
+    <div class="toast" id="labArchivoToast" role="status" aria-live="polite"></div>
+  <% } %>
 
   <%
   // Isla de datos JSON inerte (nunca un <script>, esta página no usa HTMX
@@ -284,6 +484,7 @@
     doctores,
     doctorIdPreseleccionado,
     soloLectura,
+    puedeCargarArchivos,
     csrfToken,
     registro: registro ? {
       id: registro.id,
@@ -293,6 +494,7 @@
       observaciones: registro.observaciones,
       propietarioId: registro.propietario_id,
       propietarioNombre: registro.propietario_nombre,
+      propietarioApellidos: registro.propietario_apellidos,
       propietarioTelefono: registro.propietario_telefono,
       propietarioCorreo: registro.propietario_correo,
       pacientesDelTutor: registro.pacientesDelTutor,
@@ -352,6 +554,13 @@
     const CATALOGO = DATOS.catalogo;
     const DOCTORES = DATOS.doctores;
     const SOLO_LECTURA = DATOS.soloLectura;
+    const PUEDE_CARGAR_ARCHIVOS = DATOS.puedeCargarArchivos;
+    // Tipos permitidos para resultados (pedido explícito del usuario: video,
+    // foto o PDF) — mismo whitelist que laboratorio.archivos.js del lado
+    // servidor, aquí solo restringe qué aparece en el selector de archivos
+    // del sistema operativo (la validación real es la del servidor).
+    const ACCEPT_ARCHIVOS =
+      'image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime,video/webm';
     // Regla explícita del usuario: en EDICIÓN (no alta) tutor/paciente/fecha
     // quedan bloqueados — mismo criterio que tutorPacienteDisabledAttr del
     // lado servidor, para el código que solo corre en cliente (JS de
@@ -411,10 +620,10 @@
     }
 
     // ---- Tutor por teléfono ----
-    let tutorActual = null; // { id, nombre, telefono, correo, pacientes }
+    let tutorActual = null; // { id, nombre, apellidos, telefono, correo, pacientes }
 
     function renderTutor() {
-      document.getElementById('labTutorNombre').value = tutorActual ? tutorActual.nombre : '';
+      document.getElementById('labTutorNombre').value = tutorActual ? `${tutorActual.nombre} ${tutorActual.apellidos}` : '';
       document.getElementById('labTutorCorreo').value = tutorActual ? (tutorActual.correo || '—') : '';
     }
 
@@ -518,13 +727,25 @@
       labLimpiarTutorBtn.addEventListener('click', limpiarTutorYPaciente);
     }
 
+    // Pedido explícito del usuario: la máscara depende del prefijo — 55/56
+    // (CDMX/Edomex, lada de 2 dígitos) usa NN-NNNN-NNNN; cualquier otro
+    // prefijo usa NNN-NNN-NNNN (lada de 3 dígitos). Mismo criterio
+    // duplicado en tutor-form.ejs#formatearTelefono (esta pantalla no
+    // comparte <script> con esa).
+    function formatearTelefono(digitos) {
+      const esCDMXEdomex = digitos.slice(0, 2) === '55' || digitos.slice(0, 2) === '56';
+      const grupos = esCDMXEdomex
+        ? [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)]
+        : [digitos.slice(0, 3), digitos.slice(3, 6), digitos.slice(6, 10)];
+      return grupos.filter((parte) => parte).join('-');
+    }
+
     const labTelefonoInput = document.getElementById('labTelefono');
     if (labTelefonoInput && !SOLO_LECTURA && !ES_EDICION) {
       let telefonoTimer = null;
       labTelefonoInput.addEventListener('input', () => {
         const digitos = labTelefonoInput.value.replace(/\D/g, '').slice(0, 10);
-        const partes = [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)].filter((p) => p);
-        labTelefonoInput.value = partes.join('-');
+        labTelefonoInput.value = formatearTelefono(digitos);
         document.getElementById('labTelefonoError').classList.remove('show');
 
         clearTimeout(telefonoTimer);
@@ -572,7 +793,7 @@
           ? data.tutores
               .map(
                 (t) =>
-                  `<li class="combobox-item" data-telefono="${escapeHtml(t.telefono)}">${escapeHtml(t.nombre)}<br><span class="lab-cart-observaciones">${escapeHtml(t.telefono)}</span></li>`,
+                  `<li class="combobox-item" data-telefono="${escapeHtml(t.telefono)}">${escapeHtml(t.nombre)} ${escapeHtml(t.apellidos)}<br><span class="lab-cart-observaciones">${escapeHtml(t.telefono)}</span></li>`,
               )
               .join('')
           : '<li class="combobox-empty">Sin resultados</li>';
@@ -907,6 +1128,11 @@
 
     // ---- Carrito de estudios ----
     let selectedStudies = [];
+    // Pedido explícito del usuario: editar un estudio ya agregado ya NO lo
+    // quita de "Estudios solicitados" mientras se edita — se queda en su
+    // lugar y solo se reemplaza en el mismo índice al guardar. `editIndex`
+    // es `null` en modo "agregar", o el índice del estudio en edición.
+    let editIndex = null;
 
     function etiquetaLateralidad(valor) {
       return { izquierdo: 'Izquierdo', derecho: 'Derecho', bilateral: 'Bilateral' }[valor] || '';
@@ -944,13 +1170,13 @@
           const nombre = estudio ? estudio.nombre : 'Estudio';
           const meta = [estudio ? estudio.categoriaNombre : '', detalleDeFila(s)].filter(Boolean).join(' · ');
           return `
-            <div class="lab-study-card">
-              <div>
+            <div class="lab-study-card${PUEDE_CARGAR_ARCHIVOS ? ' lab-study-card--archivos' : ''}">
+              <div class="lab-study-card-info">
                 <div class="lab-study-title">${escapeHtml(nombre)}</div>
                 ${meta ? `<div class="lab-study-meta">${escapeHtml(meta)}</div>` : ''}
                 ${s.observaciones ? `<div class="lab-study-meta"><strong>Nota:</strong> ${escapeHtml(s.observaciones)}</div>` : ''}
               </div>
-              ${SOLO_LECTURA ? '' : `
+              ${SOLO_LECTURA ? renderArchivoEstudioSlot(s) : `
                 <div class="row-actions lab-study-actions">
                   <button type="button" class="row-action-btn row-action-edit" data-action="editar" data-idx="${i}" data-tooltip="Editar" aria-label="Editar estudio">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -965,15 +1191,416 @@
         .join('');
     }
 
-    // ---- Editar un estudio ya agregado: repuebla el picker con sus datos y
-    // lo quita del carrito (pedido explícito del usuario, mismo criterio que
-    // editStudy() en el mockup HTML) — el usuario ajusta y vuelve a agregar. ----
+    // ---- Carga de archivos de resultados (pedido explícito del usuario) ----
+    // Un solo generador de markup para el uploader (pedido explícito:
+    // "dar formato al botón de elegir archivos, se ve feo") — antes se
+    // repetía este HTML en 4 lugares (aquí, "Archivo para todos" y los 2
+    // "Reemplazar"), ahora todos pasan por esta función. El `<input>` nativo
+    // se oculta (`hidden`) y un `<label>` hace de botón — un <label> sigue
+    // reenviando el click a su input aunque esté hidden, no hace falta JS
+    // para abrir el selector de archivos. `.lab-archivo-picker-estado`
+    // (antes el texto nativo "Sin archivos seleccionados", que no cabía en
+    // la tarjeta angosta) se actualiza aparte, ver el listener de 'change'
+    // delegado más abajo.
+    function renderArchivoUploader({ inputId, estudioId } = {}) {
+      const estudioAttr = estudioId != null ? ` data-estudio-id="${estudioId}"` : '';
+      const inputIdAttr = inputId ? ` id="${inputId}"` : '';
+      return `
+        <div class="lab-archivo-uploader"${estudioAttr}>
+          <label class="row-action-btn lab-archivo-picker-btn" data-tooltip="Elegir archivo(s)">
+            <input type="file"${inputIdAttr} multiple accept="${ACCEPT_ARCHIVOS}" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </label>
+          <span class="lab-archivo-picker-estado">Sin archivos seleccionados</span>
+        </div>
+      `;
+    }
+
+    // Botón "x" junto al nombre del archivo ya subido (pedido explícito del
+    // usuario: "por si se equivocó el usuario") — a diferencia de
+    // "Reemplazar" (sube uno nuevo de inmediato), este solo desvincula el
+    // archivo actual y deja el estudio/"todos" como si nunca se hubiera
+    // subido nada, sin pedir un archivo nuevo en el momento.
+    function renderBotonQuitarArchivo(atributos) {
+      return `
+        <button type="button" class="lab-archivo-quitar"${atributos} data-tooltip="Quitar archivo" aria-label="Quitar archivo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      `;
+    }
+
+    // Actualiza el texto de estado del uploader (evento 'change' del input,
+    // delegado desde los contenedores — ver más abajo). Se usa para
+    // restaurar el texto real tras una carga fallida; en el camino feliz la
+    // página se recarga completa antes de que el usuario llegue a verlo.
+    function actualizarEstadoSeleccionArchivo(input) {
+      const span = input.closest('.lab-archivo-uploader')?.querySelector('.lab-archivo-picker-estado');
+      if (!span) return;
+      const n = input.files.length;
+      span.textContent =
+        n === 0 ? 'Sin archivos seleccionados' : n === 1 ? '1 archivo seleccionado' : `${n} archivos seleccionados`;
+    }
+
+    // Toast "Guardando Archivo -> Archivo guardado" (pedido explícito del
+    // usuario): la página se recarga sola tras subir un archivo (no hay
+    // botón "Guardar" que el usuario pueda buscar), así que esta es la
+    // única confirmación visible de que el archivo sí quedó guardado antes
+    // de que la recarga se lo lleve todo. Un color por estado (ajuste
+    // posterior, pedido del usuario): warning mientras sube, success al
+    // terminar, danger si falla — mismas 3 variantes de color que ya usan
+    // los badges de Estado (fondo claro + texto de marca, nunca el color
+    // sólido, mismo criterio de contraste establecido en todo el sistema).
+    // mostrarToast() reinicia la animación aunque el toast ya estuviera
+    // visible (void offsetWidth fuerza un reflow entre quitar y volver a
+    // poner la clase 'show' — sin esto, el navegador puede saltarse la
+    // transición si ambas clases cambian en el mismo tick).
+    const labArchivoToast = document.getElementById('labArchivoToast');
+    const TOAST_VARIANTES = ['toast--warning', 'toast--success', 'toast--danger'];
+
+    function aplicarVarianteToast(variante) {
+      if (!labArchivoToast) return;
+      labArchivoToast.classList.remove(...TOAST_VARIANTES);
+      labArchivoToast.classList.add(`toast--${variante}`);
+    }
+
+    function mostrarToast(texto, variante) {
+      if (!labArchivoToast) return;
+      labArchivoToast.textContent = texto;
+      aplicarVarianteToast(variante);
+      labArchivoToast.classList.remove('show');
+      void labArchivoToast.offsetWidth;
+      labArchivoToast.classList.add('show');
+    }
+
+    function actualizarToast(texto, variante) {
+      if (!labArchivoToast) return;
+      labArchivoToast.textContent = texto;
+      aplicarVarianteToast(variante);
+    }
+
+    function ocultarToast() {
+      labArchivoToast?.classList.remove('show');
+    }
+
+    // Pedido explícito del usuario: menos clics — en cuanto se eligen
+    // archivos, se suben solos (sin un paso aparte de "Subir"). Deshabilita
+    // el input mientras sube para evitar un doble envío.
+    function marcarSubiendoArchivo(input) {
+      input.disabled = true;
+      mostrarToast('Guardando Archivo', 'warning');
+      const span = input.closest('.lab-archivo-uploader')?.querySelector('.lab-archivo-picker-estado');
+      if (span) span.textContent = 'Subiendo…';
+    }
+
+    // Exclusión mutua OPTIMISTA (pedido explícito del usuario): en cuanto se
+    // eligen archivos de un lado, el otro camino se deshabilita de
+    // inmediato, sin esperar a que la subida termine — evita que el usuario
+    // alcance a iniciar los dos caminos a la vez mientras la solicitud sigue
+    // en curso. actualizarEstadosBotonesArchivo() (con el estado real ya
+    // recargado del servidor) es quien manda a la larga; esto solo cubre la
+    // ventana entre elegir el archivo y que la página se recargue.
+    function bloquearCaminoOpuesto(esTodos) {
+      const selector = esTodos
+        ? '#labCartBody .lab-archivo-uploader input, #labCartBody .lab-archivo-chip button'
+        : '#labArchivoTodosWrap input, #labArchivoTodosWrap button';
+      document.querySelectorAll(selector).forEach((el) => {
+        el.disabled = true;
+      });
+    }
+
+    // "Un archivo para todos" (pedido explícito del usuario): se considera
+    // "compartido" cuando TODOS los estudios de la orden apuntan al mismo
+    // archivo — no es una columna aparte, se deriva de selectedStudies cada
+    // vez que se renderiza. Declarada ANTES de renderArchivoEstudioSlot
+    // porque la usa (el orden de function declarations no importa para el
+    // hoisting, pero así se lee en el orden en que se necesita).
+    function archivoCompartidoActual() {
+      if (!selectedStudies.length) return null;
+      const [primero] = selectedStudies;
+      if (!primero.archivoId) return null;
+      const todosIguales = selectedStudies.every((s) => s.archivoId === primero.archivoId);
+      return todosIguales ? primero : null;
+    }
+
+    // Slot de cada tarjeta del carrito — SOLO en /cargar (PUEDE_CARGAR_ARCHIVOS),
+    // nunca en /ver: corrección explícita del usuario, "Ver" es puramente
+    // informativa y se queda exactamente como estaba (slot vacío, mismo
+    // criterio que antes de que existiera esta función). Si ya existe un
+    // archivo COMPARTIDO ("Archivo para todos"), pedido explícito del
+    // usuario: el slot individual queda vacío por completo (ni chip ni
+    // botón de subir/reemplazar) — el archivo vive a nivel de la orden, no
+    // de cada estudio, así que no hay nada que hacer aquí mientras siga
+    // compartido. Si no, un link de descarga con "Quitar"/"Reemplazar" si el
+    // estudio ya tiene su propio archivo, o un mini-uploader si no.
+    // Pedido explícito del usuario (look and feel): dentro de la tarjeta del
+    // carrito, "Reemplazar" va ARRIBA y el nombre del archivo + la "x" van
+    // ABAJO — al revés que en "Archivo para todos" (ese sí cabe en una sola
+    // línea, tiene toda la fila para él) — así el nombre del archivo tiene
+    // su propio renglón completo para envolver, en vez de competir por
+    // espacio horizontal con los botones en la columna angosta de la
+    // tarjeta.
+    function renderArchivoEstudioSlot(fila) {
+      if (!PUEDE_CARGAR_ARCHIVOS) return '';
+      if (archivoCompartidoActual()) return '';
+      if (fila.archivoNombre) {
+        return `
+          <div class="lab-archivo-chip">
+            <button type="button" class="btn-secondary lab-archivo-reemplazar" data-estudio-id="${fila.id}">Reemplazar</button>
+            <div class="lab-archivo-chip-nombre">
+              <a href="laboratorio/archivos/${fila.archivoId}" target="_blank" rel="noopener">${escapeHtml(fila.archivoNombre)}</a>
+              ${renderBotonQuitarArchivo(` data-estudio-id="${fila.id}"`)}
+            </div>
+          </div>
+        `;
+      }
+      return renderArchivoUploader({ estudioId: fila.id });
+    }
+
+    function renderArchivoTodos() {
+      const wrap = document.getElementById('labArchivoTodosWrap');
+      if (!wrap) return;
+      const compartido = archivoCompartidoActual();
+      wrap.innerHTML = compartido
+        ? `
+          <div class="lab-archivo-chip">
+            <a href="laboratorio/archivos/${compartido.archivoId}" target="_blank" rel="noopener">${escapeHtml(compartido.archivoNombre)}</a>
+            ${renderBotonQuitarArchivo(' id="labArchivoTodosQuitar"')}
+            <button type="button" class="btn-secondary" id="labArchivoTodosReemplazar">Reemplazar</button>
+          </div>
+        `
+        : renderArchivoUploader({ inputId: 'labArchivoTodosInput' });
+    }
+
+    // Reglas de exclusión mutua + habilitar "Enviar resultados" (pedido
+    // explícito del usuario): "un archivo para todos" y "uno por estudio"
+    // son dos caminos excluyentes — el que se usa primero bloquea al otro,
+    // para no dejar la orden en un estado mezclado (unos estudios con el
+    // archivo compartido, otros con uno propio). "Enviar" solo se habilita
+    // cuando CADA estudio ya tiene su archivo, sin importar por cuál de los
+    // dos caminos haya llegado.
+    function actualizarEstadosBotonesArchivo() {
+      const compartido = archivoCompartidoActual();
+      const modoIndividual = selectedStudies.some((s) => s.archivoId) && !compartido;
+      const todosConArchivo = selectedStudies.length > 0 && selectedStudies.every((s) => s.archivoId);
+
+      const enviarBtn = document.getElementById('labEnviarResultadosBtn');
+      if (enviarBtn) enviarBtn.disabled = !todosConArchivo;
+
+      // "Quitar todos los archivos" (pedido explícito del usuario, a nivel
+      // de "Estudios solicitados") — solo tiene sentido mientras el camino
+      // individual está en uso; nada que ver con "Archivo para todos" (esa
+      // tiene su propia x en su chip).
+      const quitarTodosIndividualesBtn = document.getElementById('labQuitarTodosIndividualesBtn');
+      if (quitarTodosIndividualesBtn) quitarTodosIndividualesBtn.disabled = !modoIndividual;
+
+      const todosWrap = document.getElementById('labArchivoTodosWrap');
+      if (todosWrap) {
+        todosWrap.querySelectorAll('input, button').forEach((el) => {
+          el.disabled = modoIndividual;
+        });
+      }
+
+      document
+        .querySelectorAll('#labCartBody .lab-archivo-uploader, #labCartBody .lab-archivo-chip')
+        .forEach((slot) => {
+          slot.querySelectorAll('input, button').forEach((el) => {
+            el.disabled = Boolean(compartido);
+          });
+        });
+    }
+
+    // Recarga la página completa tras una carga exitosa — más simple y
+    // robusto que parchear a mano el estado de cada tarjeta/el badge de
+    // "Cargado" de la tabla (a la que se regresa con Cancelar de todos
+    // modos), mismo criterio que guardar()/editar() en esta misma pantalla.
+    // Regresa true/false para que el llamador sepa si debe deshacer el
+    // bloqueo optimista del camino contrario (ver bloquearCaminoOpuesto()).
+    async function subirArchivosDeLaboratorio(url, fileList) {
+      hideBanners();
+      const formData = new FormData();
+      Array.from(fileList).forEach((file) => formData.append('archivos', file));
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+        body: formData,
+      });
+      if (res.redirected) {
+        ocultarToast();
+        window.location.href = res.url;
+        return true;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // El banner de abajo trae el detalle real del servidor (ej. "Tipo
+        // de archivo no permitido"); el toast es solo la alerta rápida en
+        // rojo pedida por el usuario, con un texto fijo — no reemplaza al
+        // banner, conviven.
+        actualizarToast('Error al subir archivo', 'danger');
+        setTimeout(ocultarToast, 2000);
+        showError(data.error || 'No se pudo subir el archivo.');
+        return false;
+      }
+      // "Archivo guardado" se queda visible un momento antes de
+      // desvanecerse — la recarga espera ese mismo tiempo para que el
+      // usuario alcance a verlo completo en vez de que la página se lo
+      // lleve a medias.
+      actualizarToast('Archivo guardado', 'success');
+      setTimeout(ocultarToast, 1200);
+      setTimeout(() => window.location.reload(), 1500);
+      return true;
+    }
+
+    // Quitar un archivo ya cargado (pedido explícito del usuario, botón "x"
+    // junto al nombre) — sin modal de confirmación a propósito: no borra
+    // nada de forma permanente (la fila de archivos_laboratorio queda
+    // huérfana, igual que al "Reemplazar", y el archivo físico sigue en
+    // disco), es trivial de deshacer con un solo clic más (subir de nuevo),
+    // y el pedido explícito de esta misma función fue reducir clics — pedir
+    // confirmación aquí iría en contra de eso.
+    async function quitarArchivo(url) {
+      hideBanners();
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'x-csrf-token': csrfToken },
+      });
+      if (res.redirected) {
+        window.location.href = res.url;
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(data.error || 'No se pudo quitar el archivo.');
+        return;
+      }
+      window.location.reload();
+    }
+
+    // Punto de entrada único del evento 'change' de cualquier uploader
+    // (tanto "Archivo para todos" como el de cada tarjeta del carrito):
+    // bloquea el camino contrario de inmediato y sube sin esperar un clic
+    // aparte en "Subir" (ese botón ya no existe, pedido explícito del
+    // usuario para reducir clics). Si la subida falla, deshace el bloqueo
+    // optimista y deja el uploader listo para reintentar.
+    async function manejarSeleccionArchivoParaSubir(input) {
+      if (!input.files.length) return;
+      const wrapper = input.closest('.lab-archivo-uploader');
+      const estudioId = wrapper.dataset.estudioId;
+      const esTodos = !estudioId;
+
+      bloquearCaminoOpuesto(esTodos);
+      marcarSubiendoArchivo(input);
+
+      const url = esTodos
+        ? `laboratorio/${DATOS.registro.id}/archivos`
+        : `laboratorio/${DATOS.registro.id}/estudios/${estudioId}/archivo`;
+      const exito = await subirArchivosDeLaboratorio(url, input.files);
+      if (!exito) {
+        input.value = '';
+        actualizarEstadoSeleccionArchivo(input);
+        actualizarEstadosBotonesArchivo();
+      }
+    }
+
+    if (PUEDE_CARGAR_ARCHIVOS) {
+      const labArchivoTodosWrap = document.getElementById('labArchivoTodosWrap');
+      labArchivoTodosWrap.addEventListener('change', (event) => {
+        const input = event.target.closest('input[type=file]');
+        if (input) manejarSeleccionArchivoParaSubir(input);
+      });
+      labArchivoTodosWrap.addEventListener('click', (event) => {
+        if (event.target.closest('#labArchivoTodosReemplazar')) {
+          labArchivoTodosWrap.innerHTML = renderArchivoUploader({ inputId: 'labArchivoTodosInput' });
+          return;
+        }
+        if (event.target.closest('#labArchivoTodosQuitar')) {
+          quitarArchivo(`laboratorio/${DATOS.registro.id}/archivos`);
+        }
+      });
+
+      const labCartBody = document.getElementById('labCartBody');
+      labCartBody.addEventListener('change', (event) => {
+        const input = event.target.closest('input[type=file]');
+        if (input) manejarSeleccionArchivoParaSubir(input);
+      });
+      labCartBody.addEventListener('click', (event) => {
+        const reemplazarBtn = event.target.closest('.lab-archivo-reemplazar');
+        if (reemplazarBtn) {
+          reemplazarBtn.closest('.lab-archivo-chip').outerHTML = renderArchivoUploader({
+            estudioId: reemplazarBtn.dataset.estudioId,
+          });
+          return;
+        }
+        const quitarBtn = event.target.closest('.lab-archivo-quitar');
+        if (quitarBtn) {
+          quitarArchivo(`laboratorio/${DATOS.registro.id}/estudios/${quitarBtn.dataset.estudioId}/archivo`);
+        }
+      });
+
+      // "Quitar todos los archivos" (pedido explícito del usuario, botón a
+      // nivel de "Estudios solicitados") — reutiliza la MISMA ruta que la x
+      // de "Archivo para todos": desvincular el archivo de TODOS los
+      // estudios de la orden es exactamente lo mismo sin importar si esos
+      // archivos eran uno compartido o uno distinto por estudio (el
+      // servidor no distingue, solo limpia archivo_id en cada fila). Este
+      // botón llega deshabilitado salvo cuando el camino individual está en
+      // uso, así que nunca coincide con tener uno compartido activo.
+      const quitarTodosIndividualesBtn = document.getElementById('labQuitarTodosIndividualesBtn');
+      quitarTodosIndividualesBtn.addEventListener('click', () => {
+        if (quitarTodosIndividualesBtn.disabled) return;
+        quitarArchivo(`laboratorio/${DATOS.registro.id}/archivos`);
+      });
+
+      // "Enviar resultados" (pedido explícito del usuario) — de momento un
+      // stub, sin envío real todavía: solo abre el modal y lo cierra solo a
+      // los 5s. El botón mismo ya llega deshabilitado desde el servidor y
+      // actualizarEstadosBotonesArchivo() decide cuándo se habilita — este
+      // guard es una segunda capa, nunca debería hacer falta.
+      const enviarBtn = document.getElementById('labEnviarResultadosBtn');
+      const enviarModal = document.getElementById('labEnviarModalBackdrop');
+      let enviarModalTimer = null;
+      enviarBtn.addEventListener('click', () => {
+        if (enviarBtn.disabled) return;
+        enviarModal.classList.add('open');
+        clearTimeout(enviarModalTimer);
+        enviarModalTimer = setTimeout(() => enviarModal.classList.remove('open'), 5000);
+      });
+      document.getElementById('labEnviarModalClose').addEventListener('click', () => {
+        enviarModal.classList.remove('open');
+        clearTimeout(enviarModalTimer);
+      });
+      enviarModal.addEventListener('click', (event) => {
+        if (event.target === enviarModal) {
+          enviarModal.classList.remove('open');
+          clearTimeout(enviarModalTimer);
+        }
+      });
+    }
+
+    // Pedido explícito del usuario: solo cambia el texto del botón/el
+    // disabled de Categoría y Buscar estudio según si se está editando un
+    // estudio ya agregado (no se puede cambiar CUÁL estudio es, solo sus
+    // detalles/observaciones) o agregando uno nuevo.
+    function actualizarModoBotonAgregar() {
+      const editando = editIndex !== null;
+      document.getElementById('btnAddStudyLabel').textContent = editando ? 'Guardar cambios' : 'Agregar estudio';
+      document.getElementById('labCategoriaTrigger').disabled = editando;
+      document.getElementById('labEstudioSearch').disabled = editando;
+    }
+
+    // ---- Editar un estudio ya agregado (pedido explícito del usuario): a
+    // diferencia de antes, YA NO lo quita de "Estudios solicitados" — se
+    // queda visible en su lugar mientras se edita, y solo el estudio en sí
+    // (cuál es) queda bloqueado; los detalles (zona/tipo de muestra/tejido/
+    // componentes) y la observación del estudio sí son editables. Al
+    // guardar, se reemplaza en el MISMO índice (ver el handler de
+    // btnAddStudy), no se agrega al final. ----
     function editarEstudioEnCarrito(idx) {
       const fila = selectedStudies[idx];
       const estudio = findEstudioPorId(fila.estudioId);
       if (!estudio) return;
 
       clearEstudioSelection();
+      editIndex = idx;
 
       categoriaFiltro = String(estudio.categoriaId);
       document.getElementById('labCategoriaId').value = categoriaFiltro;
@@ -1004,8 +1631,7 @@
       }
       document.getElementById('labEstudioObservaciones').value = fila.observaciones || '';
 
-      selectedStudies.splice(idx, 1);
-      renderCart();
+      actualizarModoBotonAgregar();
       document.querySelector('.lab-estudios-picker')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
 
@@ -1057,9 +1683,18 @@
         const observaciones = document.getElementById('labEstudioObservaciones').value.trim();
         if (observaciones) fila.observaciones = observaciones;
 
-        selectedStudies.push(fila);
+        // Editando (pedido explícito del usuario): reemplaza en el MISMO
+        // índice en vez de agregar al final — el estudio nunca se movió de
+        // "Estudios solicitados" mientras se editaba.
+        if (editIndex !== null) {
+          selectedStudies[editIndex] = fila;
+          editIndex = null;
+        } else {
+          selectedStudies.push(fila);
+        }
         renderCart();
         clearEstudioSelection();
+        actualizarModoBotonAgregar();
       });
 
       document.getElementById('labCartBody').addEventListener('click', (event) => {
@@ -1068,6 +1703,20 @@
         const idx = Number(btn.dataset.idx);
         if (btn.dataset.action === 'eliminar') {
           selectedStudies.splice(idx, 1);
+          // Ahora que editar ya no saca al estudio del carrito, borrar
+          // cualquier otro estudio mientras uno está en edición puede
+          // recorrer los índices — hay que mantener editIndex apuntando al
+          // estudio correcto (o cancelar la edición si fue justo ese el
+          // que se borró).
+          if (editIndex !== null) {
+            if (editIndex === idx) {
+              editIndex = null;
+              clearEstudioSelection();
+              actualizarModoBotonAgregar();
+            } else if (editIndex > idx) {
+              editIndex -= 1;
+            }
+          }
           renderCart();
         } else if (btn.dataset.action === 'editar') {
           editarEstudioEnCarrito(idx);
@@ -1098,19 +1747,14 @@
 
       // propietario_telefono llega sin guiones (se guarda así en BD, ver
       // tutores.service.js#stripTelefono) — se reconstruye el formato
-      // NN-NNNN-NNNN solo para mostrarlo, mismo criterio que
-      // formatTelefono() en el resto del sistema.
+      // solo para mostrarlo, mismo criterio que formatTelefono() en el
+      // resto del sistema (55/56 → NN-NNNN-NNNN, resto → NNN-NNN-NNNN).
       const digitosTelefono = (registro.propietarioTelefono ?? '').replace(/\D/g, '');
-      document.getElementById('labTelefono').value = [
-        digitosTelefono.slice(0, 2),
-        digitosTelefono.slice(2, 6),
-        digitosTelefono.slice(6, 10),
-      ]
-        .filter((p) => p)
-        .join('-');
+      document.getElementById('labTelefono').value = formatearTelefono(digitosTelefono);
       tutorActual = {
         id: registro.propietarioId,
         nombre: registro.propietarioNombre,
+        apellidos: registro.propietarioApellidos,
         correo: registro.propietarioCorreo,
         pacientes: registro.pacientesDelTutor,
       };
@@ -1125,7 +1769,17 @@
       document.getElementById('labObservacionesGenerales').value = registro.observaciones ?? '';
 
       selectedStudies = registro.estudios.map((e) => {
-        const fila = { estudioId: e.estudio_id };
+        // `id` (la fila real de estudios_solicitados, no el estudio del
+        // catálogo) y los campos de archivo son para la carga de
+        // resultados (pedido explícito del usuario) — solo se usan en modo
+        // consulta, ver renderCart().
+        const fila = {
+          id: e.id,
+          estudioId: e.estudio_id,
+          archivoId: e.archivo_id,
+          archivoNombre: e.archivo_nombre,
+          archivoCargadoEn: e.archivo_cargado_en,
+        };
 
         if (e.zona_anatomica_id) {
           fila.zonaAnatomicaId = e.zona_anatomica_id;
@@ -1190,8 +1844,79 @@
       document.getElementById('labGuardarBtn').addEventListener('click', guardar);
     }
 
+    // ---- Imprimir: pedido explícito del usuario — no la pantalla tal cual
+    // impresa, sino un documento propio tipo orden de laboratorio
+    // (#labPrintDocument, invisible en pantalla, ver @media print en
+    // main.css). El diálogo de impresión nativo del navegador ya ofrece
+    // "Guardar como PDF" como destino, así que no hace falta ninguna
+    // librería de terceros (este proyecto es deliberadamente conservador
+    // con dependencias del lado del cliente). Se llena justo antes de
+    // imprimir, leyendo lo que YA está en pantalla (mismo criterio en
+    // alta/edición/consulta, sin duplicar de dónde sale cada dato) — así
+    // siempre refleja el estado actual del formulario, incluso datos aún
+    // sin guardar.
+    function prepararDocumentoImpresion() {
+      document.getElementById('labPrintFolio').textContent = DATOS.registro
+        ? `LAB-${String(DATOS.registro.id).padStart(3, '0')}`
+        : 'Sin guardar';
+      document.getElementById('labPrintFechaImpresion').textContent = new Date().toLocaleDateString('es-MX', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+
+      document.getElementById('labPrintTutor').textContent = document.getElementById('labTutorNombre').value || '—';
+      document.getElementById('labPrintTelefono').textContent = document.getElementById('labTelefono').value || '—';
+      document.getElementById('labPrintCorreo').textContent = document.getElementById('labTutorCorreo').value || '—';
+      document.getElementById('labPrintPaciente').textContent =
+        document.getElementById('labPacienteTrigger').value || '—';
+      document.getElementById('labPrintEspecie').textContent =
+        document.getElementById('labPacienteEspecieLabel').textContent || '—';
+      document.getElementById('labPrintSexo').textContent =
+        document.getElementById('labPacienteSexoLabel').textContent || '—';
+      document.getElementById('labPrintEdad').textContent = document.getElementById('labPacienteEdad').textContent || '—';
+      document.getElementById('labPrintRaza').textContent = document.getElementById('labPacienteRaza').textContent || '—';
+
+      document.getElementById('labPrintDoctor').textContent = document.getElementById('labDoctorInput').value || '—';
+      const fechaRaw = document.getElementById('labFecha').value;
+      document.getElementById('labPrintFecha').textContent = fechaRaw
+        ? new Date(`${fechaRaw}T00:00:00`).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '—';
+
+      const estudiosWrap = document.getElementById('labPrintEstudios');
+      estudiosWrap.innerHTML = selectedStudies.length
+        ? selectedStudies
+            .map((s) => {
+              const estudio = findEstudioPorId(s.estudioId);
+              const nombre = estudio ? estudio.nombre : 'Estudio';
+              const meta = [estudio ? estudio.categoriaNombre : '', detalleDeFila(s)].filter(Boolean).join(' · ');
+              return `
+                <div class="lab-print-estudio">
+                  <strong>${escapeHtml(nombre)}</strong>
+                  ${meta ? `<div>${escapeHtml(meta)}</div>` : ''}
+                  ${s.observaciones ? `<div><em>Nota:</em> ${escapeHtml(s.observaciones)}</div>` : ''}
+                </div>
+              `;
+            })
+            .join('')
+        : '<p>Sin estudios agregados.</p>';
+
+      const observaciones = document.getElementById('labObservacionesGenerales').value.trim();
+      document.getElementById('labPrintObservacionesSection').hidden = !observaciones;
+      document.getElementById('labPrintObservaciones').textContent = observaciones;
+    }
+
+    document.getElementById('labImprimirBtn').addEventListener('click', () => {
+      prepararDocumentoImpresion();
+      window.print();
+    });
+
     precargar();
     renderCart();
+    if (PUEDE_CARGAR_ARCHIVOS) {
+      renderArchivoTodos();
+      actualizarEstadosBotonesArchivo();
+    }
   </script>
 
 </body>

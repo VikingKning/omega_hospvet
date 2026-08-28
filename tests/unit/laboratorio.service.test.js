@@ -1,8 +1,10 @@
 jest.mock('../../src/modules/laboratorio/laboratorio.repository');
+jest.mock('../../src/modules/laboratorio/laboratorio.archivos');
 jest.mock('../../src/modules/tutores/tutores.repository');
 jest.mock('../../src/modules/tutores/tutores.service');
 jest.mock('../../src/modules/doctores/doctores.repository');
 const repository = require('../../src/modules/laboratorio/laboratorio.repository');
+const archivos = require('../../src/modules/laboratorio/laboratorio.archivos');
 const tutoresRepository = require('../../src/modules/tutores/tutores.repository');
 const tutoresService = require('../../src/modules/tutores/tutores.service');
 const doctoresRepository = require('../../src/modules/doctores/doctores.repository');
@@ -15,6 +17,11 @@ const {
   eliminar,
   listarDoctoresActivos,
   catalogoParaFormulario,
+  subirArchivoParaTodos,
+  subirArchivoParaEstudio,
+  eliminarArchivoDeTodos,
+  eliminarArchivoDeEstudio,
+  obtenerArchivoParaDescarga,
 } = require('../../src/modules/laboratorio/laboratorio.service');
 
 const MASCOTA = { id: 11, nombre: 'Cachis', propietario_id: 6 };
@@ -462,5 +469,145 @@ describe('laboratorio.service catálogo/doctores', () => {
     const catalogo = await catalogoParaFormulario();
     expect(catalogo.componentesLiquido.length).toBeGreaterThan(0);
     expect(catalogo.zonasAnatomicas).toEqual(ZONAS);
+  });
+});
+
+describe('laboratorio.service.subirArchivoParaTodos', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findById.mockResolvedValue({ id: 7, estudios: [{ id: 100 }, { id: 101 }] });
+    archivos.procesarArchivos.mockResolvedValue({
+      nombreOriginal: 'resultado.pdf',
+      rutaAlmacenamiento: '7/abc.pdf',
+      hashContenido: 'hash',
+      tamanoBytes: 123,
+      consolidado: false,
+    });
+    repository.crearArchivo.mockResolvedValue(55);
+  });
+
+  it('rechaza un id de registro inválido', async () => {
+    await expect(subirArchivoParaTodos('no-es-numero', [{}], 1)).rejects.toThrow('Registro no encontrado.');
+  });
+
+  it('rechaza si el registro no existe', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    await expect(subirArchivoParaTodos('7', [{}], 1)).rejects.toThrow('Registro no encontrado.');
+  });
+
+  it('crea el archivo, lo asigna a TODOS los estudios y marca cargado si completa', async () => {
+    const archivoId = await subirArchivoParaTodos('7', [{ originalname: 'a.pdf' }], 9);
+
+    expect(archivoId).toBe(55);
+    expect(archivos.procesarArchivos).toHaveBeenCalledWith({
+      registroId: 7,
+      files: [{ originalname: 'a.pdf' }],
+    });
+    expect(repository.crearArchivo).toHaveBeenCalledWith(
+      expect.objectContaining({ registroId: 7, usuarioId: 9, nombreOriginal: 'resultado.pdf' }),
+    );
+    expect(repository.asignarArchivoATodosLosEstudios).toHaveBeenCalledWith(7, 55);
+    expect(repository.marcarCargadoSiCompleto).toHaveBeenCalledWith(7);
+  });
+
+  it('propaga el error de validación de laboratorio.archivos.js (ej. video mezclado con otro archivo)', async () => {
+    archivos.procesarArchivos.mockRejectedValue(Object.assign(new Error('Tipo no permitido'), { status: 400 }));
+    await expect(subirArchivoParaTodos('7', [{}], 1)).rejects.toThrow('Tipo no permitido');
+    expect(repository.crearArchivo).not.toHaveBeenCalled();
+  });
+});
+
+describe('laboratorio.service.subirArchivoParaEstudio', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findById.mockResolvedValue({ id: 7, estudios: [{ id: 100 }, { id: 101 }] });
+    archivos.procesarArchivos.mockResolvedValue({
+      nombreOriginal: 'radiografia.jpg',
+      rutaAlmacenamiento: '7/def.jpg',
+      hashContenido: 'hash2',
+      tamanoBytes: 456,
+      consolidado: false,
+    });
+    repository.crearArchivo.mockResolvedValue(56);
+  });
+
+  it('rechaza si el estudio no pertenece a ese registro', async () => {
+    await expect(subirArchivoParaEstudio('7', '999', [{}], 1)).rejects.toThrow('Registro no encontrado.');
+    expect(repository.asignarArchivoAEstudio).not.toHaveBeenCalled();
+  });
+
+  it('crea el archivo y lo asigna SOLO a ese estudio (no a los demás de la orden)', async () => {
+    const archivoId = await subirArchivoParaEstudio('7', '101', [{ originalname: 'x.jpg' }], 9);
+
+    expect(archivoId).toBe(56);
+    expect(repository.asignarArchivoAEstudio).toHaveBeenCalledWith(101, 56);
+    expect(repository.asignarArchivoATodosLosEstudios).not.toHaveBeenCalled();
+    expect(repository.marcarCargadoSiCompleto).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('laboratorio.service.eliminarArchivoDeTodos', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findById.mockResolvedValue({ id: 7, estudios: [{ id: 100 }, { id: 101 }] });
+  });
+
+  it('rechaza un id de registro inválido', async () => {
+    await expect(eliminarArchivoDeTodos('no-es-numero')).rejects.toThrow('Registro no encontrado.');
+  });
+
+  it('rechaza si el registro no existe', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    await expect(eliminarArchivoDeTodos('7')).rejects.toThrow('Registro no encontrado.');
+  });
+
+  it('desvincula el archivo de TODOS los estudios de la orden', async () => {
+    await eliminarArchivoDeTodos('7');
+    expect(repository.desasignarArchivoDeTodosLosEstudios).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('laboratorio.service.eliminarArchivoDeEstudio', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findById.mockResolvedValue({ id: 7, estudios: [{ id: 100 }, { id: 101 }] });
+  });
+
+  it('rechaza si el estudio no pertenece a ese registro', async () => {
+    await expect(eliminarArchivoDeEstudio('7', '999')).rejects.toThrow('Registro no encontrado.');
+    expect(repository.desasignarArchivoDeEstudio).not.toHaveBeenCalled();
+  });
+
+  it('desvincula el archivo de ese estudio y revisa si el registro debe volver a pendiente', async () => {
+    await eliminarArchivoDeEstudio('7', '101');
+    expect(repository.desasignarArchivoDeEstudio).toHaveBeenCalledWith(101);
+    expect(repository.revertirCargadoSiIncompleto).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('laboratorio.service.obtenerArchivoParaDescarga', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('regresa null con un id inválido', async () => {
+    expect(await obtenerArchivoParaDescarga('no-es-numero')).toBeNull();
+  });
+
+  it('regresa null si el archivo no existe', async () => {
+    repository.findArchivoById.mockResolvedValue(undefined);
+    expect(await obtenerArchivoParaDescarga('5')).toBeNull();
+  });
+
+  it('regresa nombre original y ruta absoluta cuando existe', async () => {
+    repository.findArchivoById.mockResolvedValue({
+      id: 5,
+      nombre_original: 'r.pdf',
+      ruta_almacenamiento: '7/x.pdf',
+    });
+    archivos.rutaAbsolutaDeArchivo.mockReturnValue('/storage/laboratorio/7/x.pdf');
+
+    expect(await obtenerArchivoParaDescarga('5')).toEqual({
+      nombreOriginal: 'r.pdf',
+      rutaAbsoluta: '/storage/laboratorio/7/x.pdf',
+    });
   });
 });

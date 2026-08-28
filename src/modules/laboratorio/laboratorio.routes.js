@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const requireAuth = require('../../middlewares/requireAuth');
 const requirePermission = require('../../middlewares/requirePermission');
 const writeLimiter = require('../../middlewares/writeLimiter');
@@ -7,6 +8,35 @@ const { doubleCsrfProtection } = require('../../config/csrf');
 const controller = require('./laboratorio.controller');
 
 const router = express.Router();
+
+// Memoria (no disco directo): laboratorio.archivos.js necesita el Buffer
+// completo en memoria de todos modos para poder fusionar varios archivos
+// en un PDF antes de escribir el resultado final — guardarlos primero en
+// disco solo para releerlos sería trabajo doble. Límites generosos pero
+// acotados (un panel interno de una sola clínica, no una API pública):
+// 50MB por archivo (video de consultorio), máximo 10 archivos por lote.
+const uploadArchivos = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024, files: 10 },
+});
+
+// MulterError no trae `.status` — sin este wrapper, un archivo demasiado
+// grande caería al 500 genérico de errorHandler.js en vez de un 400 con un
+// mensaje que el usuario pueda entender.
+const MULTER_ERROR_MESSAGES = {
+  LIMIT_FILE_SIZE: 'El archivo es demasiado grande (máximo 50MB).',
+  LIMIT_FILE_COUNT: 'Puedes subir máximo 10 archivos a la vez.',
+};
+
+function subirArchivos(req, res, next) {
+  uploadArchivos.array('archivos')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      err.status = 400;
+      err.message = MULTER_ERROR_MESSAGES[err.code] || err.message;
+    }
+    next(err);
+  });
+}
 
 router.get(
   '/laboratorio.html',
@@ -54,13 +84,28 @@ router.get(
 // con permiso de editar también puede querer solo CONSULTAR un registro sin
 // riesgo de tocarlo. Misma pantalla que /editar, mismo permiso mínimo
 // (`laboratorio.ver`), pero el controller siempre fuerza soloLectura=true
-// sin importar si el usuario también tiene laboratorio.editar.
+// sin importar si el usuario también tiene laboratorio.editar. PURAMENTE
+// informativa — corrección explícita del usuario: nunca ofrece subir
+// archivos, eso vive en /cargar (ver abajo).
 router.get(
   '/laboratorio/:id/ver',
   requireAuth,
   requirePermission('laboratorio.ver'),
   attachSidebarAreas,
   controller.verForm,
+);
+
+// Ícono "Subir resultados" de la tabla — pedido explícito del usuario:
+// pantalla similar a /ver pero con los controles de carga de archivos.
+// Permiso propio (`laboratorio.cargar`, no laboratorio.ver): alguien que
+// solo puede cargar resultados no necesariamente tiene por qué poder abrir
+// /ver ni /editar.
+router.get(
+  '/laboratorio/:id/cargar',
+  requireAuth,
+  requirePermission('laboratorio.cargar'),
+  attachSidebarAreas,
+  controller.cargarForm,
 );
 
 router.post(
@@ -100,6 +145,64 @@ router.put(
   writeLimiter,
   doubleCsrfProtection,
   controller.editar,
+);
+
+// Carga de archivos de resultados (pedido explícito del usuario) — solo
+// desde la pantalla "Ver" (soloLectura), gateado por laboratorio.cargar
+// (permiso ya sembrado, sin usar hasta ahora). `subirArchivos` ANTES de
+// doubleCsrfProtection también funcionaría (el token viaja en un header,
+// no en el body), pero se deja DESPUÉS a propósito: así el CSRF se valida
+// antes de gastar tiempo/memoria procesando archivos de una petición que
+// de todos modos se iba a rechazar.
+router.post(
+  '/laboratorio/:id/archivos',
+  requireAuth,
+  requirePermission('laboratorio.cargar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  subirArchivos,
+  controller.subirArchivoRegistro,
+);
+
+router.post(
+  '/laboratorio/:id/estudios/:estudioId/archivo',
+  requireAuth,
+  requirePermission('laboratorio.cargar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  subirArchivos,
+  controller.subirArchivoEstudio,
+);
+
+// Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
+// equivocó el usuario") — mismo permiso que subir, sin multer (no llevan
+// body).
+router.delete(
+  '/laboratorio/:id/archivos',
+  requireAuth,
+  requirePermission('laboratorio.cargar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.eliminarArchivoRegistro,
+);
+
+router.delete(
+  '/laboratorio/:id/estudios/:estudioId/archivo',
+  requireAuth,
+  requirePermission('laboratorio.cargar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.eliminarArchivoEstudio,
+);
+
+// Descarga autenticada — laboratorio.ver alcanza (igual que abrir la
+// pantalla de consulta), no hace falta laboratorio.cargar para poder ver
+// un resultado ya cargado.
+router.get(
+  '/laboratorio/archivos/:archivoId',
+  requireAuth,
+  requirePermission('laboratorio.ver'),
+  controller.descargarArchivo,
 );
 
 // Baja lógica de una orden, disparada por HTMX desde el ícono de eliminar

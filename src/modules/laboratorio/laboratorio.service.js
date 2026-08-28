@@ -2,6 +2,7 @@ const repository = require('./laboratorio.repository');
 const tutoresRepository = require('../tutores/tutores.repository');
 const tutoresService = require('../tutores/tutores.service');
 const doctoresRepository = require('../doctores/doctores.repository');
+const archivos = require('./laboratorio.archivos');
 
 // Mismo patrón de errores con `.status` que agenda.service.js/doctores.service.js
 // — el controller los atrapa para responder con el mensaje, en vez de un 500
@@ -337,6 +338,87 @@ async function buscarTutoresPorNombre(q) {
   return tutoresService.buscarActivosPorNombre(q);
 }
 
+function errorRegistroNoEncontrado() {
+  const err = new Error('Registro no encontrado.');
+  err.status = 404;
+  return err;
+}
+
+// Carga de archivos de resultados (pedido explícito del usuario) — valida
+// que el registro/estudio exista (mismo criterio que el resto del módulo:
+// nunca se confía en un id que llega del cliente), delega el trabajo
+// pesado (fusionar/guardar en disco) en laboratorio.archivos.js, y
+// actualiza registro/estudio en la BD vía el repository. "Un archivo para
+// todos" pisa cualquier archivo individual que ya tuviera cada estudio —
+// representa el reporte combinado del laboratorio.
+async function subirArchivoParaTodos(rawRegistroId, files, usuarioId) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+
+  const metadata = await archivos.procesarArchivos({ registroId, files });
+  const archivoId = await repository.crearArchivo({ registroId, ...metadata, usuarioId });
+  await repository.asignarArchivoATodosLosEstudios(registroId, archivoId);
+  await repository.marcarCargadoSiCompleto(registroId);
+  return archivoId;
+}
+
+async function subirArchivoParaEstudio(rawRegistroId, rawEstudioId, files, usuarioId) {
+  const registroId = parseId(rawRegistroId);
+  const estudioId = parseId(rawEstudioId);
+  if (registroId === null || estudioId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+  const pertenece = registro.estudios.some((estudio) => estudio.id === estudioId);
+  if (!pertenece) throw errorRegistroNoEncontrado();
+
+  const metadata = await archivos.procesarArchivos({ registroId, files });
+  const archivoId = await repository.crearArchivo({ registroId, ...metadata, usuarioId });
+  await repository.asignarArchivoAEstudio(estudioId, archivoId);
+  await repository.marcarCargadoSiCompleto(registroId);
+  return archivoId;
+}
+
+// Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
+// equivocó el usuario", sin necesidad de reemplazarlo de inmediato por otro)
+// — mismas validaciones de pertenencia que subirArchivoPara*, delega el
+// desvincular en el repository.
+async function eliminarArchivoDeTodos(rawRegistroId) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+
+  await repository.desasignarArchivoDeTodosLosEstudios(registroId);
+}
+
+async function eliminarArchivoDeEstudio(rawRegistroId, rawEstudioId) {
+  const registroId = parseId(rawRegistroId);
+  const estudioId = parseId(rawEstudioId);
+  if (registroId === null || estudioId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+  const pertenece = registro.estudios.some((estudio) => estudio.id === estudioId);
+  if (!pertenece) throw errorRegistroNoEncontrado();
+
+  await repository.desasignarArchivoDeEstudio(estudioId);
+  await repository.revertirCargadoSiIncompleto(registroId);
+}
+
+// Descarga autenticada (laboratorio.controller.js#descargarArchivo) —
+// nunca por static serving directo, ver comentario del .gitignore.
+async function obtenerArchivoParaDescarga(rawArchivoId) {
+  const id = parseId(rawArchivoId);
+  if (id === null) return null;
+  const archivo = await repository.findArchivoById(id);
+  if (!archivo) return null;
+  return {
+    nombreOriginal: archivo.nombre_original,
+    rutaAbsoluta: archivos.rutaAbsolutaDeArchivo(archivo.ruta_almacenamiento),
+  };
+}
+
 async function eliminar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
@@ -353,6 +435,11 @@ module.exports = {
   obtenerParaEditar,
   resolverTutorPorTelefono,
   buscarTutoresPorNombre,
+  subirArchivoParaTodos,
+  subirArchivoParaEstudio,
+  eliminarArchivoDeTodos,
+  eliminarArchivoDeEstudio,
+  obtenerArchivoParaDescarga,
   eliminar,
   LaboratorioValidationError,
 };

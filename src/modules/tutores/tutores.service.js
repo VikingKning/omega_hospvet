@@ -25,6 +25,7 @@ class RequiereConfirmacionReactivacionError extends Error {
 
 const PAGE_SIZE = 10;
 const NOMBRE_TUTOR_MAX = 150;
+const APELLIDOS_TUTOR_MAX = 150;
 const NOMBRE_PACIENTE_MAX = 100;
 const TIPO_PACIENTE_MAX = 20;
 const RAZA_PACIENTE_MAX = 100;
@@ -38,23 +39,33 @@ const SEXO_PACIENTE_VALORES = ['Macho', 'Hembra'];
 const EDAD_PACIENTE_MAX = 40;
 const FORMATO_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Mismo formato ya establecido en el resto del sistema para teléfono
-// mexicano (10 dígitos, NN-NNNN-NNNN) — perfil.service.js#TELEFONO_REGEX es
-// la referencia (ahí es opcional; aquí es obligatorio, AC3/AC4, pero el
-// FORMATO en sí debe ser el mismo en todos los formularios del sistema,
-// pedido explícito del usuario). usuarios.service.js no lo valida del lado
-// del servidor todavía (solo el cliente, vía el atributo `pattern` del
-// input) — inconsistencia previa del proyecto, no un segundo estándar a
-// seguir.
-const TELEFONO_REGEX = /^\d{2}-\d{4}-\d{4}$/;
+// mexicano — perfil.service.js#TELEFONO_REGEX es la referencia (ahí es
+// opcional; aquí es obligatorio, AC3/AC4, pero el FORMATO en sí debe ser el
+// mismo en todos los formularios del sistema, pedido explícito del
+// usuario). usuarios.service.js no lo valida del lado del servidor todavía
+// (solo el cliente, vía el atributo `pattern` del input) — inconsistencia
+// previa del proyecto, no un segundo estándar a seguir.
+//
+// Ajuste posterior, pedido explícito del usuario: la máscara ya NO es fija
+// — un teléfono que empieza con 55 o 56 (CDMX/Edomex, los únicos con lada
+// de 2 dígitos que este sistema captura) sigue siendo NN-NNNN-NNNN (2-4-4);
+// cualquier otro prefijo pasa a NNN-NNN-NNNN (3-3-4, lada de 3 dígitos del
+// resto del país). El regex acepta ambas formas sin comprobar que el
+// agrupamiento coincida con el prefijo — esa consistencia la garantiza la
+// máscara en vivo del cliente (ver tutor-form.ejs#formatearTelefono, mismo
+// criterio duplicado ahí); el servidor solo necesita rechazar basura, no
+// repetir la regla completa.
+const TELEFONO_REGEX = /^(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})$/;
 
-// Ajuste posterior, pedido explícito del usuario: el formato NN-NNNN-NNNN
+// Ajuste posterior, pedido explícito del usuario: el formato con guiones
 // es solo "look and feel" — lo que se guarda en `propietarios.telefono` son
 // los 10 dígitos, sin guiones (ver migración
 // 20260819000001_normalizar_telefonos_sin_guiones.js para los datos que ya
 // existían). `stripTelefono` se usa antes de guardar/comparar;
 // `formatTelefono` reconstruye el formato solo al devolver un teléfono para
 // MOSTRARLO (listado, formulario precargado, resultados del buscador) —
-// nunca se guarda el resultado de formatTelefono.
+// nunca se guarda el resultado de formatTelefono. Mismo criterio 55/56 →
+// 2-4-4, resto → 3-3-4 que la máscara en vivo (ver arriba).
 function stripTelefono(telefono) {
   return (telefono ?? '').replace(/\D/g, '');
 }
@@ -62,7 +73,11 @@ function stripTelefono(telefono) {
 function formatTelefono(telefono) {
   const digits = stripTelefono(telefono);
   if (digits.length !== 10) return telefono;
-  return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  const prefijo = digits.slice(0, 2);
+  if (prefijo === '55' || prefijo === '56') {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
 }
 
 function parsePage(rawPage) {
@@ -112,7 +127,7 @@ function validateTelefono(rawTelefono) {
     throw new TutorValidationError('El campo Teléfono es obligatorio.');
   }
   if (!TELEFONO_REGEX.test(telefono)) {
-    throw new TutorValidationError('El teléfono debe tener el formato NN-NNNN-NNNN.');
+    throw new TutorValidationError('El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.');
   }
   return stripTelefono(telefono);
 }
@@ -242,10 +257,18 @@ function includes(valor, qLower) {
 // puede venir vacío si `q` no tiene ningún dígito) contra el teléfono tal
 // cual está guardado, en vez de comparar el `q` crudo.
 //
-// AC: la búsqueda coincide con nombre/teléfono/correo del tutor.
+// AC: la búsqueda coincide con nombre/teléfono/correo del tutor. El
+// concatenado (mismo patrón que el ILIKE de baseQuery en el repository)
+// cubre buscar el nombre completo de un jalón (ej. "Juan Pérez") — sin él,
+// un tutor que coincidiera solo por nombre completo (ninguna de las 2
+// palabras por separado) se trataría como "coincidió por un paciente", lo
+// que le recortaba de más su lista de pacientes mostrados (bug real
+// encontrado al correr esta suite tras separar nombre/apellidos).
 function tutorCoincide(tutor, qLower, qDigits) {
   return (
     includes(tutor.nombre, qLower) ||
+    includes(tutor.apellidos, qLower) ||
+    includes(`${tutor.nombre} ${tutor.apellidos}`, qLower) ||
     (qDigits && (tutor.telefono ?? '').includes(qDigits)) ||
     includes(tutor.correo, qLower)
   );
@@ -357,6 +380,7 @@ async function obtenerParaEditar(rawId) {
 // con los datos de este formulario en vez de crear uno nuevo.
 async function crear({
   nombre: rawNombre,
+  apellidos: rawApellidos,
   telefono: rawTelefono,
   correo: rawCorreo,
   pacientes: rawPacientes,
@@ -364,6 +388,7 @@ async function crear({
   usuarioId,
 }) {
   const nombre = validateTexto(rawNombre, 'Nombre', NOMBRE_TUTOR_MAX);
+  const apellidos = validateTexto(rawApellidos, 'Apellidos', APELLIDOS_TUTOR_MAX);
   const telefono = validateTelefono(rawTelefono);
   const correo = validateCorreo(rawCorreo);
   const pacientes = parsePacientes(rawPacientes);
@@ -376,12 +401,14 @@ async function crear({
     if (!confirmarReactivacion) {
       throw new RequiereConfirmacionReactivacionError({
         nombre: existente.nombre,
+        apellidos: existente.apellidos,
         telefono: formatTelefono(existente.telefono),
       });
     }
     return repository.reactivar({
       id: existente.id,
       nombre,
+      apellidos,
       telefono,
       correo,
       pacientes,
@@ -389,7 +416,7 @@ async function crear({
     });
   }
 
-  return repository.crear({ nombre, telefono, correo, pacientes, usuarioId });
+  return repository.crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId });
 }
 
 // US-156 AC15/16/17/19/21: edición. A diferencia de crear(), aquí NUNCA se
@@ -398,18 +425,34 @@ async function crear({
 // areas.service.js#editar: "no hay reactivar al editar, sería fusionar la
 // identidad de dos registros distintos", algo que ningún AC de esta
 // historia pidió).
+// Pedido explícito del usuario: switch Activo/Inactivo en el propio
+// formulario de edición (reemplaza el badge fijo que vivía en "Resumen",
+// nunca leía el dato real) — mismo criterio "dos caminos hacia activo, sin
+// fusionar" ya usado en plantillas (US-613/614): convive con la baja
+// lógica desde el listado (desactivar(), más abajo) sin reemplazarla.
+// `rawActivo` es opcional a propósito: cualquier llamador que no lo mande
+// (payload viejo, otra integración futura) no debe tocar el estado actual
+// del propietario como efecto secundario de editar otro campo.
+function normalizeActivoOpcional(rawActivo) {
+  return typeof rawActivo === 'boolean' ? rawActivo : undefined;
+}
+
 async function editar({
   id: rawId,
   nombre: rawNombre,
+  apellidos: rawApellidos,
   telefono: rawTelefono,
   correo: rawCorreo,
+  activo: rawActivo,
   pacientes: rawPacientes,
   usuarioId,
 }) {
   const id = parseId(rawId);
   const nombre = validateTexto(rawNombre, 'Nombre', NOMBRE_TUTOR_MAX);
+  const apellidos = validateTexto(rawApellidos, 'Apellidos', APELLIDOS_TUTOR_MAX);
   const telefono = validateTelefono(rawTelefono);
   const correo = validateCorreo(rawCorreo);
+  const activo = normalizeActivoOpcional(rawActivo);
   const pacientes = parsePacientes(rawPacientes);
 
   const existente = await repository.findByTelefono(telefono, id);
@@ -417,7 +460,7 @@ async function editar({
     throw new TutorValidationError('El teléfono ya se encuentra registrado.');
   }
 
-  await repository.editar({ id, nombre, telefono, correo, pacientes, usuarioId });
+  await repository.editar({ id, nombre, apellidos, telefono, correo, activo, pacientes, usuarioId });
   return id;
 }
 
@@ -474,7 +517,11 @@ async function verificarTelefono(rawTelefono) {
   const existente = await repository.findByTelefono(telefono);
   if (!existente) return { existe: false };
   if (existente.activo) {
-    return { existe: true, activo: true, tutor: { id: existente.id, nombre: existente.nombre } };
+    return {
+      existe: true,
+      activo: true,
+      tutor: { id: existente.id, nombre: existente.nombre, apellidos: existente.apellidos },
+    };
   }
   const pacientes = await repository.findMascotasByPropietarioId(existente.id);
   return {
@@ -483,6 +530,7 @@ async function verificarTelefono(rawTelefono) {
     tutor: {
       id: existente.id,
       nombre: existente.nombre,
+      apellidos: existente.apellidos,
       telefono: formatTelefono(existente.telefono),
       correo: existente.correo,
       pacientes: pacientesConEdad(pacientes),
@@ -507,6 +555,7 @@ async function resolverTutorActivoPorTelefono(rawTelefono) {
   return {
     id: existente.id,
     nombre: existente.nombre,
+    apellidos: existente.apellidos,
     telefono: formatTelefono(existente.telefono),
     correo: existente.correo,
     pacientes: pacientesConEdad(pacientes).filter((p) => p.activo),
@@ -524,7 +573,12 @@ async function buscarActivosPorNombre(rawQ) {
   const q = (rawQ ?? '').trim();
   if (q.length < 2) return [];
   const tutores = await repository.findActivosPorNombre(q, 10);
-  return tutores.map((t) => ({ id: t.id, nombre: t.nombre, telefono: formatTelefono(t.telefono) }));
+  return tutores.map((t) => ({
+    id: t.id,
+    nombre: t.nombre,
+    apellidos: t.apellidos,
+    telefono: formatTelefono(t.telefono),
+  }));
 }
 
 // Laboratorio: precarga del selector de "Paciente" en la pantalla de

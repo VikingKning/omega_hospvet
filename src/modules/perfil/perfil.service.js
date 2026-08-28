@@ -53,13 +53,19 @@ function validateCorreo(rawCorreo) {
 
 // US-109 AC9: "valida que el valor cumpla con el formato y longitud
 // permitidos" — mismo formato que ya pide el atributo `pattern` del campo
-// Teléfono en usuario-form.ejs (NN-NNNN-NNNN, 10 dígitos), pero validado
-// aquí también del lado del servidor (el `pattern` del HTML es solo una
-// ayuda visual, nunca la única barrera). Opcional: vacío es válido (AC8),
-// se guarda como NULL.
-const TELEFONO_REGEX = /^\d{2}-\d{4}-\d{4}$/;
+// Teléfono en usuario-form.ejs (10 dígitos), pero validado aquí también del
+// lado del servidor (el `pattern` del HTML es solo una ayuda visual, nunca
+// la única barrera). Opcional: vacío es válido (AC8), se guarda como NULL.
+//
+// Ajuste posterior, pedido explícito del usuario: la máscara ya NO es fija
+// — un teléfono que empieza con 55 o 56 (CDMX/Edomex) sigue siendo
+// NN-NNNN-NNNN (2-4-4); cualquier otro prefijo pasa a NNN-NNN-NNNN (3-3-4).
+// El regex acepta ambas formas sin comprobar que el agrupamiento coincida
+// con el prefijo — esa consistencia la garantiza la máscara en vivo del
+// cliente (mismo criterio duplicado en tutores.service.js#TELEFONO_REGEX).
+const TELEFONO_REGEX = /^(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})$/;
 
-// Ajuste posterior, pedido explícito del usuario: el formato NN-NNNN-NNNN
+// Ajuste posterior, pedido explícito del usuario: el formato con guiones
 // es solo "look and feel" — lo que se guarda en `usuarios.telefono` (esta
 // tabla también, vía el mismo repository que Mi Perfil actualiza) son los
 // 10 dígitos, sin guiones (ver migración
@@ -73,16 +79,37 @@ function stripTelefono(telefono) {
 function formatTelefono(telefono) {
   const digits = stripTelefono(telefono);
   if (digits.length !== 10) return telefono;
-  return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  const prefijo = digits.slice(0, 2);
+  if (prefijo === '55' || prefijo === '56') {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
 }
 
 function validateTelefono(rawTelefono) {
   const telefono = (rawTelefono ?? '').trim();
   if (!telefono) return null;
   if (!TELEFONO_REGEX.test(telefono)) {
-    throw new PerfilValidationError('El teléfono debe tener el formato NN-NNNN-NNNN.');
+    throw new PerfilValidationError('El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.');
   }
   return stripTelefono(telefono);
+}
+
+// Pedido explícito del usuario: 5 íconos fijos para mostrarse en la barra
+// de título (ver perfil.ejs, sección "Datos personales") — whitelist real,
+// nunca se confía en que el cliente mande uno de estos 5 valores solo
+// porque el picker del formulario solo ofrece esos (mismo criterio que
+// SEXO_PACIENTE_VALORES en tutores.service.js). Los nombres coinciden
+// exactamente con el archivo en assets/imgs (sin extensión) — la vista
+// arma la ruta completa (`assets/imgs/${avatar}.png`).
+const AVATARES_VALIDOS = ['icon_hospvet', 'icon_cat', 'icon_dog', 'img_doctor', 'img_doctora'];
+
+function validateAvatar(rawAvatar) {
+  const avatar = (rawAvatar ?? '').trim();
+  if (!AVATARES_VALIDOS.includes(avatar)) {
+    throw new PerfilValidationError('Selecciona un ícono válido.');
+  }
+  return avatar;
 }
 
 // ---------------------------------------------------------------------
@@ -262,8 +289,8 @@ async function obtener(usuarioId) {
   };
 }
 
-// US-109 AC: actualiza ÚNICAMENTE nombre/apellidos/telefono/correo del
-// propio usuario. `usuarioId` sale siempre de `req.session.user.id`
+// US-109 AC: actualiza ÚNICAMENTE nombre/apellidos/telefono/correo/avatar
+// del propio usuario. `usuarioId` sale siempre de `req.session.user.id`
 // (nunca de un parámetro de la petición) — ver perfil.controller.js.
 //
 // Extensión: si la cuenta tiene un doctor vinculado, Nombre/Apellidos se
@@ -272,12 +299,19 @@ async function obtener(usuarioId) {
 // pasárselo al repository, que hace ambos updates en una sola transacción.
 async function actualizar(
   usuarioId,
-  { nombre: rawNombre, apellidos: rawApellidos, telefono: rawTelefono, correo: rawCorreo },
+  {
+    nombre: rawNombre,
+    apellidos: rawApellidos,
+    telefono: rawTelefono,
+    correo: rawCorreo,
+    avatar: rawAvatar,
+  },
 ) {
   const nombre = validateTexto(rawNombre, 'Nombre', 100);
   const apellidos = validateTexto(rawApellidos, 'Apellidos', 100);
   const correo = validateCorreo(rawCorreo);
   const telefono = validateTelefono(rawTelefono);
+  const avatar = validateAvatar(rawAvatar);
 
   if (await repository.findByCorreo(correo, usuarioId)) {
     throw new DuplicateCorreoError();
@@ -289,9 +323,10 @@ async function actualizar(
     apellidos,
     telefono,
     correo,
+    avatar,
     doctorId: actual.doctor_id,
   });
-  return { nombre, apellidos, telefono: formatTelefono(telefono), correo };
+  return { nombre, apellidos, telefono: formatTelefono(telefono), correo, avatar };
 }
 
 // US-110 AC: "el sistema identifica al usuario exclusivamente a partir de
@@ -347,4 +382,5 @@ module.exports = {
   cambiarPassword,
   PerfilValidationError,
   DuplicateCorreoError,
+  AVATARES_VALIDOS,
 };
