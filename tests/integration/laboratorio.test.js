@@ -343,7 +343,9 @@ describe('POST /laboratorio/:id/estudios/:estudioId/archivo', () => {
     const agent = await loginAs(SOLO_CARGAR);
     const csrfToken = await getLaboratorioCsrfToken(agent);
 
-    const res = await agent.post('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+    const res = await agent
+      .post('/laboratorio/999999/estudios/1/archivo')
+      .set('x-csrf-token', csrfToken);
 
     expect(res.status).toBe(404);
   });
@@ -352,7 +354,9 @@ describe('POST /laboratorio/:id/estudios/:estudioId/archivo', () => {
     const agent = await loginAs(SOLO_VER);
     const csrfToken = await getLaboratorioCsrfToken(agent);
 
-    const res = await agent.post('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+    const res = await agent
+      .post('/laboratorio/999999/estudios/1/archivo')
+      .set('x-csrf-token', csrfToken);
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
@@ -387,7 +391,9 @@ describe('DELETE /laboratorio/:id/estudios/:estudioId/archivo', () => {
     const agent = await loginAs(SOLO_CARGAR);
     const csrfToken = await getLaboratorioCsrfToken(agent);
 
-    const res = await agent.delete('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+    const res = await agent
+      .delete('/laboratorio/999999/estudios/1/archivo')
+      .set('x-csrf-token', csrfToken);
 
     expect(res.status).toBe(404);
   });
@@ -396,7 +402,9 @@ describe('DELETE /laboratorio/:id/estudios/:estudioId/archivo', () => {
     const agent = await loginAs(SOLO_VER);
     const csrfToken = await getLaboratorioCsrfToken(agent);
 
-    const res = await agent.delete('/laboratorio/999999/estudios/1/archivo').set('x-csrf-token', csrfToken);
+    const res = await agent
+      .delete('/laboratorio/999999/estudios/1/archivo')
+      .set('x-csrf-token', csrfToken);
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');

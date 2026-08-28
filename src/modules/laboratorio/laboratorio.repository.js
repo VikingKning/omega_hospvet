@@ -254,7 +254,15 @@ async function findById(id) {
 // aquí (no en laboratorio.archivos.js, que solo habla con disco/pdf-lib)
 // porque son las únicas funciones que tocan `archivos_laboratorio`/
 // `estudios_solicitados.archivo_id` en la base de datos.
-async function crearArchivo({ registroId, nombreOriginal, rutaAlmacenamiento, hashContenido, tamanoBytes, consolidado, usuarioId }) {
+async function crearArchivo({
+  registroId,
+  nombreOriginal,
+  rutaAlmacenamiento,
+  hashContenido,
+  tamanoBytes,
+  consolidado,
+  usuarioId,
+}) {
   const [row] = await db('archivos_laboratorio')
     .insert({
       registro_laboratorio_id: registroId,
@@ -275,7 +283,9 @@ async function findArchivoById(id) {
 }
 
 async function asignarArchivoAEstudio(estudioId, archivoId) {
-  await db('estudios_solicitados').where({ id: estudioId }).update({ archivo_id: archivoId, estado: 'cargado' });
+  await db('estudios_solicitados')
+    .where({ id: estudioId })
+    .update({ archivo_id: archivoId, estado: 'cargado' });
 }
 
 // "Un archivo para todos" (pedido explícito del usuario) — pisa cualquier
@@ -319,11 +329,15 @@ async function desasignarArchivoDeTodosLosEstudios(registroId) {
   await db('estudios_solicitados')
     .where('registro_laboratorio_id', registroId)
     .update({ archivo_id: null, estado: 'pendiente' });
-  await db('registros_laboratorio').where({ id: registroId }).update({ estado: 'pendiente', cargado_en: null });
+  await db('registros_laboratorio')
+    .where({ id: registroId })
+    .update({ estado: 'pendiente', cargado_en: null });
 }
 
 async function desasignarArchivoDeEstudio(estudioId) {
-  await db('estudios_solicitados').where({ id: estudioId }).update({ archivo_id: null, estado: 'pendiente' });
+  await db('estudios_solicitados')
+    .where({ id: estudioId })
+    .update({ archivo_id: null, estado: 'pendiente' });
 }
 
 // Reversa de marcarCargadoSiCompleto — a diferencia de "quitar de todos",

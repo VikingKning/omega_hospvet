@@ -487,7 +487,9 @@ describe('laboratorio.service.subirArchivoParaTodos', () => {
   });
 
   it('rechaza un id de registro inválido', async () => {
-    await expect(subirArchivoParaTodos('no-es-numero', [{}], 1)).rejects.toThrow('Registro no encontrado.');
+    await expect(subirArchivoParaTodos('no-es-numero', [{}], 1)).rejects.toThrow(
+      'Registro no encontrado.',
+    );
   });
 
   it('rechaza si el registro no existe', async () => {
@@ -511,7 +513,9 @@ describe('laboratorio.service.subirArchivoParaTodos', () => {
   });
 
   it('propaga el error de validación de laboratorio.archivos.js (ej. video mezclado con otro archivo)', async () => {
-    archivos.procesarArchivos.mockRejectedValue(Object.assign(new Error('Tipo no permitido'), { status: 400 }));
+    archivos.procesarArchivos.mockRejectedValue(
+      Object.assign(new Error('Tipo no permitido'), { status: 400 }),
+    );
     await expect(subirArchivoParaTodos('7', [{}], 1)).rejects.toThrow('Tipo no permitido');
     expect(repository.crearArchivo).not.toHaveBeenCalled();
   });
@@ -532,7 +536,9 @@ describe('laboratorio.service.subirArchivoParaEstudio', () => {
   });
 
   it('rechaza si el estudio no pertenece a ese registro', async () => {
-    await expect(subirArchivoParaEstudio('7', '999', [{}], 1)).rejects.toThrow('Registro no encontrado.');
+    await expect(subirArchivoParaEstudio('7', '999', [{}], 1)).rejects.toThrow(
+      'Registro no encontrado.',
+    );
     expect(repository.asignarArchivoAEstudio).not.toHaveBeenCalled();
   });
 

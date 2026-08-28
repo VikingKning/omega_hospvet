@@ -228,7 +228,9 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
   });
 
   it('los apellidos son obligatorios', async () => {
-    await expect(crear({ ...DATOS_VALIDOS, apellidos: '  ' })).rejects.toThrow(TutorValidationError);
+    await expect(crear({ ...DATOS_VALIDOS, apellidos: '  ' })).rejects.toThrow(
+      TutorValidationError,
+    );
   });
 
   it('AC3: el teléfono es obligatorio', async () => {
@@ -329,7 +331,11 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
       expect(err).toBeInstanceOf(RequiereConfirmacionReactivacionError);
       // El teléfono guardado (5551234567, sin guiones) se reformatea a
       // NN-NNNN-NNNN solo para mostrarlo en el modal — nunca se guarda así.
-      expect(err.tutorExistente).toEqual({ nombre: 'Tutor', apellidos: 'Inactivo', telefono: '55-5123-4567' });
+      expect(err.tutorExistente).toEqual({
+        nombre: 'Tutor',
+        apellidos: 'Inactivo',
+        telefono: '55-5123-4567',
+      });
     }
   });
 
@@ -347,7 +353,12 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
 
     expect(id).toBe(5);
     expect(repository.reactivar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 5, nombre: 'Juan', apellidos: 'Pérez', telefono: '5551234567' }),
+      expect.objectContaining({
+        id: 5,
+        nombre: 'Juan',
+        apellidos: 'Pérez',
+        telefono: '5551234567',
+      }),
     );
     expect(repository.crear).not.toHaveBeenCalled();
   });
@@ -439,7 +450,9 @@ describe('tutores.service.editar (US-156 AC15-AC21)', () => {
   });
 
   it('los apellidos son obligatorios', async () => {
-    await expect(editar({ ...DATOS_VALIDOS, apellidos: '  ' })).rejects.toThrow(TutorValidationError);
+    await expect(editar({ ...DATOS_VALIDOS, apellidos: '  ' })).rejects.toThrow(
+      TutorValidationError,
+    );
   });
 
   it('actualiza el propietario cuando no hay colisión de teléfono', async () => {
@@ -447,7 +460,12 @@ describe('tutores.service.editar (US-156 AC15-AC21)', () => {
     expect(id).toBe(1);
     // Ajuste posterior (pedido del usuario): se guarda sin guiones.
     expect(repository.editar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 1, nombre: 'Juan', apellidos: 'Pérez', telefono: '5551234567' }),
+      expect.objectContaining({
+        id: 1,
+        nombre: 'Juan',
+        apellidos: 'Pérez',
+        telefono: '5551234567',
+      }),
     );
   });
 

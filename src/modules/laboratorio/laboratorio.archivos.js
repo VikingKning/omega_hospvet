@@ -77,7 +77,8 @@ async function fusionarEnPdf(files) {
       const paginas = await pdf.copyPages(origen, origen.getPageIndices());
       paginas.forEach((pagina) => pdf.addPage(pagina));
     } else {
-      const imagen = file.mimetype === 'image/png' ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+      const imagen =
+        file.mimetype === 'image/png' ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
       const pagina = pdf.addPage([imagen.width, imagen.height]);
       pagina.drawImage(imagen, { x: 0, y: 0, width: imagen.width, height: imagen.height });
     }

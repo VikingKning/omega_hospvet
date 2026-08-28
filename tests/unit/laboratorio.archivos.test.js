@@ -103,7 +103,10 @@ describe('laboratorio.archivos.procesarArchivos', () => {
     const pdfDeDosPaginas = await pdfConPaginas(2);
     const resultado = await procesarArchivos({
       registroId: 7,
-      files: [archivo('previo.pdf', 'application/pdf', pdfDeDosPaginas), archivo('extra.jpg', 'image/jpeg', JPG_1PX)],
+      files: [
+        archivo('previo.pdf', 'application/pdf', pdfDeDosPaginas),
+        archivo('extra.jpg', 'image/jpeg', JPG_1PX),
+      ],
     });
 
     expect(resultado.consolidado).toBe(true);
@@ -116,7 +119,10 @@ describe('laboratorio.archivos.procesarArchivos', () => {
     await expect(
       procesarArchivos({
         registroId: 7,
-        files: [archivo('video.mp4', 'video/mp4', Buffer.from('x')), archivo('foto.jpg', 'image/jpeg', JPG_1PX)],
+        files: [
+          archivo('video.mp4', 'video/mp4', Buffer.from('x')),
+          archivo('foto.jpg', 'image/jpeg', JPG_1PX),
+        ],
       }),
     ).rejects.toThrow(/no se puede combinar/);
     expect(fs.writeFile).not.toHaveBeenCalled();
@@ -126,7 +132,10 @@ describe('laboratorio.archivos.procesarArchivos', () => {
     await expect(
       procesarArchivos({
         registroId: 7,
-        files: [archivo('foto.webp', 'image/webp', Buffer.from('x')), archivo('foto2.jpg', 'image/jpeg', JPG_1PX)],
+        files: [
+          archivo('foto.webp', 'image/webp', Buffer.from('x')),
+          archivo('foto2.jpg', 'image/jpeg', JPG_1PX),
+        ],
       }),
     ).rejects.toThrow(/no se puede combinar/);
   });
@@ -142,6 +151,8 @@ describe('laboratorio.archivos.procesarArchivos', () => {
 describe('laboratorio.archivos.rutaAbsolutaDeArchivo', () => {
   it('resuelve la ruta relativa guardada contra la raíz de almacenamiento', () => {
     const ruta = rutaAbsolutaDeArchivo('7/abc.pdf');
-    expect(ruta.endsWith(require('path').join('storage', 'laboratorio', '7', 'abc.pdf'))).toBe(true);
+    expect(ruta.endsWith(require('path').join('storage', 'laboratorio', '7', 'abc.pdf'))).toBe(
+      true,
+    );
   });
 });

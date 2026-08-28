@@ -129,17 +129,26 @@ async function formularioDeRegistro(req, res, next, { forzarSoloLectura, modoCar
 }
 
 async function editarForm(req, res, next) {
-  return formularioDeRegistro(req, res, next, { forzarSoloLectura: false, modoCargarArchivos: false });
+  return formularioDeRegistro(req, res, next, {
+    forzarSoloLectura: false,
+    modoCargarArchivos: false,
+  });
 }
 
 async function verForm(req, res, next) {
-  return formularioDeRegistro(req, res, next, { forzarSoloLectura: true, modoCargarArchivos: false });
+  return formularioDeRegistro(req, res, next, {
+    forzarSoloLectura: true,
+    modoCargarArchivos: false,
+  });
 }
 
 // Ícono "Subir resultados" de la tabla — pedido explícito del usuario, en
 // vez de la pantalla de Ver (que se queda puramente informativa).
 async function cargarForm(req, res, next) {
-  return formularioDeRegistro(req, res, next, { forzarSoloLectura: true, modoCargarArchivos: true });
+  return formularioDeRegistro(req, res, next, {
+    forzarSoloLectura: true,
+    modoCargarArchivos: true,
+  });
 }
 
 // Búsqueda de tutor por teléfono para el formulario de "Nuevo registro"
@@ -213,7 +222,12 @@ async function subirArchivoRegistro(req, res, next) {
 // Mismo mecanismo, para UN estudio en particular.
 async function subirArchivoEstudio(req, res, next) {
   try {
-    await service.subirArchivoParaEstudio(req.params.id, req.params.estudioId, req.files, req.session.user.id);
+    await service.subirArchivoParaEstudio(
+      req.params.id,
+      req.params.estudioId,
+      req.files,
+      req.session.user.id,
+    );
     res.json({ ok: true });
   } catch (err) {
     if (err.status) {

@@ -90,7 +90,9 @@ function validateTelefono(rawTelefono) {
   const telefono = (rawTelefono ?? '').trim();
   if (!telefono) return null;
   if (!TELEFONO_REGEX.test(telefono)) {
-    throw new PerfilValidationError('El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.');
+    throw new PerfilValidationError(
+      'El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.',
+    );
   }
   return stripTelefono(telefono);
 }

@@ -221,9 +221,14 @@ describe('perfil.service.actualizar (US-109)', () => {
     await expect(actualizar(7, { ...base, avatar: '' })).rejects.toBeInstanceOf(
       PerfilValidationError,
     );
-    await expect(actualizar(7, { nombre: base.nombre, apellidos: base.apellidos, telefono: base.telefono, correo: base.correo })).rejects.toBeInstanceOf(
-      PerfilValidationError,
-    );
+    await expect(
+      actualizar(7, {
+        nombre: base.nombre,
+        apellidos: base.apellidos,
+        telefono: base.telefono,
+        correo: base.correo,
+      }),
+    ).rejects.toBeInstanceOf(PerfilValidationError);
   });
 });
 

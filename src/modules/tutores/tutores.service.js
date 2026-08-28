@@ -127,7 +127,9 @@ function validateTelefono(rawTelefono) {
     throw new TutorValidationError('El campo Teléfono es obligatorio.');
   }
   if (!TELEFONO_REGEX.test(telefono)) {
-    throw new TutorValidationError('El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.');
+    throw new TutorValidationError(
+      'El teléfono debe tener el formato NN-NNNN-NNNN o NNN-NNN-NNNN.',
+    );
   }
   return stripTelefono(telefono);
 }
@@ -460,7 +462,16 @@ async function editar({
     throw new TutorValidationError('El teléfono ya se encuentra registrado.');
   }
 
-  await repository.editar({ id, nombre, apellidos, telefono, correo, activo, pacientes, usuarioId });
+  await repository.editar({
+    id,
+    nombre,
+    apellidos,
+    telefono,
+    correo,
+    activo,
+    pacientes,
+    usuarioId,
+  });
   return id;
 }
 
