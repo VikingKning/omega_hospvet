@@ -46,4 +46,16 @@ module.exports = {
     calendarId: process.env.GOOGLE_CALENDAR_ID,
     syncIntervalMinutes: Number(process.env.GOOGLE_SYNC_INTERVAL_MINUTES) || 10,
   },
+  // Envío de resultados de laboratorio por WhatsApp (Decisión 21) —
+  // opcionales a propósito, mismo criterio que `google` arriba: sin ellas
+  // la app sigue funcionando normal, el envío por WhatsApp simplemente no
+  // se activa (ver isWhatsappConfigured() en config/whatsapp.js). Hoy
+  // apunta al número de PRUEBA de Meta (decisión explícita del usuario,
+  // mientras la app de Meta sigue en modo Desarrollo) — cuando se dé de
+  // alta el número real, solo cambia WHATSAPP_PHONE_NUMBER_ID.
+  whatsapp: {
+    token: process.env.WHATSAPP_TOKEN,
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+    businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+  },
 };

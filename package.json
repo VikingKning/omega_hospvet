@@ -22,6 +22,8 @@
     "migrate:test": "dotenv -e .env.test -o --no-expand -- knex migrate:latest",
     "seed:test": "dotenv -e .env.test -o --no-expand -- knex seed:run",
     "google:renovar-token": "dotenv -e .env.localhost -o --no-expand -- node scripts/renovar-google-token.js",
+    "whatsapp:registrar-plantillas": "dotenv -e .env.localhost -o --no-expand -- node scripts/registrar-plantillas-whatsapp.js",
+    "whatsapp:estado-plantillas": "dotenv -e .env.localhost -o --no-expand -- node scripts/estado-plantillas-whatsapp.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

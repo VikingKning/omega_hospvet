@@ -390,23 +390,25 @@ El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc
 
 ### Scripts disponibles
 
-| Script                          | Descripción                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| `pnpm start`                    | Levanta el servidor Express en modo producción, usando `.env`                   |
-| `pnpm run dev`                  | Levanta el servidor con recarga automática (`node --watch`), usando `.env`      |
-| `pnpm run migrate`              | Ejecuta las migraciones pendientes (`knex migrate:latest`), usando `.env`       |
-| `pnpm run migrate:rollback`     | Revierte el último batch de migraciones                                         |
-| `pnpm run migrate:status`       | Muestra el estado de las migraciones                                            |
-| `pnpm run seed`                 | Ejecuta los seeds (catálogos base + usuario admin), usando `.env`               |
-| `pnpm run dev:localhost`        | Igual que `dev`, pero carga variables desde `.env.localhost` (sin tocar `.env`) |
-| `pnpm run migrate:localhost`    | Igual que `migrate`, cargando `.env.localhost`                                  |
-| `pnpm run seed:localhost`       | Igual que `seed`, cargando `.env.localhost`                                     |
-| `pnpm run lint`                 | Corre ESLint sobre todo el proyecto                                             |
-| `pnpm run lint:fix`             | Corre ESLint y corrige automáticamente lo que pueda                             |
-| `pnpm run format`               | Formatea todo el proyecto con Prettier                                          |
-| `pnpm run format:check`         | Verifica el formato sin modificar archivos (usado en CI)                        |
-| `pnpm test`                     | Corre la suite de pruebas con Jest + Supertest (`tests/`)                       |
-| `pnpm run google:renovar-token` | Regenera `GOOGLE_REFRESH_TOKEN` cuando Google lo revoca/expira (ver nota abajo) |
+| Script                                   | Descripción                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| `pnpm start`                             | Levanta el servidor Express en modo producción, usando `.env`                   |
+| `pnpm run dev`                           | Levanta el servidor con recarga automática (`node --watch`), usando `.env`      |
+| `pnpm run migrate`                       | Ejecuta las migraciones pendientes (`knex migrate:latest`), usando `.env`       |
+| `pnpm run migrate:rollback`              | Revierte el último batch de migraciones                                         |
+| `pnpm run migrate:status`                | Muestra el estado de las migraciones                                            |
+| `pnpm run seed`                          | Ejecuta los seeds (catálogos base + usuario admin), usando `.env`               |
+| `pnpm run dev:localhost`                 | Igual que `dev`, pero carga variables desde `.env.localhost` (sin tocar `.env`) |
+| `pnpm run migrate:localhost`             | Igual que `migrate`, cargando `.env.localhost`                                  |
+| `pnpm run seed:localhost`                | Igual que `seed`, cargando `.env.localhost`                                     |
+| `pnpm run lint`                          | Corre ESLint sobre todo el proyecto                                             |
+| `pnpm run lint:fix`                      | Corre ESLint y corrige automáticamente lo que pueda                             |
+| `pnpm run format`                        | Formatea todo el proyecto con Prettier                                          |
+| `pnpm run format:check`                  | Verifica el formato sin modificar archivos (usado en CI)                        |
+| `pnpm test`                              | Corre la suite de pruebas con Jest + Supertest (`tests/`)                       |
+| `pnpm run google:renovar-token`          | Regenera `GOOGLE_REFRESH_TOKEN` cuando Google lo revoca/expira (ver nota abajo) |
+| `pnpm run whatsapp:registrar-plantillas` | Da de alta en Meta las plantillas elegidas del experimento (ver nota abajo)     |
+| `pnpm run whatsapp:estado-plantillas`    | Consulta en vivo el estado de aprobación de las plantillas ya registradas       |
 
 Los scripts `*:localhost` usan [`dotenv-cli`](https://github.com/entropitor/dotenv-cli) para inyectar las variables de un archivo específico sin necesidad de copiarlo a `.env` (evita el riesgo de sobrescribir por accidente un `.env` real). El mismo patrón se usará para `.env.qa` y `.env.prod` cuando existan (`dev:qa`, `start:prod`, etc.).
 
@@ -422,6 +424,22 @@ Para regenerarlo:
 2. Corre `pnpm run google:renovar-token` y abre la URL que imprime en el navegador, con la cuenta de Gmail correcta.
 3. Autoriza — la terminal imprime el `GOOGLE_REFRESH_TOKEN` nuevo.
 4. Pégalo en `.env.localhost` (reemplazando el que ya no sirve) y vuelve a correr `pnpm run dev:localhost`.
+
+#### WhatsApp Business (envío de resultados de laboratorio — Decisión 21)
+
+Igual que Google Calendar, opcional y desacoplado del resto de la app (`isWhatsappConfigured()` en `src/config/whatsapp.js`; sin las variables, la app funciona normal, el envío por WhatsApp simplemente no se activa):
+
+```
+WHATSAPP_TOKEN=...
+WHATSAPP_PHONE_NUMBER_ID=...
+WHATSAPP_BUSINESS_ACCOUNT_ID=...
+```
+
+**Estado actual (2026-09-02)**: usando el **número de prueba** que Meta da gratis al dar de alta el producto WhatsApp en Meta for Developers (hasta 5 destinatarios de prueba verificados, token temporal de 24h renovable desde la misma consola) — la app de Meta está bajo la cuenta personal del desarrollador, todavía no la de Omega. `src/config/whatsapp.js` expone `messagesUrl()` (envío) y `templatesUrl()` (alta/consulta de plantillas), ambos vía `fetch` nativo contra la Graph API, sin SDK.
+
+**Experimento en curso**: se registraron en Meta 3 de las plantillas reales que ya existen en `plantillas_whatsapp` (`cambio_horario_medicacion`, `dosis_olvidada`, `revision_herida_foto`, categoría `UTILITY`) solo para validar el tiempo real de aprobación y el mecanismo de consulta de estado — **no** porque las necesiten para su uso actual (son respuestas dentro de una conversación ya abierta, WhatsApp no exige aprobación de Meta para eso; la aprobación previa solo aplica a mensajes que el negocio inicia fuera de la ventana de 24h, como avisar que un resultado ya está listo). Corre `pnpm run whatsapp:estado-plantillas` para ver si ya las aprobó.
+
+**Pendiente** (según la Bitácora de Decisiones Técnicas v4, "LLM clasificador de intención de WhatsApp"): un clasificador con `claude-haiku-4-5` vía Claude API (Commercial Terms) que solo clasifica la intención del mensaje entrante y enruta a una plantilla fija de `plantillas_whatsapp` — nunca genera texto médico libre. Todavía no existen las credenciales de Anthropic (Commercial Terms, cuenta de negocio) para esto.
 
 Ver `scripts/renovar-google-token.js` para el detalle de implementación.
 
