@@ -390,24 +390,40 @@ El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc
 
 ### Scripts disponibles
 
-| Script                       | Descripción                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------- |
-| `pnpm start`                 | Levanta el servidor Express en modo producción, usando `.env`                   |
-| `pnpm run dev`               | Levanta el servidor con recarga automática (`node --watch`), usando `.env`      |
-| `pnpm run migrate`           | Ejecuta las migraciones pendientes (`knex migrate:latest`), usando `.env`       |
-| `pnpm run migrate:rollback`  | Revierte el último batch de migraciones                                         |
-| `pnpm run migrate:status`    | Muestra el estado de las migraciones                                            |
-| `pnpm run seed`              | Ejecuta los seeds (catálogos base + usuario admin), usando `.env`               |
-| `pnpm run dev:localhost`     | Igual que `dev`, pero carga variables desde `.env.localhost` (sin tocar `.env`) |
-| `pnpm run migrate:localhost` | Igual que `migrate`, cargando `.env.localhost`                                  |
-| `pnpm run seed:localhost`    | Igual que `seed`, cargando `.env.localhost`                                     |
-| `pnpm run lint`              | Corre ESLint sobre todo el proyecto                                             |
-| `pnpm run lint:fix`          | Corre ESLint y corrige automáticamente lo que pueda                             |
-| `pnpm run format`            | Formatea todo el proyecto con Prettier                                          |
-| `pnpm run format:check`      | Verifica el formato sin modificar archivos (usado en CI)                        |
-| `pnpm test`                  | Corre la suite de pruebas con Jest + Supertest (`tests/`)                       |
+| Script                          | Descripción                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| `pnpm start`                    | Levanta el servidor Express en modo producción, usando `.env`                   |
+| `pnpm run dev`                  | Levanta el servidor con recarga automática (`node --watch`), usando `.env`      |
+| `pnpm run migrate`              | Ejecuta las migraciones pendientes (`knex migrate:latest`), usando `.env`       |
+| `pnpm run migrate:rollback`     | Revierte el último batch de migraciones                                         |
+| `pnpm run migrate:status`       | Muestra el estado de las migraciones                                            |
+| `pnpm run seed`                 | Ejecuta los seeds (catálogos base + usuario admin), usando `.env`               |
+| `pnpm run dev:localhost`        | Igual que `dev`, pero carga variables desde `.env.localhost` (sin tocar `.env`) |
+| `pnpm run migrate:localhost`    | Igual que `migrate`, cargando `.env.localhost`                                  |
+| `pnpm run seed:localhost`       | Igual que `seed`, cargando `.env.localhost`                                     |
+| `pnpm run lint`                 | Corre ESLint sobre todo el proyecto                                             |
+| `pnpm run lint:fix`             | Corre ESLint y corrige automáticamente lo que pueda                             |
+| `pnpm run format`               | Formatea todo el proyecto con Prettier                                          |
+| `pnpm run format:check`         | Verifica el formato sin modificar archivos (usado en CI)                        |
+| `pnpm test`                     | Corre la suite de pruebas con Jest + Supertest (`tests/`)                       |
+| `pnpm run google:renovar-token` | Regenera `GOOGLE_REFRESH_TOKEN` cuando Google lo revoca/expira (ver nota abajo) |
 
 Los scripts `*:localhost` usan [`dotenv-cli`](https://github.com/entropitor/dotenv-cli) para inyectar las variables de un archivo específico sin necesidad de copiarlo a `.env` (evita el riesgo de sobrescribir por accidente un `.env` real). El mismo patrón se usará para `.env.qa` y `.env.prod` cuando existan (`dev:qa`, `start:prod`, etc.).
+
+#### Renovar el token de Google Calendar (`GOOGLE_REFRESH_TOKEN` expirado)
+
+La app de Google Cloud de este proyecto usa una cuenta de **Gmail personal** (no Workspace) en estado de publicación **"Prueba"** — decisión explícita del usuario: pasar por la verificación completa de Google (política de privacidad publicada, revisión de días/semanas) es demasiado trámite para una herramienta de un solo consultorio, y con Gmail personal tampoco existe la opción de marcar la app como "Interna" (eso solo aplica a cuentas de Google Workspace).
+
+El costo de quedarse en "Prueba": Google expira el `GOOGLE_REFRESH_TOKEN` cada **7 días**, sin importar que se esté usando activamente. Cuando eso pasa, `agenda.googleSync.js` empieza a fallar con `invalid_grant: "Token has been expired or revoked"` en los logs (tanto el push inmediato al crear/editar una cita como el pull periódico) — la app sigue funcionando normal para todo lo demás, solo la sincronización con Google Calendar se detiene.
+
+Para regenerarlo:
+
+1. Detén `dev:localhost` (Ctrl+C) — el script de renovación necesita el puerto 3000 libre, porque usa el mismo redirect URI ya registrado en Google Cloud Console (`http://localhost:3000/auth/google/callback`).
+2. Corre `pnpm run google:renovar-token` y abre la URL que imprime en el navegador, con la cuenta de Gmail correcta.
+3. Autoriza — la terminal imprime el `GOOGLE_REFRESH_TOKEN` nuevo.
+4. Pégalo en `.env.localhost` (reemplazando el que ya no sirve) y vuelve a correr `pnpm run dev:localhost`.
+
+Ver `scripts/renovar-google-token.js` para el detalle de implementación.
 
 ### Calidad y CI
 
