@@ -58,4 +58,12 @@ module.exports = {
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
   },
+  // Clasificador de intención de WhatsApp (Bitácora de Decisiones Técnicas
+  // v4: "claude-haiku-4-5 vía Claude API, Commercial Terms — solo
+  // clasifica, nunca genera contenido médico libre") — opcional, mismo
+  // criterio que `google`/`whatsapp` arriba (ver isClaudeConfigured() en
+  // config/claude.js).
+  anthropic: {
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  },
 };
