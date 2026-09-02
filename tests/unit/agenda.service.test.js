@@ -22,6 +22,21 @@ const {
 
 const DOCTOR_EN_AREA = { id: 5, nombre: 'Ana', apellidos: 'Pérez' };
 
+// Fecha de prueba SIEMPRE en el futuro (mañana a las 15:00 UTC) — nunca una
+// fecha fija: agenda.service.js#validateFechaHoraInicio rechaza cualquier
+// fecha en el pasado, así que un literal tipo '2026-09-01T15:00:00.000Z'
+// empieza a fallar solo en cuanto el calendario real lo alcanza (bug real
+// encontrado en vivo: el propio suite se rompió el día que rodó la fecha).
+function mananaALas15UTC() {
+  const fecha = new Date();
+  fecha.setUTCDate(fecha.getUTCDate() + 1);
+  fecha.setUTCHours(15, 0, 0, 0);
+  return fecha;
+}
+const FECHA_FUTURA = mananaALas15UTC();
+const FECHA_FUTURA_ISO = FECHA_FUTURA.toISOString();
+const FECHA_FUTURA_MAS_30MIN = new Date(FECHA_FUTURA.getTime() + 30 * 60000);
+
 // jest.clearAllMocks() (en cada describe de abajo) limpia las llamadas
 // registradas pero NO el mockResolvedValue de aquí — se define una sola
 // vez porque dispararSyncGoogle() en agenda.service.js hace
@@ -186,7 +201,7 @@ describe('agenda.service.crear', () => {
     areaId: 1,
     doctorId: '5',
     mascotaId: '10',
-    fechaHoraInicio: '2026-09-01T15:00:00.000Z',
+    fechaHoraInicio: FECHA_FUTURA_ISO,
     duracionMinutos: '30',
     motivo: '  Revisión general  ',
     usuarioId: 2,
@@ -199,7 +214,7 @@ describe('agenda.service.crear', () => {
       areaId: 1,
       doctorId: 5,
       mascotaId: 10,
-      fechaHoraInicio: new Date('2026-09-01T15:00:00.000Z'),
+      fechaHoraInicio: FECHA_FUTURA,
       duracionMinutos: 30,
       motivo: 'Revisión general',
       usuarioId: 2,
@@ -264,8 +279,8 @@ describe('agenda.service.crear', () => {
     await crear(datosValidos);
     expect(repository.existeTraslape).toHaveBeenCalledWith(
       5,
-      new Date('2026-09-01T15:00:00.000Z'),
-      new Date('2026-09-01T15:30:00.000Z'),
+      FECHA_FUTURA,
+      FECHA_FUTURA_MAS_30MIN,
       undefined,
     );
   });
@@ -291,7 +306,7 @@ describe('agenda.service.editar', () => {
     areaId: 1,
     doctorId: '5',
     mascotaId: '10',
-    fechaHoraInicio: '2026-09-01T15:00:00.000Z',
+    fechaHoraInicio: FECHA_FUTURA_ISO,
     duracionMinutos: '60',
     motivo: 'Seguimiento',
     usuarioId: 2,
@@ -303,7 +318,7 @@ describe('agenda.service.editar', () => {
     expect(repository.update).toHaveBeenCalledWith(42, {
       doctorId: 5,
       mascotaId: 10,
-      fechaHoraInicio: new Date('2026-09-01T15:00:00.000Z'),
+      fechaHoraInicio: FECHA_FUTURA,
       duracionMinutos: 60,
       motivo: 'Seguimiento',
       usuarioId: 2,

@@ -565,5 +565,4 @@ module.exports = {
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
   eliminar,
-  LaboratorioValidationError,
 };

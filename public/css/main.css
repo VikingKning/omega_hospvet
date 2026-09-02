@@ -224,26 +224,6 @@ body:has(.app)::after {
   padding-left: 9px;
 }
 
-/* Áreas de agenda que el usuario puede ver (tiene agenda_<slug>.ver) pero
-   que todavía no tienen una página real construida (ver sidebar.ejs) — se
-   listan para que el menú refleje el permiso real, pero sin poder
-   navegar. `<span>`, no `<a>`, a propósito: no hay destino al que ir. */
-.submenu-link.is-disabled {
-  color: rgba(255, 255, 255, 0.35);
-  cursor: default;
-}
-
-.submenu-link.is-disabled:hover {
-  background: none;
-  color: rgba(255, 255, 255, 0.35);
-}
-
-.submenu-link-soon {
-  margin-left: auto;
-  font-size: 10px;
-  font-style: italic;
-}
-
 .topbar {
   position: relative;
   flex: 1;
@@ -910,10 +890,6 @@ body:has(.app)::after {
     flex: 1 1 calc(50% - 5px);
   }
 
-  .gcal-embed {
-    min-height: 500px;
-  }
-
   /* Bug real (reportado por el usuario: "no se ve el calendario en
      mobile"): FullCalendar configura `height:'100%'` en su propio
      elemento (agenda.ejs) — eso necesita que .agenda-calendar-wrap tenga
@@ -1294,38 +1270,6 @@ body:has(.app)::after {
 .badge-cargado {
   background: rgba(242, 169, 0, 0.15);
   color: var(--warning-text);
-}
-
-.btn-upload {
-  display: inline-flex;
-  align-items: center;
-  padding: 7px 12px;
-  border: none;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.btn-upload.pending {
-  background: var(--primary);
-  color: #fff;
-}
-
-.btn-upload.pending:hover {
-  background: var(--primary-hover);
-}
-
-.btn-upload.sent {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.btn-upload.sent:hover {
-  background: var(--bg-base);
 }
 
 .modal-backdrop {
@@ -2085,6 +2029,7 @@ body:has(.app)::after {
 
 .avatar-picker-option {
   cursor: pointer;
+  position: relative;
 }
 
 .avatar-picker-circle {
@@ -2152,10 +2097,6 @@ body:has(.app)::after {
   border-color: var(--success);
   box-shadow: 0 0 0 3px rgba(30, 142, 62, 0.3);
   transform: scale(1.06);
-}
-
-.avatar-picker-option {
-  position: relative;
 }
 
 .avatar-picker-check {
@@ -2350,18 +2291,6 @@ body:has(.app)::after {
 
 .modal-form-columns .modal-actions {
   flex-basis: 100%;
-}
-
-.btn-add-study {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.btn-add-study svg {
-  width: 16px;
-  height: 16px;
 }
 
 .mini-table-wrap {
@@ -2835,15 +2764,6 @@ body:has(.app)::after {
 /* US-601: acciones de fila propias de usuarios (permisos, resetear
    contraseña) — mismos colores base ya usados en el resto del sistema
    (primary/warning), sin inventar variables nuevas. */
-.row-action-permisos {
-  color: var(--primary);
-  --tooltip-bg: var(--primary);
-}
-
-.row-action-permisos:hover {
-  background: var(--primary-light);
-}
-
 .row-action-reset {
   /* El ícono usa --warning-text (no --warning): el ámbar original no pasa
      ni el contraste de gráficos/UI (~2:1, mínimo 3:1) sobre el fondo
@@ -3072,7 +2992,12 @@ body:has(.app)::after {
    laboratorio-form.ejs) hace scroll — mismo criterio y mismas 2 reglas
    .main-content:has()/.lab-form-page > que ya existían para esa pantalla,
    ver más abajo en este archivo. */
-.tutor-form-page {
+/* .lab-form-page comparte este bloque completo (page/heading/heading-icon/
+   heading-text) — mismo layout copiado tal cual al construir esa pantalla,
+   nunca diverge visualmente de tutor-form.ejs (selectores combinados aquí,
+   antes duplicados byte-por-byte más abajo). */
+.tutor-form-page,
+.lab-form-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -3084,13 +3009,15 @@ body:has(.app)::after {
   flex-shrink: 0;
 }
 
-.tutor-form-heading {
+.tutor-form-heading,
+.lab-form-heading {
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-.tutor-form-heading-icon {
+.tutor-form-heading-icon,
+.lab-form-heading-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3102,24 +3029,28 @@ body:has(.app)::after {
   color: var(--primary);
 }
 
-.tutor-form-heading-icon svg {
+.tutor-form-heading-icon svg,
+.lab-form-heading-icon svg {
   width: 22px;
   height: 22px;
 }
 
-.tutor-form-heading-text {
+.tutor-form-heading-text,
+.lab-form-heading-text {
   flex: 1;
   min-width: 0;
 }
 
-.tutor-form-heading-text h2 {
+.tutor-form-heading-text h2,
+.lab-form-heading-text h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
   color: var(--text-dark);
 }
 
-.tutor-form-heading-text p {
+.tutor-form-heading-text p,
+.lab-form-heading-text p {
   margin: 2px 0 0;
   font-size: 13px;
   color: var(--text-muted);
@@ -3406,18 +3337,6 @@ body:has(.app)::after {
    `.tutor-form-actions*`, `.form-error-banner`/`.form-success-banner`/
    `.form-info-banner`, `.combobox*`, `.tipo-picker*`, `.checkbox-grid`,
    `.mini-table*`). */
-.lab-form-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  /* Pedido explícito del usuario: encabezado y footer siempre visibles,
-     solo la franja de en medio hace scroll — .lab-form-page pasa a llenar
-     TODO el alto disponible de .main-content (que por eso deja de ser el
-     que hace scroll, ver la regla de .main-content:has() más abajo) en vez
-     de crecer con el contenido. */
-  height: 100%;
-}
-
 /* El encabezado (título/Volver) y el footer de acciones NUNCA se encogen —
    son los 2 renglones fijos de la columna; `.lab-form-scroll` (flex:1) es
    la única que cede/gana espacio entre ambos. Selector scopeado a esta
@@ -3468,34 +3387,6 @@ body:has(.app)::after {
   margin-bottom: 0;
 }
 
-.lab-form-heading {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.lab-form-heading-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--primary-light);
-  color: var(--primary);
-}
-
-.lab-form-heading-icon svg {
-  width: 22px;
-  height: 22px;
-}
-
-.lab-form-heading-text {
-  flex: 1;
-  min-width: 0;
-}
-
 /* Pedido explícito del usuario: el badge de Estado (ver laboratorio-form.ejs)
    va junto al título de Consultar/Cargar resultados, no debajo. */
 .lab-form-heading-title-row {
@@ -3503,19 +3394,6 @@ body:has(.app)::after {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.lab-form-heading-text h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-dark);
-}
-
-.lab-form-heading-text p {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 .lab-form-subtitle {

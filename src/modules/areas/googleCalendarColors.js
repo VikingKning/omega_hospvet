@@ -44,4 +44,4 @@ function findColor(id) {
   return GOOGLE_CALENDAR_COLORS.find((c) => c.id === String(id)) ?? SIN_COLOR;
 }
 
-module.exports = { GOOGLE_CALENDAR_COLORS, SIN_COLOR, isValidColorId, findColor };
+module.exports = { GOOGLE_CALENDAR_COLORS, isValidColorId, findColor };

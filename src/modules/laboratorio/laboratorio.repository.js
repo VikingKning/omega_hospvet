@@ -62,10 +62,6 @@ async function findEstudiosByIds(ids) {
     .select('id', 'nombre', 'campo_adicional', 'activo');
 }
 
-async function findZonaById(id) {
-  return db('catalogo_zonas_anatomicas').where({ id }).first('id');
-}
-
 function baseQuery({ q, estado, categoriaId }) {
   return db('registros_laboratorio as r')
     .where('r.eliminado', false)
@@ -570,7 +566,6 @@ module.exports = {
   findZonasAnatomicas,
   findCategorias,
   findEstudiosByIds,
-  findZonaById,
   count,
   findPage,
   existsAny,
@@ -580,12 +575,7 @@ module.exports = {
   actualizarRegistro,
   eliminar,
   buscarArchivosActivosPorHashes,
-  crearArchivo,
   findArchivoById,
-  asignarArchivoAEstudio,
-  asignarArchivoATodosLosEstudios,
-  marcarCargadoSiCompleto,
-  retirarSiNoQuedaEnUso,
   esViolacionHashActivo,
   registrarArchivoParaTodos,
   registrarArchivoParaEstudio,

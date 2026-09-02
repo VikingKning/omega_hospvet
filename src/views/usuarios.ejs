@@ -113,93 +113,10 @@
     </div>
   </div>
 
+<script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
+<script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
+<script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  const sidebar = document.getElementById('sidebar');
-  const app = document.querySelector('.app');
-  const sidebarToggle = document.getElementById('sidebarToggle');
-  const navBackdrop = document.getElementById('navBackdrop');
-
-  sidebarToggle.addEventListener('click', () => {
-    app.classList.toggle('sidebar-hidden');
-    app.classList.toggle('mobile-menu-open');
-  });
-
-  navBackdrop.addEventListener('click', () => {
-    app.classList.remove('sidebar-hidden');
-    app.classList.remove('mobile-menu-open');
-  });
-
-  document.querySelectorAll('.nav-toggle').forEach((toggle) => {
-    const submenu = document.getElementById(toggle.dataset.target);
-    if (submenu.classList.contains('open')) {
-      submenu.style.maxHeight = `${submenu.scrollHeight}px`;
-    }
-
-    toggle.addEventListener('click', () => {
-      const isOpen = submenu.classList.contains('open');
-
-      document.querySelectorAll('.submenu.open').forEach((open) => {
-        if (open !== submenu) {
-          open.classList.remove('open');
-          open.style.maxHeight = null;
-          open.previousElementSibling?.classList.remove('active');
-        }
-      });
-
-      submenu.classList.toggle('open', !isOpen);
-      toggle.classList.toggle('active', !isOpen);
-      submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
-    });
-  });
-
-  // Modal de confirmación en vez del confirm() nativo del navegador: patrón
-  // documentado por HTMX (evento htmx:confirm + evt.detail.issueRequest),
-  // mismo componente que areas.ejs/doctores.ejs/plantillas.ejs. Solo se
-  // intercepta cuando el elemento que disparó la petición trae
-  // hx-confirm — así los demás triggers de esta vista (buscar, ordenar,
-  // paginar) siguen sin pedir confirmación, como hasta ahora.
-  const confirmModalBackdrop = document.getElementById('confirmModalBackdrop');
-  const confirmModalMessage = document.getElementById('confirmModalMessage');
-  const confirmModalConfirmBtn = document.getElementById('confirmModalConfirm');
-  let resolveConfirm = null;
-
-  // US-605: esta vista ya no tiene una sola acción destructiva (dar de
-  // baja) — "Resetear contraseña" también pide confirmación con el mismo
-  // modal, pero "Dar de baja" como texto del botón sería incorrecto ahí.
-  // `confirmLabel` es opcional (default "Dar de baja", el único caso que
-  // existía hasta ahora) para no tener que tocar areas.ejs/doctores.ejs/
-  // plantillas.ejs, que reusan este mismo componente y solo necesitan el
-  // comportamiento original.
-  function openConfirmModal(message, confirmLabel = 'Dar de baja') {
-    confirmModalMessage.textContent = message;
-    confirmModalConfirmBtn.textContent = confirmLabel;
-    confirmModalBackdrop.classList.add('open');
-    return new Promise((resolve) => {
-      resolveConfirm = resolve;
-    });
-  }
-
-  function closeConfirmModal(result) {
-    confirmModalBackdrop.classList.remove('open');
-    resolveConfirm?.(result);
-    resolveConfirm = null;
-  }
-
-  document.getElementById('confirmModalCancel').addEventListener('click', () => closeConfirmModal(false));
-  document.getElementById('confirmModalClose').addEventListener('click', () => closeConfirmModal(false));
-  confirmModalConfirmBtn.addEventListener('click', () => closeConfirmModal(true));
-  confirmModalBackdrop.addEventListener('click', (event) => {
-    if (event.target === confirmModalBackdrop) closeConfirmModal(false);
-  });
-
-  document.body.addEventListener('htmx:confirm', (event) => {
-    if (!event.target.hasAttribute('hx-confirm')) return;
-    event.preventDefault();
-    openConfirmModal(event.detail.question, event.target.dataset.confirmLabel).then((confirmed) => {
-      if (confirmed) event.detail.issueRequest(true);
-    });
-  });
-
   // Cualquier `.combobox-list` de esta vista puede: (a) abrir cerca del
   // borde de un contenedor con scroll (un modal con `overflow-y:auto`) —
   // un elemento `position:absolute` sigue contando para el área
@@ -319,19 +236,6 @@
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
-  }
-
-  // Pedido explícito del usuario: la máscara depende del prefijo — 55/56
-  // (CDMX/Edomex, lada de 2 dígitos) usa NN-NNNN-NNNN; cualquier otro
-  // prefijo usa NNN-NNN-NNNN (lada de 3 dígitos). Mismo criterio duplicado
-  // en tutor-form.ejs#formatearTelefono (esta pantalla no comparte
-  // <script> con esa).
-  function formatearTelefono(digitos) {
-    const esCDMXEdomex = digitos.slice(0, 2) === '55' || digitos.slice(0, 2) === '56';
-    const grupos = esCDMXEdomex
-      ? [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)]
-      : [digitos.slice(0, 3), digitos.slice(3, 6), digitos.slice(6, 10)];
-    return grupos.filter((parte) => parte).join('-');
   }
 
   // Catálogo de doctores activos para el combobox: vive en JS, no en el

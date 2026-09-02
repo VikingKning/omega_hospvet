@@ -319,45 +319,9 @@
   %>
   <div id="tutorFormPacientesData" hidden><%- JSON.stringify(pacientes).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
 
+  <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
+  <script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
   <script nonce="<%= cspNonce %>">
-    const sidebar = document.getElementById('sidebar');
-    const app = document.querySelector('.app');
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    const navBackdrop = document.getElementById('navBackdrop');
-
-    sidebarToggle.addEventListener('click', () => {
-      app.classList.toggle('sidebar-hidden');
-      app.classList.toggle('mobile-menu-open');
-    });
-
-    navBackdrop.addEventListener('click', () => {
-      app.classList.remove('sidebar-hidden');
-      app.classList.remove('mobile-menu-open');
-    });
-
-    document.querySelectorAll('.nav-toggle').forEach((toggle) => {
-      const submenu = document.getElementById(toggle.dataset.target);
-      if (submenu.classList.contains('open')) {
-        submenu.style.maxHeight = `${submenu.scrollHeight}px`;
-      }
-
-      toggle.addEventListener('click', () => {
-        const isOpen = submenu.classList.contains('open');
-
-        document.querySelectorAll('.submenu.open').forEach((open) => {
-          if (open !== submenu) {
-            open.classList.remove('open');
-            open.style.maxHeight = null;
-            open.previousElementSibling?.classList.remove('active');
-          }
-        });
-
-        submenu.classList.toggle('open', !isOpen);
-        toggle.classList.toggle('active', !isOpen);
-        submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
-      });
-    });
-
     function escapeHtml(text) {
       const div = document.createElement('div');
       div.textContent = text ?? '';
@@ -372,19 +336,11 @@
     // formatearTelefono() más abajo); no repite la regla del prefijo.
     const TELEFONO_REGEX = /^(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})$/;
 
-    // Pedido explícito del usuario: la máscara depende del prefijo — 55/56
-    // (CDMX/Edomex, lada de 2 dígitos) usa NN-NNNN-NNNN; cualquier otro
-    // prefijo usa NNN-NNN-NNNN (lada de 3 dígitos). Recibe los DÍGITOS ya
-    // recortados a 10 (nunca el valor con guiones) para poder decidir el
-    // agrupamiento a partir de los primeros 2 caracteres sin importar
-    // cuántos guiones traía antes.
-    function formatearTelefono(digitos) {
-      const esCDMXEdomex = digitos.slice(0, 2) === '55' || digitos.slice(0, 2) === '56';
-      const grupos = esCDMXEdomex
-        ? [digitos.slice(0, 2), digitos.slice(2, 6), digitos.slice(6, 10)]
-        : [digitos.slice(0, 3), digitos.slice(3, 6), digitos.slice(6, 10)];
-      return grupos.filter((parte) => parte).join('-');
-    }
+    // formatearTelefono() vive en public/js/telefono.js (cargado arriba,
+    // compartido con perfil.ejs/usuarios.ejs/laboratorio-form.ejs) — recibe
+    // los DÍGITOS ya recortados a 10 (nunca el valor con guiones) para
+    // poder decidir el agrupamiento a partir de los primeros 2 caracteres
+    // sin importar cuántos guiones traía antes.
 
     // ---- Estado del formulario ----
     // `tutorId` empieza como el id de edición (o null en alta) y se

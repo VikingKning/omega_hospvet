@@ -156,7 +156,6 @@ async function eliminarFisico(rutaAlmacenamiento) {
 
 module.exports = {
   ArchivoValidationError,
-  TIPOS_PERMITIDOS,
   calcularHash,
   procesarArchivos,
   rutaAbsolutaDeArchivo,

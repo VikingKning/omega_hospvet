@@ -78,83 +78,9 @@
     <div class="modal-card" id="areaFormModalBody"></div>
   </div>
 
+<script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
+<script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  const sidebar = document.getElementById('sidebar');
-  const app = document.querySelector('.app');
-  const sidebarToggle = document.getElementById('sidebarToggle');
-  const navBackdrop = document.getElementById('navBackdrop');
-
-  sidebarToggle.addEventListener('click', () => {
-    app.classList.toggle('sidebar-hidden');
-    app.classList.toggle('mobile-menu-open');
-  });
-
-  navBackdrop.addEventListener('click', () => {
-    app.classList.remove('sidebar-hidden');
-    app.classList.remove('mobile-menu-open');
-  });
-
-  document.querySelectorAll('.nav-toggle').forEach((toggle) => {
-    const submenu = document.getElementById(toggle.dataset.target);
-    if (submenu.classList.contains('open')) {
-      submenu.style.maxHeight = `${submenu.scrollHeight}px`;
-    }
-
-    toggle.addEventListener('click', () => {
-      const isOpen = submenu.classList.contains('open');
-
-      document.querySelectorAll('.submenu.open').forEach((open) => {
-        if (open !== submenu) {
-          open.classList.remove('open');
-          open.style.maxHeight = null;
-          open.previousElementSibling?.classList.remove('active');
-        }
-      });
-
-      submenu.classList.toggle('open', !isOpen);
-      toggle.classList.toggle('active', !isOpen);
-      submenu.style.maxHeight = !isOpen ? `${submenu.scrollHeight}px` : null;
-    });
-  });
-
-  // Modal de confirmación en vez del confirm() nativo del navegador: patrón
-  // documentado por HTMX (evento htmx:confirm + evt.detail.issueRequest).
-  // Solo se intercepta cuando el elemento que disparó la petición trae
-  // hx-confirm — así los demás triggers de esta vista (buscar, ordenar,
-  // paginar) siguen sin pedir confirmación, como hasta ahora.
-  const confirmModalBackdrop = document.getElementById('confirmModalBackdrop');
-  const confirmModalMessage = document.getElementById('confirmModalMessage');
-  let resolveConfirm = null;
-
-  function openConfirmModal(message) {
-    confirmModalMessage.textContent = message;
-    confirmModalBackdrop.classList.add('open');
-    return new Promise((resolve) => {
-      resolveConfirm = resolve;
-    });
-  }
-
-  function closeConfirmModal(result) {
-    confirmModalBackdrop.classList.remove('open');
-    resolveConfirm?.(result);
-    resolveConfirm = null;
-  }
-
-  document.getElementById('confirmModalCancel').addEventListener('click', () => closeConfirmModal(false));
-  document.getElementById('confirmModalClose').addEventListener('click', () => closeConfirmModal(false));
-  document.getElementById('confirmModalConfirm').addEventListener('click', () => closeConfirmModal(true));
-  confirmModalBackdrop.addEventListener('click', (event) => {
-    if (event.target === confirmModalBackdrop) closeConfirmModal(false);
-  });
-
-  document.body.addEventListener('htmx:confirm', (event) => {
-    if (!event.target.hasAttribute('hx-confirm')) return;
-    event.preventDefault();
-    openConfirmModal(event.detail.question).then((confirmed) => {
-      if (confirmed) event.detail.issueRequest(true);
-    });
-  });
-
   // Modal de alta/edición (US-610). El contenido de #areaFormModalBody lo
   // reemplaza HTMX en cada apertura/reintento, así que los botones de
   // adentro (cerrar, cancelar, cerrar el mensaje de error) se manejan por
