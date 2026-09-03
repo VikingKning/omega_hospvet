@@ -204,8 +204,15 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     plantillaFormModalBackdrop: vive fuera de #calendar (que se re-dibuja
     solo, no vía HTMX) así que el modal nunca se destruye a medio uso.
   %>
+  <%#
+    Pedido explícito del usuario: el formulario pasa a 2-3 columnas por
+    fila para no necesitar scroll (ver cita-form.ejs) — .modal-card-wide
+    (720px, ya definida en main.css) le da el espacio horizontal que ese
+    layout necesita; el .modal-card angosto (440px) original se quedaba
+    corto para 2-3 campos por fila.
+  %>
   <div class="modal-backdrop" id="citaFormModalBackdrop">
-    <div class="modal-card" id="citaFormModalBody"></div>
+    <div class="modal-card modal-card-wide" id="citaFormModalBody"></div>
   </div>
 
   <%#
@@ -234,7 +241,14 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
+<script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text ?? '';
+    return div.innerHTML;
+  }
+
   // Semáforo de la próxima cita: verde antes de la hora, amarillo hasta 10
   // min después, rojo pasados 10 min y 1 segundo — mismo criterio visual
   // que el mockup que esto reemplaza, ahora contra una fecha/hora ISO real
@@ -314,6 +328,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     if (citaFormModalBody.querySelector('form')) {
       openCitaFormModal();
       separarFechaHora();
+      inicializarTutorDesdeIsla();
     }
   });
 
@@ -356,31 +371,105 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     list.hidden = false;
   }
 
-  // ---- Combobox de Mascota (búsqueda debounced en servidor — el catálogo
-  // puede ser grande, mismo patrón que el teléfono en tutor-form.ejs). ----
-  let mascotaDebounceTimer = null;
+  // ---- Tutor antes que mascota (pedido explícito del usuario, mismo
+  // patrón que labTutor*/labPaciente* en laboratorio-form.ejs): se busca al
+  // tutor por teléfono (10 dígitos exactos) o por nombre (parcial, en
+  // servidor); al elegirlo, el combobox de Mascota se limita a SUS
+  // pacientes. Así, al confirmar una reserva externa de Google Calendar
+  // (agenda.reservasExternas.js) que ya trae el teléfono matcheado pero sin
+  // mascota, el staff solo tiene que elegir el paciente. ----
+  let tutorActual = null; // { id, nombre, apellidos, telefono, correo, pacientes }
+  let tutorDebounceTimer = null;
 
-  function buscarMascotas(term) {
-    const combobox = citaFormModalBody.querySelector('#citaMascotaCombobox');
+  function inicializarTutorDesdeIsla() {
+    const el = citaFormModalBody.querySelector('#citaTutorData');
+    tutorActual = el && el.textContent ? JSON.parse(el.textContent) : null;
+    renderPacienteOptions();
+  }
+
+  function renderPacienteOptions() {
+    const trigger = citaFormModalBody.querySelector('#citaMascotaTrigger');
     const list = citaFormModalBody.querySelector('#citaMascotaList');
-    if (!combobox || !list) return;
-    fetch('tutores/buscar-mascota', {
+    if (!trigger || !list) return;
+    const pacientes = tutorActual ? tutorActual.pacientes : [];
+    trigger.disabled = trigger.disabled || pacientes.length === 0;
+    if (!trigger.disabled) {
+      trigger.placeholder = pacientes.length ? 'Selecciona un paciente...' : 'Este tutor no tiene mascotas activas';
+    }
+    list.innerHTML = pacientes
+      .map((p) => `<li class="combobox-item" data-id="${p.id}">${escapeHtml(p.nombre)}</li>`)
+      .join('');
+  }
+
+  function limpiarMascota() {
+    const idInput = citaFormModalBody.querySelector('#citaMascotaId');
+    const trigger = citaFormModalBody.querySelector('#citaMascotaTrigger');
+    if (idInput) idInput.value = '';
+    if (trigger) trigger.value = '';
+    actualizarBotonConfirmar();
+  }
+
+  function seleccionarMascota(id) {
+    const paciente = (tutorActual?.pacientes ?? []).find((p) => String(p.id) === String(id));
+    if (!paciente) return;
+    citaFormModalBody.querySelector('#citaMascotaId').value = paciente.id;
+    citaFormModalBody.querySelector('#citaMascotaTrigger').value = paciente.nombre;
+    actualizarBotonConfirmar();
+  }
+
+  async function buscarTutorPorTelefono(telefono) {
+    const slug = citaFormModalBody.querySelector('#citaForm')?.dataset.areaSlug;
+    const res = await fetch('tutores/buscar-tutor-telefono', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-      body: JSON.stringify({ q: term, slug: combobox.dataset.areaSlug }),
-    })
-      .then((res) => res.json())
-      .then((resultados) => {
-        list.innerHTML = resultados.length
-          ? resultados
-              .map(
-                (m) =>
-                  `<li class="combobox-item" data-id="${m.id}" data-label="${m.nombre} (${m.propietario_nombre} ${m.propietario_apellidos})">${m.nombre} — ${m.propietario_nombre} ${m.propietario_apellidos}</li>`,
-              )
-              .join('')
-          : '<li class="combobox-empty">Sin resultados</li>';
-        list.hidden = false;
-      });
+      body: JSON.stringify({ telefono, slug }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    tutorActual = data.existe ? data.tutor : null;
+    const tutorInput = citaFormModalBody.querySelector('#citaTutorNombreInput');
+    if (tutorInput) tutorInput.value = tutorActual ? `${tutorActual.nombre} ${tutorActual.apellidos}` : '';
+    const trigger = citaFormModalBody.querySelector('#citaMascotaTrigger');
+    if (trigger) trigger.disabled = !tutorActual;
+    limpiarMascota();
+    renderPacienteOptions();
+  }
+
+  async function buscarTutoresPorNombre(q) {
+    const slug = citaFormModalBody.querySelector('#citaForm')?.dataset.areaSlug;
+    const res = await fetch('tutores/buscar-tutor-nombre', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+      body: JSON.stringify({ q, slug }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = citaFormModalBody.querySelector('#citaTutorNombreList');
+    if (!list) return;
+    list.innerHTML = data.tutores?.length
+      ? data.tutores
+          .map(
+            (t) =>
+              `<li class="combobox-item" data-telefono="${escapeHtml(t.telefono)}">${escapeHtml(t.nombre)} ${escapeHtml(t.apellidos)} — ${escapeHtml(t.telefono)}</li>`,
+          )
+          .join('')
+      : '<li class="combobox-empty">Sin resultados</li>';
+    list.hidden = false;
+  }
+
+  // "Confirmar cita" (reserva pendiente sin mascota, ver cita-form.ejs):
+  // se habilita en vivo en cuanto se elige una mascota, sin esperar a un
+  // Guardar aparte — pedido explícito del usuario.
+  function actualizarBotonConfirmar() {
+    const btn = citaFormModalBody.querySelector('#citaFormConfirmar');
+    if (!btn) return;
+    const tieneMascota = Boolean(citaFormModalBody.querySelector('#citaMascotaId')?.value);
+    btn.disabled = !tieneMascota;
+    if (tieneMascota) {
+      btn.removeAttribute('data-tooltip');
+    } else {
+      btn.setAttribute('data-tooltip', 'Selecciona la mascota primero');
+    }
   }
 
   citaFormModalBody.addEventListener('input', (event) => {
@@ -388,11 +477,31 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
       citaFormModalBody.querySelector('#citaDoctorId').value = '';
       renderDoctorList(event.target.value);
     }
-    if (event.target.id === 'citaMascotaInput') {
-      citaFormModalBody.querySelector('#citaMascotaId').value = '';
-      clearTimeout(mascotaDebounceTimer);
-      const term = event.target.value;
-      mascotaDebounceTimer = setTimeout(() => buscarMascotas(term), 400);
+    if (event.target.id === 'citaTutorTelefono') {
+      const digitos = event.target.value.replace(/\D/g, '').slice(0, 10);
+      event.target.value = formatearTelefono(digitos);
+      clearTimeout(tutorDebounceTimer);
+      if (digitos.length === 10) {
+        tutorDebounceTimer = setTimeout(() => buscarTutorPorTelefono(digitos), 300);
+      } else {
+        tutorActual = null;
+        const tutorInput = citaFormModalBody.querySelector('#citaTutorNombreInput');
+        if (tutorInput) tutorInput.value = '';
+        const trigger = citaFormModalBody.querySelector('#citaMascotaTrigger');
+        if (trigger) trigger.disabled = true;
+        limpiarMascota();
+        renderPacienteOptions();
+      }
+    }
+    if (event.target.id === 'citaTutorNombreInput') {
+      clearTimeout(tutorDebounceTimer);
+      const q = event.target.value.trim();
+      const list = citaFormModalBody.querySelector('#citaTutorNombreList');
+      if (q.length < 2) {
+        if (list) list.hidden = true;
+        return;
+      }
+      tutorDebounceTimer = setTimeout(() => buscarTutoresPorNombre(q), 300);
     }
   });
 
@@ -400,7 +509,9 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     'focus',
     (event) => {
       if (event.target.id === 'citaDoctorInput') renderDoctorList(event.target.value);
-      if (event.target.id === 'citaMascotaInput') buscarMascotas(event.target.value);
+      if (event.target.id === 'citaMascotaTrigger' && !event.target.disabled) {
+        citaFormModalBody.querySelector('#citaMascotaList').hidden = false;
+      }
     },
     true,
   );
@@ -416,7 +527,13 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
           if (list) list.hidden = true;
         }, 150);
       }
-      if (event.target.id === 'citaMascotaInput') {
+      if (event.target.id === 'citaTutorNombreInput') {
+        setTimeout(() => {
+          const list = citaFormModalBody.querySelector('#citaTutorNombreList');
+          if (list) list.hidden = true;
+        }, 150);
+      }
+      if (event.target.id === 'citaMascotaTrigger') {
         setTimeout(() => {
           const list = citaFormModalBody.querySelector('#citaMascotaList');
           if (list) list.hidden = true;
@@ -430,15 +547,23 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     const item = event.target.closest('.combobox-item');
     if (!item) return;
     const doctorList = citaFormModalBody.querySelector('#citaDoctorList');
+    const tutorList = citaFormModalBody.querySelector('#citaTutorNombreList');
     const mascotaList = citaFormModalBody.querySelector('#citaMascotaList');
     if (doctorList && doctorList.contains(item)) {
       citaFormModalBody.querySelector('#citaDoctorId').value = item.dataset.id;
       citaFormModalBody.querySelector('#citaDoctorInput').value = item.dataset.label;
       doctorList.hidden = true;
     }
-    if (mascotaList && mascotaList.contains(item)) {
-      citaFormModalBody.querySelector('#citaMascotaId').value = item.dataset.id;
-      citaFormModalBody.querySelector('#citaMascotaInput').value = item.dataset.label;
+    if (tutorList && tutorList.contains(item) && item.dataset.telefono) {
+      event.preventDefault(); // el <li> no es enfocable y vive dentro de un <label> — sin esto el navegador reenvía el click al input y reabre la lista que este mismo click acaba de cerrar
+      tutorList.hidden = true;
+      const telefono = item.dataset.telefono;
+      citaFormModalBody.querySelector('#citaTutorTelefono').value = telefono;
+      buscarTutorPorTelefono(telefono.replace(/\D/g, ''));
+    }
+    if (mascotaList && mascotaList.contains(item) && item.dataset.id) {
+      event.preventDefault(); // mismo motivo que arriba
+      seleccionarMascota(item.dataset.id);
       mascotaList.hidden = true;
     }
   });
@@ -509,6 +634,12 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     eventDidMount(info) {
       if (info.event.display === 'background') {
         info.el.setAttribute('data-tooltip', 'No disponible');
+      }
+      // Reserva externa (agenda.reservasExternas.js) sin match completo,
+      // todavía no confirmada — ver .fc-event-pendiente-confirmar en main.css.
+      if (info.event.extendedProps.estado === 'registrada') {
+        info.el.classList.add('fc-event-pendiente-confirmar');
+        info.el.setAttribute('data-tooltip', 'Reserva pendiente de confirmar');
       }
     },
     eventSources: [

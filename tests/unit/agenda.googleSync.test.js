@@ -2,6 +2,7 @@
 // repository se mockean por completo, nunca se pega a la red real (mismo
 // criterio que el resto de los tests unitarios del proyecto).
 jest.mock('../../src/modules/agenda/agenda.repository');
+jest.mock('../../src/modules/agenda/agenda.reservasExternas');
 jest.mock('../../src/config/googleCalendar');
 jest.mock('../../src/config/env', () => ({
   ...jest.requireActual('../../src/config/env'),
@@ -9,6 +10,7 @@ jest.mock('../../src/config/env', () => ({
 }));
 
 const repository = require('../../src/modules/agenda/agenda.repository');
+const { importarReserva } = require('../../src/modules/agenda/agenda.reservasExternas');
 const { getCalendarClient, isGoogleSyncConfigured } = require('../../src/config/googleCalendar');
 const { pushCita, sincronizar } = require('../../src/modules/agenda/agenda.googleSync');
 
@@ -153,6 +155,7 @@ describe('agenda.googleSync.sincronizar', () => {
     isGoogleSyncConfigured.mockReturnValue(true);
     repository.findPendientesDePush.mockResolvedValue([]);
     repository.findSincronizadasFuturas.mockResolvedValue([]);
+    importarReserva.mockResolvedValue(null);
   });
 
   it('sin configurar, no toca nada', async () => {
@@ -300,5 +303,63 @@ describe('agenda.googleSync.sincronizar', () => {
     getCalendarClient.mockReturnValue(calendar);
 
     await expect(sincronizar()).resolves.toBeUndefined();
+  });
+
+  it('un evento sin citaId que SÍ es una reserva reconocida se importa y se empuja a Google', async () => {
+    const eventoReserva = { id: 'evt-reserva-1', description: 'Nombre de la Mascota\nSparky' };
+    const calendar = fakeCalendar();
+    calendar.events.list.mockResolvedValue({ data: { items: [eventoReserva] } });
+    getCalendarClient.mockReturnValue(calendar);
+    importarReserva.mockResolvedValue(42);
+    repository.findByIdParaSync.mockResolvedValue(CITA_NUEVA);
+
+    await sincronizar();
+
+    expect(importarReserva).toHaveBeenCalledWith(eventoReserva);
+    expect(repository.findByIdParaSync).toHaveBeenCalledWith(42); // pushCita(42)
+  });
+
+  it('bug real: una cita importada Y empujada en ESTE mismo ciclo no se cancela sola, aunque ya califique para la reconciliación', async () => {
+    // El snapshot de events.list() se toma ANTES de que exista la cita
+    // recién importada — eventosPorCitaId.get(42) siempre da undefined
+    // en este mismo ciclo, sin importar que pushCita() SÍ haya etiquetado
+    // el evento de Google con citaId=42 en el momento (ver el comentario
+    // del fix en agenda.googleSync.js).
+    const eventoReserva = { id: 'evt-reserva-1', description: 'Nombre de la Mascota\nSparky' };
+    const calendar = fakeCalendar();
+    calendar.events.list.mockResolvedValue({ data: { items: [eventoReserva] } });
+    getCalendarClient.mockReturnValue(calendar);
+    importarReserva.mockResolvedValue(42);
+    repository.findByIdParaSync.mockResolvedValue(CITA_NUEVA);
+    // findSincronizadasFuturas es una consulta FRESCA que corre después
+    // del import — ya incluye la cita 42 (mascota_id/google_event_id ya
+    // están puestos para cuando esto se ejecuta).
+    repository.findSincronizadasFuturas.mockResolvedValue([
+      {
+        id: 42,
+        google_event_id: 'evt-reserva-1',
+        fecha_hora_inicio: new Date('2026-09-01T15:00:00.000Z'),
+        duracion_minutos: 30,
+        actualizado_en: null,
+        google_sincronizado_en: new Date('2026-09-01T00:00:00.000Z'),
+      },
+    ]);
+
+    await sincronizar();
+
+    expect(repository.aplicarCancelacionDesdeGoogle).not.toHaveBeenCalledWith(42);
+  });
+
+  it('un evento sin citaId que NO se reconoce como reserva (importarReserva regresa null) no dispara ningún push', async () => {
+    const eventoAjeno = { id: 'evt-ajeno', description: 'Otro tipo de evento cualquiera' };
+    const calendar = fakeCalendar();
+    calendar.events.list.mockResolvedValue({ data: { items: [eventoAjeno] } });
+    getCalendarClient.mockReturnValue(calendar);
+    importarReserva.mockResolvedValue(null);
+
+    await sincronizar();
+
+    expect(importarReserva).toHaveBeenCalledWith(eventoAjeno);
+    expect(repository.findByIdParaSync).not.toHaveBeenCalled();
   });
 });

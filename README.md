@@ -22,6 +22,7 @@
 - [Cómo correr el proyecto en localhost](#cómo-correr-el-proyecto-en-localhost)
 - [Arquitectura](#arquitectura)
   - [Configuración de entorno](#configuración-de-entorno)
+  - [Reservas externas de Consultas (Google Calendar)](#reservas-externas-de-consultas-google-calendar)
   - [Stack tecnológico](#stack-tecnológico)
   - [Estructura del proyecto](#estructura-del-proyecto)
   - [Rutas](#rutas)
@@ -138,6 +139,35 @@ src="https://calendar.google.com/calendar/embed?src=CALENDAR_ID%40group.calendar
 ```
 
 Debe reemplazarse `CALENDAR_ID` por el ID real de cada calendario (Google Calendar → Configuración → Integrar calendario), y ese calendario debe estar compartido públicamente para que el embed funcione sin iniciar sesión.
+
+### Reservas externas de Consultas (Google Calendar)
+
+> Esta sección documenta requisitos operativos que **no están en el código** (viven en la configuración de Google Calendar) — si algún día se recrea la página de reservas o se le pierde el rastro a por qué una reserva no se importó, empezar por aquí.
+
+Además del embed de arriba, el área de Consultas tiene una página pública de reservas de Google Calendar ("Appointment Scheduling") — el link vive en la plantilla de WhatsApp `agendar_cita_default`. Cada `GOOGLE_SYNC_INTERVAL_MINUTES` minutos, `agenda.googleSync.js#sincronizar()` revisa el calendario compartido (`GOOGLE_CALENDAR_ID`) y, para cualquier evento que el sistema no haya creado él mismo, intenta reconocerlo e importarlo como cita de Consultas (`agenda.reservasExternas.js`).
+
+**Variables de entorno** (todas opcionales — sin ellas, la sincronización simplemente no corre; ver `isGoogleSyncConfigured()` en `src/config/googleCalendar.js`):
+
+```
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
+GOOGLE_CALENDAR_ID=
+GOOGLE_SYNC_INTERVAL_MINUTES=10   # opcional, default 10
+```
+
+**Datos obligatorios en la página de reservas de Google** — si se edita o se recrea la página, hay que dejarla exactamente así, o las reservas dejan de importarse en silencio (`agenda.reservasExternas.js` las ignora sin avisar si no reconoce el título+descripción):
+
+- **Nombre de la página de reservas**: debe contener el texto `Consultas Veterinarias` (se compara contra el título del evento que crea Google, sin distinguir mayúsculas/minúsculas).
+- **Descripción de la página** (el texto que ve el cliente al agendar): debe incluir textual la oración `Agenda aquí la cita de tu compañero de cuatro patas de forma rápida y sencilla.` — es la señal que distingue esta página de cualquier otra que exista en la misma cuenta de Google (evita importar reservas de otro servicio).
+- **Preguntas personalizadas del formulario**, con estas etiquetas EXACTAS (el sistema busca el texto literal en la descripción del evento):
+  - `Teléfono` — recomendado obligatorio. Se acepta con o sin separadores (`5529000090`, `55-2900-0090`, `55 29 00 00 90`, `55 2900 0090`...), se normaliza a 10 dígitos solo.
+  - `Nombre de la Mascota` — opcional. Si el teléfono ya coincide con un tutor registrado y este nombre coincide con una de sus mascotas (sin distinguir mayúsculas/acentos/espacios), la cita nace ya `confirmada`.
+  - `Motivo de Consulta` — opcional. Se preserva tal cual (no se resume ni se descarta) al inicio del `motivo` de la cita creada.
+
+Si el teléfono no coincide con ningún tutor, o no viene, la cita se importa igual pero `registrada` (pendiente), sin tutor ni mascota — el staff la completa a mano desde el calendario antes de confirmarla.
+
+**Doctor genérico**: toda cita importada se asigna a un doctor "Consultas Omega" / "Generico", vinculado automáticamente al área Consultas. Se auto-provisiona (`agenda.repository.js#obtenerOCrearDoctorConsultasPredeterminado`) la primera vez que se importa una reserva en cada entorno — **no hace falta crearlo a mano** en ningún ambiente (localhost, CI, producción). Por el mismo motivo, **no renombrar ni borrar este doctor**: el sistema busca por `nombre='Consultas Omega' AND apellidos='Generico'` exacto, y si no lo encuentra vuelve a crear uno nuevo (duplicando el catálogo en vez de reusar el vínculo ya hecho con `doctor_area`).
 
 ### Stack tecnológico
 

@@ -93,4 +93,18 @@ router.delete(
   controller.cancelar,
 );
 
+// "Confirmar" una cita 'registrada' (reserva externa ya completada a mano
+// — ver agenda.service.js#confirmar). Mismo permiso que editar: es parte
+// de la misma capacidad de modificar la agenda de esta área, no se
+// inventa un permiso nuevo solo para esta acción.
+router.post(
+  '/agenda/:slug/citas/:id/confirmar',
+  requireAuth,
+  requirePermission((req) => `agenda.${req.params.slug}.editar`),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.attachArea,
+  controller.confirmar,
+);
+
 module.exports = router;

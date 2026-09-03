@@ -15,9 +15,11 @@ const {
   editar,
   cancelar,
   obtener,
+  confirmar,
   CitaValidationError,
   TraslapeError,
   DoctorFueraDeAreaError,
+  CitaNoConfirmableError,
 } = require('../../src/modules/agenda/agenda.service');
 
 const DOCTOR_EN_AREA = { id: 5, nombre: 'Ana', apellidos: 'Pérez' };
@@ -396,5 +398,43 @@ describe('agenda.service.obtener', () => {
     const result = await obtener('no-es-un-numero');
     expect(result).toBeUndefined();
     expect(repository.findById).not.toHaveBeenCalled();
+  });
+});
+
+describe('agenda.service.confirmar', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('caso exitoso: cita registrada con mascota ya asignada -> delega en repository.confirmar', async () => {
+    repository.findById.mockResolvedValue({ id: 7, estado: 'registrada', mascota_id: 50 });
+
+    await confirmar('7', 42);
+
+    expect(repository.confirmar).toHaveBeenCalledWith(7, 42);
+  });
+
+  it('un id inválido no truena y no llega al repository', async () => {
+    await confirmar('no-es-un-numero', 42);
+    expect(repository.findById).not.toHaveBeenCalled();
+    expect(repository.confirmar).not.toHaveBeenCalled();
+  });
+
+  it('un id inexistente no truena y no llega a repository.confirmar', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    await confirmar('7', 42);
+    expect(repository.confirmar).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una cita que no está en estado registrada (ya confirmada)', async () => {
+    repository.findById.mockResolvedValue({ id: 7, estado: 'confirmada', mascota_id: 50 });
+
+    await expect(confirmar('7', 42)).rejects.toThrow(CitaNoConfirmableError);
+    expect(repository.confirmar).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una cita registrada que todavía no tiene mascota asignada', async () => {
+    repository.findById.mockResolvedValue({ id: 7, estado: 'registrada', mascota_id: null });
+
+    await expect(confirmar('7', 42)).rejects.toThrow(CitaNoConfirmableError);
+    expect(repository.confirmar).not.toHaveBeenCalled();
   });
 });

@@ -14,9 +14,14 @@ function baseQuery(areaId) {
   return db('citas as c').where('c.area_id', areaId).andWhereNot('c.estado', 'cancelada');
 }
 
+// LEFT JOIN en mascotas (no INNER): una cita de reserva_externa sin match
+// puede nacer con mascota_id null (ver agenda.reservasExternas.js) y
+// TIENE que seguir apareciendo en el feed/resumen del día para que el
+// staff la vea y la complete — un INNER JOIN la haría desaparecer del
+// calendario por completo.
 function conDetalle(query) {
   return query
-    .join('mascotas as m', 'm.id', 'c.mascota_id')
+    .leftJoin('mascotas as m', 'm.id', 'c.mascota_id')
     .join('doctores as d', 'd.id', 'c.doctor_id')
     .select(
       'c.id',
@@ -157,15 +162,41 @@ async function findPendientesDePush(ahora) {
     .select('c.id');
 }
 
+// Ventana de gracia tras crear una cita antes de que entre a la
+// reconciliación de abajo — bug real encontrado en vivo: si dos procesos
+// del servidor corren a la vez (pasó varias veces en este entorno de
+// desarrollo — dos `pnpm run dev` sueltos), cada uno arma su propio
+// eventosPorCitaId con SU PROPIO events.list(), tomado en un momento
+// distinto. Una cita reserva_externa recién importada en el proceso A
+// (con su citaId ya puesto en Google) puede no aparecer todavía en el
+// snapshot que el proceso B tomó unos milisegundos antes — B la cancela
+// creyendo que "desapareció de Google", cuando en realidad nunca llegó a
+// verla. citasImportadasEsteCiclo en agenda.googleSync.js ya protege
+// contra esto DENTRO de un mismo proceso; esta ventana (2 min) protege
+// entre procesos distintos, dándole tiempo a cualquier push en curso de
+// terminar antes de que la reconciliación la toque.
+const VENTANA_GRACIA_TRAS_CREAR_MS = 2 * 60 * 1000;
+
 // Citas ya reflejadas en Google — para diffear contra lo que reporta el
 // pull (agenda.googleSync.js#sincronizar) y detectar cancelaciones o
 // reagendados hechos directo ahí. Solo futuras y no canceladas de este
 // lado (una ya cancelada aquí no tiene nada que reconciliar).
+//
+// mascota_id IS NOT NULL a propósito (bug real encontrado en vivo): una
+// reserva externa (agenda.reservasExternas.js) sin mascota nace CON
+// google_event_id (es el evento que la originó) pero pushCita() nunca la
+// tagea con nuestro citaId (findByIdParaSync tiene el mismo INNER JOIN en
+// mascotas, así que la ignora hasta que tenga mascota) — sin este filtro,
+// este query la marcaba como "sincronizada" igual, no la encontraba en
+// eventosPorCitaId (nunca se tageó) y la cancelaba sola en el mismo ciclo
+// en el que se acababa de importar.
 async function findSincronizadasFuturas(ahora) {
   return db('citas')
     .whereNotNull('google_event_id')
+    .whereNotNull('mascota_id')
     .andWhereNot('estado', 'cancelada')
     .andWhere('fecha_hora_inicio', '>=', ahora)
+    .andWhere('creado_en', '<', new Date(ahora.getTime() - VENTANA_GRACIA_TRAS_CREAR_MS))
     .select(
       'id',
       'google_event_id',
@@ -269,6 +300,102 @@ async function cancelar(id, usuarioId) {
   });
 }
 
+// agenda.reservasExternas.js: evita re-importar el mismo evento de Google
+// en cada ciclo de sincronizar() — cualquier cita (de cualquier origen) ya
+// trae el id del evento que la originó en google_event_id.
+async function findByGoogleEventId(googleEventId) {
+  return db('citas').where({ google_event_id: googleEventId }).first();
+}
+
+// agenda.reservasExternas.js: doctor fijo por default para reservas
+// externas de Consultas — se crea perezosamente aquí, NUNCA en una
+// migración (rompería doctores.test.js, que asume esa tabla vacía en todo
+// entorno, incluido test — el job de sincronización que llega hasta aquí
+// nunca corre en NODE_ENV=test, así que esto jamás se ejecuta ahí).
+// Idempotente: si el usuario ya lo creó a mano (como en localhost antes
+// de este cambio), lo reusa tal cual, igual que su vínculo con Consultas
+// vía doctor_area.
+async function obtenerOCrearDoctorConsultasPredeterminado() {
+  let doctor = await db('doctores')
+    .where({ nombre: 'Consultas Omega', apellidos: 'Generico' })
+    .first();
+
+  if (!doctor) {
+    const [row] = await db('doctores')
+      .insert({
+        nombre: 'Consultas Omega',
+        apellidos: 'Generico',
+        activo: true,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    doctor = { id: row.id };
+  }
+
+  const area = await db('areas').where({ slug: 'consultas' }).first();
+  if (area) {
+    const yaVinculado = await db('doctor_area')
+      .where({ doctor_id: doctor.id, area_id: area.id })
+      .first();
+    if (!yaVinculado) {
+      await db('doctor_area').insert({ doctor_id: doctor.id, area_id: area.id });
+    }
+  }
+
+  return doctor;
+}
+
+// Alta desde una reserva externa (Google Calendar Appointment Scheduling,
+// ver agenda.reservasExternas.js) — a diferencia de create() (alta desde
+// el portal), mascotaId/propietarioId pueden venir null (no se pudo
+// matchear el teléfono/nombre de mascota contra el sistema) y estado no
+// siempre es 'confirmada': viene resuelto de antes, según qué tanto se
+// pudo matchear. Sin usuarioId real (nadie del staff la creó) — creado_por
+// se queda null.
+async function crearDesdeReservaExterna({
+  areaId,
+  doctorId,
+  mascotaId,
+  propietarioId,
+  fechaHoraInicio,
+  duracionMinutos,
+  motivo,
+  estado,
+  googleEventId,
+}) {
+  const [row] = await db('citas')
+    .insert({
+      area_id: areaId,
+      doctor_id: doctorId,
+      mascota_id: mascotaId,
+      propietario_id: propietarioId,
+      fecha_hora_inicio: fechaHoraInicio,
+      duracion_minutos: duracionMinutos,
+      motivo,
+      estado,
+      origen: 'reserva_externa',
+      google_event_id: googleEventId,
+      creado_en: db.fn.now(),
+      ...(estado === 'confirmada' ? { confirmada_en: db.fn.now() } : {}),
+    })
+    .returning('id');
+  return row.id;
+}
+
+// "Confirmar": única transición de estado que existe hoy además de
+// cancelar — pasa una cita 'registrada' (nacida de una reserva externa sin
+// match completo, ya completada a mano por el staff vía editar()) a
+// 'confirmada'. Nunca toca mascota_id/doctor_id/fecha — eso ya lo hizo
+// editar() antes, son acciones separadas (mismo criterio que el resto del
+// módulo).
+async function confirmar(id, usuarioId) {
+  await db('citas').where({ id }).update({
+    estado: 'confirmada',
+    confirmada_por: usuarioId,
+    confirmada_en: db.fn.now(),
+  });
+}
+
 module.exports = {
   findEnRango,
   findOcupadoPorDoctor,
@@ -284,4 +411,8 @@ module.exports = {
   create,
   update,
   cancelar,
+  findByGoogleEventId,
+  obtenerOCrearDoctorConsultasPredeterminado,
+  crearDesdeReservaExterna,
+  confirmar,
 };

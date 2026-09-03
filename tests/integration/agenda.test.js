@@ -379,3 +379,41 @@ describe('GET /agenda/:slug/citas/ocupado.json (bloques "ocupado" del doctor fil
     expect(res.status).toBe(302);
   });
 });
+
+// "Confirmar" (agenda.reservasExternas.js/agenda.service.js#confirmar) —
+// mismo criterio ya establecido en el encabezado de este archivo: nada
+// que dependa de una cita real completa (con doctor/mascota reales) se
+// prueba aquí (esta acción ni siquiera podría probarse sin insertar en
+// `doctores`, algo que este archivo nunca hace) — el rechazo por estado/
+// mascota faltante y el caso exitoso ya están cubiertos a nivel unitario
+// en agenda.service.test.js (repository mockeado). Aquí solo se cubren
+// permisos/forma, con un id que no existe.
+describe('POST /agenda/:slug/citas/:id/confirmar (permiso .editar)', () => {
+  it('una cita inexistente responde 404', async () => {
+    const agent = await loginAs(SOLO_EDITAR);
+    const csrfToken = await getAgendaCsrfToken(agent, 'cirugias');
+
+    const res = await agent
+      .post('/agenda/cirugias/citas/999999999/confirmar')
+      .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('un usuario con SOLO agenda.cirugias.ver no puede confirmar', async () => {
+    const agent = await loginAs(SOLO_VER);
+
+    const res = await agent.post('/agenda/cirugias/citas/999999999/confirmar');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('sin token CSRF es rechazado', async () => {
+    const agent = await loginAs(SOLO_EDITAR);
+
+    const res = await agent.post('/agenda/cirugias/citas/999999999/confirmar');
+
+    expect(res.status).toBe(403);
+  });
+});

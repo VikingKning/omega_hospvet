@@ -38,6 +38,16 @@ class DoctorFueraDeAreaError extends Error {
   }
 }
 
+// Solo aplica a citas 'registrada' (nacidas de una reserva externa sin
+// match completo, ver agenda.reservasExternas.js) — nunca a 'confirmada'
+// (ya está confirmada) ni 'cancelada'.
+class CitaNoConfirmableError extends Error {
+  constructor(message) {
+    super(message);
+    this.status = 400;
+  }
+}
+
 // Presets fijos del <select> de duración del formulario — whitelist real,
 // no solo una sugerencia visual (mismo criterio que cualquier <select> de
 // este sistema: nunca se confía en que el cliente mande uno de estos
@@ -251,6 +261,30 @@ async function obtener(rawId) {
   return repository.findById(id);
 }
 
+// "Confirmar": transición 'registrada' -> 'confirmada' para una cita
+// importada de una reserva externa que el staff ya completó a mano (le
+// asignó mascota vía editar(), acción separada — ver comentario de
+// editar() arriba). Un id inválido/inexistente no truena (mismo criterio
+// permisivo que cancelar()); una cita que no está 'registrada', o que
+// sigue sin mascota_id, sí rechaza — es la única validación real de esta
+// acción.
+async function confirmar(rawId, usuarioId) {
+  const id = parseId(rawId);
+  if (id === null) return;
+
+  const cita = await repository.findById(id);
+  if (!cita) return;
+
+  if (cita.estado !== 'registrada') {
+    throw new CitaNoConfirmableError('Esta cita no está pendiente de confirmar.');
+  }
+  if (cita.mascota_id === null) {
+    throw new CitaNoConfirmableError('Completa la mascota antes de confirmar la cita.');
+  }
+
+  await repository.confirmar(id, usuarioId);
+}
+
 module.exports = {
   resolverArea,
   listarDoctoresDelArea,
@@ -261,7 +295,9 @@ module.exports = {
   editar,
   cancelar,
   obtener,
+  confirmar,
   CitaValidationError,
   TraslapeError,
   DoctorFueraDeAreaError,
+  CitaNoConfirmableError,
 };

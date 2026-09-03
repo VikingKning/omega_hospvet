@@ -1,16 +1,21 @@
 // Sincronización con Google Calendar — pedido explícito del usuario: push
 // inmediato (best-effort, nunca bloquea al usuario) al crear/editar/
 // cancelar una cita, más un pull periódico (job en src/jobs/) que revisa
-// Google Calendar y refleja acá SOLO cancelaciones y reagendados hechos
-// directo ahí (nunca importa eventos nuevos creados directo en Google —
-// no hay cómo mapear doctor/mascota/área). Una sola cuenta/calendario para
-// las 8 áreas, distinguidas por el colorId del evento
-// (areas.color_google_calendar YA es ese colorId real).
+// Google Calendar y refleja acá cancelaciones/reagendados hechos directo
+// ahí, Y (agregado después, ver agenda.reservasExternas.js) importa
+// reservas nuevas hechas por el cliente vía la página de reservas de
+// Google Calendar de Consultas — el resto de eventos creados directo en
+// Google (sin la señal de ese formulario) se siguen ignorando por
+// completo, sigue sin haber forma de mapearlos a doctor/mascota/área.
+// Una sola cuenta/calendario para las 8 áreas, distinguidas por el
+// colorId del evento (areas.color_google_calendar YA es ese colorId
+// real).
 const logger = require('../../config/logger');
 const { getCalendarClient, isGoogleSyncConfigured } = require('../../config/googleCalendar');
 const env = require('../../config/env');
 const repository = require('./agenda.repository');
 const { findColor } = require('../areas/googleCalendarColors');
+const { importarReserva } = require('./agenda.reservasExternas');
 
 function esErrorEventoInexistente(err) {
   const status = err.code ?? err.response?.status;
@@ -112,13 +117,36 @@ async function sincronizar() {
     });
 
     const eventosPorCitaId = new Map();
+    // Bug real encontrado en vivo: eventosPorCitaId es un snapshot de
+    // ANTES de que exista cualquier cita que se importe en este mismo
+    // ciclo — aunque importarReserva()+pushCita() la etiqueten con
+    // citaId en Google en el momento, ese cambio nunca aparece en ESTE
+    // snapshot ya tomado. Sin este Set, la reconciliación de abajo
+    // concluía "esta cita tiene google_event_id pero no aparece en el
+    // snapshot -> debió borrarse en Google" y la cancelaba sola, en el
+    // mismo ciclo en el que se acababa de crear.
+    const citasImportadasEsteCiclo = new Set();
     for (const evento of data.items ?? []) {
       const citaId = evento.extendedProperties?.private?.citaId;
-      if (citaId) eventosPorCitaId.set(Number(citaId), evento);
+      if (citaId) {
+        eventosPorCitaId.set(Number(citaId), evento);
+        continue;
+      }
+      // Sin citaId: no lo creamos nosotros. Puede ser una reserva de la
+      // página de Consultas (importarReserva reconoce la señal del
+      // formulario y la ignora en silencio si no aplica) — secuencial,
+      // mismo criterio que el resto del ciclo, y nunca lanza.
+      const nuevaCitaId = await importarReserva(evento);
+      if (nuevaCitaId) {
+        citasImportadasEsteCiclo.add(nuevaCitaId);
+        await pushCita(nuevaCitaId);
+      }
     }
 
     const sincronizadas = await repository.findSincronizadasFuturas(ahora);
     for (const cita of sincronizadas) {
+      if (citasImportadasEsteCiclo.has(cita.id)) continue;
+
       // Conflicto: si ya hay una edición local sin sincronizar todavía
       // (más reciente que el último sync), esa gana — findPendientesDePush
       // ya se encarga de reempujarla, no se toca nada aquí.

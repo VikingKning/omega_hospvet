@@ -3,6 +3,23 @@ const tutoresService = require('../tutores/tutores.service');
 const { generateCsrfToken } = require('../../config/csrf');
 const { findColor } = require('../areas/googleCalendarColors');
 
+// Tutor a precargar en cita-form.ejs (pedido explícito del usuario: tutor
+// primero, mascota después) — se deriva, en orden de preferencia: 1) del
+// propietario de la mascota ya elegida (edición, o re-render tras un
+// error con mascotaId ya en el body); 2) de citas.propietario_id (reserva
+// externa ya matcheada por teléfono pero sin mascota — así el staff solo
+// tiene que elegir la mascota, ver agenda.reservasExternas.js); 3) null,
+// el formulario abre sin tutor precargado (alta normal).
+async function resolverTutorParaFormulario({ mascotaSeleccionada, propietarioId }) {
+  if (mascotaSeleccionada) {
+    return tutoresService.resolverTutorPorId(mascotaSeleccionada.propietario_id);
+  }
+  if (propietarioId) {
+    return tutoresService.resolverTutorPorId(propietarioId);
+  }
+  return null;
+}
+
 // Resuelve `:slug` contra un área real/activa UNA vez por request y la deja
 // en `req.area` — evita que cada una de las rutas de este módulo repita su
 // propio "buscar área, 404 si no existe" (mismo espíritu que
@@ -46,9 +63,13 @@ async function pagina(req, res, next) {
 function citaAEvento(cita, color) {
   const inicio = new Date(cita.fecha_hora_inicio);
   const fin = new Date(inicio.getTime() + cita.duracion_minutos * 60000);
+  // Una reserva externa (agenda.reservasExternas.js) sin match completo
+  // puede no tener mascota todavía — el título lo deja claro en vez de
+  // mostrar "undefined".
+  const mascotaLabel = cita.mascota_nombre ?? 'Reserva por completar';
   return {
     id: cita.id,
-    title: `${cita.mascota_nombre} — ${cita.doctor_apellidos}, ${cita.doctor_nombre}`,
+    title: `${mascotaLabel} — ${cita.doctor_apellidos}, ${cita.doctor_nombre}`,
     start: inicio.toISOString(),
     end: fin.toISOString(),
     backgroundColor: color.hex ?? undefined,
@@ -129,6 +150,7 @@ async function nuevoForm(req, res, next) {
       cita: null,
       doctores,
       doctorIdSeleccionado,
+      tutorSeleccionado: null,
       mascotaSeleccionada: null,
       fechaHoraInicio: req.query.inicio ?? '',
       duracionMinutos: '',
@@ -159,12 +181,17 @@ async function editarForm(req, res, next) {
       service.listarDoctoresDelArea(req.area.id),
       tutoresService.resolverMascota(cita.mascota_id),
     ]);
+    const tutorSeleccionado = await resolverTutorParaFormulario({
+      mascotaSeleccionada,
+      propietarioId: cita.propietario_id,
+    });
     const csrfToken = generateCsrfToken(req, res);
     res.render('partials/cita-form', {
       area: req.area,
       cita,
       doctores,
       doctorIdSeleccionado: cita.doctor_id,
+      tutorSeleccionado,
       mascotaSeleccionada,
       fechaHoraInicio: new Date(cita.fecha_hora_inicio).toISOString(),
       duracionMinutos: String(cita.duracion_minutos),
@@ -211,11 +238,13 @@ async function crear(req, res, next) {
         service.listarDoctoresDelArea(req.area.id),
         tutoresService.resolverMascota(req.body.mascotaId),
       ]);
+      const tutorSeleccionado = await resolverTutorParaFormulario({ mascotaSeleccionada });
       return res.render('partials/cita-form', {
         area: req.area,
         cita: null,
         doctores,
         doctorIdSeleccionado: req.body.doctorId ?? '',
+        tutorSeleccionado,
         mascotaSeleccionada,
         fechaHoraInicio: req.body.fechaHoraInicio ?? '',
         duracionMinutos: req.body.duracionMinutos ?? '',
@@ -266,11 +295,16 @@ async function editar(req, res, next) {
           service.listarDoctoresDelArea(req.area.id),
           tutoresService.resolverMascota(req.body.mascotaId),
         ]);
+        const tutorSeleccionado = await resolverTutorParaFormulario({
+          mascotaSeleccionada,
+          propietarioId: existing.propietario_id,
+        });
         return res.render('partials/cita-form', {
           area: req.area,
           cita: existing,
           doctores,
           doctorIdSeleccionado: req.body.doctorId ?? '',
+          tutorSeleccionado,
           mascotaSeleccionada,
           fechaHoraInicio: req.body.fechaHoraInicio ?? '',
           duracionMinutos: req.body.duracionMinutos ?? '',
@@ -305,6 +339,70 @@ async function cancelar(req, res, next) {
   }
 }
 
+// POST /agenda/:slug/citas/:id/confirmar — completa Y confirma en un solo
+// paso (pedido explícito del usuario: el botón "Confirmar cita" manda el
+// formulario completo con hx-include, no hace falta un "Guardar" aparte
+// antes — ver cita-form.ejs). Aplica los cambios del formulario (típico:
+// la mascota que el staff acaba de elegir) exactamente igual que editar()
+// — misma validación, mismo manejo de traslape/doctor-fuera-de-área — y
+// solo si eso funciona intenta la transición 'registrada' -> 'confirmada'
+// (agenda.service.js#confirmar). Un error de cualquiera de los dos pasos
+// re-renderiza el mismo formulario con el mensaje, igual que editar().
+async function confirmar(req, res, next) {
+  const csrfToken = generateCsrfToken(req, res);
+  try {
+    const existing = await service.obtener(req.params.id);
+    if (!existing || existing.area_id !== req.area.id) {
+      return res.status(404).send('Cita no encontrada');
+    }
+
+    try {
+      await service.editar({
+        id: req.params.id,
+        areaId: req.area.id,
+        doctorId: req.body.doctorId,
+        mascotaId: req.body.mascotaId,
+        fechaHoraInicio: req.body.fechaHoraInicio,
+        duracionMinutos: req.body.duracionMinutos,
+        motivo: req.body.motivo,
+        usuarioId: req.session.user.id,
+      });
+      await service.confirmar(req.params.id, req.session.user.id);
+    } catch (err) {
+      if (err.status) {
+        const [doctores, mascotaSeleccionada] = await Promise.all([
+          service.listarDoctoresDelArea(req.area.id),
+          tutoresService.resolverMascota(req.body.mascotaId),
+        ]);
+        const tutorSeleccionado = await resolverTutorParaFormulario({
+          mascotaSeleccionada,
+          propietarioId: existing.propietario_id,
+        });
+        return res.render('partials/cita-form', {
+          area: req.area,
+          cita: existing,
+          doctores,
+          doctorIdSeleccionado: req.body.doctorId ?? '',
+          tutorSeleccionado,
+          mascotaSeleccionada,
+          fechaHoraInicio: req.body.fechaHoraInicio ?? '',
+          duracionMinutos: req.body.duracionMinutos ?? '',
+          motivo: req.body.motivo ?? '',
+          error: err.message,
+          soloLectura: false,
+          csrfToken,
+          user: req.session.user,
+        });
+      }
+      throw err;
+    }
+
+    return renderExito(req, res);
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   attachArea,
   pagina,
@@ -315,4 +413,5 @@ module.exports = {
   crear,
   editar,
   cancelar,
+  confirmar,
 };

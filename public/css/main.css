@@ -747,6 +747,17 @@ body:has(.app)::after {
   cursor: pointer;
 }
 
+/* Reserva externa (agenda.reservasExternas.js) sin match completo,
+   estado='registrada' — pedido explícito del usuario: se ve distinto en
+   el calendario para que el staff note que hace falta completarla/
+   confirmarla, en vez de mezclarse con las citas ya confirmadas. Mismo
+   var(--warning) que .status-badge.is-warning en el resto del sistema
+   (mismo significado: "pendiente"). El tooltip reusa la regla transversal
+   [data-tooltip] ya definida más abajo en este archivo. */
+.agenda-calendar-wrap .fc-event.fc-event-pendiente-confirmar {
+  border: 2px dashed var(--warning);
+}
+
 /* Bloques "ocupado" (pedido explícito del usuario): ni se pueden
    seleccionar (selectOverlap en agenda.ejs) ni tiene caso que el cursor
    invite a hacerlo — su [data-tooltip]="No disponible" (agenda.ejs) usa la
@@ -1000,6 +1011,13 @@ body:has(.app)::after {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Botón "Confirmar cita" deshabilitado (cita-form.ejs) trae su propio
+   [data-tooltip] explicando por qué — mismo motivo que .status-badge[data-tooltip]
+   más abajo: .btn-primary no tiene position:relative por default. */
+.btn-primary[data-tooltip] {
+  position: relative;
 }
 
 .btn-primary svg {
@@ -2275,6 +2293,23 @@ body:has(.app)::after {
   gap: 14px;
 }
 
+/* Agenda: cita-form.ejs (pedido explícito del usuario) — filas de 2 y de 3
+   campos para que el formulario quepa sin scroll dentro del modal. Mismo
+   grid que .profile-form-row (perfil-form.ejs/perfil-password-form.ejs),
+   con su propio nombre a propósito: son módulos distintos, mismo criterio
+   ya usado entre tutor-form-*/lab-form-* aunque el CSS sea equivalente. */
+.cita-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.cita-form-row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+
 .modal-col-datos {
   flex: 0 1 300px;
 }
@@ -3333,6 +3368,16 @@ body:has(.app)::after {
    HTML. */
 @media (max-width: 768px) {
   .profile-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Agenda: cita-form.ejs en mobile, mismo breakpoint/criterio que
+   .profile-form-row de arriba — el modal ya no tiene ancho para 2/3
+   columnas, se apila en una sola. */
+@media (max-width: 768px) {
+  .cita-form-row,
+  .cita-form-row-3 {
     grid-template-columns: 1fr;
   }
 }

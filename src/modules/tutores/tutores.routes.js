@@ -85,6 +85,29 @@ router.post(
   controller.buscarMascota,
 );
 
+// Agenda: combobox de "Tutor" del formulario de citas (pedido explícito
+// del usuario — tutor primero: buscar por teléfono o por nombre, y una
+// vez elegido, la Mascota se limita a sus pacientes) — mismo criterio de
+// permiso que buscar-mascota arriba. buscarTutorTelefono delega en
+// tutores.service.js#resolverTutorActivoPorTelefono (ya devuelve
+// `pacientes`, el mismo que usa laboratorio.controller.js#buscarTutor).
+router.post(
+  '/tutores/buscar-tutor-telefono',
+  requireAuth,
+  requirePermission((req) => `agenda.${req.body.slug}.crear`),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.buscarTutorTelefono,
+);
+router.post(
+  '/tutores/buscar-tutor-nombre',
+  requireAuth,
+  requirePermission((req) => `agenda.${req.body.slug}.crear`),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.buscarTutorNombre,
+);
+
 // US-157 (ajuste posterior, pedido del usuario): chequeo exacto del
 // teléfono al salir del campo (blur) en el alta — a diferencia de la
 // búsqueda de arriba (parcial, solo activos), este SÍ revela un

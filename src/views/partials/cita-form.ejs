@@ -15,6 +15,11 @@ const esEdicion = Boolean(cita);
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 const puedeCancelar = has(`agenda.${area.slug}.cancelar`);
+// Reserva externa (agenda.reservasExternas.js) sin match completo, ya
+// completada a mano por el staff — mismo permiso que editar (no se
+// inventa uno nuevo solo para esta acción, ver agenda.routes.js).
+const puedeConfirmar = has(`agenda.${area.slug}.editar`);
+const esConfirmable = esEdicion && cita.estado === 'registrada';
 // Pedido explícito del usuario: una cita que ya pasó no se puede editar
 // (evita "agenciarse" citas ya ocurridas cambiando doctor/mascota/motivo a
 // posteriori) — el formulario se abre en solo lectura en vez de no abrir
@@ -27,9 +32,17 @@ const DURACIONES = [15, 30, 45, 60, 90];
 const doctorIdSel = String(doctorIdSeleccionado ?? '');
 const doctorSeleccionado = doctores.find((d) => String(d.id) === doctorIdSel);
 const doctorLabel = doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : '';
-const mascotaLabel = mascotaSeleccionada
-  ? `${mascotaSeleccionada.nombre} (${mascotaSeleccionada.propietario_nombre} ${mascotaSeleccionada.propietario_apellidos})`
-  : '';
+// Pedido explícito del usuario: el tutor se busca y se elige ANTES que la
+// mascota (mismo patrón que laboratorio-form.ejs) — así, cuando una reserva
+// externa de Google Calendar (agenda.reservasExternas.js) ya trae el
+// teléfono matcheado pero no la mascota, el staff solo tiene que elegir el
+// paciente. El nombre de la mascota ya no repite tutor/apellidos (ahora
+// viven en su propio campo, arriba).
+const hayTutor = Boolean(tutorSeleccionado);
+const tutorLabel = hayTutor ? `${tutorSeleccionado.nombre} ${tutorSeleccionado.apellidos}` : '';
+const tutorTelefonoLabel = hayTutor ? tutorSeleccionado.telefono : '';
+const mascotaLabel = mascotaSeleccionada ? mascotaSeleccionada.nombre : '';
+const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
 %>
 <div class="modal-header">
   <h2><%= esSoloLectura ? 'Detalle de la cita' : (esEdicion ? 'Editar cita' : 'Nueva cita') %></h2>
@@ -49,31 +62,75 @@ const mascotaLabel = mascotaSeleccionada
   </div>
 <% } %>
 
-<form class="modal-form" id="citaForm"
+<% if (esConfirmable) { %>
+  <div class="form-info-banner">
+    <span>Reserva pendiente de confirmar (viene de la página de reservas en línea).<%= cita.mascota_id ? '' : ' Selecciona la mascota y da clic en Confirmar cita.' %></span>
+  </div>
+<% } %>
+
+<form class="modal-form" id="citaForm" data-area-slug="<%= area.slug %>"
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `agenda/${area.slug}/citas/${cita.id}` : `agenda/${area.slug}/citas` %>"
       hx-target="#citaFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
-  <label>
-    Mascota (paciente)
-    <div class="combobox" id="citaMascotaCombobox" data-area-slug="<%= area.slug %>">
-      <input type="text" id="citaMascotaInput" autocomplete="off" required <%= disabledAttr %>
-             placeholder="Buscar por mascota, dueño o teléfono..." value="<%= mascotaLabel %>">
-      <ul class="combobox-list" id="citaMascotaList" hidden></ul>
-    </div>
-    <input type="hidden" name="mascotaId" id="citaMascotaId" value="<%= mascotaSeleccionada ? mascotaSeleccionada.id : '' %>">
-  </label>
+  <%
+  // Pedido explícito del usuario: 2 columnas por fila (Teléfono+Tutor,
+  // Mascota+Doctor) y una fila de 3 (Fecha/Hora/Duración) para que el
+  // formulario quepa sin scroll — mismo grid que .profile-form-row
+  // (perfil-form.ejs/perfil-password-form.ejs), pero con su propio nombre
+  // (`.cita-form-row*`): son módulos distintos, mismo criterio ya usado
+  // entre tutor-form-*/lab-form-* aunque el CSS sea equivalente.
+  %>
+  <div class="cita-form-row">
+    <label>
+      Teléfono del tutor
+      <input type="text" id="citaTutorTelefono" placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off"
+             pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12"
+             title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)"
+             <%= disabledAttr %> value="<%= tutorTelefonoLabel %>">
+    </label>
 
-  <label>
-    Doctor
-    <div class="combobox" id="citaDoctorCombobox">
-      <input type="text" id="citaDoctorInput" autocomplete="off" required <%= disabledAttr %>
-             placeholder="Buscar doctor..." value="<%= doctorLabel %>">
-      <ul class="combobox-list" id="citaDoctorList" hidden></ul>
-    </div>
-    <input type="hidden" name="doctorId" id="citaDoctorId" value="<%= doctorIdSel %>">
-  </label>
+    <label>
+      Tutor
+      <div class="combobox" id="citaTutorNombreCombobox">
+        <input type="text" id="citaTutorNombreInput" autocomplete="off" placeholder="Buscar por nombre..." <%= disabledAttr %> value="<%= tutorLabel %>">
+        <ul class="combobox-list" id="citaTutorNombreList" hidden></ul>
+      </div>
+    </label>
+  </div>
 
-  <div class="modal-form-columns">
+  <%
+  // Isla de datos JSON (nunca un <script> — HTMX lo borraría al hacer swap
+  // del modal): las mascotas del tutor precargado, para que el JS de
+  // agenda.ejs pueda repoblar #citaMascotaList sin pedirlas de nuevo al
+  // servidor cada vez que se reabre el combobox.
+  %>
+  <div id="citaTutorData" hidden><%- JSON.stringify(tutorSeleccionado).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
+
+  <div class="cita-form-row">
+    <label>
+      Mascota (paciente)
+      <div class="combobox" id="citaMascotaCombobox">
+        <input type="text" id="citaMascotaTrigger" class="select-trigger-input" readonly autocomplete="off" required
+               <%= mascotaTriggerDisabledAttr %>
+               placeholder="<%= hayTutor ? 'Selecciona un paciente...' : 'Primero busca al tutor por teléfono o nombre' %>"
+               value="<%= mascotaLabel %>">
+        <ul class="combobox-list" id="citaMascotaList" hidden></ul>
+      </div>
+      <input type="hidden" name="mascotaId" id="citaMascotaId" value="<%= mascotaSeleccionada ? mascotaSeleccionada.id : '' %>">
+    </label>
+
+    <label>
+      Doctor
+      <div class="combobox" id="citaDoctorCombobox">
+        <input type="text" id="citaDoctorInput" autocomplete="off" required <%= disabledAttr %>
+               placeholder="Buscar doctor..." value="<%= doctorLabel %>">
+        <ul class="combobox-list" id="citaDoctorList" hidden></ul>
+      </div>
+      <input type="hidden" name="doctorId" id="citaDoctorId" value="<%= doctorIdSel %>">
+    </label>
+  </div>
+
+  <div class="cita-form-row-3">
     <label>
       Fecha
       <input type="date" id="citaFecha" required <%= disabledAttr %>>
@@ -82,18 +139,17 @@ const mascotaLabel = mascotaSeleccionada
       Hora
       <input type="time" id="citaHora" required <%= disabledAttr %>>
     </label>
+    <label>
+      Duración
+      <select name="duracionMinutos" id="citaDuracion" required <%= disabledAttr %>>
+        <option value="" disabled <%= duracionMinutos ? '' : 'selected' %>>Selecciona...</option>
+        <% DURACIONES.forEach((min) => { %>
+          <option value="<%= min %>" <%= String(min) === String(duracionMinutos) ? 'selected' : '' %>><%= min %> min</option>
+        <% }) %>
+      </select>
+    </label>
   </div>
   <input type="hidden" name="fechaHoraInicio" id="citaFechaHoraInicio" value="<%= fechaHoraInicio %>">
-
-  <label>
-    Duración
-    <select name="duracionMinutos" id="citaDuracion" required <%= disabledAttr %>>
-      <option value="" disabled <%= duracionMinutos ? '' : 'selected' %>>Selecciona...</option>
-      <% DURACIONES.forEach((min) => { %>
-        <option value="<%= min %>" <%= String(min) === String(duracionMinutos) ? 'selected' : '' %>><%= min %> min</option>
-      <% }) %>
-    </select>
-  </label>
 
   <label>
     Motivo
@@ -109,8 +165,27 @@ const mascotaLabel = mascotaSeleccionada
         Cancelar cita
       </button>
     <% } %>
+    <% if (esConfirmable && puedeConfirmar) { %>
+      <%
+        // "Confirmar cita" manda el <form> completo (hx-include) y hace
+        // guardar+confirmar en un solo paso del lado del servidor — pedido
+        // explícito del usuario: antes había que Guardar, volver a abrir la
+        // cita, y HASTA ENTONCES aparecía habilitado Confirmar, lo cual no
+        // tenía sentido para completar una reserva pendiente. El disabled
+        // inicial refleja el estado ya guardado (cita.mascota_id); el JS de
+        // agenda.ejs lo actualiza en vivo en cuanto se elige una mascota en
+        // el combobox de arriba, sin esperar a guardar primero.
+      %>
+      <button type="button" class="btn-primary" id="citaFormConfirmar"
+              <%= cita.mascota_id ? '' : 'disabled data-tooltip="Selecciona la mascota primero"' %>
+              hx-post="agenda/<%= area.slug %>/citas/<%= cita.id %>/confirmar"
+              hx-include="#citaForm"
+              hx-target="#citaFormModalBody" hx-swap="innerHTML">
+        Confirmar cita
+      </button>
+    <% } %>
     <button type="button" class="btn-secondary" id="citaFormCancel">Cerrar</button>
-    <% if (!esSoloLectura) { %>
+    <% if (!esSoloLectura && !esConfirmable) { %>
       <button type="submit" class="btn-primary">Guardar</button>
     <% } %>
   </div>

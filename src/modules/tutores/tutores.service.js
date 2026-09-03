@@ -603,6 +603,27 @@ async function obtenerPacientesConEdad(propietarioId) {
   return pacientesConEdad(pacientes);
 }
 
+// Agenda: precarga del tutor de una reserva externa (agenda.reservasExternas.js)
+// ya matcheada por teléfono pero sin mascota todavía (citas.propietario_id) —
+// mismo criterio que obtenerPacientesConEdad de arriba (el vínculo ya
+// existe, se muestra tal cual aunque el tutor esté inactivo, nunca por
+// teléfono). Mismo shape de salida que resolverTutorActivoPorTelefono
+// (incluye `pacientes`, filtrados a activos) para que el cliente pueda
+// reusar exactamente el mismo render.
+async function resolverTutorPorId(propietarioId) {
+  const existente = await repository.findById(propietarioId);
+  if (!existente) return null;
+  const pacientes = await repository.findMascotasByPropietarioId(existente.id);
+  return {
+    id: existente.id,
+    nombre: existente.nombre,
+    apellidos: existente.apellidos,
+    telefono: formatTelefono(existente.telefono),
+    correo: existente.correo,
+    pacientes: pacientesConEdad(pacientes).filter((p) => p.activo),
+  };
+}
+
 // US-157: baja lógica (activo=false + desactivado_por/desactivado_en),
 // nunca un DELETE físico — mismo criterio permisivo que el resto de los
 // módulos: un id inválido/inexistente no truena, simplemente no hace nada.
@@ -622,6 +643,7 @@ module.exports = {
   resolverMascota,
   verificarTelefono,
   resolverTutorActivoPorTelefono,
+  resolverTutorPorId,
   buscarActivosPorNombre,
   obtenerPacientesConEdad,
   desactivar,

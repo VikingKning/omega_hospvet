@@ -17,6 +17,7 @@ const {
   buscarPorTelefono,
   buscarMascotas,
   verificarTelefono,
+  resolverTutorPorId,
   TutorValidationError,
   RequiereConfirmacionReactivacionError,
 } = require('../../src/modules/tutores/tutores.service');
@@ -691,5 +692,50 @@ describe('tutores.service.verificarTelefono (ajuste posterior: chequeo exacto en
     const result = await verificarTelefono(undefined);
     expect(result).toEqual({ existe: false });
     expect(repository.findByTelefono).toHaveBeenCalledWith('');
+  });
+});
+
+// Agenda: precarga del tutor de una reserva externa ya matcheada por
+// teléfono pero sin mascota todavía (citas.propietario_id, ver
+// agenda.controller.js#resolverTutorParaFormulario y
+// agenda.reservasExternas.js) — a diferencia de
+// resolverTutorActivoPorTelefono, aquí el vínculo ya existe (se busca por
+// id, no por teléfono) y se muestra tal cual aunque el tutor esté
+// inactivo, mismo criterio que obtenerPacientesConEdad.
+describe('tutores.service.resolverTutorPorId (agenda: precarga de tutor por propietario_id)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('sin coincidencia, devuelve null y no consulta mascotas', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    const result = await resolverTutorPorId(999);
+    expect(result).toBeNull();
+    expect(repository.findMascotasByPropietarioId).not.toHaveBeenCalled();
+  });
+
+  it('devuelve el tutor con su teléfono formateado y solo sus mascotas activas', async () => {
+    repository.findById.mockResolvedValue(TUTOR);
+    const mascotaInactiva = { ...MASCOTA_B, id: 12, activo: false };
+    repository.findMascotasByPropietarioId.mockResolvedValue([MASCOTA_A, mascotaInactiva]);
+
+    const result = await resolverTutorPorId(TUTOR.id);
+
+    expect(repository.findMascotasByPropietarioId).toHaveBeenCalledWith(TUTOR.id);
+    expect(result).toEqual({
+      id: TUTOR.id,
+      nombre: TUTOR.nombre,
+      apellidos: TUTOR.apellidos,
+      telefono: '55-5123-4567',
+      correo: TUTOR.correo,
+      pacientes: [{ ...MASCOTA_A, edad: 7 }],
+    });
+  });
+
+  it('un tutor inactivo también se resuelve (el vínculo ya existe, no es un alta nueva)', async () => {
+    repository.findById.mockResolvedValue({ ...TUTOR, activo: false });
+    repository.findMascotasByPropietarioId.mockResolvedValue([]);
+
+    const result = await resolverTutorPorId(TUTOR.id);
+
+    expect(result).toEqual(expect.objectContaining({ id: TUTOR.id, pacientes: [] }));
   });
 });

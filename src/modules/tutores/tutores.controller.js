@@ -153,6 +153,30 @@ async function verificarTelefono(req, res, next) {
   }
 }
 
+// Agenda: combobox de "Tutor" del formulario de citas (pedido explícito
+// del usuario — tutor primero, después mascota) — mismo patrón que
+// buscarTutor/buscarTutorPorNombre de laboratorio.controller.js, ambos ya
+// delegados en las mismas funciones de tutores.service.js. Vive aquí (no
+// en agenda.routes.js) por el mismo motivo que buscarMascota: `mascotas`/
+// `propietarios` son tablas de este módulo.
+async function buscarTutorTelefono(req, res, next) {
+  try {
+    const tutor = await service.resolverTutorActivoPorTelefono(req.body.telefono);
+    res.json(tutor ? { existe: true, tutor } : { existe: false });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function buscarTutorNombre(req, res, next) {
+  try {
+    const tutores = await service.buscarActivosPorNombre(req.body.q);
+    res.json({ tutores });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // US-157: baja lógica de un tutor. Igual que doctores.controller.js#
 // desactivar: recibe el estado de filtro/orden/página actual (el ícono lo
 // arrastra vía hx-include del mismo <form>) para que el fragmento devuelto
@@ -183,5 +207,7 @@ module.exports = {
   buscarTelefono,
   buscarMascota,
   verificarTelefono,
+  buscarTutorTelefono,
+  buscarTutorNombre,
   desactivar,
 };
