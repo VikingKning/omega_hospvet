@@ -116,6 +116,7 @@ describe('GET /plantillas.html', () => {
       texto_respuesta: 'Tu cita ha sido confirmada.',
       activo: true,
       veces_usada: 12,
+      aprobado_meta: true,
       creado_en: db.fn.now(),
     });
     await db('plantillas_whatsapp').insert({
@@ -136,24 +137,41 @@ describe('GET /plantillas.html', () => {
     });
   });
 
-  it('AC: la carga inicial tiene "Todos" seleccionado por defecto y lista activas E inactivas, con intención/slug/veces_usada/estado', async () => {
+  it('AC: la carga inicial tiene "Activos" seleccionado por defecto y solo lista activas (cambio explícito del usuario, 2026-09-03), con intención/slug/estado en Meta/estado', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await agent.get('/plantillas.html');
 
     expect(res.status).toBe(200);
     expect(res.text).toContain(`Confirmar cita ${SUFFIX}`);
-    expect(res.text).toContain(`Retirada ${SUFFIX}`); // inactiva, SÍ aparece por defecto (a diferencia de doctores/áreas)
-    expect(res.text).toContain('toggle-btn active'); // el toggle "Todos" trae la clase active por defecto
+    expect(res.text).not.toContain(`Retirada ${SUFFIX}`); // inactiva, ya NO aparece por defecto
+    expect(res.text).toContain('toggle-btn active'); // el toggle "Activos" trae la clase active por defecto
     expect(res.text).toContain(`confirmar-cita-${SUFFIX.toLowerCase()}`); // columna Slug (LLM)
+    expect(res.text).toContain('Estado en Meta');
+    expect(res.text).not.toContain('Veces usada'); // se movió al detalle (ícono Ver), ya no es columna de la tabla
+    expect(res.text).toContain('Aprobado'); // Confirmar cita, aprobado_meta=true
+    expect(res.text).toContain('En revisión'); // Recordatorio vacuna (activa, aprobado_meta=false) — mismo texto que usa Meta
+  });
+
+  it('AC: con el filtro Todos, una plantilla inactiva muestra "N/A" en Estado en Meta, no "En revisión" (nunca se manda mientras esté inactiva)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { estado: 'todos' });
+    const inicioFila = res.text.indexOf(`<td>Retirada ${SUFFIX}</td>`);
+    const filaRetirada = res.text.slice(inicioFila).split('</tr>')[0];
+
+    expect(filaRetirada).toContain('N/A');
+    expect(filaRetirada).not.toContain('En revisión');
   });
 
   it('un GET con query string a mano se ignora por completo (privacidad: nunca se lee ni se refleja)', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-    const res = await agent.get(`/plantillas.html?estado=activos&q=${SUFFIX}`);
+    const res = await agent.get(`/plantillas.html?estado=todos&q=${SUFFIX}`);
 
-    expect(res.text).toContain(`Retirada ${SUFFIX}`); // si leyera estado=activos, no aparecería
+    // Si leyera estado=todos de la URL, Retirada (inactiva) aparecería —
+    // como se ignora, sigue aplicando el default (activos) y no aparece.
+    expect(res.text).not.toContain(`Retirada ${SUFFIX}`);
   });
 
   it('POST con estado=activos EXCLUYE a las inactivas', async () => {
@@ -216,7 +234,11 @@ describe('GET /plantillas.html', () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await filtrarPlantillas(agent, { estado: 'todos' });
-    const filaRetirada = res.text.split(`Retirada ${SUFFIX}`)[1].split('</tr>')[0];
+    // Ancla en la celda <td> exacta, no en el texto suelto de la intención
+    // (que también se repite en el aria-label del ícono Ver de esta misma
+    // fila) — mismo ajuste que el test de "Baja" más abajo.
+    const inicioFila = res.text.indexOf(`<td>Retirada ${SUFFIX}</td>`);
+    const filaRetirada = res.text.slice(inicioFila).split('</tr>')[0];
 
     expect(filaRetirada).not.toContain('row-action-delete');
   });
@@ -288,20 +310,18 @@ describe('GET /plantillas.html', () => {
       expect(idxRecordatorio).toBeLessThan(idxRetirada);
     });
 
-    it('sort=veces_usada ordena numéricamente', async () => {
+    it('sort=estado_meta agrupa pendientes/aprobadas respetando la dirección', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
       const res = await filtrarPlantillas(agent, {
         estado: 'todos',
-        sort: 'veces_usada',
+        sort: 'estado_meta',
         dir: 'asc',
       });
 
-      const idxRetirada = res.text.indexOf(`Retirada ${SUFFIX}`); // 0 usos
-      const idxRecordatorio = res.text.indexOf(`Recordatorio vacuna ${SUFFIX}`); // 3 usos
-      const idxConfirmar = res.text.indexOf(`Confirmar cita ${SUFFIX}`); // 12 usos
-      expect(idxRetirada).toBeLessThan(idxRecordatorio);
-      expect(idxRecordatorio).toBeLessThan(idxConfirmar);
+      const idxRecordatorio = res.text.indexOf(`Recordatorio vacuna ${SUFFIX}`); // aprobado_meta=false
+      const idxConfirmar = res.text.indexOf(`Confirmar cita ${SUFFIX}`); // aprobado_meta=true
+      expect(idxRecordatorio).toBeLessThan(idxConfirmar); // pendiente (false) antes que aprobada (true) en asc
     });
 
     it('sort=estado agrupa por activa/inactiva respetando la dirección', async () => {
@@ -325,7 +345,7 @@ describe('GET /plantillas.html', () => {
   });
 });
 
-describe('GET /plantillas/nuevo y GET /plantillas/:id/editar (US-613 — formulario)', () => {
+describe('GET /plantillas/nuevo, /:id/editar y /:id/ver (US-613 — formulario, y el ícono Ver)', () => {
   let plantillaId;
 
   beforeAll(async () => {
@@ -387,6 +407,44 @@ describe('GET /plantillas/nuevo y GET /plantillas/:id/editar (US-613 — formula
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('AC: el detalle de solo lectura (Ver) trae intención/slug/texto_respuesta/veces_usada/estado/estado en Meta', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/plantillas/${plantillaId}/ver`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Detalle de la plantilla');
+    expect(res.text).toContain(`value="Formulario ${SUFFIX}"`);
+    expect(res.text).toContain('Texto original de la plantilla.');
+    expect(res.text).toContain('value="0"'); // veces_usada
+    expect(res.text).toContain('value="En revisión"'); // aprobado_meta=false por default
+  });
+
+  it('un usuario con solo plantillas.ver SÍ puede abrir el detalle (a diferencia de editar, que exige plantillas.editar)', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.get(`/plantillas/${plantillaId}/ver`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('un usuario sin ningún permiso no puede abrir el detalle', async () => {
+    const agent = await loginAs(SIN_PERMISOS_USER);
+
+    const res = await agent.get(`/plantillas/${plantillaId}/ver`);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('un id inexistente responde 404', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/plantillas/999999999/ver');
+
+    expect(res.status).toBe(404);
   });
 });
 
@@ -729,7 +787,13 @@ describe('DELETE /plantillas/:id (US-614 — baja lógica)', () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await filtrarPlantillas(agent, { estado: 'todos' });
-    const filaBaja = res.text.split(`Baja ${SUFFIX}`)[1].split('</tr>')[0];
+    // Ancla en la celda <td> exacta (no en el texto de la intención suelto):
+    // desde el ícono "Ver" el texto de la intención también aparece en su
+    // aria-label dentro de la misma fila, así que un split ingenuo sobre
+    // "Baja QA612" corta en la primera repetición (el propio aria-label del
+    // ícono Ver), no al final de la fila.
+    const inicioFila = res.text.indexOf(`<td>Baja ${SUFFIX}</td>`);
+    const filaBaja = res.text.slice(inicioFila).split('</tr>')[0];
 
     expect(filaBaja).toContain('row-action-edit');
   });
@@ -789,5 +853,100 @@ describe('DELETE /plantillas/:id (US-614 — baja lógica)', () => {
       .set('x-csrf-token', csrfToken);
 
     expect(res.status).toBe(200);
+  });
+});
+
+// Migración 20260903000002 — 4 plantillas del sistema (emergencia_medica,
+// agendar_cita_default, resultados_laboratorio_default,
+// sin_coincidencia_default), sembradas una sola vez para toda la BD, no
+// por SUFFIX como las demás fixtures de este archivo — por eso cleanup()
+// nunca las toca (no matchean `intencion LIKE '%QA612'`) y estos tests
+// solo LEEN/prueban acciones reversibles sobre ellas, nunca las dan de
+// baja de verdad.
+describe('Plantillas predeterminadas del sistema (es_predeterminada) — inborrables, solo editables', () => {
+  let predeterminada;
+
+  beforeAll(async () => {
+    predeterminada = await db('plantillas_whatsapp').where({ slug: 'emergencia-medica' }).first();
+  });
+
+  it('AC: no se puede eliminar — responde 400 y la fila queda intacta', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    const res = await agent
+      .delete(`/plantillas/${predeterminada.id}`)
+      .query({ estado: 'todos' })
+      .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(400);
+
+    const row = await db('plantillas_whatsapp').where({ id: predeterminada.id }).first();
+    expect(row.activo).toBe(true);
+    expect(row.desactivado_por).toBeNull();
+  });
+
+  it('AC: el ícono de eliminar no aparece en la tabla para una plantilla predeterminada, aunque esté activa y haya permiso', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/plantillas.html');
+    const inicioFila = res.text.indexOf(`<td>${predeterminada.intencion} `);
+    const fila = res.text.slice(inicioFila).split('</tr>')[0];
+
+    expect(fila).toContain('Predeterminada');
+    expect(fila).not.toContain('row-action-delete');
+  });
+
+  it('AC: editar el texto SÍ funciona (es lo único editable)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    const res = await agent
+      .put(`/plantillas/${predeterminada.id}`)
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ texto_respuesta: 'Texto de emergencia actualizado en la prueba.', activo: 'true' });
+
+    expect(res.status).toBe(200);
+    const row = await db('plantillas_whatsapp').where({ id: predeterminada.id }).first();
+    expect(row.texto_respuesta).toBe('Texto de emergencia actualizado en la prueba.');
+
+    // Deja el texto como estaba, para no afectar otras corridas de este archivo.
+    await db('plantillas_whatsapp')
+      .where({ id: predeterminada.id })
+      .update({ texto_respuesta: predeterminada.texto_respuesta });
+  });
+
+  it('AC: aunque el switch mande activo desmarcado (ausente), la plantilla se queda activa (nunca se puede desactivar)', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+
+    await agent
+      .put(`/plantillas/${predeterminada.id}`)
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ texto_respuesta: predeterminada.texto_respuesta }); // sin "activo" en el body
+
+    const row = await db('plantillas_whatsapp').where({ id: predeterminada.id }).first();
+    expect(row.activo).toBe(true);
+  });
+
+  it('AC: el formulario de edición no muestra el switch Activo/Inactivo, muestra una nota en su lugar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/plantillas/${predeterminada.id}/editar`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain('name="activo"');
+    expect(res.text).toContain('predeterminada del sistema');
+  });
+
+  it('AC: el detalle (Ver) muestra la nota de plantilla predeterminada', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/plantillas/${predeterminada.id}/ver`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('predeterminada del sistema');
   });
 });

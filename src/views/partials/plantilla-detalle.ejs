@@ -1,0 +1,52 @@
+<%
+// Detalle de solo lectura (ícono "Ver", gate plantillas.ver) — reusa el
+// mismo modal que alta/edición (#plantillaFormModalBody), por eso el
+// <form> de abajo no lleva hx-post/inputs con name: es solo el wrapper que
+// plantillas.ejs ya sabe detectar para abrir el modal (busca un <form>
+// dentro del contenedor tras el swap de HTMX), y los ids
+// plantillaFormClose/plantillaFormCancel ya tienen su delegación de clicks
+// puesta ahí — no hace falta JS nuevo.
+%>
+<div class="modal-header">
+  <h2>Detalle de la plantilla</h2>
+  <button class="modal-close-btn" type="button" id="plantillaFormClose" aria-label="Cerrar">&times;</button>
+</div>
+<form class="modal-form">
+  <label>
+    Intención
+    <input type="text" value="<%= plantilla.intencion %>" readonly disabled>
+  </label>
+  <label>
+    Slug (para el LLM)
+    <input type="text" value="<%= plantilla.slug %>" readonly disabled>
+  </label>
+  <label>
+    Texto de respuesta
+    <textarea rows="4" readonly disabled><%= plantilla.texto_respuesta %></textarea>
+  </label>
+  <label>
+    Estado
+    <input type="text" value="<%= plantilla.activo ? 'Activo' : 'Inactivo' %>" readonly disabled>
+  </label>
+  <label>
+    Estado en Meta
+    <%
+      // Igual que en la tabla: inactiva no se manda a Meta, así que
+      // "Aprobado"/"En revisión" no aplica — mismas etiquetas que
+      // plantillas-panel.ejs (coinciden con el texto que usa Meta en su
+      // propio panel).
+      const estadoMeta = !plantilla.activo ? 'N/A' : plantilla.aprobado_meta ? 'Aprobado' : 'En revisión';
+    %>
+    <input type="text" value="<%= estadoMeta %>" readonly disabled>
+  </label>
+  <label>
+    Veces utilizada
+    <input type="text" value="<%= plantilla.veces_usada %>" readonly disabled>
+  </label>
+  <% if (plantilla.es_predeterminada) { %>
+    <p class="tutor-form-hint">Plantilla predeterminada del sistema — no se puede eliminar, solo editar su texto de respuesta.</p>
+  <% } %>
+  <div class="modal-actions">
+    <button type="button" class="btn-secondary" id="plantillaFormCancel">Cerrar</button>
+  </div>
+</form>

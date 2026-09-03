@@ -30,7 +30,7 @@ async function count({ q, activoOnly }) {
 const SORT_EXPRESSIONS = {
   intencion: (dir) => `p.intencion ${dir}`,
   slug: (dir) => `p.slug ${dir}`,
-  veces_usada: (dir) => `p.veces_usada ${dir}`,
+  estado_meta: (dir) => `p.aprobado_meta ${dir}`,
   estado: (dir) => `p.activo ${dir}`,
 };
 
@@ -40,11 +40,15 @@ function applySort(query, { sort, dir }) {
   return query.orderByRaw(buildExpression(direction));
 }
 
+// veces_usada ya no se muestra en la tabla (se movió al detalle vía el
+// ícono de Ver, ver plantilla-detalle.ejs) — se quita de aquí porque
+// findById() (que sí trae todas las columnas) es lo que alimenta esa
+// pantalla, no findPage().
 async function findPage({ q, activoOnly, sort, dir, limit, offset }) {
   return applySort(baseQuery({ q, activoOnly }), { sort, dir })
     .limit(limit)
     .offset(offset)
-    .select('p.id', 'p.intencion', 'p.slug', 'p.veces_usada', 'p.activo');
+    .select('p.id', 'p.intencion', 'p.slug', 'p.aprobado_meta', 'p.activo', 'p.es_predeterminada');
 }
 
 // Independiente de filtros: distingue "el catálogo nunca ha tenido una
@@ -67,8 +71,11 @@ async function findById(id) {
 // de duplicados de áreas, US-610). Sin parámetro de exclusión: a
 // diferencia de áreas, aquí solo la revisa crear() (intención/slug son
 // inmutables después del alta, editar() ya no compara duplicados).
+// slug/texto_respuesta se incluyen para que crear() pueda reintentar el
+// registro en Meta al reactivar una plantilla dada de baja (reactivar() no
+// toca texto_respuesta, así que hay que leer el que ya estaba guardado).
 async function findAllExcept() {
-  return db('plantillas_whatsapp').select('id', 'intencion', 'activo');
+  return db('plantillas_whatsapp').select('id', 'intencion', 'activo', 'slug', 'texto_respuesta');
 }
 
 // El slug es único de verdad para siempre (nunca se reutiliza, ni siquiera
@@ -166,10 +173,24 @@ async function desactivar(id, usuarioId) {
 // que se le pasa a claude.js#clasificarIntencion como 2do nivel dentro de
 // la categoría 'duda_medica'. Solo lo mínimo que necesita ese flujo: nunca
 // slug/veces_usada/fechas, que no le sirven para clasificar ni responder.
+// es_predeterminada=false a propósito: las 4 plantillas del sistema
+// (emergencia_medica, agendar_cita_default, resultados_laboratorio_default,
+// sin_coincidencia_default) sirven a las OTRAS 3 categorías, no a
+// duda_medica — si entraran aquí, Claude podría matchear por error un
+// mensaje de duda médica contra, por ejemplo, "emergencia_medica".
 async function findActivasParaClasificar() {
   return db('plantillas_whatsapp')
     .where('activo', true)
+    .where('es_predeterminada', false)
     .select('id', 'intencion', 'texto_respuesta');
+}
+
+// whatsapp.service.js: busca por el slug fijo de una de las 4 plantillas
+// predeterminadas del sistema (ver la migración 20260903000002) — a
+// diferencia de duda_medica, estas se seleccionan de forma determinista
+// por categoria_clasificacion, nunca por el LLM.
+async function findBySlug(slug) {
+  return db('plantillas_whatsapp').where({ slug }).first();
 }
 
 // Cada vez que una plantilla resuelve de verdad un mensaje entrante —
@@ -179,6 +200,18 @@ async function incrementarUso(id) {
   await db('plantillas_whatsapp')
     .where({ id })
     .update({ veces_usada: db.raw('veces_usada + 1') });
+}
+
+// plantillas_whatsapp.metaSync.js (job periódico) — plantillas que todavía
+// no se han visto como APPROVED en Meta. Sin filtrar por `activo`: una
+// plantilla dada de baja pudo quedar aprobada de todos modos, y no hay
+// razón para que el flag se quede desactualizado.
+async function findPendientesAprobacionMeta() {
+  return db('plantillas_whatsapp').where('aprobado_meta', false).select('id', 'slug');
+}
+
+async function marcarAprobadoMeta(id) {
+  await db('plantillas_whatsapp').where({ id }).update({ aprobado_meta: true });
 }
 
 module.exports = {
@@ -194,4 +227,7 @@ module.exports = {
   desactivar,
   findActivasParaClasificar,
   incrementarUso,
+  findPendientesAprobacionMeta,
+  marcarAprobadoMeta,
+  findBySlug,
 };

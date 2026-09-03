@@ -60,8 +60,15 @@ const esEdicion = Boolean(plantilla);
     // Switch Activo/Inactivo: solo en edición, a petición explícita (no
     // estaba en el AC original de la historia). En alta no tiene sentido
     // mostrarlo — el AC exige activo=true siempre para un registro nuevo.
+    // Una plantilla predeterminada del sistema (es_predeterminada) NUNCA
+    // lo muestra — pedido explícito del usuario: son inborrables, solo
+    // editables (el texto), siempre quedan activas. La defensa real vive
+    // en el servidor (plantillas_whatsapp.service.js#editar), esto es
+    // solo para no ofrecer un control que de todos modos se ignoraría.
   %>
-  <% if (esEdicion) { %>
+  <% if (esEdicion && plantilla.es_predeterminada) { %>
+    <p class="tutor-form-hint">Esta es una plantilla predeterminada del sistema — siempre permanece activa, solo se puede editar el texto de respuesta.</p>
+  <% } else if (esEdicion) { %>
     <label class="switch-field">
       <span class="switch">
         <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %>>

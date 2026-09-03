@@ -2658,6 +2658,15 @@ body:has(.app)::after {
   background: var(--danger);
 }
 
+/* Badge "Predeterminada" (catálogo de plantillas de WhatsApp) trae su
+   propio [data-tooltip] — .status-badge no tiene position:relative por
+   default (lo necesita el tooltip, ver la regla transversal [data-tooltip]
+   más abajo), así que se agrega solo cuando aplica. */
+.status-badge[data-tooltip] {
+  position: relative;
+  cursor: default;
+}
+
 .row-actions {
   display: flex;
   justify-content: flex-end;

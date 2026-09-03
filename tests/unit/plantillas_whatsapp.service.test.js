@@ -1,13 +1,17 @@
 jest.mock('../../src/modules/plantillas_whatsapp/plantillas_whatsapp.repository');
+jest.mock('../../src/config/whatsapp');
 const repository = require('../../src/modules/plantillas_whatsapp/plantillas_whatsapp.repository');
+const whatsappConfig = require('../../src/config/whatsapp');
 const {
   list,
   obtener,
   desactivar,
   crear,
   editar,
+  nombreMeta,
   PlantillaValidationError,
   DuplicateIntencionError,
+  PlantillaPredeterminadaError,
 } = require('../../src/modules/plantillas_whatsapp/plantillas_whatsapp.service');
 const db = require('../../src/config/database');
 
@@ -21,12 +25,10 @@ describe('plantillas_whatsapp.service.list', () => {
     repository.findPage.mockResolvedValue([]);
   });
 
-  it('AC: por defecto el filtro es "Todos" (activoOnly=false), a diferencia de doctores/áreas', async () => {
+  it('AC: por defecto el filtro es "Activos" (activoOnly=true) — cambio explícito del usuario, igual que doctores/áreas', async () => {
     const result = await list({});
-    expect(repository.findPage).toHaveBeenCalledWith(
-      expect.objectContaining({ activoOnly: false }),
-    );
-    expect(result.estado).toBe('todos');
+    expect(repository.findPage).toHaveBeenCalledWith(expect.objectContaining({ activoOnly: true }));
+    expect(result.estado).toBe('activos');
   });
 
   it('estado=activos SÍ activa el filtro de activas', async () => {
@@ -34,12 +36,18 @@ describe('plantillas_whatsapp.service.list', () => {
     expect(repository.findPage).toHaveBeenCalledWith(expect.objectContaining({ activoOnly: true }));
   });
 
-  it('cualquier otro valor de estado (no solo "todos") cae al comportamiento por defecto: todos', async () => {
-    const result = await list({ estado: 'lo-que-sea' });
+  it('estado=todos SÍ desactiva el filtro de activas', async () => {
+    const result = await list({ estado: 'todos' });
     expect(repository.findPage).toHaveBeenCalledWith(
       expect.objectContaining({ activoOnly: false }),
     );
     expect(result.estado).toBe('todos');
+  });
+
+  it('cualquier otro valor de estado (no solo "activos"/"todos") cae al comportamiento por defecto: activos', async () => {
+    const result = await list({ estado: 'lo-que-sea' });
+    expect(repository.findPage).toHaveBeenCalledWith(expect.objectContaining({ activoOnly: true }));
+    expect(result.estado).toBe('activos');
   });
 
   it('recorta espacios en la búsqueda y manda undefined si queda vacía', async () => {
@@ -82,7 +90,7 @@ describe('plantillas_whatsapp.service.list', () => {
     expect(result.dir).toBe('asc');
   });
 
-  it.each([['intencion'], ['slug'], ['veces_usada'], ['estado']])(
+  it.each([['intencion'], ['slug'], ['estado_meta'], ['estado']])(
     'acepta ordenar por %s',
     async (column) => {
       await list({ sort: column, dir: 'desc' });
@@ -125,6 +133,7 @@ describe('plantillas_whatsapp.service.obtener (US-613)', () => {
 describe('plantillas_whatsapp.service.desactivar (US-614)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    repository.findById.mockResolvedValue({ id: 7, es_predeterminada: false });
   });
 
   it('delega en el repository con el id ya parseado y el usuario que ejecuta la baja', async () => {
@@ -134,6 +143,19 @@ describe('plantillas_whatsapp.service.desactivar (US-614)', () => {
 
   it('un id inválido no truena y no llega al repository', async () => {
     await desactivar('no-es-un-numero', 42);
+    expect(repository.desactivar).not.toHaveBeenCalled();
+  });
+
+  it('un id inexistente no truena y no llega al repository.desactivar', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    await desactivar('7', 42);
+    expect(repository.desactivar).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una plantilla predeterminada del sistema (es_predeterminada), nunca llega a repository.desactivar', async () => {
+    repository.findById.mockResolvedValue({ id: 7, es_predeterminada: true });
+
+    await expect(desactivar('7', 42)).rejects.toThrow(PlantillaPredeterminadaError);
     expect(repository.desactivar).not.toHaveBeenCalled();
   });
 });
@@ -232,6 +254,104 @@ describe('plantillas_whatsapp.service.crear (US-613)', () => {
   });
 });
 
+describe('plantillas_whatsapp.service — nombreMeta', () => {
+  it('cambia guiones por guion_bajo (Meta exige minúsculas/números/guion_bajo)', () => {
+    expect(nombreMeta('confirmar-cita')).toBe('confirmar_cita');
+  });
+});
+
+describe('plantillas_whatsapp.service.crear — registro en Meta (aprobado_meta)', () => {
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findAllExcept.mockResolvedValue([]);
+    repository.existsBySlug.mockResolvedValue(false);
+    repository.create.mockResolvedValue(99);
+    repository.reactivar.mockResolvedValue();
+    whatsappConfig.isWhatsappConfigured.mockReturnValue(true);
+    whatsappConfig.templatesUrl.mockReturnValue(
+      'https://graph.facebook.com/fake/message_templates',
+    );
+    whatsappConfig.authHeaders.mockReturnValue({ Authorization: 'Bearer fake' });
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: () => Promise.resolve({ id: '1', status: 'PENDING' }) });
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('al crear una plantilla nueva, la manda a registrar a Meta con el name derivado del slug', async () => {
+    await crear({
+      intencion: 'Confirmar Cita',
+      texto_respuesta: 'Tu cita fue confirmada.',
+      usuarioId: 1,
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://graph.facebook.com/fake/message_templates',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body).toEqual({
+      name: 'confirmar_cita',
+      language: 'es_MX',
+      category: 'UTILITY',
+      components: [{ type: 'BODY', text: 'Tu cita fue confirmada.' }],
+    });
+  });
+
+  it('si WhatsApp no está configurado, no intenta registrar nada en Meta', async () => {
+    whatsappConfig.isWhatsappConfigured.mockReturnValue(false);
+
+    await crear({ intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 1 });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('si Meta rechaza el registro, la plantilla igual se crea (nunca lanza)', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: {} }) });
+
+    const id = await crear({ intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 1 });
+
+    expect(id).toBe(99);
+  });
+
+  it('si el fetch a Meta truena (red caída), la plantilla igual se crea', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
+
+    const id = await crear({ intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 1 });
+
+    expect(id).toBe(99);
+  });
+
+  it('al reactivar una plantilla dada de baja, registra en Meta con el texto YA GUARDADO, no el del formulario', async () => {
+    repository.findAllExcept.mockResolvedValue([
+      {
+        id: 7,
+        intencion: 'Confirmar cita',
+        activo: false,
+        slug: 'confirmar-cita',
+        texto_respuesta: 'Texto viejo guardado.',
+      },
+    ]);
+
+    await crear({
+      intencion: 'Confirmar cita',
+      texto_respuesta: 'Texto nuevo del formulario, no debería usarse',
+      usuarioId: 1,
+    });
+
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body.components[0].text).toBe('Texto viejo guardado.');
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('plantillas_whatsapp.service.editar (US-613, ampliada: intención/slug inmutables)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -273,5 +393,17 @@ describe('plantillas_whatsapp.service.editar (US-613, ampliada: intención/slug 
     await expect(
       editar({ id: 5, texto_respuesta: '', activo: 'true', usuarioId: 2 }),
     ).rejects.toThrow(PlantillaValidationError);
+  });
+
+  it('una plantilla predeterminada del sistema (esPredeterminada) siempre se guarda activo=true, aunque el switch mande false', async () => {
+    await editar({
+      id: 5,
+      texto_respuesta: 'Nuevo texto',
+      activo: undefined, // switch desmarcado/ausente — normalmente sería false
+      esPredeterminada: true,
+      usuarioId: 2,
+    });
+
+    expect(repository.update).toHaveBeenCalledWith(5, expect.objectContaining({ activo: true }));
   });
 });

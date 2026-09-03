@@ -1,11 +1,21 @@
 const service = require('./plantillas_whatsapp.service');
+const metaSync = require('./plantillas_whatsapp.metaSync');
 const { generateCsrfToken } = require('../../config/csrf');
 
 // Carga inicial de la página: siempre el estado por defecto, nunca lee
 // query params (mismo criterio de privacidad que doctores/areas.controller.js
 // — el filtrado real ocurre por el POST de abajo, vía HTMX, sin tocar la URL).
+//
+// Pedido explícito del usuario: revisar aprobaciones de Meta AL ENTRAR al
+// módulo, no solo esperar el job de cada 60 min — revisarAprobaciones()
+// nunca lanza (atrapa sus propios errores, ver plantillas_whatsapp.metaSync.js),
+// así que un Meta caído nunca rompe la carga de la página, solo la deja
+// con la info que ya había. Se espera (await) ANTES de leer el catálogo
+// para que, si sí hay algo que actualizar, ya se refleje en este mismo
+// render.
 async function list(req, res, next) {
   try {
+    await metaSync.revisarAprobaciones();
     const data = await service.list({});
     const csrfToken = generateCsrfToken(req, res);
     res.render('plantillas', { ...data, user: req.session.user, csrfToken });
@@ -42,6 +52,18 @@ async function filter(req, res, next) {
 async function desactivar(req, res, next) {
   try {
     await service.desactivar(req.params.id, req.session.user.id);
+  } catch (err) {
+    // Una plantilla predeterminada del sistema: el ícono de eliminar ni
+    // siquiera se muestra para estas (ver plantillas-panel.ejs), así que
+    // solo llega aquí vía una petición manual — basta un 400 en texto
+    // plano, no hace falta un fragmento HTMX especial.
+    if (err.status) {
+      return res.status(err.status).send(err.message);
+    }
+    return next(err);
+  }
+
+  try {
     const data = await service.list({ ...req.query, ...req.body });
     const csrfToken = generateCsrfToken(req, res);
     res.render('partials/plantillas-panel', { ...data, user: req.session.user, csrfToken });
@@ -63,6 +85,21 @@ async function nuevoForm(req, res, next) {
       csrfToken,
       user: req.session.user,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Ícono "Ver" (gate plantillas.ver, distinto de editar): fragmento HTMX de
+// solo lectura con la info completa, incluida veces_usada (que ya no se
+// muestra en la tabla).
+async function verForm(req, res, next) {
+  try {
+    const plantilla = await service.obtener(req.params.id);
+    if (!plantilla) {
+      return res.status(404).send('Plantilla no encontrada');
+    }
+    res.render('partials/plantilla-detalle', { plantilla });
   } catch (err) {
     next(err);
   }
@@ -152,6 +189,7 @@ async function editar(req, res, next) {
         id: req.params.id,
         texto_respuesta: req.body.texto_respuesta,
         activo: req.body.activo,
+        esPredeterminada: existing.es_predeterminada,
         usuarioId: req.session.user.id,
       });
     } catch (err) {
@@ -176,4 +214,4 @@ async function editar(req, res, next) {
   }
 }
 
-module.exports = { list, filter, desactivar, nuevoForm, editarForm, crear, editar };
+module.exports = { list, filter, desactivar, nuevoForm, verForm, editarForm, crear, editar };

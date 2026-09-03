@@ -11,9 +11,12 @@
 // 'agendar_cita'/'resultados_laboratorio' TODAVÍA NO tienen ninguna acción
 // real (no hay mecanismo de alerta a staff, ni parser de fecha/hora para
 // agendar, ni lookup de registro de laboratorio por teléfono) — responden
-// con un texto de respaldo honesto, nunca fingen haber hecho algo que no
-// pasó. `cita_generada_id`/`registro_laboratorio_id` se quedan en null a
-// propósito hasta que esas 3 fases se construyan.
+// con la plantilla predeterminada del sistema de esa categoría (pedido
+// explícito del usuario: antes eran textos fijos en este archivo, ahora
+// son 4 filas editables — pero inborrables — en `plantillas_whatsapp`,
+// ver la migración 20260903000002). `cita_generada_id`/
+// `registro_laboratorio_id` se quedan en null a propósito hasta que esas 3
+// fases se construyan.
 const claude = require('../../config/claude');
 const whatsapp = require('../../config/whatsapp');
 const plantillasRepository = require('../plantillas_whatsapp/plantillas_whatsapp.repository');
@@ -21,20 +24,20 @@ const repository = require('./whatsapp.repository');
 
 const TELEFONO_CLINICA = '7711634578';
 
-const TEXTO_EMERGENCIA =
-  `Recibimos tu mensaje y detectamos que podría tratarse de una urgencia. ` +
-  `Un miembro del equipo se pondrá en contacto contigo lo antes posible. ` +
-  `Si es una urgencia real, por favor llama de inmediato al ${TELEFONO_CLINICA} o acude directamente a la clínica.`;
+// Slugs fijos de las 4 plantillas predeterminadas del sistema (migración
+// 20260903000002) — a diferencia de las 9 normales (matcheadas por Claude
+// contra su `intencion` dentro de duda_medica), estas 4 se seleccionan de
+// forma DETERMINISTA por categoria_clasificacion, nunca por el LLM.
+const SLUG_EMERGENCIA = 'emergencia-medica';
+const SLUG_AGENDAR_CITA = 'agendar-cita-default';
+const SLUG_RESULTADOS_LABORATORIO = 'resultados-laboratorio-default';
+const SLUG_SIN_COINCIDENCIA = 'sin-coincidencia-default';
 
-const TEXTO_AGENDAR_CITA =
-  `Gracias por escribirnos. Por el momento, para agendar, mover o cancelar una cita ` +
-  `contáctanos directamente al ${TELEFONO_CLINICA} y con gusto te ayudamos.`;
-
-const TEXTO_RESULTADOS_LABORATORIO =
-  `Gracias por escribirnos. Para consultar el estado de tus resultados de laboratorio, ` +
-  `contáctanos al ${TELEFONO_CLINICA} y con gusto te apoyamos.`;
-
-const TEXTO_SIN_COINCIDENCIA = `Gracias por tu mensaje. Para poder ayudarte mejor, contáctanos directamente al ${TELEFONO_CLINICA}.`;
+// Último recurso si una plantilla predeterminada no existiera o estuviera
+// inactiva — no debería pasar nunca (plantillas_whatsapp.service.js las
+// protege: es_predeterminada las hace inborrables y no desactivables),
+// pero una respuesta de WhatsApp jamás debe salir vacía.
+const TEXTO_RESPALDO_ABSOLUTO = `Gracias por tu mensaje. Contáctanos directamente al ${TELEFONO_CLINICA} y con gusto te apoyamos.`;
 
 // El campo `from` de un mensaje entrante de un celular mexicano llega como
 // 521XXXXXXXXXX (con el "1" extra tras el 52, un resabio histórico de
@@ -59,6 +62,20 @@ async function enviarRespuesta(telefono, texto) {
   });
 }
 
+// Resuelve una de las 4 plantillas predeterminadas por su slug fijo —
+// cuenta como uso real (incrementarUso) igual que una plantilla normal
+// matcheada dentro de duda_medica, y su id sí viaja en `plantilla_id` de
+// mensajes_whatsapp (a diferencia de antes, cuando estos 3 textos ni
+// siquiera eran una plantilla real que se pudiera enlazar).
+async function resolverPlantillaPredeterminada(slug) {
+  const plantilla = await plantillasRepository.findBySlug(slug);
+  if (!plantilla || !plantilla.activo) {
+    return { texto: TEXTO_RESPALDO_ABSOLUTO, plantillaId: null };
+  }
+  await plantillasRepository.incrementarUso(plantilla.id);
+  return { texto: plantilla.texto_respuesta, plantillaId: plantilla.id };
+}
+
 // Segundo nivel — solo se llama dentro de la rama 'duda_medica'. Regresa
 // { texto, plantillaId, tokensEntrada, tokensSalida }.
 async function resolverDudaMedica(mensaje) {
@@ -73,9 +90,15 @@ async function resolverDudaMedica(mensaje) {
   const plantilla = plantillas.find((p) => p.intencion === etiqueta);
   if (!plantilla) {
     // Defensivo: en teoría 'duda_medica_general' (una de las 9 activas) ya
-    // cubre el catch-all real dentro de esta categoría — este texto solo
-    // se usa si ni siquiera esa encajó.
-    return { texto: TEXTO_SIN_COINCIDENCIA, plantillaId: null, tokensEntrada, tokensSalida };
+    // cubre el catch-all real dentro de esta categoría — esto solo se usa
+    // si ni siquiera esa encajó.
+    const resuelto = await resolverPlantillaPredeterminada(SLUG_SIN_COINCIDENCIA);
+    return {
+      texto: resuelto.texto,
+      plantillaId: resuelto.plantillaId,
+      tokensEntrada,
+      tokensSalida,
+    };
   }
 
   await plantillasRepository.incrementarUso(plantilla.id);
@@ -93,7 +116,7 @@ async function procesarMensajeEntrante({ telefono, texto, recibidoEn }) {
   let tokensSalida = categoria.tokensSalida;
 
   let respuesta;
-  let plantillaId = null;
+  let plantillaId;
   let categoriaGuardada = categoria.etiqueta ?? claude.SIN_COINCIDENCIA;
 
   if (categoria.etiqueta === 'duda_medica') {
@@ -103,13 +126,21 @@ async function procesarMensajeEntrante({ telefono, texto, recibidoEn }) {
     tokensEntrada += resuelto.tokensEntrada;
     tokensSalida += resuelto.tokensSalida;
   } else if (categoria.etiqueta === 'emergencia') {
-    respuesta = TEXTO_EMERGENCIA;
+    const resuelto = await resolverPlantillaPredeterminada(SLUG_EMERGENCIA);
+    respuesta = resuelto.texto;
+    plantillaId = resuelto.plantillaId;
   } else if (categoria.etiqueta === 'agendar_cita') {
-    respuesta = TEXTO_AGENDAR_CITA;
+    const resuelto = await resolverPlantillaPredeterminada(SLUG_AGENDAR_CITA);
+    respuesta = resuelto.texto;
+    plantillaId = resuelto.plantillaId;
   } else if (categoria.etiqueta === 'resultados_laboratorio') {
-    respuesta = TEXTO_RESULTADOS_LABORATORIO;
+    const resuelto = await resolverPlantillaPredeterminada(SLUG_RESULTADOS_LABORATORIO);
+    respuesta = resuelto.texto;
+    plantillaId = resuelto.plantillaId;
   } else {
-    respuesta = TEXTO_SIN_COINCIDENCIA;
+    const resuelto = await resolverPlantillaPredeterminada(SLUG_SIN_COINCIDENCIA);
+    respuesta = resuelto.texto;
+    plantillaId = resuelto.plantillaId;
   }
 
   await enviarRespuesta(telefono, respuesta);

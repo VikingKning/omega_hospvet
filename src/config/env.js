@@ -63,6 +63,12 @@ module.exports = {
     // "Verify token" al registrar el webhook en Meta (no lo genera Meta).
     appSecret: process.env.WHATSAPP_APP_SECRET,
     webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+    // Job periódico que revisa si Meta ya aprobó cada plantilla pendiente
+    // (plantillas_whatsapp.metaSync.js) — la revisión de Meta tarda
+    // típicamente horas, no minutos, así que el default es más
+    // espaciado que el de Google Calendar (GOOGLE_SYNC_INTERVAL_MINUTES).
+    templatesSyncIntervalMinutes:
+      Number(process.env.WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES) || 60,
   },
   // Clasificador de intención de WhatsApp (Bitácora de Decisiones Técnicas
   // v4: "claude-haiku-4-5 vía Claude API, Commercial Terms — solo

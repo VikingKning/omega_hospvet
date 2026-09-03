@@ -57,6 +57,15 @@ router.get(
   requirePermission('plantillas.editar'),
   controller.editarForm,
 );
+// Ícono "Ver": solo lectura, gate plantillas.ver (a diferencia de editar
+// arriba) — quien solo puede consultar el catálogo también puede abrir el
+// detalle completo de una plantilla, sin poder modificarla.
+router.get(
+  '/plantillas/:id/ver',
+  requireAuth,
+  requirePermission('plantillas.ver'),
+  controller.verForm,
+);
 router.post(
   '/plantillas',
   requireAuth,

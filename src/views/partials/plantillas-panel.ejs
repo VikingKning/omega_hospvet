@@ -68,12 +68,12 @@ function sortVals(column) {
       <table class="lab-table">
         <thead>
           <tr>
-            <% ['intencion', 'slug', 'veces_usada', 'estado'].forEach((column) => { %>
+            <% ['intencion', 'slug', 'estado_meta', 'estado'].forEach((column) => { %>
               <th class="sortable-th">
                 <button type="button" class="sortable-th-link"
                         hx-post="plantillas.html" hx-include="#plantillas-filters" hx-target="#plantillas-panel"
                         hx-vals='<%- sortVals(column) %>'>
-                  <%= { intencion: 'Intención', slug: 'Slug (LLM)', veces_usada: 'Veces usada', estado: 'Estado' }[column] %>
+                  <%= { intencion: 'Intención', slug: 'Slug (LLM)', estado_meta: 'Estado en Meta', estado: 'Estado' }[column] %>
                   <svg class="sort-arrow<%= sort === column ? ' active' : '' %>" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <% if (sort === column && dir === 'desc') { %>
                       <path d="M6 9l6 6 6-6"/>
@@ -90,14 +90,44 @@ function sortVals(column) {
         <tbody>
           <% plantillas.forEach((plantilla) => { %>
             <tr>
-              <td><%= plantilla.intencion %></td>
+              <%
+                // Todo en una sola línea a propósito: varios tests de
+                // integración anclan la fila buscando el string exacto
+                // "<td>{intención}</td>" — un <td> multilínea rompería ese
+                // anclaje incluso para filas SIN badge.
+              %>
+              <td><%= plantilla.intencion %><% if (plantilla.es_predeterminada) { %> <span class="status-badge" data-tooltip="Plantilla del sistema, usada como respaldo automático — no se puede eliminar">Predeterminada</span><% } %></td>
               <td><span class="area-tag-empty"><%= plantilla.slug %></span></td>
-              <td><%= plantilla.veces_usada %></td>
+              <td>
+                <%
+                  // Una plantilla inactiva no se manda a Meta (ni se
+                  // debió mandar, ni se va a mandar mientras siga así) —
+                  // "Aprobado"/"En revisión" solo aplica a las activas —
+                  // "En revisión" (no "Pendiente") para que coincida
+                  // exactamente con la etiqueta que usa el propio panel de
+                  // Meta (Administrador de WhatsApp > Plantillas de
+                  // mensajes), pedido explícito del usuario.
+                %>
+                <% if (!plantilla.activo) { %>
+                  <span class="status-badge">N/A</span>
+                <% } else { %>
+                  <span class="status-badge<%= plantilla.aprobado_meta ? ' is-active' : ' is-warning' %>"><%= plantilla.aprobado_meta ? 'Aprobado' : 'En revisión' %></span>
+                <% } %>
+              </td>
               <td>
                 <span class="status-badge<%= plantilla.activo ? ' is-active' : '' %>"><%= plantilla.activo ? 'Activo' : 'Inactivo' %></span>
               </td>
               <td class="text-right">
                 <div class="row-actions">
+                  <% if (has('plantillas.ver')) { %>
+                    <button class="row-action-btn" type="button" data-tooltip="Ver"
+                            aria-label="Ver plantilla <%= plantilla.intencion %>"
+                            hx-get="plantillas/<%= plantilla.id %>/ver" hx-target="#plantillaFormModalBody" hx-swap="innerHTML">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </button>
+                  <% } %>
                   <% if (has('plantillas.editar')) { %>
                     <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar"
                             aria-label="Editar plantilla <%= plantilla.intencion %>"
@@ -107,7 +137,7 @@ function sortVals(column) {
                       </svg>
                     </button>
                   <% } %>
-                  <% if (has('plantillas.eliminar') && plantilla.activo) { %>
+                  <% if (has('plantillas.eliminar') && plantilla.activo && !plantilla.es_predeterminada) { %>
                     <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
                             aria-label="Dar de baja la plantilla <%= plantilla.intencion %>"
                             hx-delete="plantillas/<%= plantilla.id %>" hx-include="#plantillas-filters"
