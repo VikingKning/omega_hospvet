@@ -21,6 +21,7 @@ const perfilRoutes = require('./modules/perfil/perfil.routes');
 const tutoresRoutes = require('./modules/tutores/tutores.routes');
 const agendaRoutes = require('./modules/agenda/agenda.routes');
 const laboratorioRoutes = require('./modules/laboratorio/laboratorio.routes');
+const whatsappRoutes = require('./modules/whatsapp/whatsapp.routes');
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
@@ -96,7 +97,18 @@ app.use(
   }),
 );
 app.use(compression());
-app.use(express.json());
+// `verify` guarda los bytes crudos del body en `req.rawBody` — hace falta
+// para el webhook de WhatsApp (whatsapp.controller.js), que tiene que
+// recalcular el HMAC de la firma de Meta sobre el body TAL CUAL llegó, no
+// sobre el JSON ya parseado (el hash no coincidiría). Inocuo para el
+// resto de las rutas, que nunca leen `req.rawBody`.
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  }),
+);
 // HTMX manda el <form> del panel de doctores con la codificación por
 // defecto de un form HTML (application/x-www-form-urlencoded), no JSON —
 // express.json() no lo parsea, hace falta este middleware aparte.
@@ -149,6 +161,12 @@ app.use('/', perfilRoutes);
 app.use('/', tutoresRoutes);
 app.use('/', agendaRoutes);
 app.use('/', laboratorioRoutes);
+// Callback externo de Meta, nunca una acción de un usuario con sesión —
+// sin requireAuth/CSRF (mismo criterio ya establecido: CSRF es opt-in por
+// ruta, no global). Protegido en su lugar por el verify_token (GET,
+// handshake) y la firma HMAC (POST, cada mensaje) — ver
+// whatsapp.controller.js.
+app.use('/', whatsappRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

@@ -57,6 +57,12 @@ module.exports = {
     token: process.env.WHATSAPP_TOKEN,
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+    // Webhook de mensajes entrantes (módulo `whatsapp/`) — appSecret firma
+    // cada POST que manda Meta (X-Hub-Signature-256), webhookVerifyToken es
+    // un valor que NOSOTROS elegimos y se pega tal cual en el campo
+    // "Verify token" al registrar el webhook en Meta (no lo genera Meta).
+    appSecret: process.env.WHATSAPP_APP_SECRET,
+    webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
   },
   // Clasificador de intención de WhatsApp (Bitácora de Decisiones Técnicas
   // v4: "claude-haiku-4-5 vía Claude API, Commercial Terms — solo

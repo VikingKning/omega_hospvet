@@ -162,6 +162,25 @@ async function desactivar(id, usuarioId) {
   });
 }
 
+// Módulo `whatsapp/` (clasificador de mensajes entrantes) — lista cerrada
+// que se le pasa a claude.js#clasificarIntencion como 2do nivel dentro de
+// la categoría 'duda_medica'. Solo lo mínimo que necesita ese flujo: nunca
+// slug/veces_usada/fechas, que no le sirven para clasificar ni responder.
+async function findActivasParaClasificar() {
+  return db('plantillas_whatsapp')
+    .where('activo', true)
+    .select('id', 'intencion', 'texto_respuesta');
+}
+
+// Cada vez que una plantilla resuelve de verdad un mensaje entrante —
+// nunca se había incrementado hasta ahora, la columna existe desde el
+// alta original (US-613) sin ningún flujo real que la tocara.
+async function incrementarUso(id) {
+  await db('plantillas_whatsapp')
+    .where({ id })
+    .update({ veces_usada: db.raw('veces_usada + 1') });
+}
+
 module.exports = {
   count,
   findPage,
@@ -173,4 +192,6 @@ module.exports = {
   update,
   reactivar,
   desactivar,
+  findActivasParaClasificar,
+  incrementarUso,
 };

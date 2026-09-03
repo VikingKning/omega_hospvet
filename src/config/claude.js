@@ -17,31 +17,59 @@ function isClaudeConfigured() {
   return Boolean(env.anthropic.apiKey);
 }
 
-// Sentinel para "el mensaje no encaja con ninguna intención conocida" —
-// nunca se inventa una intención fuera de la lista dada, y nunca se
-// regresa texto libre: solo esta etiqueta o una de `intencionesValidas`.
+// Sentinel para "el mensaje no encaja con ninguna etiqueta conocida" —
+// nunca se inventa una fuera de la lista dada, y nunca se regresa texto
+// libre: solo esta etiqueta o una de las válidas.
 const SIN_COINCIDENCIA = 'sin_coincidencia';
 
-function construirSystemPrompt(intencionesValidas) {
+// Las 4 categorías fijas de mensajes_whatsapp.categoria_clasificacion
+// (sección 1.3 del documento funcional del cliente) — primer nivel de
+// clasificación, siempre corre antes que clasificarIntencion() (2do
+// nivel, solo aplica dentro de 'duda_medica').
+const CATEGORIAS = ['emergencia', 'duda_medica', 'agendar_cita', 'resultados_laboratorio'];
+
+function reglasComunes(etiquetasValidas) {
   return [
-    'Eres un clasificador de intención para mensajes de WhatsApp de una clínica veterinaria.',
-    'Tu ÚNICO trabajo es decidir a cuál de estas intenciones fijas corresponde el mensaje del tutor:',
-    intencionesValidas.map((i) => `- ${i}`).join('\n'),
     `Si el mensaje no encaja claramente con ninguna, responde exactamente: ${SIN_COINCIDENCIA}`,
     '',
     'Reglas estrictas:',
-    '- Responde ÚNICAMENTE con una de las etiquetas de arriba, en minúsculas, tal cual — nada más.',
+    `- Responde ÚNICAMENTE con una de estas etiquetas, en minúsculas, tal cual, nada más: ${etiquetasValidas.join(', ')}, ${SIN_COINCIDENCIA}`,
     '- NUNCA generes una respuesta médica, una explicación, ni texto para el tutor: eso lo decide la clínica, no tú.',
     '- Ante cualquier duda o mensaje ambiguo, responde `sin_coincidencia` en vez de adivinar.',
   ].join('\n');
 }
 
-// Clasifica `mensaje` contra la lista cerrada `intencionesValidas` (los
-// valores de plantillas_whatsapp.intencion que estén activos) — regresa
-// una de esas cadenas, o `null` si Claude no encaja el mensaje con
-// ninguna, o si por cualquier motivo la respuesta no viene exactamente en
-// la lista (defensivo: nunca se confía a ciegas en la salida del modelo).
-async function clasificarIntencion(mensaje, intencionesValidas) {
+function systemPromptCategoria() {
+  return [
+    'Eres un clasificador de mensajes de WhatsApp de una clínica veterinaria.',
+    'Tu ÚNICO trabajo es decidir a cuál de estas 4 categorías fijas corresponde el mensaje del tutor:',
+    '- emergencia: una urgencia médica real, algo que no puede esperar.',
+    '- duda_medica: una pregunta o duda de cuidado/tratamiento que NO es urgente.',
+    '- agendar_cita: quiere agendar, mover o cancelar una cita.',
+    '- resultados_laboratorio: pregunta por el estado de resultados de laboratorio ya solicitados.',
+    '',
+    reglasComunes(CATEGORIAS),
+  ].join('\n');
+}
+
+function systemPromptIntencion(intencionesValidas) {
+  return [
+    'Eres un clasificador de intención para mensajes de WhatsApp de una clínica veterinaria.',
+    'Tu ÚNICO trabajo es decidir a cuál de estas intenciones fijas corresponde el mensaje del tutor:',
+    intencionesValidas.map((i) => `- ${i}`).join('\n'),
+    '',
+    reglasComunes(intencionesValidas),
+  ].join('\n');
+}
+
+// Llamada real a la API — compartida por clasificarCategoria() y
+// clasificarIntencion(), la única diferencia entre ambas es qué
+// systemPrompt/lista de etiquetas válidas usan. Regresa `etiqueta: null`
+// si Claude no encaja el mensaje con ninguna, o si por cualquier motivo la
+// respuesta no viene EXACTAMENTE en la lista dada (defensivo: nunca se
+// confía a ciegas en la salida del modelo) — nunca lanza por un "sin
+// coincidencia", solo por fallas reales de la API.
+async function clasificar(mensaje, systemPrompt, etiquetasValidas) {
   if (!isClaudeConfigured()) {
     throw new Error('El clasificador de Claude no está configurado (falta ANTHROPIC_API_KEY).');
   }
@@ -56,7 +84,7 @@ async function clasificarIntencion(mensaje, intencionesValidas) {
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 20,
-      system: construirSystemPrompt(intencionesValidas),
+      system: systemPrompt,
       messages: [{ role: 'user', content: mensaje }],
     }),
   });
@@ -67,10 +95,33 @@ async function clasificarIntencion(mensaje, intencionesValidas) {
   }
 
   const data = await res.json();
-  const etiqueta = data.content?.[0]?.text?.trim().toLowerCase();
+  const etiquetaCruda = data.content?.[0]?.text?.trim().toLowerCase();
+  const etiqueta = etiquetasValidas.includes(etiquetaCruda) ? etiquetaCruda : null;
 
-  if (intencionesValidas.includes(etiqueta)) return etiqueta;
-  return null;
+  return {
+    etiqueta,
+    tokensEntrada: data.usage?.input_tokens ?? 0,
+    tokensSalida: data.usage?.output_tokens ?? 0,
+  };
 }
 
-module.exports = { isClaudeConfigured, clasificarIntencion, SIN_COINCIDENCIA, MODEL };
+// 1er nivel: 1 de las 4 categorías fijas de mensajes_whatsapp.
+async function clasificarCategoria(mensaje) {
+  return clasificar(mensaje, systemPromptCategoria(), CATEGORIAS);
+}
+
+// 2do nivel, SOLO dentro de la categoría 'duda_medica': contra la lista
+// cerrada `intencionesValidas` (los valores de plantillas_whatsapp.intencion
+// que estén activos).
+async function clasificarIntencion(mensaje, intencionesValidas) {
+  return clasificar(mensaje, systemPromptIntencion(intencionesValidas), intencionesValidas);
+}
+
+module.exports = {
+  isClaudeConfigured,
+  clasificarCategoria,
+  clasificarIntencion,
+  CATEGORIAS,
+  SIN_COINCIDENCIA,
+  MODEL,
+};
