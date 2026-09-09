@@ -15,7 +15,6 @@ const router = express.Router();
 // real/activa (404 si no) DESPUÉS del permiso, nunca antes — mismo orden
 // que areas.routes.js (requireAuth -> requirePermission -> lo demás).
 
-// GET /agenda/:slug.html — página completa del calendario.
 router.get(
   '/agenda/:slug.html',
   requireAuth,
