@@ -273,6 +273,23 @@ async function eliminarArchivoEstudio(req, res, next) {
   }
 }
 
+// Envío real de resultados (pedido explícito del usuario) — reemplaza el
+// stub anterior (modal que se cerraba solo a los 5s sin mandar nada). El
+// service nunca lanza por una falla de correo/WhatsApp en sí (eso viaja en
+// el propio JSON de respuesta, por canal) — solo lanza (con `.status`) por
+// datos inválidos (registro inexistente, algún estudio sin archivo).
+async function enviarResultados(req, res, next) {
+  try {
+    const resultado = await service.enviarResultados(req.params.id, req.session.user.id);
+    res.json(resultado);
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return next(err);
+  }
+}
+
 // Descarga autenticada — nunca por static serving directo (ver comentario
 // del .gitignore, son resultados médicos de pacientes).
 async function descargarArchivo(req, res, next) {
@@ -303,5 +320,6 @@ module.exports = {
   subirArchivoEstudio,
   eliminarArchivoRegistro,
   eliminarArchivoEstudio,
+  enviarResultados,
   descargarArchivo,
 };

@@ -36,6 +36,30 @@ const TIPOS_PERMITIDOS = new Set([
 // otros archivos en el mismo lote.
 const TIPOS_FUSIONABLES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
 
+// archivos_laboratorio no guarda el mimetype (nunca hizo falta: la
+// descarga autenticada deja que Express lo infiera de la extensión al
+// hacer res.download()) — laboratorio.envios.js sí necesita uno explícito
+// para subir el archivo a la API de WhatsApp, así que se deriva de la
+// extensión de nombre_original con el mismo criterio, acotado a los tipos
+// que TIPOS_PERMITIDOS ya acepta (un archivo consolidado siempre termina
+// en .pdf, ver guardarEnDisco).
+const MIME_POR_EXTENSION = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+};
+
+function mimetypeDeArchivo(nombreOriginal) {
+  return (
+    MIME_POR_EXTENSION[path.extname(nombreOriginal).toLowerCase()] ?? 'application/octet-stream'
+  );
+}
+
 class ArchivoValidationError extends Error {
   constructor(message) {
     super(message);
@@ -159,5 +183,6 @@ module.exports = {
   calcularHash,
   procesarArchivos,
   rutaAbsolutaDeArchivo,
+  mimetypeDeArchivo,
   eliminarFisico,
 };

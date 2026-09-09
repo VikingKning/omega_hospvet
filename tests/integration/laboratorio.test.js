@@ -30,6 +30,7 @@ const SIN_PERMISOS = {
   password: 'LaboratorioSinPermisoTest123!',
 };
 const SOLO_CARGAR = { username: 'laboratorio.cargar.test', password: 'LaboratorioCargarTest123!' };
+const SOLO_ENVIAR = { username: 'laboratorio.enviar.test', password: 'LaboratorioEnviarTest123!' };
 
 async function getCsrfToken(agent) {
   const res = await agent.get('/');
@@ -62,6 +63,7 @@ async function cleanup() {
     SOLO_ELIMINAR.username,
     SIN_PERMISOS.username,
     SOLO_CARGAR.username,
+    SOLO_ENVIAR.username,
   ];
   const usuarioIds = await db('usuarios').whereIn('username', usernames).pluck('id');
   if (usuarioIds.length) {
@@ -101,6 +103,11 @@ beforeAll(async () => {
   await createTestUser(SOLO_ELIMINAR, ['laboratorio.ver', 'laboratorio.eliminar']);
   await createTestUser(SIN_PERMISOS, []);
   await createTestUser(SOLO_CARGAR, ['laboratorio.ver', 'laboratorio.cargar']);
+  await createTestUser(SOLO_ENVIAR, [
+    'laboratorio.ver',
+    'laboratorio.cargar',
+    'laboratorio.enviar',
+  ]);
 });
 
 afterAll(async () => {
@@ -405,6 +412,34 @@ describe('DELETE /laboratorio/:id/estudios/:estudioId/archivo', () => {
     const res = await agent
       .delete('/laboratorio/999999/estudios/1/archivo')
       .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+// Envío real de resultados (pedido explícito del usuario) — permiso PROPIO
+// `laboratorio.enviar`, distinto de `laboratorio.cargar` (alguien que solo
+// carga archivos no necesariamente debe poder disparar el envío al
+// tutor). Con un id inexistente, el service nunca llega a intentar
+// correo/WhatsApp de verdad (falla antes, en el 404) — mismo criterio que
+// el resto de este archivo: sin datos reales, la cobertura del envío en sí
+// vive en laboratorio.envios.test.js/laboratorio.service.test.js.
+describe('POST /laboratorio/:id/enviar', () => {
+  it('AC: laboratorio.enviar alcanza para llegar al controller (404 en id inexistente)', async () => {
+    const agent = await loginAs(SOLO_ENVIAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio/999999/enviar').set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('tener laboratorio.cargar no alcanza — hace falta laboratorio.enviar', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio/999999/enviar').set('x-csrf-token', csrfToken);
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');

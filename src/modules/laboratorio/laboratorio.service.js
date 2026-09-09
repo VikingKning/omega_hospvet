@@ -3,6 +3,7 @@ const tutoresRepository = require('../tutores/tutores.repository');
 const tutoresService = require('../tutores/tutores.service');
 const doctoresRepository = require('../doctores/doctores.repository');
 const archivos = require('./laboratorio.archivos');
+const envios = require('./laboratorio.envios');
 
 // Mismo patrón de errores con `.status` que agenda.service.js/doctores.service.js
 // — el controller los atrapa para responder con el mensaje, en vez de un 500
@@ -543,6 +544,92 @@ async function obtenerArchivoParaDescarga(rawArchivoId) {
   };
 }
 
+// Envío real de resultados (pedido explícito del usuario: WhatsApp y/o
+// correo, según qué dato de contacto tenga el tutor — teléfono siempre
+// existe (propietarios.telefono NOT NULL), correo es opcional). Los 2
+// intentos corren en paralelo (Promise.allSettled: uno fallando nunca
+// bloquea al otro) y SOLO se registra en BD lo que de verdad tuvo éxito —
+// si ninguno lo tuvo, no se toca ni el archivo ni el registro.
+async function enviarResultados(rawRegistroId, usuarioId) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+
+  const faltaArchivo = registro.estudios.some((estudio) => !estudio.archivo_id);
+  if (faltaArchivo) {
+    throw new LaboratorioValidationError(
+      'Todos los estudios deben tener un archivo cargado antes de enviar los resultados.',
+    );
+  }
+
+  const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))];
+  const filas = await Promise.all(archivoIds.map((id) => repository.findArchivoById(id)));
+  const archivosParaEnviar = filas.map((archivo) => ({
+    id: archivo.id,
+    nombreOriginal: archivo.nombre_original,
+    rutaAbsoluta: archivos.rutaAbsolutaDeArchivo(archivo.ruta_almacenamiento),
+    mimetype: archivos.mimetypeDeArchivo(archivo.nombre_original),
+  }));
+
+  const nombreTutor = `${registro.propietario_nombre} ${registro.propietario_apellidos}`;
+  const intentos = {
+    correo: Boolean(registro.propietario_correo),
+    whatsapp: Boolean(registro.propietario_telefono),
+  };
+
+  const [correoResultado, whatsappResultado] = await Promise.allSettled([
+    intentos.correo
+      ? envios.enviarPorCorreo({
+          destinatario: registro.propietario_correo,
+          nombreTutor,
+          nombreMascota: registro.mascota_nombre,
+          archivos: archivosParaEnviar,
+        })
+      : Promise.resolve(null),
+    intentos.whatsapp
+      ? envios.enviarPorWhatsapp({
+          telefono: registro.propietario_telefono,
+          nombreTutor,
+          nombreMascota: registro.mascota_nombre,
+          archivos: archivosParaEnviar,
+        })
+      : Promise.resolve(null),
+  ]);
+
+  // Promise.allSettled nunca rechaza, pero enviarPor* tampoco (siempre
+  // regresan {ok, error}) — este `?.` es solo defensa en profundidad, no
+  // se espera llegar nunca a la rama `rejected`.
+  const correo = correoResultado.status === 'fulfilled' ? correoResultado.value : null;
+  const whatsapp = whatsappResultado.status === 'fulfilled' ? whatsappResultado.value : null;
+
+  const mediosExitosos = [];
+  if (correo?.ok) mediosExitosos.push('correo');
+  if (whatsapp?.ok) mediosExitosos.push('whatsapp');
+
+  if (mediosExitosos.length > 0) {
+    await repository.registrarEnvio({
+      registroLaboratorioId: registroId,
+      medio: mediosExitosos.length === 2 ? 'ambos' : mediosExitosos[0],
+      destinatarioCorreo: mediosExitosos.includes('correo') ? registro.propietario_correo : null,
+      destinatarioTelefono: mediosExitosos.includes('whatsapp')
+        ? registro.propietario_telefono
+        : null,
+      archivoIds,
+      usuarioId,
+    });
+  }
+
+  return {
+    correo: { intentado: intentos.correo, enviado: Boolean(correo?.ok), error: correo?.error },
+    whatsapp: {
+      intentado: intentos.whatsapp,
+      enviado: Boolean(whatsapp?.ok),
+      error: whatsapp?.error,
+    },
+  };
+}
+
 async function eliminar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
@@ -564,5 +651,6 @@ module.exports = {
   eliminarArchivoDeTodos,
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
+  enviarResultados,
   eliminar,
 };

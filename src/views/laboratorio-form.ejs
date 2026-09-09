@@ -85,7 +85,7 @@
             <div class="lab-form-heading-title-row">
               <h2><%= titulo %> de laboratorio</h2>
               <% if (esEdicion) { %>
-                <span class="badge badge-<%= registro.estado %>"><%= ESTADO_LABEL[registro.estado] %></span>
+                <span class="badge badge-<%= registro.estado %>" id="labEstadoBadge"><%= ESTADO_LABEL[registro.estado] %></span>
               <% } %>
             </div>
             <p>Captura la solicitud y agrega uno o varios estudios para el paciente.</p>
@@ -358,12 +358,14 @@
             // "Enviar resultados" — pedido explícito del usuario: vive en
             // el footer fijo (junto a Cancelar/Imprimir) para que quede
             // siempre visible aunque el usuario haga scroll dentro de
-            // "Agregar estudios". De momento solo un stub (modal "Enviando
-            // resultados", se cierra solo a los 5s): el envío real por
-            // correo/WhatsApp (envios_laboratorio/envio_archivo) sigue sin
-            // implementar. Empieza deshabilitado; se activa client-side
-            // según actualizarEstadosBotonesArchivo() — solo cuando TODOS
-            // los estudios ya tienen archivo (por "todos" o uno por uno).
+            // "Agregar estudios". Envío real por correo/WhatsApp (ver
+            // laboratorio.service.js#enviarResultados) — se queda
+            // habilitado después de un envío exitoso a propósito, para
+            // poder reenviar (ej. reintentar un canal que falló, o el
+            // tutor pide que se lo manden de nuevo). Empieza deshabilitado;
+            // se activa client-side según actualizarEstadosBotonesArchivo()
+            // — solo cuando TODOS los estudios ya tienen archivo (por
+            // "todos" o uno por uno).
             %>
             <button type="button" class="btn-primary" id="labEnviarResultadosBtn" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
@@ -446,19 +448,21 @@
 
   <% if (puedeCargarArchivos) { %>
     <%
-    // "Enviar resultados" (pedido explícito del usuario) — de momento un
-    // stub: solo muestra este modal y se cierra solo a los 5s, sin enviar
-    // nada de verdad todavía. Mismo patrón visual que #confirmModalBackdrop
-    // (.modal-backdrop/.modal-card/.modal-header, ya usado en el resto del
-    // sistema), sin botones de acción porque no hay nada que confirmar.
+    // "Enviar resultados" (pedido explícito del usuario): envío real por
+    // WhatsApp y/o correo según los datos de contacto del tutor (ver
+    // laboratorio.service.js#enviarResultados) — el título/mensaje se
+    // actualizan en cliente según la respuesta real del servidor (ver
+    // manejarEnvioResultados más abajo), nunca se cierra solo. Mismo
+    // patrón visual que #confirmModalBackdrop (.modal-backdrop/.modal-card/
+    // .modal-header, ya usado en el resto del sistema).
     %>
     <div class="modal-backdrop" id="labEnviarModalBackdrop">
       <div class="modal-card">
         <div class="modal-header">
-          <h2>Enviando resultados</h2>
+          <h2 id="labEnviarModalTitulo">Enviando resultados</h2>
           <button class="modal-close-btn" type="button" id="labEnviarModalClose" aria-label="Cerrar">&times;</button>
         </div>
-        <p>Enviando documentos al tutor…</p>
+        <p id="labEnviarModalMensaje">Enviando documentos al tutor…</p>
       </div>
     </div>
 
@@ -1518,29 +1522,102 @@
         quitarArchivo(`laboratorio/${DATOS.registro.id}/archivos`);
       });
 
-      // "Enviar resultados" (pedido explícito del usuario) — de momento un
-      // stub, sin envío real todavía: solo abre el modal y lo cierra solo a
-      // los 5s. El botón mismo ya llega deshabilitado desde el servidor y
+      // "Enviar resultados" (pedido explícito del usuario): envío real por
+      // WhatsApp y/o correo, según qué dato de contacto tenga el tutor —
+      // POST laboratorio.controller.js#enviarResultados, que nunca lanza
+      // por una falla de un canal en sí (viaja en el propio JSON, por
+      // canal). El botón mismo ya llega deshabilitado desde el servidor y
       // actualizarEstadosBotonesArchivo() decide cuándo se habilita — este
       // guard es una segunda capa, nunca debería hacer falta.
       const enviarBtn = document.getElementById('labEnviarResultadosBtn');
       const enviarModal = document.getElementById('labEnviarModalBackdrop');
-      let enviarModalTimer = null;
+      const enviarModalTitulo = document.getElementById('labEnviarModalTitulo');
+      const enviarModalMensaje = document.getElementById('labEnviarModalMensaje');
+
+      // Arma el título/mensaje final a partir de { correo, whatsapp }
+      // ({intentado, enviado, error} cada uno) — pedido explícito del
+      // usuario: "al final anunciar al usuario si se mandaron
+      // correctamente y por qué medio".
+      function resumenEnvio(resultado) {
+        const exitosos = [];
+        if (resultado.correo?.enviado) exitosos.push('correo');
+        if (resultado.whatsapp?.enviado) exitosos.push('WhatsApp');
+
+        const fallas = [];
+        if (resultado.correo?.intentado && !resultado.correo.enviado) {
+          fallas.push(`Correo: ${resultado.correo.error || 'no se pudo enviar.'}`);
+        }
+        if (resultado.whatsapp?.intentado && !resultado.whatsapp.enviado) {
+          fallas.push(`WhatsApp: ${resultado.whatsapp.error || 'no se pudo enviar.'}`);
+        }
+
+        if (exitosos.length === 0) {
+          return {
+            titulo: 'No se pudo enviar',
+            mensaje: fallas.join(' ') || 'No se pudo enviar por ningún medio.',
+          };
+        }
+        const exito = `Resultados enviados por ${exitosos.join(' y ')}.`;
+        return {
+          titulo: 'Resultados enviados',
+          mensaje: fallas.length ? `${exito} ${fallas.join(' ')}` : exito,
+        };
+      }
+
+      async function enviarResultados() {
+        enviarModalTitulo.textContent = 'Enviando resultados';
+        enviarModalMensaje.textContent = 'Enviando documentos al tutor…';
+        enviarModal.classList.add('open');
+
+        try {
+          const res = await fetch(`laboratorio/${DATOS.registro.id}/enviar`, {
+            method: 'POST',
+            headers: { 'x-csrf-token': csrfToken },
+          });
+          if (res.redirected) {
+            window.location.href = res.url;
+            return;
+          }
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            enviarModalTitulo.textContent = 'No se pudo enviar';
+            enviarModalMensaje.textContent = data.error || 'Ocurrió un error inesperado.';
+            return;
+          }
+
+          const { titulo, mensaje } = resumenEnvio(data);
+          enviarModalTitulo.textContent = titulo;
+          enviarModalMensaje.textContent = mensaje;
+
+          if (data.correo?.enviado || data.whatsapp?.enviado) {
+            const badge = document.getElementById('labEstadoBadge');
+            if (badge) {
+              badge.className = 'badge badge-enviado';
+              badge.textContent = 'Enviado';
+            }
+          }
+          // El botón se queda habilitado a propósito (pedido explícito del
+          // usuario): reenviar debe seguir siendo posible — ej. un canal
+          // falló (WhatsApp 131030 por número no verificado) y se corrige
+          // y reintenta sin recargar la página, o el tutor simplemente
+          // pide que se lo manden de nuevo. Mismo criterio que ya
+          // documenta envio_archivo en el schema ("permite reenviar el
+          // mismo archivo en envíos posteriores").
+        } catch {
+          enviarModalTitulo.textContent = 'No se pudo enviar';
+          enviarModalMensaje.textContent = 'No se pudo conectar con el servidor.';
+        }
+      }
+
       enviarBtn.addEventListener('click', () => {
         if (enviarBtn.disabled) return;
-        enviarModal.classList.add('open');
-        clearTimeout(enviarModalTimer);
-        enviarModalTimer = setTimeout(() => enviarModal.classList.remove('open'), 5000);
+        enviarResultados();
       });
       document.getElementById('labEnviarModalClose').addEventListener('click', () => {
         enviarModal.classList.remove('open');
-        clearTimeout(enviarModalTimer);
       });
       enviarModal.addEventListener('click', (event) => {
-        if (event.target === enviarModal) {
-          enviarModal.classList.remove('open');
-          clearTimeout(enviarModalTimer);
-        }
+        if (event.target === enviarModal) enviarModal.classList.remove('open');
       });
     }
 

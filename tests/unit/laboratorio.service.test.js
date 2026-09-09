@@ -1,10 +1,12 @@
 jest.mock('../../src/modules/laboratorio/laboratorio.repository');
 jest.mock('../../src/modules/laboratorio/laboratorio.archivos');
+jest.mock('../../src/modules/laboratorio/laboratorio.envios');
 jest.mock('../../src/modules/tutores/tutores.repository');
 jest.mock('../../src/modules/tutores/tutores.service');
 jest.mock('../../src/modules/doctores/doctores.repository');
 const repository = require('../../src/modules/laboratorio/laboratorio.repository');
 const archivos = require('../../src/modules/laboratorio/laboratorio.archivos');
+const envios = require('../../src/modules/laboratorio/laboratorio.envios');
 const tutoresRepository = require('../../src/modules/tutores/tutores.repository');
 const tutoresService = require('../../src/modules/tutores/tutores.service');
 const doctoresRepository = require('../../src/modules/doctores/doctores.repository');
@@ -22,6 +24,7 @@ const {
   eliminarArchivoDeTodos,
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
+  enviarResultados,
 } = require('../../src/modules/laboratorio/laboratorio.service');
 
 const MASCOTA = { id: 11, nombre: 'Cachis', propietario_id: 6 };
@@ -811,5 +814,132 @@ describe('laboratorio.service.obtenerArchivoParaDescarga', () => {
       nombreOriginal: 'r.pdf',
       rutaAbsoluta: '/storage/laboratorio/7/x.pdf',
     });
+  });
+});
+
+// Pedido explícito del usuario: envío real por WhatsApp y/o correo según
+// qué dato de contacto tenga el tutor, reportando al final qué medio(s)
+// funcionaron. laboratorio.envios.js (correo/WhatsApp) va mockeado entero
+// — lo que importa aquí es la ORQUESTACIÓN (a quién se le manda qué, qué
+// se registra en BD, qué se reporta), no las llamadas HTTP/SMTP en sí.
+describe('laboratorio.service.enviarResultados', () => {
+  const REGISTRO = {
+    id: 42,
+    mascota_nombre: 'Firulais',
+    propietario_nombre: 'Ana',
+    propietario_apellidos: 'Ruiz',
+    propietario_correo: 'ana@correo.com',
+    propietario_telefono: '5512345678',
+    estudios: [
+      { id: 1, archivo_id: 10 },
+      { id: 2, archivo_id: 10 },
+    ],
+  };
+  const ARCHIVO = { id: 10, nombre_original: 'resultados.pdf', ruta_almacenamiento: '42/x.pdf' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findById.mockResolvedValue(REGISTRO);
+    repository.findArchivoById.mockResolvedValue(ARCHIVO);
+    archivos.rutaAbsolutaDeArchivo.mockReturnValue('/storage/laboratorio/42/x.pdf');
+    archivos.mimetypeDeArchivo.mockReturnValue('application/pdf');
+    envios.enviarPorCorreo.mockResolvedValue({ ok: true });
+    envios.enviarPorWhatsapp.mockResolvedValue({ ok: true });
+    repository.registrarEnvio.mockResolvedValue();
+  });
+
+  it('lanza 404 con un id inválido, sin llegar a intentar ningún canal', async () => {
+    await expect(enviarResultados('no-es-numero', 1)).rejects.toThrow('Registro no encontrado.');
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+  });
+
+  it('lanza 404 si el registro no existe', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    await expect(enviarResultados('999', 1)).rejects.toThrow('Registro no encontrado.');
+  });
+
+  it('rechaza (400) si algún estudio todavía no tiene archivo', async () => {
+    repository.findById.mockResolvedValue({
+      ...REGISTRO,
+      estudios: [{ id: 1, archivo_id: null }],
+    });
+    await expect(enviarResultados('42', 1)).rejects.toThrow(
+      'Todos los estudios deben tener un archivo cargado antes de enviar los resultados.',
+    );
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('con correo y teléfono, intenta ambos canales y registra medio "ambos"', async () => {
+    const resultado = await enviarResultados('42', 7);
+
+    expect(envios.enviarPorCorreo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destinatario: 'ana@correo.com',
+        nombreTutor: 'Ana Ruiz',
+        nombreMascota: 'Firulais',
+      }),
+    );
+    expect(envios.enviarPorWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({ telefono: '5512345678' }),
+    );
+    expect(repository.registrarEnvio).toHaveBeenCalledWith({
+      registroLaboratorioId: 42,
+      medio: 'ambos',
+      destinatarioCorreo: 'ana@correo.com',
+      destinatarioTelefono: '5512345678',
+      archivoIds: [10],
+      usuarioId: 7,
+    });
+    expect(resultado).toEqual({
+      correo: { intentado: true, enviado: true, error: undefined },
+      whatsapp: { intentado: true, enviado: true, error: undefined },
+    });
+  });
+
+  it('sin correo registrado, solo intenta WhatsApp y registra medio "whatsapp"', async () => {
+    repository.findById.mockResolvedValue({ ...REGISTRO, propietario_correo: null });
+
+    await enviarResultados('42', 7);
+
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+    expect(repository.registrarEnvio).toHaveBeenCalledWith(
+      expect.objectContaining({ medio: 'whatsapp', destinatarioCorreo: null }),
+    );
+  });
+
+  it('si un canal falla, el otro se registra igual (uno no bloquea al otro)', async () => {
+    envios.enviarPorWhatsapp.mockResolvedValue({ ok: false, error: 'Meta rechazó el envío.' });
+
+    const resultado = await enviarResultados('42', 7);
+
+    expect(repository.registrarEnvio).toHaveBeenCalledWith(
+      expect.objectContaining({ medio: 'correo', destinatarioTelefono: null }),
+    );
+    expect(resultado.whatsapp).toEqual({
+      intentado: true,
+      enviado: false,
+      error: 'Meta rechazó el envío.',
+    });
+  });
+
+  it('si ningún canal tiene éxito, no registra nada en BD', async () => {
+    envios.enviarPorCorreo.mockResolvedValue({ ok: false, error: 'SMTP caído.' });
+    envios.enviarPorWhatsapp.mockResolvedValue({ ok: false, error: 'Meta caído.' });
+
+    const resultado = await enviarResultados('42', 7);
+
+    expect(repository.registrarEnvio).not.toHaveBeenCalled();
+    expect(resultado).toEqual({
+      correo: { intentado: true, enviado: false, error: 'SMTP caído.' },
+      whatsapp: { intentado: true, enviado: false, error: 'Meta caído.' },
+    });
+  });
+
+  it('deduplica archivo_id repetidos entre estudios (un solo archivo compartido)', async () => {
+    await enviarResultados('42', 7);
+
+    expect(repository.findArchivoById).toHaveBeenCalledTimes(1);
+    expect(repository.findArchivoById).toHaveBeenCalledWith(10);
   });
 });

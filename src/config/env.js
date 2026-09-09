@@ -57,6 +57,12 @@ module.exports = {
     token: process.env.WHATSAPP_TOKEN,
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+    // Solo la usa scripts/registrar-plantilla-resultados-laboratorio.js
+    // (Resumable Upload API de Meta, POST /{appId}/uploads) — el ID de la
+    // app de Meta for Developers, distinto de businessAccountId/
+    // phoneNumberId. No hace falta para nada del resto del envío/recepción
+    // normal de mensajes.
+    appId: process.env.WHATSAPP_APP_ID,
     // Webhook de mensajes entrantes (módulo `whatsapp/`) — appSecret firma
     // cada POST que manda Meta (X-Hub-Signature-256), webhookVerifyToken es
     // un valor que NOSOTROS elegimos y se pega tal cual en el campo
@@ -77,5 +83,19 @@ module.exports = {
   // config/claude.js).
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY,
+  },
+  // Envío de resultados de laboratorio por correo (config/email.js) —
+  // opcional, mismo criterio que `google`/`whatsapp` arriba: sin ellas la
+  // app sigue funcionando normal, el envío por correo simplemente no se
+  // activa (ver isEmailConfigured()).
+  email: {
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    // 'true'/'1' → true, cualquier otra cosa (incluido vacío/undefined) →
+    // false — una env var siempre llega como string, nunca como boolean.
+    secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_SECURE === '1',
+    user: process.env.SMTP_USER,
+    password: process.env.SMTP_PASSWORD,
+    from: process.env.SMTP_FROM,
   },
 };

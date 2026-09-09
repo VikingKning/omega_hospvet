@@ -195,6 +195,19 @@ router.delete(
   controller.eliminarArchivoEstudio,
 );
 
+// Envío real de resultados (pedido explícito del usuario) — permiso propio
+// `laboratorio.enviar` (ya sembrado, sin usar hasta ahora): alguien que
+// solo carga archivos no necesariamente debe poder disparar el envío al
+// tutor. Sin multer (no lleva archivos en el body, usa los ya guardados).
+router.post(
+  '/laboratorio/:id/enviar',
+  requireAuth,
+  requirePermission('laboratorio.enviar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.enviarResultados,
+);
+
 // Descarga autenticada — laboratorio.ver alcanza (igual que abrir la
 // pantalla de consulta), no hace falta laboratorio.cargar para poder ver
 // un resultado ya cargado.

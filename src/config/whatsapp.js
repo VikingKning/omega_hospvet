@@ -37,11 +37,30 @@ function templatesUrl() {
   return `https://graph.facebook.com/${GRAPH_API_VERSION}/${businessAccountId}/message_templates`;
 }
 
+// Subida de media (envío de resultados de laboratorio, whatsapp.envios.js)
+// — vive a nivel del NÚMERO, igual que messagesUrl(): se sube el archivo
+// aquí primero para obtener un media id, y ESE id (no el archivo) es lo
+// que se manda como parámetro del header de una plantilla.
+function mediaUrl() {
+  if (!isWhatsappConfigured()) {
+    throw new Error('WhatsApp no está configurado (faltan variables de entorno).');
+  }
+  return `https://graph.facebook.com/${GRAPH_API_VERSION}/${env.whatsapp.phoneNumberId}/media`;
+}
+
 function authHeaders() {
   return {
     Authorization: `Bearer ${env.whatsapp.token}`,
     'Content-Type': 'application/json',
   };
+}
+
+// Solo el Authorization — para requests multipart (mediaUrl() de arriba)
+// fetch arma su propio 'Content-Type: multipart/form-data; boundary=...' a
+// partir del FormData; fijarlo a mano (como hace authHeaders()) rompe el
+// boundary y Meta rechaza la subida.
+function bearerHeader() {
+  return { Authorization: `Bearer ${env.whatsapp.token}` };
 }
 
 // Verifica que un POST del webhook realmente venga de Meta — recalcula el
@@ -78,7 +97,9 @@ module.exports = {
   isWhatsappConfigured,
   messagesUrl,
   templatesUrl,
+  mediaUrl,
   authHeaders,
+  bearerHeader,
   verificarFirma,
   esVerifyTokenValido,
   GRAPH_API_VERSION,

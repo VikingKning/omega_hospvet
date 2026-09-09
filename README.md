@@ -420,25 +420,26 @@ El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc
 
 ### Scripts disponibles
 
-| Script                                   | Descripción                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------------- |
-| `pnpm start`                             | Levanta el servidor Express en modo producción, usando `.env`                   |
-| `pnpm run dev`                           | Levanta el servidor con recarga automática (`node --watch`), usando `.env`      |
-| `pnpm run migrate`                       | Ejecuta las migraciones pendientes (`knex migrate:latest`), usando `.env`       |
-| `pnpm run migrate:rollback`              | Revierte el último batch de migraciones                                         |
-| `pnpm run migrate:status`                | Muestra el estado de las migraciones                                            |
-| `pnpm run seed`                          | Ejecuta los seeds (catálogos base + usuario admin), usando `.env`               |
-| `pnpm run dev:localhost`                 | Igual que `dev`, pero carga variables desde `.env.localhost` (sin tocar `.env`) |
-| `pnpm run migrate:localhost`             | Igual que `migrate`, cargando `.env.localhost`                                  |
-| `pnpm run seed:localhost`                | Igual que `seed`, cargando `.env.localhost`                                     |
-| `pnpm run lint`                          | Corre ESLint sobre todo el proyecto                                             |
-| `pnpm run lint:fix`                      | Corre ESLint y corrige automáticamente lo que pueda                             |
-| `pnpm run format`                        | Formatea todo el proyecto con Prettier                                          |
-| `pnpm run format:check`                  | Verifica el formato sin modificar archivos (usado en CI)                        |
-| `pnpm test`                              | Corre la suite de pruebas con Jest + Supertest (`tests/`)                       |
-| `pnpm run google:renovar-token`          | Regenera `GOOGLE_REFRESH_TOKEN` cuando Google lo revoca/expira (ver nota abajo) |
-| `pnpm run whatsapp:registrar-plantillas` | Da de alta en Meta las plantillas elegidas del experimento (ver nota abajo)     |
-| `pnpm run whatsapp:estado-plantillas`    | Consulta en vivo el estado de aprobación de las plantillas ya registradas       |
+| Script                                             | Descripción                                                                        |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm start`                                       | Levanta el servidor Express en modo producción, usando `.env`                      |
+| `pnpm run dev`                                     | Levanta el servidor con recarga automática (`node --watch`), usando `.env`         |
+| `pnpm run migrate`                                 | Ejecuta las migraciones pendientes (`knex migrate:latest`), usando `.env`          |
+| `pnpm run migrate:rollback`                        | Revierte el último batch de migraciones                                            |
+| `pnpm run migrate:status`                          | Muestra el estado de las migraciones                                               |
+| `pnpm run seed`                                    | Ejecuta los seeds (catálogos base + usuario admin), usando `.env`                  |
+| `pnpm run dev:localhost`                           | Igual que `dev`, pero carga variables desde `.env.localhost` (sin tocar `.env`)    |
+| `pnpm run migrate:localhost`                       | Igual que `migrate`, cargando `.env.localhost`                                     |
+| `pnpm run seed:localhost`                          | Igual que `seed`, cargando `.env.localhost`                                        |
+| `pnpm run lint`                                    | Corre ESLint sobre todo el proyecto                                                |
+| `pnpm run lint:fix`                                | Corre ESLint y corrige automáticamente lo que pueda                                |
+| `pnpm run format`                                  | Formatea todo el proyecto con Prettier                                             |
+| `pnpm run format:check`                            | Verifica el formato sin modificar archivos (usado en CI)                           |
+| `pnpm test`                                        | Corre la suite de pruebas con Jest + Supertest (`tests/`)                          |
+| `pnpm run google:renovar-token`                    | Regenera `GOOGLE_REFRESH_TOKEN` cuando Google lo revoca/expira (ver nota abajo)    |
+| `pnpm run whatsapp:registrar-plantillas`           | Da de alta en Meta las plantillas elegidas del experimento (ver nota abajo)        |
+| `pnpm run whatsapp:estado-plantillas`              | Consulta en vivo el estado de aprobación de las plantillas ya registradas          |
+| `pnpm run whatsapp:registrar-plantilla-resultados` | Registro único de la plantilla "resultados de laboratorio listos" (ver nota abajo) |
 
 Los scripts `*:localhost` usan [`dotenv-cli`](https://github.com/entropitor/dotenv-cli) para inyectar las variables de un archivo específico sin necesidad de copiarlo a `.env` (evita el riesgo de sobrescribir por accidente un `.env` real). El mismo patrón se usará para `.env.qa` y `.env.prod` cuando existan (`dev:qa`, `start:prod`, etc.).
 
@@ -472,6 +473,75 @@ WHATSAPP_BUSINESS_ACCOUNT_ID=...
 **Pendiente** (según la Bitácora de Decisiones Técnicas v4, "LLM clasificador de intención de WhatsApp"): un clasificador con `claude-haiku-4-5` vía Claude API (Commercial Terms) que solo clasifica la intención del mensaje entrante y enruta a una plantilla fija de `plantillas_whatsapp` — nunca genera texto médico libre. Todavía no existen las credenciales de Anthropic (Commercial Terms, cuenta de negocio) para esto.
 
 Ver `scripts/renovar-google-token.js` para el detalle de implementación.
+
+#### Recibir mensajes de WhatsApp en localhost (webhook + cloudflared)
+
+El webhook de mensajes entrantes (`GET`/`POST /webhooks/whatsapp`, módulo `whatsapp/`) es un callback que Meta llama directamente sobre tu servidor — necesita una URL pública con HTTPS, algo que `localhost:3000` no es. Para probarlo en desarrollo se usa un **quick tunnel** de [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) (`cloudflared` ya instalado en la máquina de desarrollo) — no requiere cuenta ni login, pero tampoco guarda configuración: **cada vez que lo levantas te da una URL nueva** de `*.trycloudflare.com`.
+
+Dos terminales:
+
+```bash
+# Terminal 1 — el servidor
+pnpm run dev:localhost
+
+# Terminal 2 — el túnel
+cloudflared tunnel --url http://localhost:3000
+```
+
+`cloudflared` imprime algo como `https://algo-random.trycloudflare.com`. Si es distinta a la que ya tenías registrada en Meta, hay que actualizarla ahí:
+
+1. [Meta for Developers](https://developers.facebook.com/) → tu app → **WhatsApp → Configuration → Webhook**.
+2. Callback URL: `https://algo-random.trycloudflare.com/webhooks/whatsapp`.
+3. Verify Token: el valor de `WHATSAPP_WEBHOOK_VERIFY_TOKEN` en tu `.env.localhost` (lo elegimos nosotros, Meta solo lo repite — ver `esVerifyTokenValido()` en `src/config/whatsapp.js`).
+4. "Verify and save" — si el servidor ya está corriendo y el token coincide, Meta lo acepta al toque.
+
+Deja `cloudflared` corriendo mientras pruebas; ciérralo con `Ctrl+C` cuando termines (no hace falta "apagarlo" en ningún lado de Meta, simplemente la URL deja de responder).
+
+#### Envío de resultados de laboratorio (WhatsApp + correo)
+
+Pedido explícito del usuario: al terminar de cargar todos los archivos de una orden, "Enviar resultados" (`/laboratorio/:id/cargar`) manda el/los archivo(s) por **correo** si el tutor tiene `correo` registrado, por **WhatsApp** siempre (`propietarios.telefono` es obligatorio), o por ambos — y al final reporta al usuario exactamente qué medio(s) funcionaron. Igual que Google/WhatsApp, cada canal es opcional y desacoplado (`isEmailConfigured()` en `src/config/email.js`; sin WhatsApp configurado, ese canal simplemente no se intenta).
+
+**Correo — SMTP vía Nodemailer**:
+
+```
+SMTP_HOST=...
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=...
+SMTP_PASSWORD=...
+SMTP_FROM=Omega Veterinaria & Estética <no-reply@tudominio.com>
+```
+
+**Ambiente de desarrollo (Gmail)**: para probar el envío de correo en local sin tocar la cuenta real de producción, sirve una cuenta de Gmail con una **contraseña de aplicación** (no tu contraseña normal — Gmail ya no acepta SMTP con esa desde hace tiempo):
+
+1. Entra a la cuenta de Gmail que quieras usar para pruebas (puede ser una nueva, solo para esto).
+2. Activa la verificación en 2 pasos: [myaccount.google.com/security](https://myaccount.google.com/security).
+3. Genera una contraseña de aplicación en [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (tipo de app "Otra", ponle un nombre como "Omega Vet dev" y genera).
+4. Copia los 16 caracteres que te da Google (sin espacios) — es lo que va en `SMTP_PASSWORD`, no tu contraseña normal.
+5. Llena tu `.env.localhost`:
+   ```
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=465
+   SMTP_SECURE=true
+   SMTP_USER=tu-cuenta-de-pruebas@gmail.com
+   SMTP_PASSWORD=la-contraseña-de-aplicación-de-16-caracteres
+   SMTP_FROM=Omega Veterinaria & Estética <tu-cuenta-de-pruebas@gmail.com>
+   ```
+   (`SMTP_SECURE=true` porque el 465 es TLS implícito — con el 587/STARTTLS de arriba se deja en `false`.)
+
+**WhatsApp — plantilla con documento adjunto**: a diferencia de las plantillas de solo texto de arriba, avisar que un resultado está listo es un mensaje que el negocio inicia fuera de una conversación abierta — Meta exige una plantilla APROBADA, y esta además lleva un archivo adjunto en el encabezado (el PDF/imagen real de cada envío). Requiere una variable nueva, solo para el registro (no para el envío del día a día):
+
+```
+WHATSAPP_APP_ID=...   # ID de la app de Meta for Developers (Configuración básica de la app), NO el de la cuenta de negocio/número
+```
+
+Registro único (una sola vez por número de WhatsApp, no en cada deploy):
+
+```bash
+pnpm run whatsapp:registrar-plantilla-resultados
+```
+
+El script sube un PDF de ejemplo (generado con `pdf-lib`, ya dependencia del proyecto) vía el [Resumable Upload API de Meta](https://developers.facebook.com/docs/graph-api/guides/upload) para obtener el `header_handle` que la creación de la plantilla exige, y da de alta `resultados_laboratorio_listos` (categoría `UTILITY`, idioma `es_MX`). La aprobación de Meta puede tardar **horas** — corre `pnpm run whatsapp:estado-plantillas` para ver cuándo pasa a `APPROVED`. Mientras el número siga siendo el de PRUEBA (ver arriba), el envío real solo llegará a los 5 destinatarios ya verificados, aunque la plantilla ya esté aprobada.
 
 ### Calidad y CI
 

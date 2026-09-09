@@ -550,6 +550,50 @@ async function actualizarRegistro(
   });
 }
 
+// Envío real de resultados (pedido explícito del usuario) — se llama UNA
+// vez por intento de laboratorio.service.js#enviarResultados, ya con
+// `medio` resuelto ('correo'|'whatsapp'|'ambos', ver el COMMENT de la
+// tabla) según qué canal(es) SÍ tuvieron éxito; nunca se llama si ninguno
+// lo tuvo. Todo en una sola transacción: si algo truena a medias (el envío
+// ya salió, esto es solo la contabilidad en BD), se reintenta la próxima
+// vez que se dé clic en "Enviar resultados" — el archivo YA llegó al
+// tutor, perder el registro no es tan grave como dejarlo a medias.
+async function registrarEnvio({
+  registroLaboratorioId,
+  medio,
+  destinatarioCorreo,
+  destinatarioTelefono,
+  archivoIds,
+  usuarioId,
+}) {
+  await db.transaction(async (trx) => {
+    const [envio] = await trx('envios_laboratorio')
+      .insert({
+        registro_laboratorio_id: registroLaboratorioId,
+        medio,
+        destinatario_correo: destinatarioCorreo,
+        destinatario_telefono: destinatarioTelefono,
+        enviado_por: usuarioId,
+        enviado_en: trx.fn.now(),
+      })
+      .returning('id');
+
+    await trx('envio_archivo').insert(
+      archivoIds.map((archivoId) => ({ envio_id: envio.id, archivo_id: archivoId })),
+    );
+
+    await trx('archivos_laboratorio')
+      .whereIn('id', archivoIds)
+      .andWhere('estado', '!=', 'enviado')
+      .update({ estado: 'enviado', enviado_por: usuarioId, enviado_en: trx.fn.now() });
+
+    await trx('registros_laboratorio')
+      .where({ id: registroLaboratorioId })
+      .andWhere('estado', '!=', 'enviado')
+      .update({ estado: 'enviado', enviado_en: trx.fn.now() });
+  });
+}
+
 // Baja lógica — nunca DELETE físico (mismo patrón que todo el resto del
 // sistema). Idempotente (mismo criterio que US-603): un id inexistente o ya
 // eliminado no truena, simplemente no afecta ninguna fila.
@@ -584,4 +628,5 @@ module.exports = {
   desasignarArchivoDeTodosLosEstudios,
   desasignarArchivoDeEstudio,
   revertirCargadoSiIncompleto,
+  registrarEnvio,
 };
