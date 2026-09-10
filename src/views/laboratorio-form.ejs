@@ -212,7 +212,17 @@
                 <label>
                   Categoría
                   <div class="combobox" id="labCategoriaCombobox">
-                    <input type="text" id="labCategoriaTrigger" autocomplete="off" placeholder="Todas las categorías" value="Todas las categorías">
+                    <%
+                    // Pedido explícito del usuario (helper compartido de
+                    // combobox.js): el botón "x" de limpiar se muestra según
+                    // si el trigger tiene texto — un value fijo no vacío
+                    // ("Todas las categorías") nunca se vería como "vacío"
+                    // para ese chequeo. Se resuelve igual que Lateralidad
+                    // abajo: placeholder en vez de value, el campo arranca
+                    // (y vuelve, al elegir "Todas las categorías" o limpiar)
+                    // realmente vacío.
+                    %>
+                    <input type="text" id="labCategoriaTrigger" autocomplete="off" placeholder="Todas las categorías">
                     <ul class="combobox-list" id="labCategoriaList" hidden></ul>
                   </div>
                   <input type="hidden" id="labCategoriaId">
@@ -511,6 +521,7 @@
 
   <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
   <script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
+  <script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
   <script nonce="<%= cspNonce %>">
     function escapeHtml(text) {
       const div = document.createElement('div');
@@ -597,12 +608,27 @@
       document.getElementById('labFormError').style.display = 'none';
     });
 
+    // ---- Botón "x" de limpiar de cada combobox (pedido explícito del
+    // usuario, ver public/js/combobox.js#attachComboboxClearButton) — cada
+    // sección de abajo reasigna la suya al armar su botón; se declaran aquí
+    // como no-op por si ese bloque nunca corre (ej. Tutor por nombre y
+    // Paciente no tienen botón activo en modo edición/consulta) y el resto
+    // del código puede llamarlas de todos modos tras cambiar el value por
+    // su cuenta, sin checar primero si el botón llegó a existir.
+    let refrescarTutorNombreClear = () => {};
+    let refrescarPacienteClear = () => {};
+    let refrescarDoctorClear = () => {};
+    let refrescarCategoriaClear = () => {};
+    let refrescarEstudioClear = () => {};
+    let refrescarZonaClear = () => {};
+
     // ---- Tutor por teléfono ----
     let tutorActual = null; // { id, nombre, apellidos, telefono, correo, pacientes }
 
     function renderTutor() {
       document.getElementById('labTutorNombre').value = tutorActual ? `${tutorActual.nombre} ${tutorActual.apellidos}` : '';
       document.getElementById('labTutorCorreo').value = tutorActual ? (tutorActual.correo || '—') : '';
+      refrescarTutorNombreClear();
     }
 
     function renderPacienteOptions() {
@@ -614,6 +640,11 @@
       list.innerHTML = pacientes
         .map((p) => `<li class="combobox-item" data-id="${p.id}">${escapeHtml(p.nombre)}</li>`)
         .join('');
+      // El botón "x" también se oculta cuando trigger.disabled cambia a
+      // true (ej. tutor sin pacientes) — attachComboboxClearButton solo
+      // reacciona a 'input' o a una llamada explícita, así que hace falta
+      // este refrescar() manual tras tocar `disabled` por código.
+      refrescarPacienteClear();
     }
 
     function limpiarPaciente() {
@@ -621,6 +652,7 @@
       document.getElementById('labPacienteTrigger').value = '';
       document.getElementById('labPacienteFicha').hidden = true;
       pacienteEspecieActual = null;
+      refrescarPacienteClear();
     }
 
     function seleccionarPaciente(id) {
@@ -639,8 +671,13 @@
         pacienteEspecieActual = paciente.tipo || null;
         if (!SOLO_LECTURA) {
           categoriaFiltro = '';
-          document.getElementById('labCategoriaTrigger').value = 'Todas las categorías';
+          // Vacío (no el texto "Todas las categorías"): el placeholder ya
+          // muestra ese texto, y así el botón "x" del combobox se oculta
+          // correctamente al volver al default (ver caveat del value fijo
+          // en el markup de labCategoriaTrigger).
+          document.getElementById('labCategoriaTrigger').value = '';
           document.getElementById('labCategoriaId').value = '';
+          refrescarCategoriaClear();
           clearEstudioSelection();
         }
       }
@@ -657,6 +694,7 @@
       document.getElementById('labPacienteEdad').textContent = paciente.edad != null ? `${paciente.edad} años` : '—';
       document.getElementById('labPacienteRaza').textContent = paciente.raza || '—';
       document.getElementById('labPacienteFicha').hidden = false;
+      refrescarPacienteClear();
     }
 
     async function buscarTutorPorTelefono(telefono) {
@@ -787,6 +825,23 @@
         document.getElementById('labTelefonoError').classList.remove('show');
         buscarTutorPorTelefono(item.dataset.telefono.replace(/\D/g, ''));
       });
+
+      attachComboboxKeyboardNav(labTutorNombreInput, labTutorNombreList);
+      // Pedido explícito del usuario: el "x" aquí solo limpia ESTE campo
+      // (texto + lista), sin tocar #labTelefono ni el tutor/paciente ya
+      // encontrados — para borrar la selección completa ya existe el botón
+      // "Borrar tutor y paciente" (labLimpiarTutorBtn, arriba, mismo
+      // condicional !soloLectura && !esEdicion), que sí hace ese reset
+      // agresivo (incluido el teléfono). Mismo criterio "ligero" que Doctor
+      // más abajo, que tampoco tiene una función limpiar propia.
+      refrescarTutorNombreClear = attachComboboxClearButton(
+        document.getElementById('labTutorNombreCombobox'),
+        labTutorNombreInput,
+        () => {
+          labTutorNombreInput.value = '';
+          labTutorNombreList.hidden = true;
+        },
+      );
     }
 
     document.getElementById('labPacienteList').addEventListener('click', (event) => {
@@ -810,6 +865,13 @@
       positionComboboxList(event.target, list);
       list.hidden = false;
     });
+
+    attachComboboxKeyboardNav(document.getElementById('labPacienteTrigger'), document.getElementById('labPacienteList'));
+    refrescarPacienteClear = attachComboboxClearButton(
+      document.getElementById('labPacienteCombobox'),
+      document.getElementById('labPacienteTrigger'),
+      limpiarPaciente,
+    );
 
     // ---- Doctor (catálogo chico embebido, filtrado en cliente — mismo
     // patrón que citaDoctorCombobox en agenda.ejs). ----
@@ -839,7 +901,23 @@
         document.getElementById('labDoctorId').value = item.dataset.id;
         labDoctorInput.value = item.dataset.label;
         document.getElementById('labDoctorList').hidden = true;
+        refrescarDoctorClear();
       });
+
+      attachComboboxKeyboardNav(labDoctorInput, document.getElementById('labDoctorList'));
+      // Sin limpiarDoctor() propia (nada depende de Doctor) — el "x" solo
+      // necesita vaciar lo que el listener de 'input' de arriba ya no
+      // alcanza a vaciar por sí solo (el propio input.value) y cerrar la
+      // lista.
+      refrescarDoctorClear = attachComboboxClearButton(
+        document.getElementById('labDoctorCombobox'),
+        labDoctorInput,
+        () => {
+          document.getElementById('labDoctorId').value = '';
+          labDoctorInput.value = '';
+          document.getElementById('labDoctorList').hidden = true;
+        },
+      );
     }
 
     function preseleccionarDoctor(doctorId) {
@@ -847,6 +925,7 @@
       if (!doctor) return;
       document.getElementById('labDoctorId').value = doctor.id;
       labDoctorInput.value = `${doctor.nombre} ${doctor.apellidos}`;
+      refrescarDoctorClear();
     }
 
     // ---- Categoría (filtro del combobox de estudio, no se manda al
@@ -895,15 +974,35 @@
         if (!item) return;
         event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
         categoriaFiltro = item.dataset.id;
-        labCategoriaTrigger.value = item.textContent;
+        // "Todas las categorías" (data-id="") deja el campo VACÍO (se ve el
+        // placeholder) en vez de escribir ese texto — mismo motivo que el
+        // reset en seleccionarPaciente(): así el botón "x" se oculta
+        // correctamente al volver al default.
+        labCategoriaTrigger.value = categoriaFiltro ? item.textContent : '';
         document.getElementById('labCategoriaId').value = categoriaFiltro;
         document.getElementById('labCategoriaList').hidden = true;
+        refrescarCategoriaClear();
         clearEstudioSelection();
       });
+
+      attachComboboxKeyboardNav(labCategoriaTrigger, document.getElementById('labCategoriaList'));
+      refrescarCategoriaClear = attachComboboxClearButton(
+        document.getElementById('labCategoriaCombobox'),
+        labCategoriaTrigger,
+        () => {
+          categoriaFiltro = '';
+          labCategoriaTrigger.value = '';
+          document.getElementById('labCategoriaId').value = '';
+          document.getElementById('labCategoriaList').hidden = true;
+          clearEstudioSelection();
+        },
+      );
     }
 
     // ---- Estudio (búsqueda en todo el catálogo) ----
-    let estudioActiveIndex = -1;
+    // estudioActiveIndex ya no vive aquí — attachComboboxKeyboardNav (ver
+    // public/js/combobox.js) lo mantiene internamente, resetéandolo solo él
+    // mismo cuando labEstudioList se vuelve a renderizar (MutationObserver).
     // Especie del paciente seleccionado (Perro/Gato) — pedido explícito del
     // usuario: filtrar el picker de estudios según la especie, mismo
     // criterio que catalogo_estudios.especie ('Perro'|'Gato'|NULL para
@@ -934,7 +1033,6 @@
         : entries;
 
       positionComboboxList(search, list);
-      estudioActiveIndex = -1;
 
       if (filtered.length === 0) {
         list.innerHTML = '<li class="combobox-empty">Sin resultados</li>';
@@ -959,7 +1057,6 @@
     function hideEstudioList() {
       const list = document.getElementById('labEstudioList');
       if (list) list.hidden = true;
-      estudioActiveIndex = -1;
     }
 
     function updateCamposAdicionales() {
@@ -975,6 +1072,7 @@
       if (campo !== 'zona') {
         document.getElementById('labZonaId').value = '';
         document.getElementById('labZonaTrigger').value = '';
+        refrescarZonaClear();
       }
       if (campo !== 'tipo_muestra') {
         document.getElementById('labTipoMuestra').value = '';
@@ -996,6 +1094,7 @@
       document.getElementById('labEstudioId').value = estudio.id;
       document.getElementById('labEstudioSearch').value = estudio.nombre;
       updateCamposAdicionales();
+      refrescarEstudioClear();
     }
 
     function clearEstudioSelection() {
@@ -1004,6 +1103,7 @@
       document.getElementById('labEstudioObservaciones').value = '';
       updateCamposAdicionales();
       hideEstudioList();
+      refrescarEstudioClear();
     }
 
     if (!SOLO_LECTURA) {
@@ -1011,34 +1111,15 @@
       labEstudioSearch.addEventListener('input', () => renderEstudioList(labEstudioSearch.value));
       labEstudioSearch.addEventListener('focus', () => renderEstudioList(labEstudioSearch.value));
 
-      labEstudioSearch.addEventListener('keydown', (event) => {
-        const list = document.getElementById('labEstudioList');
-        if (list.hidden && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
-          renderEstudioList(labEstudioSearch.value);
-          return;
-        }
-        const items = Array.from(list.querySelectorAll('.combobox-item'));
-        if (event.key === 'ArrowDown') {
-          event.preventDefault();
-          estudioActiveIndex = Math.min(estudioActiveIndex + 1, items.length - 1);
-          items.forEach((item, i) => item.classList.toggle('active', i === estudioActiveIndex));
-          items[estudioActiveIndex]?.scrollIntoView({ block: 'nearest' });
-        } else if (event.key === 'ArrowUp') {
-          event.preventDefault();
-          estudioActiveIndex = Math.max(estudioActiveIndex - 1, 0);
-          items.forEach((item, i) => item.classList.toggle('active', i === estudioActiveIndex));
-          items[estudioActiveIndex]?.scrollIntoView({ block: 'nearest' });
-        } else if (event.key === 'Enter') {
-          event.preventDefault();
-          const item = items[estudioActiveIndex] || items[0];
-          if (item && item.dataset.id) {
-            selectEstudio(item.dataset.id);
-            hideEstudioList();
-          }
-        } else if (event.key === 'Escape') {
-          hideEstudioList();
-        }
-      });
+      // Pedido explícito del usuario: una sola fuente de la lógica de
+      // flechas/Enter/Escape para los 7 combobox de esta página — este
+      // input ya tenía su propio manejo de teclado antes de que existiera
+      // combobox.js (precedente real, funcionaba bien), pero se reemplaza
+      // por el helper compartido para no dejar 2 implementaciones
+      // coexistiendo sobre el mismo campo. Mismo resultado: Enter dispara
+      // un click sintético sobre el item activo, que ya cae en el listener
+      // de click de abajo (selectEstudio + hideEstudioList).
+      attachComboboxKeyboardNav(labEstudioSearch, document.getElementById('labEstudioList'));
 
       document.getElementById('labEstudioList').addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item');
@@ -1047,6 +1128,12 @@
         selectEstudio(item.dataset.id);
         hideEstudioList();
       });
+
+      refrescarEstudioClear = attachComboboxClearButton(
+        document.getElementById('labEstudioCombobox'),
+        labEstudioSearch,
+        clearEstudioSelection,
+      );
 
       // Pedido explícito del usuario: buscador con escritura y filtrado
       // incremental (11 zonas, mismo criterio que Categoría arriba).
@@ -1076,7 +1163,24 @@
         document.getElementById('labZonaId').value = item.dataset.id;
         document.getElementById('labZonaTrigger').value = item.textContent;
         document.getElementById('labZonaList').hidden = true;
+        refrescarZonaClear();
       });
+
+      attachComboboxKeyboardNav(labZonaTrigger, document.getElementById('labZonaList'));
+      // Sin función limpiarZona() propia — hoy se limpia como parte de
+      // updateCamposAdicionales() (cuando cambia el campo adicional del
+      // estudio elegido), pero eso lo dispara un cambio de ESTUDIO, no el
+      // botón "x" de ESTE combobox en particular. El "x" solo vacía su
+      // propio campo + cierra la lista.
+      refrescarZonaClear = attachComboboxClearButton(
+        document.getElementById('labZonaCombobox'),
+        labZonaTrigger,
+        () => {
+          document.getElementById('labZonaId').value = '';
+          labZonaTrigger.value = '';
+          document.getElementById('labZonaList').hidden = true;
+        },
+      );
 
       document.getElementById('labLateralidadTrigger').addEventListener('focus', (event) => {
         const list = document.getElementById('labLateralidadList');
@@ -1091,6 +1195,15 @@
         document.getElementById('labLateralidadTrigger').value = item.textContent;
         document.getElementById('labLateralidadList').hidden = true;
       });
+
+      // Lateralidad: SOLO teclado, sin botón "x" (decisión, ver reporte) —
+      // su default "No aplica" es un enum con valor fijo, no un "vacío"
+      // real (mismo criterio ya usado para Estatus en usuario-form.ejs, que
+      // tampoco tiene botón de limpiar).
+      attachComboboxKeyboardNav(
+        document.getElementById('labLateralidadTrigger'),
+        document.getElementById('labLateralidadList'),
+      );
     }
 
     // ---- Carrito de estudios ----
@@ -1630,6 +1743,12 @@
       document.getElementById('btnAddStudyLabel').textContent = editando ? 'Guardar cambios' : 'Agregar estudio';
       document.getElementById('labCategoriaTrigger').disabled = editando;
       document.getElementById('labEstudioSearch').disabled = editando;
+      // Mismo motivo que refrescarPacienteClear() en renderPacienteOptions:
+      // tocar `disabled` por código no dispara 'input', así que el botón
+      // "x" de Categoría/Estudio no se ocultaría solo mientras se edita un
+      // estudio ya agregado del carrito.
+      refrescarCategoriaClear();
+      refrescarEstudioClear();
     }
 
     // ---- Editar un estudio ya agregado (pedido explícito del usuario): a
@@ -1650,6 +1769,7 @@
       categoriaFiltro = String(estudio.categoriaId);
       document.getElementById('labCategoriaId').value = categoriaFiltro;
       document.getElementById('labCategoriaTrigger').value = estudio.categoriaNombre;
+      refrescarCategoriaClear();
 
       selectEstudio(estudio.id);
 
@@ -1657,6 +1777,7 @@
         const zona = CATALOGO.zonasAnatomicas.find((z) => z.id === fila.zonaAnatomicaId);
         document.getElementById('labZonaId').value = fila.zonaAnatomicaId;
         document.getElementById('labZonaTrigger').value = zona ? zona.nombre : '';
+        refrescarZonaClear();
       }
       if (fila.tipoMuestra) {
         document.getElementById('labTipoMuestra').value = fila.tipoMuestra;

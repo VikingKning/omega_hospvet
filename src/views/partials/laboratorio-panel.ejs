@@ -53,7 +53,7 @@ function primeraPalabra(texto) {
       <div class="lab-toolbar-filters">
         <div class="lab-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" id="laboratorio-search" name="q" value="<%= q %>" placeholder="Buscar por mascota, cliente o doctor...">
+          <input type="text" id="laboratorio-search" name="q" value="<%= q %>" placeholder="Buscar por paciente, tutor, doctor, teléfono o folio (LAB-XXX)...">
         </div>
         <%
         // Un <select> nativo no puede tener su lista abierta con esquinas
@@ -68,7 +68,7 @@ function primeraPalabra(texto) {
         <input type="hidden" name="estado" value="<%= estado %>">
         <div class="combobox" id="estadoFiltroCombobox">
           <input type="text" id="estadoFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
-                 value="<%= ESTADO_LABEL[estado] ?? 'Todos los estados' %>">
+                 placeholder="Todos los estados" value="<%= ESTADO_LABEL[estado] ?? '' %>">
           <ul class="combobox-list" id="estadoFiltroList" hidden hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
             <li class="combobox-item"
                 hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
@@ -83,7 +83,7 @@ function primeraPalabra(texto) {
         <input type="hidden" name="categoriaId" value="<%= categoriaId %>">
         <div class="combobox" id="categoriaFiltroCombobox">
           <input type="text" id="categoriaFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
-                 value="<%= categorias.find((c) => String(c.id) === String(categoriaId))?.nombre ?? 'Todos los estudios' %>">
+                 placeholder="Todos los estudios" value="<%= categorias.find((c) => String(c.id) === String(categoriaId))?.nombre ?? '' %>">
           <ul class="combobox-list" id="categoriaFiltroList" hidden hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
             <li class="combobox-item"
                 hx-post="laboratorio.html" hx-include="#laboratorio-filters" hx-target="#laboratorio-panel"
@@ -109,7 +109,7 @@ function primeraPalabra(texto) {
         <thead>
           <tr>
             <th>#ID</th>
-            <th>Mascota/Cliente</th>
+            <th>Paciente/Tutor</th>
             <th>Tipo de estudio</th>
             <th>Dr. Solicitante</th>
             <th>Fecha Solicitud</th>

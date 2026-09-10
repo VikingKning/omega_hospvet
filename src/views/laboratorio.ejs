@@ -70,6 +70,7 @@
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
+<script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
   // ---- Combobox flotante genérico del toolbar de filtros (mismo patrón
   // que usuarios.ejs/agenda.ejs — un "portal" a <body> para escapar el
@@ -123,6 +124,39 @@
 
   wireFiltroCombobox('estadoFiltroTrigger', 'estadoFiltroList', 'estadoFiltroCombobox');
   wireFiltroCombobox('categoriaFiltroTrigger', 'categoriaFiltroList', 'categoriaFiltroCombobox');
+
+  // Navegación con flechas + botón "x" (pedido explícito del usuario, ver
+  // public/js/combobox.js). A diferencia del filtro de doctor en agenda.ejs
+  // (vive fijo en la página), aquí HTMX reemplaza #laboratorio-panel ENTERO
+  // en cada filtro/orden/página/eliminación — el trigger, la lista y el
+  // botón "x" de la corrida anterior quedan huérfanos, así que hay que
+  // re-enganchar esto después de cada swap (mismo motivo que el modal de
+  // citas en agenda.ejs). Cada lista ya trae "Todos los estados"/"Todos los
+  // estudios" como primer <li> (con estado:""/categoriaId:"" en su
+  // hx-vals) — el botón "x" solo simula un click sintético sobre ese mismo
+  // item en vez de duplicar la lógica de "quitar filtro".
+  function wireFiltroTeclado(triggerId, listId, comboboxId) {
+    const trigger = document.getElementById(triggerId);
+    const list = document.getElementById(listId);
+    const combobox = document.getElementById(comboboxId);
+    if (!trigger || !list || !combobox) return;
+    attachComboboxKeyboardNav(trigger, list);
+    attachComboboxClearButton(combobox, trigger, () => {
+      list.querySelector('.combobox-item')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+  }
+
+  function wireFiltrosTeclado() {
+    wireFiltroTeclado('estadoFiltroTrigger', 'estadoFiltroList', 'estadoFiltroCombobox');
+    wireFiltroTeclado('categoriaFiltroTrigger', 'categoriaFiltroList', 'categoriaFiltroCombobox');
+  }
+
+  wireFiltrosTeclado();
+  const laboratorioPanel = document.getElementById('laboratorio-panel');
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target !== laboratorioPanel) return;
+    wireFiltrosTeclado();
+  });
 </script>
 
 </body>

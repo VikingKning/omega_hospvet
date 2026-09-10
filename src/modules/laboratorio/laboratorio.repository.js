@@ -62,7 +62,39 @@ async function findEstudiosByIds(ids) {
     .select('id', 'nombre', 'campo_adicional', 'activo');
 }
 
-function baseQuery({ q, estado, categoriaId }) {
+// `registros_laboratorio.id` es un `serial`/integer de Postgres (int4) — un
+// número fuera de ese rango (ej. un teléfono de 10 dígitos tecleado en el
+// buscador) revienta la consulta con "fuera de rango para el tipo integer"
+// en vez de simplemente no encontrar nada. Nunca se llega a mandar un valor
+// así a `r.id = ?`.
+const PG_INTEGER_MAX = 2147483647;
+
+// Pedido explícito del usuario: el cuadro de búsqueda también acepta el
+// folio del registro en cualquiera de sus formas ("LAB-005", "005", "5") —
+// el mismo folio que ya muestra la UI (ver `LAB-${id.padStart(3,'0')}` en
+// laboratorio-panel.ejs/laboratorio.service.js). Si `q` no calza con
+// ninguna de esas formas regresa null y la búsqueda sigue siendo solo por
+// nombre, sin tronar con texto libre ni con un número fuera de rango.
+function extraerIdBuscado(q) {
+  const match = q.trim().match(/^(?:lab-?\s*)?0*(\d+)$/i);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) && id <= PG_INTEGER_MAX ? id : null;
+}
+
+// Pedido explícito del usuario: teclear el prefijo "LAB-" (o cualquier
+// prefijo válido del mismo — "L", "LA", "LAB", "LAB-") debe mostrar TODOS
+// los registros, como si el usuario apenas estuviera empezando a escribir
+// el folio y aún no llegara al número. Solo aplica cuando `q` es
+// exactamente un prefijo de la cadena "lab-" — un nombre real que también
+// empiece distinto en cualquier posición (ej. "Laban", "Labib") nunca
+// califica aquí y sigue resolviéndose por el ILIKE normal de abajo.
+function esPrefijoDeFolio(q) {
+  const normalizado = q.trim().toLowerCase();
+  return normalizado.length > 0 && 'lab-'.startsWith(normalizado);
+}
+
+function baseQuery({ q, qDigits, estado, categoriaId }) {
   return db('registros_laboratorio as r')
     .where('r.eliminado', false)
     .join('mascotas as m', 'm.id', 'r.mascota_id')
@@ -70,11 +102,27 @@ function baseQuery({ q, estado, categoriaId }) {
     .leftJoin('doctores as d', 'd.id', 'r.doctor_id')
     .modify((builder) => {
       if (q) {
+        const idBuscado = extraerIdBuscado(q);
         builder.andWhere((whereBuilder) => {
           whereBuilder
             .whereRaw('m.nombre ILIKE ?', [`%${q}%`])
             .orWhereRaw("(p.nombre || ' ' || p.apellidos) ILIKE ?", [`%${q}%`])
             .orWhereRaw("(d.nombre || ' ' || d.apellidos) ILIKE ?", [`%${q}%`]);
+          // Pedido explícito del usuario: buscar también por el teléfono del
+          // tutor. `propietarios.telefono` se guarda sin guiones (mismo
+          // criterio que tutores.repository.js#baseQuery) — se compara
+          // contra `qDigits` (los dígitos de `q`), nunca contra `q` tal
+          // cual, y se omite por completo si `q` no traía ningún dígito
+          // (evita un ILIKE '%%' que matchearía cualquier fila).
+          if (qDigits) {
+            whereBuilder.orWhereRaw('p.telefono ILIKE ?', [`%${qDigits}%`]);
+          }
+          if (idBuscado !== null) {
+            whereBuilder.orWhere('r.id', idBuscado);
+          }
+          if (esPrefijoDeFolio(q)) {
+            whereBuilder.orWhereRaw('true');
+          }
         });
       }
       if (estado) builder.andWhere('r.estado', estado);
@@ -94,8 +142,8 @@ async function count(filters) {
   return Number(row.total);
 }
 
-async function findPage({ q, estado, categoriaId, sort, dir, limit, offset }) {
-  return baseQuery({ q, estado, categoriaId })
+async function findPage({ q, qDigits, estado, categoriaId, sort, dir, limit, offset }) {
+  return baseQuery({ q, qDigits, estado, categoriaId })
     .orderBy(SORT_COLUMNS[sort] ?? SORT_COLUMNS.fecha, dir)
     .limit(limit)
     .offset(offset)

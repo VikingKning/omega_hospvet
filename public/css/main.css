@@ -2195,8 +2195,40 @@ body:has(.app)::after {
   cursor: not-allowed;
 }
 
+/* padding-right: espacio reservado para el botón "x" (pedido explícito
+   del usuario, ver public/js/combobox.js#attachComboboxClearButton) —
+   mismo criterio que .field input/.toggle-pass en styles.css (ahí reserva
+   42px para el ojo de contraseña; aquí el ícono es más chico). */
 .combobox input[type="text"] {
   width: 100%;
+  padding-right: 34px;
+}
+
+/* Mismo lugar (right: 8px) que la flecha de .select-trigger-input (icono de
+   fondo del propio input, ver línea ~1690) — background sólido a propósito,
+   para TAPAR esa flecha cuando el botón está visible (con texto/selección),
+   en vez de que ambos íconos se encimen. */
+.combobox-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--bg-base);
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+}
+
+.combobox-clear svg {
+  width: 16px;
+  height: 16px;
+}
+
+.combobox-clear:hover {
+  color: var(--text-dark);
 }
 
 .combobox-list {

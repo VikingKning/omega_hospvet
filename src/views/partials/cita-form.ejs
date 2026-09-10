@@ -10,7 +10,7 @@
 //
 // Los combobox de Mascota/Doctor y la combinación Fecha+Hora -> ISO se
 // resuelven con JS delegado en agenda.ejs (este fragmento nunca trae su
-// propio <script> — HTMX lo borraría al hacer swap, allowScriptTags:false).
+// propio script — HTMX lo borraría al hacer swap, allowScriptTags:false).
 const esEdicion = Boolean(cita);
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
@@ -72,14 +72,6 @@ const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `agenda/${area.slug}/citas/${cita.id}` : `agenda/${area.slug}/citas` %>"
       hx-target="#citaFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
-  <%
-  // Pedido explícito del usuario: 2 columnas por fila (Teléfono+Tutor,
-  // Mascota+Doctor) y una fila de 3 (Fecha/Hora/Duración) para que el
-  // formulario quepa sin scroll — mismo grid que .profile-form-row
-  // (perfil-form.ejs/perfil-password-form.ejs), pero con su propio nombre
-  // (`.cita-form-row*`): son módulos distintos, mismo criterio ya usado
-  // entre tutor-form-*/lab-form-* aunque el CSS sea equivalente.
-  %>
   <div class="cita-form-row">
     <label>
       Teléfono del tutor
@@ -99,7 +91,7 @@ const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
   </div>
 
   <%
-  // Isla de datos JSON (nunca un <script> — HTMX lo borraría al hacer swap
+  // Isla de datos JSON (nunca un script — HTMX lo borraría al hacer swap
   // del modal): las mascotas del tutor precargado, para que el JS de
   // agenda.ejs pueda repoblar #citaMascotaList sin pedirlas de nuevo al
   // servidor cada vez que se reabre el combobox.
@@ -167,7 +159,7 @@ const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
     <% } %>
     <% if (esConfirmable && puedeConfirmar) { %>
       <%
-        // "Confirmar cita" manda el <form> completo (hx-include) y hace
+        // "Confirmar cita" manda el form completo (hx-include) y hace
         // guardar+confirmar en un solo paso del lado del servidor — pedido
         // explícito del usuario: antes había que Guardar, volver a abrir la
         // cita, y HASTA ENTONCES aparecía habilitado Confirmar, lo cual no

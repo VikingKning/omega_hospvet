@@ -190,6 +190,167 @@ describe('POST /laboratorio.html (filtro)', () => {
   });
 });
 
+describe('POST /laboratorio.html (búsqueda por folio)', () => {
+  // Pedido explícito del usuario: además de mascota/tutor/doctor, el
+  // cuadro de búsqueda también encuentra por el folio del registro (el
+  // mismo "LAB-XXX" que ya muestra la tabla) en cualquiera de sus 3 formas
+  // — con prefijo, sin prefijo, con o sin ceros a la izquierda. Se crea un
+  // registro real (mascota + propietario, sin tocar `doctores` — regla ya
+  // establecida, ver el comentario al inicio del archivo) para tener un
+  // folio conocido contra el cual buscar.
+  let propietarioId;
+  let mascotaId;
+  let registroId;
+  let folio;
+
+  beforeAll(async () => {
+    const admin = await db('usuarios').where('username', ADMIN_USERNAME).first('id');
+    const [{ id: propId }] = await db('propietarios')
+      .insert({
+        nombre: 'Folio',
+        apellidos: SUFFIX,
+        telefono: '5599999999',
+        activo: true,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    propietarioId = propId;
+    const [{ id: mascId }] = await db('mascotas')
+      .insert({
+        propietario_id: propietarioId,
+        nombre: 'FolioTest',
+        tipo: 'perro',
+        activo: true,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    mascotaId = mascId;
+    const [{ id: regId }] = await db('registros_laboratorio')
+      .insert({
+        mascota_id: mascotaId,
+        fecha_solicitud: new Date(),
+        estado: 'pendiente',
+        pendiente_desde: db.fn.now(),
+        eliminado: false,
+        creado_por: admin.id,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    registroId = regId;
+    folio = `LAB-${String(registroId).padStart(3, '0')}`;
+  });
+
+  afterAll(async () => {
+    await db('registros_laboratorio').where('id', registroId).del();
+    await db('mascotas').where('id', mascotaId).del();
+    await db('propietarios').where('id', propietarioId).del();
+  });
+
+  it.each([
+    ['con el prefijo y ceros a la izquierda', () => folio],
+    ['solo el número con ceros a la izquierda', () => String(registroId).padStart(3, '0')],
+    ['solo el número, sin ceros a la izquierda', () => String(registroId)],
+  ])('AC: encuentra el registro buscando %s', async (_descripcion, obtenerQuery) => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio.html').set('x-csrf-token', csrfToken).send({
+      q: obtenerQuery(),
+      estado: '',
+      categoriaId: '',
+      page: 1,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(folio);
+  });
+
+  // Pedido explícito del usuario: "LAB-" es la construcción del folio, no
+  // un dato buscable en sí — teclear un prefijo de esa construcción ("L",
+  // "LA", "LAB", "LAB-") sin ningún número todavía debe mostrar TODOS los
+  // registros, como si aún no se hubiera escrito el filtro.
+  it.each([['L'], ['LA'], ['LAB'], ['LAB-']])(
+    'AC: buscar "%s" (prefijo del folio, sin número) muestra todos los registros',
+    async (q) => {
+      const agent = await loginAs(SOLO_VER);
+      const csrfToken = await getLaboratorioCsrfToken(agent);
+
+      const res = await agent.post('/laboratorio.html').set('x-csrf-token', csrfToken).send({
+        q,
+        estado: '',
+        categoriaId: '',
+        page: 1,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain(folio);
+    },
+  );
+
+  // Un nombre real que empieza distinto a "lab-" en algún punto (aunque
+  // arranque con las mismas 3 letras) NUNCA debe disparar el "mostrar
+  // todos" de arriba — solo debe resolverse por el ILIKE normal contra
+  // mascota/tutor/doctor.
+  it('un nombre como "Laban" no dispara el "mostrar todos" del prefijo de folio', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio.html').set('x-csrf-token', csrfToken).send({
+      q: 'Laban',
+      estado: '',
+      categoriaId: '',
+      page: 1,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(folio);
+  });
+
+  // Pedido explícito del usuario: la búsqueda también encuentra por el
+  // teléfono del tutor (propietarios.telefono, del fixture de arriba),
+  // completo o parcial — mismo criterio de tutores.repository.js#baseQuery.
+  it.each([
+    ['el teléfono completo', () => '5599999999'],
+    ['solo una parte del teléfono', () => '99999'],
+  ])('AC: encuentra el registro buscando por %s', async (_descripcion, obtenerQuery) => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio.html').set('x-csrf-token', csrfToken).send({
+      q: obtenerQuery(),
+      estado: '',
+      categoriaId: '',
+      page: 1,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(folio);
+  });
+
+  // Bug reportado por el usuario: buscar por el teléfono del tutor (10
+  // dígitos) tronaba con 500 porque ese número, al no traer "LAB-", se
+  // interpretaba como un posible folio y se mandaba tal cual a
+  // `r.id = ?` — un entero de Postgres (int4) no admite un valor tan
+  // grande y la consulta reventaba con "fuera de rango para el tipo
+  // integer" en vez de simplemente resolverse (ahora) como búsqueda de
+  // teléfono. Un número de un tutor que no existe en el fixture no debe
+  // encontrar este registro, pero tampoco debe tronar.
+  it('AC: buscar un número que no cabe en un integer de Postgres no truena (200, nunca 500)', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent.post('/laboratorio.html').set('x-csrf-token', csrfToken).send({
+      q: '5529000090',
+      estado: '',
+      categoriaId: '',
+      page: 1,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(folio);
+  });
+});
+
 describe('POST /laboratorio/buscar-tutor', () => {
   // Pedido explícito del usuario: "Nuevo registro" arranca de un tutor YA
   // REGISTRADO por su teléfono — un teléfono que no existe responde

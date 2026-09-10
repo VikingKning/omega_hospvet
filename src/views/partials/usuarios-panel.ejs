@@ -111,7 +111,8 @@ const bannerError = typeof error === 'undefined' ? null : error;
         <input type="hidden" name="estatus" value="<%= estatus %>">
         <div class="combobox" id="estatusFiltroCombobox">
           <input type="text" id="estatusFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
-                 value="<%= ESTATUS_LABELS[estatus] ?? 'Todos' %>">
+                 placeholder="Todos"
+                 value="<%= (estatus && estatus !== 'todos') ? ESTATUS_LABELS[estatus] : '' %>">
           <%
           // El JS del cliente saca esta lista de #usuarios-filters y la
           // cuelga de <body> mientras está abierta (para escapar el

@@ -19,6 +19,15 @@ const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['fecha', 'mascota', 'estado'];
 const ESTADOS_VALIDOS = ['pendiente', 'cargado', 'enviado'];
 
+// Mismo criterio de tutores.service.js#stripTelefono (deliberadamente no
+// importado — módulos de dominio independientes, ver
+// project_selects_a_combobox/otros módulos con la misma copia): dígitos de
+// la búsqueda, para poder encontrar `propietarios.telefono` (guardado sin
+// guiones) sin importar cómo el usuario haya tecleado el número.
+function stripTelefono(telefono) {
+  return (telefono ?? '').replace(/\D/g, '');
+}
+
 // Whitelist real de "componentes" para el campo_adicional='componentes_liquido'
 // (Análisis de líquidos corporales) — checklist fijo, no texto libre: mismo
 // criterio que DURACIONES_VALIDAS en agenda.service.js. Se expone también al
@@ -117,6 +126,7 @@ async function list({
   dir: rawDir,
 }) {
   const trimmedQ = (q ?? '').trim();
+  const qDigits = stripTelefono(trimmedQ);
   const estadoFiltro = ESTADOS_VALIDOS.includes(estado) ? estado : undefined;
   const categoriaId = parseId(rawCategoriaId);
   const page = parsePage(rawPage);
@@ -126,6 +136,7 @@ async function list({
 
   const filters = {
     q: trimmedQ || undefined,
+    qDigits: qDigits || undefined,
     estado: estadoFiltro,
     categoriaId: categoriaId || undefined,
   };

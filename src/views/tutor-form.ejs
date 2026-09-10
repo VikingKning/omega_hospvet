@@ -321,6 +321,7 @@
 
   <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
   <script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
+  <script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
   <script nonce="<%= cspNonce %>">
     function escapeHtml(text) {
       const div = document.createElement('div');
@@ -743,6 +744,19 @@
           reactivandoId = data.tutor.id;
           aplicarDatosExistente(data.tutor);
         }
+      });
+
+      // Navegación por teclado + botón "x" de limpiar (pedido explícito del
+      // usuario, ver public/js/combobox.js) — esta página es autocontenida
+      // (sin HTMX/swap), así que se engancha una sola vez aquí, junto al
+      // resto del setup de esta sección. Elegir un resultado NAVEGA fuera de
+      // la página (ver el listener de click arriba), así que no queda nada
+      // más que "limpiar" tras una selección: onClear solo vacía el texto
+      // tecleado y oculta la lista.
+      attachComboboxKeyboardNav(tutorTelefonoInput, tutorTelefonoList);
+      attachComboboxClearButton(tutorTelefonoCombobox, tutorTelefonoInput, () => {
+        tutorTelefonoInput.value = '';
+        ocultarTelefonoList();
       });
     }
 

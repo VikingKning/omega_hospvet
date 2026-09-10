@@ -116,6 +116,7 @@
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
+<script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
   // Cualquier `.combobox-list` de esta vista puede: (a) abrir cerca del
   // borde de un contenedor con scroll (un modal con `overflow-y:auto`) —
@@ -199,6 +200,31 @@
     closeFloatingList(list);
   });
 
+  // Teclado + botón "x" del filtro Estatus: #usuarios-panel se reemplaza
+  // entero (innerHTML) en cada filtro/orden/página, así que hay que
+  // reenganchar en cada htmx:afterSwap sobre ese contenedor — mismo motivo
+  // que el resto de los listeners delegados de arriba, pero aquí sí hace
+  // falta re-crear el botón "x" porque attachComboboxClearButton() inserta
+  // un <button> nuevo cada vez (no es delegado).
+  function wireEstatusFiltroCombobox() {
+    const trigger = document.getElementById('estatusFiltroTrigger');
+    const list = document.getElementById('estatusFiltroList');
+    if (!trigger || !list) return;
+    attachComboboxKeyboardNav(trigger, list);
+    attachComboboxClearButton(document.getElementById('estatusFiltroCombobox'), trigger, () => {
+      // "todos" siempre es el último <li> (ver el array de arriba en
+      // usuarios-panel.ejs) — un click sintético reutiliza su propio
+      // hx-post/hx-vals en vez de reimplementar el filtro aquí.
+      list.querySelector('.combobox-item:last-child')?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }),
+      );
+    });
+  }
+  wireEstatusFiltroCombobox();
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target.id === 'usuarios-panel') wireEstatusFiltroCombobox();
+  });
+
   // Cerrar el banner de error del panel (pedido explícito del usuario) —
   // delegado sobre document.body por el mismo motivo que el combobox de
   // arriba: HTMX reemplaza #usuarios-panel entero en cada filtro/orden.
@@ -243,6 +269,7 @@
   // (ver el <script type="application/json"> inerte en usuario-form.ejs).
   // Se reinicia en cada apertura/reintento del formulario.
   let usuarioFormDoctores = [];
+  let refrescarDoctorClear = () => {};
 
   function hideDoctorList() {
     const list = document.getElementById('doctorList');
@@ -324,6 +351,7 @@
     document.getElementById('doctorSearch').value = label;
     document.getElementById('doctorIdInput').value = id;
     hideDoctorList();
+    refrescarDoctorClear();
 
     const nombreInput = document.getElementById('usuarioFormModalBody').querySelector('input[name="nombre"]');
     const apellidosInput = document.getElementById('usuarioFormModalBody').querySelector('input[name="apellidos"]');
@@ -451,6 +479,25 @@
 
     const datosEl = document.getElementById('usuarioFormDoctoresData');
     usuarioFormDoctores = datosEl ? JSON.parse(datosEl.textContent) : [];
+
+    const doctorSearchEl = usuarioFormModalBody.querySelector('#doctorSearch');
+    const doctorListEl = usuarioFormModalBody.querySelector('#doctorList');
+    if (doctorSearchEl && doctorListEl) {
+      attachComboboxKeyboardNav(doctorSearchEl, doctorListEl);
+      refrescarDoctorClear = attachComboboxClearButton(
+        usuarioFormModalBody.querySelector('#doctorCombobox'),
+        doctorSearchEl,
+        () => selectDoctor('', ''),
+      );
+    }
+    // Estatus (solo en edición): sin botón "x" — son 4 valores fijos, no
+    // tiene sentido un estado "vacío" (mismo criterio que Lateralidad en
+    // laboratorio-form.ejs).
+    const estatusTriggerEl = usuarioFormModalBody.querySelector('#estatusTrigger');
+    const estatusListEl = usuarioFormModalBody.querySelector('#estatusList');
+    if (estatusTriggerEl && estatusListEl) {
+      attachComboboxKeyboardNav(estatusTriggerEl, estatusListEl);
+    }
 
     // US-604: el modal solo necesita ser ancho cuando trae la matriz de
     // permisos (usuarios sin usuarios.permisos ven un formulario de una

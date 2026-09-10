@@ -81,6 +81,7 @@
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
+<script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
   // Modal de alta/edición (US-607). El contenido de #doctorFormModalBody lo
   // reemplaza HTMX en cada apertura/reintento, así que los botones de
@@ -129,6 +130,7 @@
   // reinicia en cada apertura/reintento del formulario, leyendo esa isla
   // de datos.
   let doctorFormAreas = { disponibles: [], seleccionadas: [] };
+  let refrescarAreaPickerClear = () => {};
 
   function renderAreaPicker() {
     const trigger = document.getElementById('areaPickerTrigger');
@@ -154,6 +156,7 @@
     // reconstruir sus <option> desde cero en cada agregar/quitar.
     trigger.value = '';
     valueInput.value = '';
+    refrescarAreaPickerClear();
   }
 
   function renderDoctorAreas() {
@@ -185,6 +188,15 @@
     const datosEl = document.getElementById('doctorFormAreasData');
     const datos = datosEl ? JSON.parse(datosEl.textContent) : { disponibles: [], seleccionadas: [] };
     doctorFormAreas = { disponibles: datos.disponibles, seleccionadas: datos.seleccionadas.slice() };
+    attachComboboxKeyboardNav(
+      doctorFormModalBody.querySelector('#areaPickerTrigger'),
+      doctorFormModalBody.querySelector('#areaPickerList'),
+    );
+    refrescarAreaPickerClear = attachComboboxClearButton(
+      doctorFormModalBody.querySelector('#areaPickerCombobox'),
+      doctorFormModalBody.querySelector('#areaPickerTrigger'),
+      renderAreaPicker,
+    );
     renderAreaPicker();
     renderDoctorAreas();
     openDoctorFormModal();
@@ -222,6 +234,7 @@
       document.getElementById('areaPickerTrigger').value = areaItem.dataset.label;
       document.getElementById('areaPickerValue').value = areaItem.dataset.id;
       document.getElementById('areaPickerList').hidden = true;
+      refrescarAreaPickerClear();
       return;
     }
     if (event.target.closest('#areaPickerAdd')) {

@@ -126,7 +126,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
                 el resto del sistema.
               %>
               <div class="combobox agenda-doctor-filter" id="agendaDoctorFilterCombobox">
-                <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly value="Todos los doctores" aria-label="Filtrar por doctor">
+                <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly placeholder="Todos los doctores" aria-label="Filtrar por doctor">
                 <ul class="combobox-list" id="agendaDoctorFilterList" hidden></ul>
               </div>
               <%#
@@ -242,6 +242,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
+<script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
   function escapeHtml(text) {
     const div = document.createElement('div');
@@ -329,6 +330,44 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
       openCitaFormModal();
       separarFechaHora();
       inicializarTutorDesdeIsla();
+      // El modal se recrea por completo en cada swap (HTMX borra/repone el
+      // HTML), así que el botón "x" (insertado por JS) y los listeners de
+      // teclado hay que volver a engancharlos cada vez — pedido explícito
+      // del usuario: navegación con flechas + botón de limpiar en todos
+      // los combobox (ver public/js/combobox.js).
+      attachComboboxKeyboardNav(
+        citaFormModalBody.querySelector('#citaDoctorInput'),
+        citaFormModalBody.querySelector('#citaDoctorList'),
+      );
+      refrescarDoctorClear = attachComboboxClearButton(
+        citaFormModalBody.querySelector('#citaDoctorCombobox'),
+        citaFormModalBody.querySelector('#citaDoctorInput'),
+        () => {
+          citaFormModalBody.querySelector('#citaDoctorInput').value = '';
+          citaFormModalBody.querySelector('#citaDoctorId').value = '';
+        },
+      );
+      attachComboboxKeyboardNav(
+        citaFormModalBody.querySelector('#citaTutorNombreInput'),
+        citaFormModalBody.querySelector('#citaTutorNombreList'),
+      );
+      refrescarTutorClear = attachComboboxClearButton(
+        citaFormModalBody.querySelector('#citaTutorNombreCombobox'),
+        citaFormModalBody.querySelector('#citaTutorNombreInput'),
+        () => {
+          citaFormModalBody.querySelector('#citaTutorTelefono').value = '';
+          resetearTutorActual();
+        },
+      );
+      attachComboboxKeyboardNav(
+        citaFormModalBody.querySelector('#citaMascotaTrigger'),
+        citaFormModalBody.querySelector('#citaMascotaList'),
+      );
+      refrescarMascotaClear = attachComboboxClearButton(
+        citaFormModalBody.querySelector('#citaMascotaCombobox'),
+        citaFormModalBody.querySelector('#citaMascotaTrigger'),
+        limpiarMascota,
+      );
     }
   });
 
@@ -380,6 +419,13 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
   // mascota, el staff solo tiene que elegir el paciente. ----
   let tutorActual = null; // { id, nombre, apellidos, telefono, correo, pacientes }
   let tutorDebounceTimer = null;
+  // Asignadas dentro de htmx:afterSwap (ver arriba) — cada una "refresca"
+  // la visibilidad del botón "x" de su combobox; hay que llamarlas después
+  // de cualquier punto donde el código cambia el .value del trigger por su
+  // cuenta (un 'input' del usuario ya se detecta solo).
+  let refrescarDoctorClear = () => {};
+  let refrescarTutorClear = () => {};
+  let refrescarMascotaClear = () => {};
 
   function inicializarTutorDesdeIsla() {
     const el = citaFormModalBody.querySelector('#citaTutorData');
@@ -407,6 +453,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     if (idInput) idInput.value = '';
     if (trigger) trigger.value = '';
     actualizarBotonConfirmar();
+    refrescarMascotaClear();
   }
 
   function seleccionarMascota(id) {
@@ -415,6 +462,23 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     citaFormModalBody.querySelector('#citaMascotaId').value = paciente.id;
     citaFormModalBody.querySelector('#citaMascotaTrigger').value = paciente.nombre;
     actualizarBotonConfirmar();
+    refrescarMascotaClear();
+  }
+
+  // Cascada compartida por el botón "x" de Tutor y por el input de
+  // teléfono cuando el usuario borra dígitos hasta dejarlo incompleto (ver
+  // el listener de 'input' más abajo) — a diferencia del botón "x", ese
+  // segundo caso NUNCA toca #citaTutorTelefono (el usuario sigue
+  // escribiendo ahí, borrarle el valor le pelearía la edición).
+  function resetearTutorActual() {
+    tutorActual = null;
+    const tutorInput = citaFormModalBody.querySelector('#citaTutorNombreInput');
+    if (tutorInput) tutorInput.value = '';
+    const trigger = citaFormModalBody.querySelector('#citaMascotaTrigger');
+    if (trigger) trigger.disabled = true;
+    limpiarMascota();
+    renderPacienteOptions();
+    refrescarTutorClear();
   }
 
   async function buscarTutorPorTelefono(telefono) {
@@ -433,6 +497,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     if (trigger) trigger.disabled = !tutorActual;
     limpiarMascota();
     renderPacienteOptions();
+    refrescarTutorClear();
   }
 
   async function buscarTutoresPorNombre(q) {
@@ -484,13 +549,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
       if (digitos.length === 10) {
         tutorDebounceTimer = setTimeout(() => buscarTutorPorTelefono(digitos), 300);
       } else {
-        tutorActual = null;
-        const tutorInput = citaFormModalBody.querySelector('#citaTutorNombreInput');
-        if (tutorInput) tutorInput.value = '';
-        const trigger = citaFormModalBody.querySelector('#citaMascotaTrigger');
-        if (trigger) trigger.disabled = true;
-        limpiarMascota();
-        renderPacienteOptions();
+        resetearTutorActual();
       }
     }
     if (event.target.id === 'citaTutorNombreInput') {
@@ -553,6 +612,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
       citaFormModalBody.querySelector('#citaDoctorId').value = item.dataset.id;
       citaFormModalBody.querySelector('#citaDoctorInput').value = item.dataset.label;
       doctorList.hidden = true;
+      refrescarDoctorClear();
     }
     if (tutorList && tutorList.contains(item) && item.dataset.telefono) {
       event.preventDefault(); // el <li> no es enfocable y vive dentro de un <label> — sin esto el navegador reenvía el click al input y reabre la lista que este mismo click acaba de cerrar
@@ -758,10 +818,31 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     const item = event.target.closest('.combobox-item');
     if (!item) return;
     filtroDoctorId = item.dataset.id;
-    agendaDoctorFilterInput.value = item.dataset.label;
+    // Vacío (no el texto "Todos los doctores") cuando se quita el filtro —
+    // así el placeholder vuelve a mostrarse solo, y el botón "x" (que se
+    // basa en si el trigger tiene texto) sabe que ya no hay nada que
+    // limpiar. Ver el <input> arriba: usa placeholder, ya no value fijo.
+    agendaDoctorFilterInput.value = item.dataset.id ? item.dataset.label : '';
     agendaDoctorFilterList.hidden = true;
     calendar.refetchEvents();
+    refrescarDoctorFiltroClear();
   });
+
+  // Navegación con flechas + botón "x" (pedido explícito del usuario, ver
+  // public/js/combobox.js) — este combobox nunca se recrea vía HTMX (vive
+  // en la página, no en un modal swapeado), así que basta engancharlo una
+  // sola vez aquí. La lista ya trae "Todos los doctores" (data-id="") como
+  // primer item — el botón "x" solo simula un click sobre ese mismo item
+  // en vez de duplicar la lógica de "quitar filtro".
+  attachComboboxKeyboardNav(agendaDoctorFilterInput, agendaDoctorFilterList);
+  const refrescarDoctorFiltroClear = attachComboboxClearButton(
+    document.getElementById('agendaDoctorFilterCombobox'),
+    agendaDoctorFilterInput,
+    () => {
+      abrirDoctorFilterList();
+      agendaDoctorFilterList.querySelector('.combobox-item[data-id=""]')?.click();
+    },
+  );
 
   document.getElementById('agendaViewWeek').addEventListener('click', (event) => {
     calendar.changeView('timeGridWeek');
