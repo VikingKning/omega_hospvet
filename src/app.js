@@ -22,6 +22,7 @@ const perfilRoutes = require('./modules/perfil/perfil.routes');
 const tutoresRoutes = require('./modules/tutores/tutores.routes');
 const agendaRoutes = require('./modules/agenda/agenda.routes');
 const laboratorioRoutes = require('./modules/laboratorio/laboratorio.routes');
+const metricasRoutes = require('./modules/metricas/metricas.routes');
 const whatsappRoutes = require('./modules/whatsapp/whatsapp.routes');
 
 const rootDir = path.join(__dirname, '..');
@@ -191,6 +192,7 @@ app.use('/', perfilRoutes);
 app.use('/', tutoresRoutes);
 app.use('/', agendaRoutes);
 app.use('/', laboratorioRoutes);
+app.use('/', metricasRoutes);
 // Callback externo de Meta, nunca una acción de un usuario con sesión —
 // sin requireAuth/CSRF (mismo criterio ya establecido: CSRF es opt-in por
 // ruta, no global). Protegido en su lugar por el verify_token (GET,

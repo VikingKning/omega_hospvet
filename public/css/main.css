@@ -4139,3 +4139,88 @@ body:has(.app)::after {
     color: #444;
   }
 }
+
+/* ---------- Métricas: Laboratorio ---------- */
+/* Primera pantalla de "dashboard" del sistema (tarjetas KPI + gráficas de
+   Chart.js, ver public/js/chart.umd.js) — reutiliza .lab-toolbar/
+   .toggle-group/.empty-state-panel ya existentes para el filtro de rango de
+   fechas, solo lo nuevo (tarjetas y contenedores de gráfica) vive aquí. */
+.metricas-rango-fechas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.metricas-rango-fechas label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.metricas-rango-fechas input[type='date'] {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text-dark);
+}
+
+.metricas-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.metricas-kpi-card {
+  flex: 1;
+  min-width: 150px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.metricas-kpi-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.metricas-kpi-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.metricas-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.metricas-chart-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.metricas-chart-card h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text-dark);
+}
+
+.metricas-chart-card canvas {
+  max-height: 280px;
+}

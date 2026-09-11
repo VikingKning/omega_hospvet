@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<%#
+  Esta página vive un nivel más profundo que la raíz (/metricas/laboratorio.html,
+  2 segmentos) en vez de uno solo como la mayoría (/laboratorio.html) —
+  mismo motivo/mismo fix que tutor-form.ejs/laboratorio-form.ejs/agenda.ejs:
+  sin <base>, cualquier referencia relativa (sus propios <link>/<script>, y
+  las de partials/sidebar.ejs) resolvería contra /metricas/ en vez de la
+  raíz real del sitio.
+%>
+<base href="/">
+<title>Métricas de Laboratorio | Omega Veterinaria & Estética</title>
+<link rel="icon" type="image/png" href="assets/imgs/icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/main.css">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
+</head>
+<body>
+
+  <div class="app" id="app">
+    <div class="top-row">
+      <div class="sidebar-header">
+        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <span class="sidebar-title">Omega Vet</span>
+        <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+
+      <header class="topbar">
+        <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+        <h1 class="topbar-title">Métricas de Laboratorio</h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
+            <img src="assets/imgs/<%= user.avatar %>.png" alt="">
+          </span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
+      </header>
+    </div>
+
+    <div class="body-row">
+    <div class="nav-backdrop" id="navBackdrop"></div>
+    <%- include('partials/sidebar', { user, currentPage: 'metricas-laboratorio' }) %>
+
+    <main class="main-content" id="metricas-laboratorio-panel">
+      <%- include('partials/metricas-laboratorio-panel', { rango, total, porEstado, porDia, topEstudios, topCategorias, topDoctores, tiempos, user, csrfToken }) %>
+    </main>
+    </div>
+  </div>
+
+<script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
+<script src="js/chart.umd.js" nonce="<%= cspNonce %>"></script>
+<script nonce="<%= cspNonce %>">
+  const metricasLabPanel = document.getElementById('metricas-laboratorio-panel');
+
+  // Cada gráfica se guarda para poder destruirla antes de reconstruirla —
+  // HTMX reemplaza el <canvas> entero en cada swap del panel (nuevo rango
+  // de fechas), así que el <canvas> viejo ya no existe, pero el objeto
+  // Chart de la corrida anterior seguiría con listeners activos si no se
+  // destruye explícitamente (recomendación oficial de Chart.js al reusar
+  // un <canvas> con el mismo id).
+  const graficasLab = {};
+
+  function destruirGraficasLab() {
+    Object.values(graficasLab).forEach((chart) => chart?.destroy());
+  }
+
+  const COLOR_ESTADO = { pendiente: '#F5A623', cargado: '#2E5090', enviado: '#1E8E3E' };
+
+  function construirGraficasLab() {
+    destruirGraficasLab();
+    // Isla de datos JSON (ver partials/metricas-laboratorio-panel.ejs) — no
+    // existe cuando el rango no tiene ninguna orden (estado vacío en vez
+    // de las gráficas), nada que construir en ese caso.
+    const dataEl = document.getElementById('metricasLabData');
+    if (!dataEl) return;
+    const datos = JSON.parse(dataEl.textContent);
+
+    const tendenciaEl = document.getElementById('metricasChartTendencia');
+    if (tendenciaEl) {
+      graficasLab.tendencia = new Chart(tendenciaEl, {
+        type: 'line',
+        data: {
+          labels: datos.porDia.map((f) => f.fecha),
+          datasets: [
+            {
+              label: 'Órdenes',
+              data: datos.porDia.map((f) => f.total),
+              borderColor: '#2E5090',
+              backgroundColor: '#E8ECF5',
+              fill: true,
+              tension: 0.3,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
+    }
+
+    const estadosEl = document.getElementById('metricasChartEstados');
+    if (estadosEl) {
+      graficasLab.estados = new Chart(estadosEl, {
+        type: 'doughnut',
+        data: {
+          labels: datos.porEstado.map((f) => f.etiqueta),
+          datasets: [
+            {
+              data: datos.porEstado.map((f) => f.total),
+              backgroundColor: datos.porEstado.map((f) => COLOR_ESTADO[f.estado]),
+            },
+          ],
+        },
+        options: { responsive: true },
+      });
+    }
+
+    function graficaBarrasHorizontal(canvasEl, filas, color) {
+      return new Chart(canvasEl, {
+        type: 'bar',
+        data: {
+          labels: filas.map((f) => f.nombre),
+          datasets: [{ label: 'Órdenes', data: filas.map((f) => f.total), backgroundColor: color }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
+    }
+
+    const estudiosEl = document.getElementById('metricasChartEstudios');
+    if (estudiosEl) graficasLab.estudios = graficaBarrasHorizontal(estudiosEl, datos.topEstudios, '#2E5090');
+
+    const categoriasEl = document.getElementById('metricasChartCategorias');
+    if (categoriasEl) graficasLab.categorias = graficaBarrasHorizontal(categoriasEl, datos.topCategorias, '#1E8E3E');
+
+    const doctoresEl = document.getElementById('metricasChartDoctores');
+    if (doctoresEl) graficasLab.doctores = graficaBarrasHorizontal(doctoresEl, datos.topDoctores, '#F5A623');
+  }
+
+  construirGraficasLab();
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target !== metricasLabPanel) return;
+    construirGraficasLab();
+  });
+</script>
+
+</body>
+</html>

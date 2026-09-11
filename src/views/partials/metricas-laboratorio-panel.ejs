@@ -1,0 +1,100 @@
+<%
+function horasLabel(horas) {
+  return horas === null ? '—' : `${horas} h`;
+}
+%>
+<form id="metricas-laboratorio-filters"
+      hx-post="metricas/laboratorio.html" hx-target="#metricas-laboratorio-panel" hx-swap="innerHTML"
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+  <div class="lab-toolbar">
+    <div class="metricas-rango-fechas">
+      <label>Desde
+        <input type="date" name="desde" value="<%= rango.desde %>">
+      </label>
+      <label>Hasta
+        <input type="date" name="hasta" value="<%= rango.hasta %>">
+      </label>
+      <button type="submit" class="btn-primary">Aplicar</button>
+    </div>
+    <div class="toggle-group">
+      <button type="button" class="toggle-btn"
+              hx-post="metricas/laboratorio.html" hx-include="#metricas-laboratorio-filters" hx-target="#metricas-laboratorio-panel"
+              hx-vals='{"preset":7}'>Últimos 7 días</button>
+      <button type="button" class="toggle-btn"
+              hx-post="metricas/laboratorio.html" hx-include="#metricas-laboratorio-filters" hx-target="#metricas-laboratorio-panel"
+              hx-vals='{"preset":30}'>Últimos 30 días</button>
+      <button type="button" class="toggle-btn"
+              hx-post="metricas/laboratorio.html" hx-include="#metricas-laboratorio-filters" hx-target="#metricas-laboratorio-panel"
+              hx-vals='{"preset":90}'>Últimos 90 días</button>
+    </div>
+  </div>
+</form>
+
+<div class="metricas-kpis">
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Total de órdenes</span>
+    <span class="metricas-kpi-value"><%= total %></span>
+  </div>
+  <% porEstado.forEach((fila) => { %>
+    <div class="metricas-kpi-card">
+      <span class="metricas-kpi-label"><%= fila.etiqueta %></span>
+      <span class="metricas-kpi-value"><%= fila.total %></span>
+    </div>
+  <% }) %>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Pendiente → Cargado (prom.)</span>
+    <span class="metricas-kpi-value"><%= horasLabel(tiempos.horasPendienteACargado) %></span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Cargado → Enviado (prom.)</span>
+    <span class="metricas-kpi-value"><%= horasLabel(tiempos.horasCargadoAEnviado) %></span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Total: Pendiente → Enviado (prom.)</span>
+    <span class="metricas-kpi-value"><%= horasLabel(tiempos.horasPendienteAEnviado) %></span>
+  </div>
+</div>
+
+<% if (total === 0) { %>
+  <div class="lab-table-wrap">
+    <div class="empty-state-panel">
+      <span class="empty-state-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+      </span>
+      <p class="empty-state-title">No hay órdenes en este rango de fechas</p>
+      <p class="empty-state-description">Prueba con un rango más amplio, o ajusta las fechas a mano arriba.</p>
+    </div>
+  </div>
+<% } else { %>
+  <div class="metricas-charts">
+    <div class="metricas-chart-card">
+      <h3>Tendencia diaria</h3>
+      <canvas id="metricasChartTendencia"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>Órdenes por estado</h3>
+      <canvas id="metricasChartEstados"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>Estudios más solicitados</h3>
+      <canvas id="metricasChartEstudios"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>Categorías más solicitadas</h3>
+      <canvas id="metricasChartCategorias"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>Doctores que más solicitan</h3>
+      <canvas id="metricasChartDoctores"></canvas>
+    </div>
+  </div>
+<% } %>
+
+<%
+// Isla de datos JSON (nunca un <script> — HTMX lo borraría al hacer swap
+// de este panel, allowScriptTags:false): el <script> de metricas-laboratorio.ejs
+// (nunca se swapea) la lee en cada htmx:afterSwap para (re)construir las
+// gráficas de Chart.js — mismo patrón ya establecido en el proyecto (ver
+// #citaTutorData en cita-form.ejs).
+%>
+<div id="metricasLabData" hidden><%- JSON.stringify({ porDia, porEstado, topEstudios, topCategorias, topDoctores }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
