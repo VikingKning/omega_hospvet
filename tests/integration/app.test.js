@@ -3,6 +3,28 @@ const app = require('../../src/app');
 const db = require('../../src/config/database');
 const { store: sessionStore } = require('../../src/config/session');
 
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+async function getCsrfToken(agent) {
+  const res = await agent.get('/');
+  const match = res.text.match(/id="csrfToken" value="([^"]+)"/);
+  return match[1];
+}
+
+// Cualquier usuario logueado sirve — la página 404 solo exige sesión activa
+// (requireAuth no aplica aquí, ver notFound en errorHandler.js), sin ningún
+// permiso puntual, así que no hace falta un usuario de prueba desechable.
+async function loginAsAdmin() {
+  const agent = request.agent(app);
+  const csrfToken = await getCsrfToken(agent);
+  await agent
+    .post('/login')
+    .set('x-csrf-token', csrfToken)
+    .send({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+  return agent;
+}
+
 afterAll(async () => {
   await Promise.all([db.destroy(), sessionStore.close()]);
 });
@@ -54,17 +76,35 @@ describe('POST /login sin token CSRF', () => {
 });
 
 describe('rutas inexistentes', () => {
-  it('GET /no-existe responde 404 con JSON de error', async () => {
+  // Pedido explícito del usuario (BUG-6): antes cualquier URL inexistente
+  // respondía un JSON crudo ({error:'No encontrado'}), pensado para un
+  // cliente programático (fetch/HTMX), nunca para alguien que navegó a mano
+  // a una ruta rota. Ahora depende de si hay sesión activa — igual que
+  // cualquier otra página protegida (requireAuth.js), nunca se revela nada
+  // del sistema sin sesión.
+  it('GET /no-existe sin sesión redirige a / (nunca revela nada del sistema)', async () => {
     const res = await request(app).get('/no-existe');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/');
+  });
+
+  it('AC: GET /no-existe con sesión activa muestra la página 404 del sistema, nunca JSON', async () => {
+    const agent = await loginAsAdmin();
+
+    const res = await agent.get('/no-existe');
+
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: 'No encontrado' });
+    expect(res.type).toBe('text/html');
+    expect(res.text).toContain('404');
+    expect(res.text).toContain('href="main.html"');
   });
 });
 
 describe('assets sensibles', () => {
   it('el esquema de base de datos (assets/sql) nunca se expone', async () => {
     const res = await request(app).get('/assets/sql/Omega-Database.sql');
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/');
   });
 });
 
