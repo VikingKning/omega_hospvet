@@ -127,9 +127,23 @@ async function contarAntiguedadAbiertas(rango) {
     .count({ total: 'r.id' });
 }
 
-async function contarEnviosPorCanalResultado(rango) {
-  return baseQuery(rango)
-    .join('envios_laboratorio as e', 'e.registro_laboratorio_id', 'r.id')
+// A diferencia de las demás queries de este módulo, esta NO usa baseQuery()
+// — el resto filtra por `r.fecha_solicitud` (cuándo se CREÓ la orden),
+// correcto para "volumen"/"recepción"/"por especie", pero esta métrica es
+// sobre el ENVÍO en sí: una orden creada hace 2 meses cuyo resultado se
+// mandó hoy debe contar en "últimos 7 días", aunque su fecha_solicitud
+// quede fuera de esa ventana (bug real encontrado en la primera versión —
+// filtraba por fecha_solicitud y ocultaba envíos recientes de órdenes
+// viejas). Se filtra por `envios_laboratorio.enviado_en` (timestamptz) en
+// vez de `fecha_solicitud` (date); `hasta` necesita el "+1 día" porque
+// `enviado_en` sí tiene hora — un envío a las 3pm del día `hasta` quedaría
+// excluido con un `<=` simple contra la medianoche de esa fecha.
+async function contarEnviosPorCanalResultado({ desde, hasta }) {
+  return db('envios_laboratorio as e')
+    .join('registros_laboratorio as r', 'r.id', 'e.registro_laboratorio_id')
+    .where('r.eliminado', false)
+    .andWhere('e.enviado_en', '>=', desde)
+    .andWhere('e.enviado_en', '<', db.raw("?::date + interval '1 day'", [hasta]))
     .groupBy('e.canal_intentado')
     .groupByRaw(RESULTADO_ENVIO)
     .select('e.canal_intentado as canal', db.raw(`${RESULTADO_ENVIO} as resultado`))

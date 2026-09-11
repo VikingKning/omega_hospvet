@@ -254,6 +254,41 @@ describe('POST /metricas/laboratorio.html (rango de fechas + agregados)', () => 
       ])
       .returning('id');
     envioIds.push(...envios.map((envio) => envio.id));
+
+    // Bug real corregido en esta revisión: "Envíos por canal y resultado"
+    // filtraba por `fecha_solicitud` de la ORDEN en vez de por
+    // `enviado_en` del envío — una orden vieja (fuera del rango
+    // consultado) cuyo envío sí ocurrió dentro del rango se perdía. Esta
+    // orden tiene fecha_solicitud muy fuera de FECHA_FIXTURE a propósito
+    // (nunca debe contar en ninguna OTRA métrica de este fixture, todas
+    // siguen filtrando por fecha_solicitud), pero su envío sí cae dentro
+    // del rango consultado.
+    const [{ id: idOrdenVieja }] = await db('registros_laboratorio')
+      .insert({
+        mascota_id: mascotaId,
+        fecha_solicitud: '2019-06-01',
+        estado: 'enviado',
+        pendiente_desde: horas(48),
+        cargado_en: horas(30),
+        enviado_en: horas(24),
+        eliminado: false,
+        creado_por: admin.id,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    registroIds.push(idOrdenVieja);
+    const [envioOrdenVieja] = await db('envios_laboratorio')
+      .insert({
+        registro_laboratorio_id: idOrdenVieja,
+        canal_intentado: 'whatsapp',
+        medio: 'whatsapp',
+        destinatario_telefono: '5588888888',
+        whatsapp_exitoso: true,
+        enviado_por: admin.id,
+        enviado_en: new Date(ANCLA),
+      })
+      .returning('id');
+    envioIds.push(envioOrdenVieja.id);
   });
 
   afterAll(async () => {
@@ -328,11 +363,38 @@ describe('POST /metricas/laboratorio.html (rango de fechas + agregados)', () => 
       cargado: 1,
     });
     expect(res.text).toContain('id="metricasChartEnviosCanal"');
+    // whatsapp: 2 exitosos, no 1 — el envío de "idOrdenVieja" (orden de
+    // 2019, fuera de este rango) también cuenta aquí a propósito, ver el
+    // siguiente test dedicado a esa corrección.
     expect(datos.enviosPorCanal).toEqual([
-      { canal: 'whatsapp', etiqueta: 'Solo WhatsApp', exitosos: 1, fallidos: 0 },
+      { canal: 'whatsapp', etiqueta: 'Solo WhatsApp', exitosos: 2, fallidos: 0 },
       { canal: 'correo', etiqueta: 'Solo Correo', exitosos: 0, fallidos: 1 },
       { canal: 'ambos', etiqueta: 'Ambos medios', exitosos: 0, fallidos: 1 },
     ]);
+  });
+
+  // Bug real corregido en esta revisión (ver metricas.repository.js#
+  // contarEnviosPorCanalResultado): esta métrica es sobre CUÁNDO OCURRIÓ
+  // EL ENVÍO, no cuándo se creó la orden — una orden vieja (fecha_solicitud
+  // muy fuera del rango consultado) cuyo envío sí ocurrió dentro del rango
+  // debe contar aquí, aunque esa misma orden NUNCA aparezca en ninguna
+  // otra métrica de esta pantalla (todas las demás sí filtran por
+  // fecha_solicitud).
+  it('AC: un envío reciente de una orden vieja SÍ cuenta en "envíos por canal", aunque la orden no aparezca en las demás métricas', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getMetricasCsrfToken(agent);
+
+    const res = await consultarFixture(agent, csrfToken);
+
+    expect(res.status).toBe(200);
+    // La orden vieja no se cuenta en el total de órdenes del rango (sigue
+    // siendo 3, no 4) — solo su ENVÍO entra a la otra métrica.
+    expect(res.text).toContain('metricas-kpi-value">3</span>');
+
+    const match = res.text.match(/<div id="metricasLabData" hidden>(.*?)<\/div>/s);
+    const datos = JSON.parse(match[1].replace(/\\u003c/g, '<'));
+    const whatsapp = datos.enviosPorCanal.find((fila) => fila.canal === 'whatsapp');
+    expect(whatsapp.exitosos).toBe(2);
   });
 
   it('AC: un rango de fechas que no cubre el fixture no encuentra los registros', async () => {
