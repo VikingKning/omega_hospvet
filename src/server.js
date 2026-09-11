@@ -13,7 +13,18 @@ const server = app.listen(env.port, () => {
 const googleSyncInterval = googleCalendarSyncJob.start();
 const plantillasMetaSyncInterval = plantillasWhatsappMetaSyncJob.start();
 
+// Doble Ctrl+C (o SIGINT y SIGTERM llegando casi juntos, ej. de una
+// terminal/supervisor que manda ambos al cerrar) disparaba shutdown() dos
+// veces en paralelo — la segunda pasada llamaba sessionStore.close() sobre
+// un pool ya cerrado por la primera, y pg-pool revienta con "Called end on
+// pool more than once" en vez de ignorarlo. Este flag hace que solo la
+// primera señal recibida tenga efecto.
+let shuttingDown = false;
+
 async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
   logger.info(`Señal ${signal} recibida, cerrando servidor...`);
   if (googleSyncInterval) clearInterval(googleSyncInterval);
   if (plantillasMetaSyncInterval) clearInterval(plantillasMetaSyncInterval);

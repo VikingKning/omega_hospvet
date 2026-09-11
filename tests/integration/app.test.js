@@ -142,3 +142,16 @@ describe('Content-Security-Policy', () => {
     expect(res.text).toContain(`nonce="${headerNonce}"`);
   });
 });
+
+// M-06 (recomendación de seguridad, buena práctica OWASP): cámara,
+// micrófono, geolocalización y pagos no se usan en ningún punto del
+// sistema — se deshabilitan por completo en vez de dejarlos disponibles
+// sin necesidad (ver app.js).
+describe('Permissions-Policy', () => {
+  it('GET / responde deshabilitando cámara, micrófono, geolocalización y pagos', async () => {
+    const res = await request(app).get('/');
+    expect(res.headers['permissions-policy']).toBe(
+      'camera=(), microphone=(), geolocation=(), payment=()',
+    );
+  });
+});

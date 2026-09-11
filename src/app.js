@@ -96,6 +96,17 @@ app.use(
     },
   }),
 );
+// Recomendación de seguridad (buena práctica OWASP, no un hallazgo de un
+// bug real): Helmet dejó de traer esto por su cuenta hace años (el nombre/
+// spec del header tardó en estabilizarse) — se manda a mano. Cámara,
+// micrófono, geolocalización y pagos no se usan en ningún punto del
+// sistema (verificado: cero `getUserMedia`/`geolocation`/`PaymentRequest`
+// en todo `public/js`/`src/views`), así que se deshabilitan por completo en
+// vez de dejarlos disponibles sin necesidad.
+app.use((req, res, next) => {
+  res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  next();
+});
 app.use(compression());
 // `verify` guarda los bytes crudos del body en `req.rawBody` — hace falta
 // para el webhook de WhatsApp (whatsapp.controller.js), que tiene que
