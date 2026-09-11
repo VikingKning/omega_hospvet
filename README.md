@@ -5,567 +5,743 @@
 <h1 align="center">Omega Veterinaria & Estética — Panel Administrativo</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js">
-  <img src="https://img.shields.io/badge/Express-000000?style=flat&logo=express&logoColor=white" alt="Express">
+  <img src="https://img.shields.io/badge/Node.js_24+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js 24+">
+  <img src="https://img.shields.io/badge/Express_5-000000?style=flat&logo=express&logoColor=white" alt="Express 5">
   <img src="https://img.shields.io/badge/EJS-B4CA65?style=flat&logo=ejs&logoColor=black" alt="EJS">
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://github.com/VikingKning/omega_hospvet/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/status-en%20desarrollo-F00F35?style=flat" alt="En desarrollo">
 </p>
 
----
-
 ## Tabla de contenido
 
 - [Descripción](#descripción)
-- [Prerequisitos para ejecución](#prerequisitos-para-ejecución)
-- [Cómo correr el proyecto en localhost](#cómo-correr-el-proyecto-en-localhost)
+- [Stack tecnológico](#stack-tecnológico)
+- [Requisitos](#requisitos)
+- [Ejecución local](#ejecución-local)
+- [Variables de entorno](#variables-de-entorno)
 - [Arquitectura](#arquitectura)
-  - [Configuración de entorno](#configuración-de-entorno)
-  - [Reservas externas de Consultas (Google Calendar)](#reservas-externas-de-consultas-google-calendar)
-  - [Stack tecnológico](#stack-tecnológico)
-  - [Estructura del proyecto](#estructura-del-proyecto)
-  - [Rutas](#rutas)
-  - [API](#api)
-  - [Scripts disponibles](#scripts-disponibles)
-  - [Calidad y CI](#calidad-y-ci)
+- [Módulos y rutas principales](#módulos-y-rutas-principales)
+- [API y endpoints](#api-y-endpoints)
+  - [Convenciones HTTP](#convenciones-http)
+  - [Autenticación y perfil](#autenticación-y-perfil)
+  - [Catálogos administrativos](#catálogos-administrativos)
+  - [Tutores y pacientes](#tutores-y-pacientes)
+  - [Agenda](#agenda)
+  - [Laboratorio y métricas](#laboratorio-y-métricas)
+  - [Webhook de WhatsApp](#webhook-de-whatsapp)
+- [Configuración de integraciones](#configuración-de-integraciones)
+  - [Google Calendar](#google-calendar)
+    - [Configuración inicial en Google Cloud](#configuración-inicial-en-google-cloud)
+    - [Generar o renovar el token de Google](#generar-o-renovar-el-token-de-google)
+    - [Configuración de la página pública de reservas](#configuración-de-la-página-pública-de-reservas)
+  - [Correo SMTP con Nodemailer](#correo-smtp-con-nodemailer)
+    - [Prueba local con Gmail](#prueba-local-con-gmail)
+  - [Meta y WhatsApp Business](#meta-y-whatsapp-business)
+    - [Crear la aplicación de prueba y obtener los valores](#crear-la-aplicación-de-prueba-y-obtener-los-valores)
+    - [Qué hacer con el token de Meta](#qué-hacer-con-el-token-de-meta)
+    - [Configurar y probar el webhook en localhost](#configurar-y-probar-el-webhook-en-localhost)
+    - [Registrar plantillas de texto](#registrar-plantillas-de-texto)
+    - [Registrar la plantilla de resultados con documento](#registrar-la-plantilla-de-resultados-con-documento)
+    - [Checklist para pasar de pruebas a producción](#checklist-para-pasar-de-pruebas-a-producción)
+  - [Claude API](#claude-api)
+- [Scripts disponibles](#scripts-disponibles)
+- [Seguridad](#seguridad)
+- [Calidad y CI](#calidad-y-ci)
 - [Deploy](#deploy)
-- [Repositorios](#repositorios)
-
----
+- [Repositorio](#repositorio)
 
 ## Descripción
 
-Panel administrativo para **Omega Veterinaria & Estética**: una interfaz web para el personal de la clínica que cubre inicio de sesión real (contraseñas con bcrypt, sesión persistida en PostgreSQL, permisos por usuario), un dashboard principal con menú lateral colapsable que solo muestra los módulos a los que el usuario tiene acceso, un módulo de **Agenda** (Consultas y Cirugías, Grooming) con calendario de Google embebido y semáforo de puntualidad de citas, y un módulo de **Laboratorio** con alta de órdenes multi-estudio (catálogo por categoría/estudio/zona anatómica), filtros de búsqueda y carga simulada de resultados.
+Panel administrativo para el personal de **Omega Veterinaria & Estética**. Es una aplicación web renderizada en el servidor con Node.js, Express y EJS, respaldada por PostgreSQL mediante Knex. El frontend usa HTML, CSS y JavaScript vanilla, con HTMX para actualizaciones parciales y sin bundler ni proceso de compilación.
 
-El frontend (HTML + CSS + JavaScript vanilla, sin frameworks de cliente ni proceso de build) se renderiza server-side con Express + EJS, sobre el backend (Node.js + Express + PostgreSQL vía Knex) que se está construyendo por historias de usuario a partir de la Fase 0 de infraestructura (US-000). El HTML/JS/CSS de cada página no cambió respecto al PoC original — solo cambió quién lo sirve. Única excepción: `/doctores.html`, `/areas.html`, `/plantillas.html` y `/usuarios.html` usan [HTMX](https://htmx.org/) (vendored en `public/js/`, sin CDN externo, sin build step) para actualizar el panel de filtros/tabla sin recargar la página y sin exponer lo que se busca/filtra en la URL — mismo patrón en las cuatro, es el estándar del sistema para listados con filtro/orden/paginación; ver la sección de doctores más abajo.
+El sistema incluye:
 
-## Prerequisitos para ejecución
+- Autenticación real, permisos granulares por usuario y sesiones persistidas en PostgreSQL.
+- Bloqueo escalonado por intentos fallidos, cambio obligatorio de contraseña y expiración de sesión por inactividad o duración máxima.
+- Catálogos de usuarios, doctores, áreas, tutores, pacientes y plantillas de WhatsApp.
+- Agenda genérica por área con FullCalendar, altas, edición, confirmación y cancelación de citas.
+- Importación periódica de reservas externas desde Google Calendar.
+- Órdenes de laboratorio multiestudio, carga protegida de resultados y envío por correo o WhatsApp.
+- Métricas de laboratorio con filtros de fecha y gráficas.
+- Recepción de mensajes de WhatsApp y clasificación de intención mediante Claude API, limitada a etiquetas y respuestas predefinidas.
 
-- [Node.js](https://nodejs.org/) 24+ (LTS activa; pnpm 11 exige como mínimo 22.13, pero 22 ya pasó a Maintenance LTS en octubre 2025) y [pnpm](https://pnpm.io/) (gestor de paquetes decidido en la bitácora técnica; `npm install -g pnpm` o `corepack enable` si tu instalación de Node lo soporta).
-- Una instancia de [PostgreSQL](https://www.postgresql.org/) accesible (local o remota).
-- [Git](https://git-scm.com/) para clonar el repositorio.
+## Stack tecnológico
 
-## Cómo correr el proyecto en localhost
+| Tecnología                                 | Uso                                                     |
+| ------------------------------------------ | ------------------------------------------------------- |
+| Node.js 24+ y Express 5                    | Runtime y servidor HTTP                                 |
+| EJS                                        | Vistas renderizadas en el servidor                      |
+| HTML, CSS y JavaScript vanilla             | Interfaz sin framework de cliente ni build step         |
+| HTMX 2.0.10                                | Filtros, formularios y actualización parcial de vistas  |
+| FullCalendar 6.1.21                        | Calendario interactivo de citas por área                |
+| Chart.js 4.5.0                             | Gráficas de métricas de laboratorio                     |
+| PostgreSQL y Knex                          | Persistencia, consultas, migraciones y seeds            |
+| bcrypt                                     | Hash de contraseñas                                     |
+| express-session y connect-pg-simple        | Sesiones persistidas en PostgreSQL                      |
+| Joi                                        | Validación de entradas                                  |
+| csrf-csrf                                  | Protección CSRF                                         |
+| Helmet, express-rate-limit y sanitize-html | Cabeceras, limitación de escritura y defensa contra XSS |
+| Multer y pdf-lib                           | Carga y procesamiento de resultados de laboratorio      |
+| googleapis                                 | Sincronización con Google Calendar                      |
+| Nodemailer                                 | Envío de resultados por correo SMTP                     |
+| WhatsApp Cloud API                         | Webhook, respuestas y envío de resultados               |
+| Claude API                                 | Clasificación cerrada de mensajes entrantes de WhatsApp |
+| Pino y pino-http                           | Logging estructurado                                    |
+| Jest y Supertest                           | Pruebas unitarias y de integración                      |
+| PM2                                        | Administración del proceso en producción                |
 
-### 1. Clonar el repositorio
+Las librerías de navegador HTMX, FullCalendar y Chart.js están vendorizadas en `public/js/`; no se descargan desde CDN durante la ejecución.
+
+## Requisitos
+
+- Node.js 24 o superior.
+- pnpm 11.21.0, fijado mediante `packageManager` en `package.json`.
+- PostgreSQL accesible. El CI usa PostgreSQL 16.
+- Git.
+
+## Ejecución local
+
+### 1. Clonar e instalar
 
 ```bash
 git clone https://github.com/VikingKning/omega_hospvet.git
 cd omega_hospvet
-```
-
-### 2. Instalar pnpm (si no lo tienes) y las dependencias
-
-```bash
-npm install -g pnpm   # o: corepack enable (si tu instalación de Node lo soporta)
+corepack enable
 pnpm install
 ```
 
-Si tu usuario no tiene permisos de escritura sobre el prefix global de npm/node (por ejemplo `/usr`), instala pnpm en un prefix propio y agrégalo al `PATH`:
+Si Corepack no está disponible, pnpm también se puede instalar con `npm install -g pnpm`.
 
-```bash
-npm config set prefix ~/.npm-global
-npm install -g pnpm
-echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc   # o ~/.zshrc según tu shell
-source ~/.bashrc
-```
+### 2. Crear la base de datos
 
-### 3. Crear la base de datos en PostgreSQL
-
-Necesitas una instancia de PostgreSQL accesible (local o remota) y un rol/base de datos dedicados. En local, con el servicio de PostgreSQL ya corriendo:
+Con PostgreSQL en ejecución:
 
 ```bash
 sudo -u postgres psql -c "CREATE USER omega_hospvet WITH PASSWORD 'tu_password';"
 sudo -u postgres psql -c "CREATE DATABASE omega_hospvet OWNER omega_hospvet;"
 ```
 
-### 4. Configurar las variables de entorno
+### 3. Configurar el entorno
 
-Hay dos formas de hacerlo:
+Para desarrollo local se recomienda usar `.env.localhost`, que está excluido de Git:
 
-- **Atajo recomendado para desarrollo local**: crea (o edita) tu propio `.env.localhost` con tus credenciales locales (está excluido de git, cada desarrollador tiene el suyo). Los scripts `*:localhost` (paso 5 y 6) lo leen directamente vía `dotenv-cli`, sin tocar nunca el archivo `.env`.
-- **Manual, usando `.env`**: `cp .env.example .env` y completa a mano.
-
+```bash
+cp .env.example .env.localhost
 ```
+
+Completa al menos:
+
+```dotenv
+NODE_ENV=development
+PORT=3000
+
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=omega_hospvet
 DB_USER=omega_hospvet
 DB_PASSWORD=tu_password
 
-SESSION_SECRET=cualquier-cadena-larga-y-aleatoria
+SESSION_SECRET=una-cadena-larga-aleatoria
+LABS_RESULT_FILE_STORAGE=/ruta/absoluta/para/resultados
 
-ADMIN_PASSWORD=elige-una-contraseña-para-el-admin
+ADMIN_NOMBRE=Administrador
+ADMIN_APELLIDOS=Omega
+ADMIN_EMAIL=admin@omegavet.local
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=una-contraseña-inicial-segura
 ```
 
-(`ADMIN_NOMBRE`, `ADMIN_APELLIDOS`, `ADMIN_EMAIL`, `ADMIN_USERNAME` ya traen valores por defecto en `.env.example`.) Cualquier variante `.env*` queda excluida de git (salvo `.env.example`, ver `.gitignore`) — nunca se sube al repositorio.
+`LABS_RESULT_FILE_STORAGE` es obligatorio. Debe apuntar a una carpeta escribible y no debe ubicarse dentro de `public/`, porque los resultados se descargan únicamente mediante una ruta autenticada.
 
-### 5. Ejecutar migraciones y seeds
+También se puede copiar `.env.example` a `.env` y utilizar los scripts sin el sufijo `:localhost`.
+
+### 4. Migrar y sembrar
 
 ```bash
-pnpm run migrate:localhost   # o: pnpm run migrate, si usas .env
-pnpm run seed:localhost      # o: pnpm run seed
+pnpm run migrate:localhost
+pnpm run seed:localhost
 ```
 
-Esto crea las 20 tablas del Modelo de Datos v4 más sus foreign keys, y siembra `permissions` (81 permisos), 8 áreas de agenda predefinidas (Consultas/Cirugías/Grooming + 5 especialidades médicas, para el tab "Agendas" de la matriz de permisos de usuarios), los catálogos de laboratorio (categorías/estudios/zonas anatómicas) y el usuario administrador de arranque con `ADMIN_USERNAME`/`ADMIN_PASSWORD` del archivo de entorno usado.
+Actualmente las migraciones crean 21 tablas y agregan las plantillas predeterminadas del sistema. Los seeds registran 81 permisos, 8 áreas iniciales, los catálogos de laboratorio y el usuario administrador.
 
-### 6. Levantar el servidor
+### 5. Levantar el servidor
 
 ```bash
-pnpm run dev:localhost   # o: pnpm run dev, si usas .env
+pnpm run dev:localhost
 ```
 
-Deberías ver en consola: `Omega Vet AdminSite escuchando en el puerto 3000 (development)`. Para detenerlo, `Ctrl+C` en esa misma terminal.
+La aplicación queda disponible en:
 
-### 7. Probar en el navegador
+- `http://localhost:3000/`: inicio de sesión.
+- `http://localhost:3000/health`: health check, responde `{"status":"ok"}`.
 
-- `http://localhost:3000/` → debe cargar la pantalla de inicio de sesión (`index.html`, servida por Express).
-- `http://localhost:3000/health` → debe responder `{"status":"ok"}`.
-- Inicia sesión con `ADMIN_USERNAME`/`ADMIN_PASSWORD` de tu archivo de entorno (el login ya es real: valida contra `usuarios.password_hash` con bcrypt, no solo en el cliente). Te lleva a `main.html`, con el sidebar mostrando únicamente los módulos para los que tienes permiso (el admin sembrado tiene todos). Desde ahí puedes navegar `agenda.html`, `grooming.html`, `laboratorio.html`, `doctores.html`, `areas.html`, `plantillas.html`, `usuarios.html` — todas protegidas por sesión y por permiso (intentar entrar por URL directa sin el permiso correspondiente te regresa a `main.html`). `doctores.html`/`areas.html`/`plantillas.html` arrancan vacíos (sin datos sembrados) — verás el estado vacío con el botón de alta correspondiente hasta que se dé de alta el primer registro; en los tres ese botón ya funciona (doctores: US-607, áreas: US-610, plantillas: US-613). `usuarios.html` nunca arranca vacío (siempre existe al menos el admin sembrado); su botón de alta ya funciona (US-602), y con `usuarios.permisos` el mismo formulario incluye la matriz de permisos (US-604).
-- "Cerrar sesión" en el sidebar destruye la sesión de verdad.
-- Para confirmar que el seed del admin quedó bien, puedes consultarlo directo en la base: `psql -U omega_hospvet -d omega_hospvet -c "select username, correo, ultimo_login_en from usuarios;"` (ajusta usuario/base a los de tu `.env.localhost`; `ultimo_login_en` se actualiza en cada login exitoso).
+El administrador inicial usa `ADMIN_USERNAME` y `ADMIN_PASSWORD`. Después del login, el sidebar muestra únicamente los módulos permitidos para la sesión.
 
-## Arquitectura
+## Variables de entorno
 
-### Configuración de entorno
+El archivo base, con comentarios de configuración, está en `.env.example`.
 
-Las credenciales y configuración sensible viven en `.env` (excluido de control de versiones). `.env.example` documenta las variables requeridas: conexión a PostgreSQL, `SESSION_SECRET` (firma las cookies de sesión y, reutilizado, los tokens CSRF) y los datos del usuario administrador de arranque (`ADMIN_*`, consumidos por el seed `05_admin_usuario.js`). `.env.test` es la excepción: son credenciales dummy para una base de datos descartable, sin secretos reales, por eso sí está versionado (usado por `pnpm test` y por el job de CI).
+### Obligatorias para iniciar la aplicación
 
-Además, el **ID del calendario de Google** se embebe manualmente en `src/views/agenda.ejs` y `src/views/grooming.ejs`:
+| Variable                   | Descripción                                    |
+| -------------------------- | ---------------------------------------------- |
+| `DB_HOST`                  | Host de PostgreSQL                             |
+| `DB_PORT`                  | Puerto de PostgreSQL                           |
+| `DB_NAME`                  | Base de datos                                  |
+| `DB_USER`                  | Usuario de base de datos                       |
+| `DB_PASSWORD`              | Contraseña de base de datos                    |
+| `SESSION_SECRET`           | Firma de sesiones y tokens CSRF                |
+| `LABS_RESULT_FILE_STORAGE` | Carpeta privada para resultados de laboratorio |
 
-```
-src="https://calendar.google.com/calendar/embed?src=CALENDAR_ID%40group.calendar.google.com&..."
-```
+Las variables `ADMIN_*` son utilizadas por el seed del administrador. `ADMIN_PASSWORD` debe definirse antes de ejecutar el seed.
 
-Debe reemplazarse `CALENDAR_ID` por el ID real de cada calendario (Google Calendar → Configuración → Integrar calendario), y ese calendario debe estar compartido públicamente para que el embed funcione sin iniciar sesión.
+### Google Calendar — opcionales
 
-### Reservas externas de Consultas (Google Calendar)
-
-> Esta sección documenta requisitos operativos que **no están en el código** (viven en la configuración de Google Calendar) — si algún día se recrea la página de reservas o se le pierde el rastro a por qué una reserva no se importó, empezar por aquí.
-
-Además del embed de arriba, el área de Consultas tiene una página pública de reservas de Google Calendar ("Appointment Scheduling") — el link vive en la plantilla de WhatsApp `agendar_cita_default`. Cada `GOOGLE_SYNC_INTERVAL_MINUTES` minutos, `agenda.googleSync.js#sincronizar()` revisa el calendario compartido (`GOOGLE_CALENDAR_ID`) y, para cualquier evento que el sistema no haya creado él mismo, intenta reconocerlo e importarlo como cita de Consultas (`agenda.reservasExternas.js`).
-
-**Variables de entorno** (todas opcionales — sin ellas, la sincronización simplemente no corre; ver `isGoogleSyncConfigured()` en `src/config/googleCalendar.js`):
-
-```
+```dotenv
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
 GOOGLE_CALENDAR_ID=
-GOOGLE_SYNC_INTERVAL_MINUTES=10   # opcional, default 10
+GOOGLE_SYNC_INTERVAL_MINUTES=10
 ```
 
-**Datos obligatorios en la página de reservas de Google** — si se edita o se recrea la página, hay que dejarla exactamente así, o las reservas dejan de importarse en silencio (`agenda.reservasExternas.js` las ignora sin avisar si no reconoce el título+descripción):
+Sin estas credenciales, la agenda interna sigue funcionando, pero el job de importación de reservas externas no inicia.
 
-- **Nombre de la página de reservas**: debe contener el texto `Consultas Veterinarias` (se compara contra el título del evento que crea Google, sin distinguir mayúsculas/minúsculas).
-- **Descripción de la página** (el texto que ve el cliente al agendar): debe incluir textual la oración `Agenda aquí la cita de tu compañero de cuatro patas de forma rápida y sencilla.` — es la señal que distingue esta página de cualquier otra que exista en la misma cuenta de Google (evita importar reservas de otro servicio).
-- **Preguntas personalizadas del formulario**, con estas etiquetas EXACTAS (el sistema busca el texto literal en la descripción del evento):
-  - `Teléfono` — recomendado obligatorio. Se acepta con o sin separadores (`5529000090`, `55-2900-0090`, `55 29 00 00 90`, `55 2900 0090`...), se normaliza a 10 dígitos solo.
-  - `Nombre de la Mascota` — opcional. Si el teléfono ya coincide con un tutor registrado y este nombre coincide con una de sus mascotas (sin distinguir mayúsculas/acentos/espacios), la cita nace ya `confirmada`.
-  - `Motivo de Consulta` — opcional. Se preserva tal cual (no se resume ni se descarta) al inicio del `motivo` de la cita creada.
+### WhatsApp y Claude — opcionales
 
-Si el teléfono no coincide con ningún tutor, o no viene, la cita se importa igual pero `registrada` (pendiente), sin tutor ni mascota — el staff la completa a mano desde el calendario antes de confirmarla.
+```dotenv
+WHATSAPP_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_BUSINESS_ACCOUNT_ID=
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=
+WHATSAPP_APP_SECRET=
+WHATSAPP_APP_ID=
+WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES=60
 
-**Doctor genérico**: toda cita importada se asigna a un doctor "Consultas Omega" / "Generico", vinculado automáticamente al área Consultas. Se auto-provisiona (`agenda.repository.js#obtenerOCrearDoctorConsultasPredeterminado`) la primera vez que se importa una reserva en cada entorno — **no hace falta crearlo a mano** en ningún ambiente (localhost, CI, producción). Por el mismo motivo, **no renombrar ni borrar este doctor**: el sistema busca por `nombre='Consultas Omega' AND apellidos='Generico'` exacto, y si no lo encuentra vuelve a crear uno nuevo (duplicando el catálogo en vez de reusar el vínculo ya hecho con `doctor_area`).
-
-### Stack tecnológico
-
-| Tecnología                          | Uso                                                                                                                                           |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node.js + Express                   | Servidor de la aplicación web                                                                                                                 |
-| EJS                                 | Motor de vistas server-side (`src/views/*.ejs` + `src/views/partials/`)                                                                       |
-| CSS3 (vanilla)                      | Sistema de diseño propio, sin frameworks (`public/css/styles.css` + `public/css/main.css`)                                                    |
-| JavaScript (ES6+)                   | Interactividad de cliente: menú, filtros, modales, semáforo, combobox de búsqueda (embebido en cada vista, sin cambios respecto al PoC)       |
-| PostgreSQL + Knex                   | Base de datos y migraciones/seeds versionados                                                                                                 |
-| bcrypt                              | Hash de contraseñas (`usuarios.password_hash`)                                                                                                |
-| express-session + connect-pg-simple | Sesiones persistidas en PostgreSQL, sin Redis (Decisión 4 de la bitácora)                                                                     |
-| csrf-csrf                           | Protección CSRF en formularios que modifican estado (login por ahora)                                                                         |
-| Joi                                 | Validación de entrada en endpoints (`auth.schema.js` + `validate.js`)                                                                         |
-| PM2                                 | Gestión del proceso en producción (`ecosystem.config.js`)                                                                                     |
-| Google Calendar Embed               | Visualización de citas en Agenda/Grooming                                                                                                     |
-| HTMX (vendored, sin CDN)            | `/doctores.html` y `/areas.html`: actualización parcial del panel sin exponer filtros en la URL (single-file, sin build step ni dependencias) |
-
-### Estructura del proyecto
-
-```
-OmegaVet_AdminSite/
-├── .github/workflows/ci.yml                       # GitHub Actions: lint + tests en cada push/PR
-├── assets/
-│   └── sql/                                       # Omega-Database.sql, modelo DBML y ERD (fuente del esquema, NO se sirve públicamente)
-├── public/                                        # Estáticos servidos por Express (express.static)
-│   ├── css/                                       # styles.css, main.css
-│   ├── js/                                        # htmx.min.js (vendored, sin CDN); el resto del JS de cada vista sigue inline en el .ejs
-│   └── assets/imgs/                               # Logotipos e íconos de la marca
-├── src/
-│   ├── config/                                    # env.js, database.js (Knex), logger.js (Pino), session.js, csrf.js, passwordPolicy.js (Decisión 24: única lógica de negocio compartida entre módulos, HIBP+lista de comunes)
-│   ├── db/
-│   │   ├── migrations/                            # Una migración por tabla + FKs + tabla session
-│   │   ├── seeds/                                 # Catálogos base y usuario admin de arranque
-│   │   └── knexfile.js                            # Config real de Knex (migrations/seeds relativas a esta carpeta)
-│   ├── middlewares/                                # errorHandler.js, requireAuth.js, requirePermission.js (acepta string o array, semántica OR), validate.js, hxRedirect.js, writeLimiter.js, attachSidebarAreas.js (alimenta el submenú "Agenda" del sidebar, res.locals.areasAgendaSidebar)
-│   ├── modules/
-│   │   ├── auth/                                   # auth.routes/controller/service/repository/schema.js (US-101)
-│   │   ├── doctores/                                # doctores.routes/controller/service/repository.js (US-606/607/608)
-│   │   ├── areas/                                   # areas.routes/controller/service/repository.js (US-609/610/611)
-│   │   ├── plantillas_whatsapp/                     # plantillas_whatsapp.routes/controller/service/repository.js (US-612/613/614)
-│   │   ├── usuarios/                                 # usuarios.routes/controller/service/repository.js (US-601/602/604/605)
-│   │   ├── perfil/                                   # perfil.routes/controller/service/repository.js (US-109) — sin permiso, identifica al usuario solo por la sesión
-│   │   └── tutores/                                  # tutores.routes/controller/service/repository.js (US-155/156/157) — listado + alta/edición combinada + baja lógica
-│   ├── views/
-│   │   ├── partials/sidebar.ejs                    # Sidebar compartido, filtrado por permisos (AC6 de US-101); "Agenda" es dinámico por área (tabla `areas` + agenda.<slug>.ver, ver attachSidebarAreas.js)
-│   │   ├── partials/doctores-panel.ejs             # Fragmento HTMX de /doctores.html (toolbar+tabla+paginación)
-│   │   ├── partials/areas-panel.ejs                # Fragmento HTMX de /areas.html (mismo patrón)
-│   │   ├── partials/plantillas-panel.ejs           # Fragmento HTMX de /plantillas.html (mismo patrón)
-│   │   ├── partials/usuarios-panel.ejs             # Fragmento HTMX de /usuarios.html (mismo patrón; filtro de estatus es un <select>, no un toggle Activos/Todos)
-│   │   ├── partials/usuario-form.ejs               # Formulario de alta/edición de usuarios (US-602): combobox de Doctor vinculado, contraseña solo en alta, Estatus solo en edición; matriz de permisos en una 2da columna con usuarios.permisos (US-604)
-│   │   ├── partials/usuarios-panel-oob.ejs          # Envoltura hx-swap-oob para refrescar la tabla tras un alta/edición desde el modal
-│   │   ├── partials/plantilla-form.ejs             # Formulario de alta/edición de plantillas (US-613), un solo template para las dos acciones
-│   │   ├── partials/plantillas-panel-oob.ejs        # Envoltura hx-swap-oob para refrescar la tabla tras un alta/edición desde el modal
-│   │   ├── partials/doctor-form.ejs                # Formulario de alta/edición de doctores (US-607), un solo template para las dos acciones
-│   │   ├── partials/area-form.ejs                  # Formulario de alta/edición de áreas (US-610), un solo template para las dos acciones
-│   │   ├── partials/areas-panel-oob.ejs             # Envoltura hx-swap-oob para refrescar la tabla tras un alta/edición desde el modal
-│   │   ├── partials/perfil-form.ejs                # Fragmento HTMX de /mi-perfil.html (US-109, rediseño v2): "Mi cuenta" siempre visible + 4 secciones <details> (Datos personales/Áreas asignadas/Permisos/Cambiar contraseña)
-│   │   ├── partials/perfil-password-form.ejs       # Fragmento HTMX de /mi-perfil/password (US-110): los 3 campos + banner, swap independiente sobre #cambiar-password-panel, no toca el resto de la página
-│   │   ├── perfil.ejs                              # Página de Mi Perfil (US-109), layout normal con sidebar — no es un modal, es el contenido principal de la página
-│   │   ├── partials/tutores-panel.ejs              # Fragmento HTMX de /tutores.html (US-155): toolbar con DOS toggles independientes (Tutores/Pacientes), pacientes agrupados bajo su tutor en un <details> por fila; ícono de Eliminar (US-157) solo en tutores activos, dispara DELETE /tutores/:id vía hx-confirm
-│   │   ├── tutor-form.ejs                          # Alta/edición de Tutores y Pacientes (US-156) — ÚNICA página del sistema que NO es un modal ni usa HTMX: página completa propia con <base href="/"> (vive en /tutores/nuevo, un nivel más profundo que el resto), guardado vía fetch()+JSON; ajuste posterior: alerta al salir (blur) del teléfono, activo navega a editar, inactivo precarga toda su información en la misma alta
-│   │   └── index.ejs, main.ejs, agenda.ejs, grooming.ejs, laboratorio.ejs, doctores.ejs, areas.ejs, plantillas.ejs, usuarios.ejs, tutores.ejs (US-157: primer uso del modal `#confirmModalBackdrop` en este módulo, mismo patrón que doctores/áreas), cambiar-password.ejs (US-605: cambio obligatorio de contraseña, independiente del layout con sidebar)
-│   ├── app.js                                      # App Express (view engine EJS, helmet, compression, logging, sesión, rutas)
-│   └── server.js                                   # Punto de entrada (graceful shutdown)
-├── tests/
-│   ├── unit/                                       # Jest — lógica de negocio, mockeando el repository (sin BD)
-│   │   ├── auth.service.test.js
-│   │   ├── doctores.service.test.js
-│   │   ├── areas.service.test.js
-│   │   ├── plantillas_whatsapp.service.test.js
-│   │   ├── usuarios.service.test.js
-│   │   ├── perfil.service.test.js
-│   │   ├── tutores.service.test.js                 # US-155 (qué pacientes mostrar según coincidió el tutor o un paciente) + US-156 (validaciones de alta/edición, reactivación de teléfono con confirmación, edición nunca reactiva, búsqueda en vivo del teléfono) + verificarTelefono (chequeo exacto en blur, ajuste posterior)
-│   │   ├── passwordPolicy.test.js                  # Decisión 24: longitud/lista de comunes, HIBP (mockeando global.fetch por caso, nunca red real)
-│   │   └── requirePermission.test.js               # String (comportamiento original) + array con semántica OR (reconstrucción del menú)
-│   └── integration/                                # Jest + Supertest — app Express completa contra BD real
-│       ├── app.test.js                             # Rutas públicas, 404, páginas protegidas sin sesión
-│       ├── auth.test.js                            # Flujo de login completo (AC1-AC6 de US-101) + bloqueo escalonado por intentos fallidos (US-106)
-│       ├── expiracionSesion.test.js                 # Cierre de sesión automático a los 30 min de inactividad y ventana móvil (US-108); tope absoluto de 8h independiente de la actividad (US-111)
-│       ├── resetearPassword.test.js                # Restablecimiento de contraseña + flujo completo de cambio obligatorio: sesión restringida, bloqueo a los 5 intentos, completar el cambio (US-605)
-│       ├── doctores.test.js                        # Catálogo de doctores: poblado, búsqueda, permisos, orden, baja, alta, edición (US-606/607/608)
-│       ├── areas.test.js                            # Catálogo de áreas: poblado, búsqueda, permisos, orden, alta, edición, baja (US-609/610/611); alta/reactivación aprovisionan sus 5 permisos de agenda
-│       ├── plantillas_whatsapp.test.js              # Catálogo de plantillas: poblado, búsqueda, permisos, orden, filtro "Todos" por defecto, alta, edición, baja (US-612/613/614)
-│       ├── usuarios.test.js                          # Gestión de usuarios: poblado, búsqueda, filtro de estatus (6 valores), permisos de acceso, orden, alta, edición, transiciones de estatus, matriz de permisos (US-601/602/604)
-│       ├── perfil.test.js                            # Mi Perfil (US-109, rediseño v2) + Cambiar contraseña propia (US-110): validación en orden, sesión permanece activa, política compartida de Decisión 24
-│       ├── tutores.test.js                            # Catálogo de Tutores y Pacientes: listado (US-155, columnas/pacientes agrupados/búsqueda cruzada/filtros/permisos/paginación) + alta y edición combinada (US-156, validaciones, reactivación de teléfono, ciclo de vida de mascotas, permisos crear≠editar) + verificar-telefono (ajuste posterior: chequeo exacto en blur) + baja lógica (US-157, nunca DELETE físico, cascada a mascotas activas, HTMX manda query string en DELETE)
-│       ├── sidebarAgenda.test.js                     # Reconstrucción del menú: submenú "Agenda" dinámico por área activa + permiso granular, áreas sin página real ("Próximamente"), "Tutores y pacientes"
-│       ├── migrarPermisosAgendaGrooming.test.js       # Migración de datos 20260817000001: invoca up() directo contra la BD de test, mapeo legacy -> granular, idempotencia
-│       └── backfillPermisosAgendaAreas.test.js         # Migración de datos 20260817000002: invoca up() directo, asegura permisos de áreas ya existentes (activas e inactivas), idempotencia
-├── eslint.config.js
-├── .prettierrc, .prettierignore
-├── jest.config.js                                  # setupFiles carga .env.test para los tests
-├── .editorconfig
-├── knexfile.js                                     # Re-export delgado de src/db/knexfile.js (para `knex` sin --knexfile)
-├── ecosystem.config.js                             # Configuración de PM2
-├── .env.example
-└── .env.test                                        # Credenciales dummy para pnpm test / CI (sin secretos reales)
+ANTHROPIC_API_KEY=
 ```
 
-### Rutas
+Las variables de WhatsApp habilitan el webhook, las respuestas y el envío de resultados. `WHATSAPP_APP_ID` solo es necesario para registrar la plantilla de resultados con documento adjunto. `ANTHROPIC_API_KEY` habilita el clasificador de mensajes entrantes; Claude solo devuelve una etiqueta permitida y nunca genera contenido médico libre.
 
-| Ruta                  | Protección                                                                                   | Descripción                                                                                                                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/` y `/index.html`   | Pública (redirige a `/main.html` si ya hay sesión)                                           | Inicio de sesión (antes `login.html`; ahora es la página raíz)                                                                                                                       |
-| `POST /login`         | CSRF + Joi                                                                                   | Valida credenciales, crea sesión, resuelve permisos (US-101)                                                                                                                         |
-| `GET /logout`         | —                                                                                            | Destruye la sesión y redirige a `/`                                                                                                                                                  |
-| `/main.html`          | `requireAuth`                                                                                | Panel administrativo (landing tras iniciar sesión)                                                                                                                                   |
-| `/agenda.html`        | `requireAuth` + `requirePermission('agenda.ver')`                                            | Agenda de Consultas y Cirugías                                                                                                                                                       |
-| `/grooming.html`      | `requireAuth` + `requirePermission('grooming.ver')`                                          | Agenda de Grooming                                                                                                                                                                   |
-| `/laboratorio.html`   | `requireAuth` + `requirePermission('laboratorio.ver')`                                       | Órdenes de laboratorio, filtros y alta de estudios                                                                                                                                   |
-| `/doctores.html`      | `requireAuth` + `requirePermission('doctores.ver')`                                          | Catálogo de doctores: listado, búsqueda, orden, paginación, alta, edición y baja (US-606/607/608)                                                                                    |
-| `/areas.html`         | `requireAuth` + `requirePermission('areas.ver')`                                             | Catálogo de áreas: listado, búsqueda, orden, paginación, alta, edición y baja (US-609/610/611)                                                                                       |
-| `/plantillas.html`    | `requireAuth` + `requirePermission('plantillas.ver')`                                        | Catálogo de plantillas de WhatsApp: listado, búsqueda, orden, paginación, alta, edición y baja (US-612/613/614)                                                                      |
-| `/usuarios.html`      | `requireAuth` + `requirePermission('usuarios.ver')`                                          | Gestión de usuarios: listado, búsqueda, filtro por estatus, orden, paginación, alta, edición, matriz de permisos y reseteo de contraseña (US-601/602/604/605)                        |
-| `/cambiar-password`   | `requireAuth` (sin permiso — cualquier sesión, incluida una restringida)                     | Cambio obligatorio de contraseña tras un reseteo administrativo (US-605); `requireAuth` confina aquí cualquier sesión con `mustChangePassword:true`, sin importar qué otra ruta pida |
-| `/mi-perfil.html`     | `requireAuth` (sin permiso — cualquier sesión autenticada, salvo una restringida por US-605) | Consultar/actualizar los propios datos personales (US-109); identifica al usuario solo por `req.session.user.id`, nunca por un id de la petición                                     |
-| `/tutores.html`       | `requireAuth` + `requirePermission('tutores.ver')`                                           | Catálogo de Tutores y Pacientes: listado, búsqueda cruzada, dos filtros de estado independientes, paginación (US-155), baja lógica (US-157)                                          |
-| `/tutores/nuevo`      | `requireAuth` + `requirePermission('tutores.crear')`                                         | Alta de propietario y sus pacientes (US-156) — página completa propia, no un modal                                                                                                   |
-| `/tutores/:id/editar` | `requireAuth` + `requirePermission('tutores.editar')`                                        | Edición de propietario y sus pacientes (US-156), precargado                                                                                                                          |
-| `/health`             | Pública                                                                                      | Health check del servidor Express                                                                                                                                                    |
+### Correo — opcionales
 
-Las páginas del panel se sirven vía Express con `res.render()` (motor EJS); ya no existen archivos `.html` sueltos en la raíz del repositorio. Las URLs conservan la extensión `.html` a propósito, para no romper los enlaces del sidebar/navegación ya escritos en cada vista. `public/` (vía `express.static`) sirve `css/`, `js/` y `assets/imgs/*`; `assets/sql/` (el esquema de la base de datos) nunca se expone.
-
-Desde US-101, `main.html`/`agenda.html`/`grooming.html`/`laboratorio.html`/`doctores.html`/`areas.html`/`plantillas.html`/`usuarios.html`/`tutores.html` requieren sesión activa (`requireAuth`, redirige a `/` si no hay sesión o si superó el tope absoluto de 8h, US-111) y, salvo `main.html`, el permiso exacto del módulo (`requirePermission`, redirige a `/main.html` si falta — nunca un 403 crudo). El sidebar (`src/views/partials/sidebar.ejs`, compartido por todas las vistas) filtra cada ítem por el mismo permiso: un módulo sin acceso ni se ve en el menú ni es alcanzable por URL directa (AC6 de US-101).
-
-**`/doctores.html` (US-606), `/areas.html` (US-609) y `/plantillas.html` (US-612)** siguen el mismo patrón — la tabla estándar del sistema, decidida explícitamente así por el cliente para cualquier catálogo nuevo: `routes → controller → service → repository` del documento de Arquitectura y Buenas Prácticas, en vez de servir HTML estático del PoC. Cada una tiene búsqueda (doctores: por nombre o área, sin ocultar las demás áreas del doctor que hizo match; áreas: por nombre o slug; plantillas: por intención), filtro Activos/Todos, paginación y orden por columna (clic en el header — invierte la dirección si ya se está ordenando por esa columna, vuelve a la página 1). La columna Acciones está justificada a la derecha. **Plantillas es la única de las tres donde "Todos" es el filtro por defecto** (`plantillas_whatsapp.service.js#list`: `activoOnly = estado === 'activos'`, invertido respecto a doctores/áreas) — así lo pide el AC de esta historia.
-
-A diferencia del resto del panel, **este filtrado NO viaja por query string**: por pedido explícito del cliente (privacidad — no quiere el texto buscado en el historial del navegador ni en logs de acceso), el `GET` de cada una siempre sirve la página con el estado por defecto (ignora cualquier query string, ni la lee ni la refleja) y todo el filtro/orden/paginación se dispara vía **HTMX** contra el `POST` del mismo path, que devuelve solo el fragmento del panel (`src/views/partials/doctores-panel.ejs` / `areas-panel.ejs` / `plantillas-panel.ejs`) y lo intercambia en el DOM sin recargar ni tocar la URL/historial. El estado (búsqueda/filtro/orden/página) vive en un `<form>` con inputs ocultos que cada interacción reenvía completo — no en la URL ni en la sesión del servidor. El POST lleva el mismo CSRF (`csrf-csrf`) que `POST /login`. Si la sesión expira o falta el permiso durante una interacción HTMX, el servidor responde con el header `HX-Redirect` en vez de un `302` normal, para forzar una navegación real de página completa en vez de insertar el login dentro de la tabla (`src/middlewares/hxRedirect.js`, usado por `requireAuth`/`requirePermission`, sin afectar a las demás vistas que no usan HTMX). Consecuencia aceptada: sin JavaScript habilitado estos controles no funcionan (a diferencia del resto del panel).
-
-El orden se resuelve contra una whitelist fija de expresiones SQL en el repository de cada módulo (nunca se concatena `sort`/`dir` directo al `ORDER BY`); en doctores, "areas" ordena por el mismo `string_agg` que se muestra en la columna. Cuando el catálogo no tiene ningún registro (sin importar filtros), se oculta la barra de herramientas y se muestra un estado vacío con CTA de alta; si el catálogo tiene datos pero la búsqueda actual no encuentra nada, se mantiene la barra y solo la tabla muestra "No hay resultados para tu búsqueda".
-
-**El alta y la edición de plantillas también son reales (US-613)** — mismo patrón que el alta/edición de áreas (US-610): un solo formulario (`src/views/partials/plantilla-form.ejs`) en un modal propio, con Intención y Texto de respuesta. "+ Nueva Plantilla"/"+ Registrar primera plantilla" abren el formulario vacío (`GET /plantillas/nuevo`); el ícono de editar (visible en TODAS las filas con `plantillas.editar`, activas e inactivas — igual que en doctores) lo abre precargado (`GET /plantillas/:id/editar`). Al guardar, `POST /plantillas` (alta) inserta con `activo=true`/`veces_usada=0` siempre; `PUT /plantillas/:id` (edición) actualiza intención/texto_respuesta + `actualizado_por`/`actualizado_en`, sin tocar `veces_usada`. `intencion` sigue siendo `UNIQUE` a secas en el schema, exactamente igual que `areas.nombre` — el chequeo de duplicados reutiliza el mismo enfoque que áreas: insensible a acentos/mayúsculas/espacios, comparado en JS contra todas las plantillas (no con SQL/una extensión de Postgres), y si la intención pertenece a una plantilla **inactiva** se reactiva ese registro en vez de insertar uno nuevo. Un nombre/texto vacío o una intención duplicada (entre plantillas activas) responde con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger` (el modal no se cierra). `plantillas.crear` y `plantillas.editar` son permisos independientes, igual que en doctores/áreas — cada ruta exige el suyo. Se corrigieron también los permisos sembrados: US-000 los había creado como `plantillas_whatsapp.ver/crear/editar/desactivar`, pero la especificación real de estas historias usa `plantillas.ver/crear/editar/eliminar` — mismo tipo de ajuste ya hecho para `doctores.*` en US-606.
-
-**El formulario de edición (solo edición, no alta) tiene además un switch Activo/Inactivo** (`.switch-field`/`.switch`/`.switch-track` en `main.css`, primer componente de este tipo en el proyecto — puro CSS con `:has()`, sin JS) — agregado a petición explícita del usuario después de cerrar US-613, no estaba en el AC original de la historia. Desmarcarlo al editar desactiva la plantilla (`activo=false` + `desactivado_por`/`desactivado_en`, mismo criterio que doctores/áreas); marcarlo en una plantilla inactiva la reactiva (limpia esas dos columnas). La transición se calcula dentro de una transacción de Knex contra el valor actual en la base (`plantillas_whatsapp.repository.js#update`), no contra lo que el formulario cargó al abrirse — mismo patrón que `doctores.repository.js#editar`. El switch no aparece en el formulario de alta (el AC de US-613 exige `activo=true` siempre para un registro nuevo, eso no cambió).
-
-**El ícono de eliminar del listado también es real (US-614)** — mismo mecanismo que doctores (US-608) y áreas (US-611): pide confirmación vía el modal propio de esta vista (`#confirmModalBackdrop` en `plantillas.ejs`, patrón `htmx:confirm`/`evt.detail.issueRequest`, no el `confirm()` nativo) y ejecuta `DELETE /plantillas/:id`, que hace una baja lógica (`activo=false` + `desactivado_por`/`desactivado_en`) — nunca un `DELETE` físico, para conservar `veces_usada` y el historial de mensajes ya enviados con esa plantilla. Solo aparece en filas activas con `plantillas.eliminar`. Ahora hay DOS caminos hacia el mismo `activo=false`/`activo=true` (el ícono de eliminar del listado, y el switch del formulario de edición de US-613) — no se fusionaron porque resuelven necesidades distintas: uno es una acción rápida de una fila ya visible en la tabla, el otro vive dentro del flujo de edición de un registro ya abierto.
-
-En **doctores**, el ícono de eliminar (US-608) pide confirmación vía un modal propio (no el `confirm()` nativo del navegador — patrón `htmx:confirm` + `evt.detail.issueRequest`, ver `doctores.ejs`) y ejecuta `DELETE /doctores/:id`, que hace una baja lógica (`activo=false` + `desactivado_por`/`desactivado_en`) — nunca un `DELETE` físico, para no perder el historial de citas/laboratorio que referencia al doctor. Solo aparece en filas activas.
-
-**El alta y la edición de doctores también son reales (US-607)** — un solo formulario (`src/views/partials/doctor-form.ejs`) en un modal propio: "Nuevo doctor" abre el formulario vacío con el checkbox "Activo" marcado (`GET /doctores/nuevo`); el ícono de editar lo abre precargado (`GET /doctores/:id/editar`) — a diferencia de áreas, este ícono aparece en TODAS las filas con `doctores.editar`, incluidas las inactivas: el campo "Activo" del formulario es la única vía de la UI para reactivar un doctor, así que restringir el ícono a filas activas lo dejaría sin alcanzar. El formulario tiene Nombre(s), Apellidos, el checkbox Activo y "Especialidades": un `<select>` con las áreas activas + botón "Agregar" que arma una tabla chica de especialidades ya asignadas (cada fila con una × para quitarla) — interacción 100% cliente (JS vanilla, sin viaje al servidor por cada agregar/quitar), reutilizando el patrón `.mini-table`/`.mini-remove` que ya existía sin usarse en el mockup de `laboratorio.ejs`. Al guardar, `POST /doctores` (alta) inserta el doctor y una fila en `doctor_area` por cada especialidad elegida (ninguna es válido: un doctor puede quedar sin área asignada); `PUT /doctores/:id` (edición) actualiza nombre/apellidos/`actualizado_por`/`actualizado_en` y **sustituye por completo** las filas de `doctor_area` por la selección actual (borra todas e inserta las elegidas — logra el mismo efecto que "agregar las nuevas y quitar las que ya no están" sin diffear fila por fila, porque `doctor_area` no tiene columnas propias que preservar). Ambas operaciones corren en una sola transacción de Knex (`doctores.repository.js`). Si el checkbox "Activo" pasa de marcado a desmarcado (o viceversa) al editar, se fijan/limpian `desactivado_por`/`desactivado_en` exactamente igual que el ícono de baja/una reactivación — la transición se calcula contra el valor actual en la base **dentro** de la misma transacción, no contra lo que el formulario cargó al abrirse. `doctores.crear` y `doctores.editar` son permisos independientes: cada ruta exige el suyo (`POST /doctores` → `doctores.crear`, `PUT /doctores/:id` → `doctores.editar`), así que tener uno sin el otro rechaza la operación que no corresponde aunque el formulario sea visualmente el mismo. Un nombre/apellidos vacío responde con el mismo fragmento del formulario y el mensaje de error (sin `HX-Trigger`, el modal no se cierra) — a diferencia de áreas, aquí no hay chequeo de duplicados (`doctores.nombre`/`apellidos` no son únicos). Al guardar con éxito: swap **out-of-band** de la tabla + `HX-Trigger: closeDoctorModal`, mismo patrón que áreas.
-
-En **áreas**, además de la baja (US-611, mismo mecanismo que doctores), **el alta y la edición también son reales (US-610)** — a diferencia de doctores, que sigue teniendo esos dos botones decorativos. Un solo formulario (`src/views/partials/area-form.ejs`) sirve para las dos acciones, en un modal propio (distinto del de confirmación): "+ Nueva área" abre el formulario vacío (`GET /areas/nuevo`); el ícono de editar lo abre precargado con el nombre y el **slug en modo solo lectura** — nunca se regenera al editar, para no romper vistas/enlaces que ya lo referencien (`GET /areas/:id/editar`). Al guardar, `POST /areas` (alta) genera el slug a partir del nombre (sin acentos, minúsculas, guiones); `PUT /areas/:id` (edición) actualiza solo el nombre (+ `actualizado_por`/`actualizado_en`).
-
-`nombre` y `slug` siguen siendo `UNIQUE` a secas, exactamente como en `assets/sql/Omega-Database.sql` — no se tocó el schema para esta historia. "El nombre de un área dada de baja queda libre" **no** se resuelve con un índice parcial ni permitiendo dos filas con el mismo nombre: al dar de alta con un nombre que ya pertenece a un registro **inactivo**, el alta **reactiva ese mismo registro** (`activo=true`, limpia `desactivado_por`/`desactivado_en`, actualiza `actualizado_por`/`actualizado_en`) en vez de insertar una fila nueva — conserva su `id` y su `slug` originales, así que cualquier enlace viejo que lo haya referenciado sigue siendo válido. Si el nombre pertenece a un registro **activo**, se rechaza igual (AC de duplicados). Editar, en cambio, rechaza el nombre si pertenece a CUALQUIER otro registro (activo o no) — no hay "reactivar" al editar, sería fusionar la identidad de dos filas distintas, algo que la historia nunca pidió. El chequeo de duplicados es **insensible a acentos, mayúsculas y espacios** ("Neurología", "neurologia" y "Neuro Logia" cuentan como el mismo nombre) — se normaliza en JS (`areas.service.js#normalizeNombre`) comparando contra todas las áreas, no con SQL/una extensión de Postgres (el catálogo es chico y así tampoco se toca el schema). Lo que se guarda y se muestra es siempre el texto tal cual lo escribió el usuario (solo recortado), la normalización es solo para decidir si es un duplicado. Un nombre duplicado responde con el mismo fragmento del formulario más el mensaje "El nombre del Área ya esta registrada" — el modal no se cierra y no se guarda nada. Al guardar con éxito, la respuesta no reemplaza el formulario: hace un swap **out-of-band** (`hx-swap-oob`) de la tabla completa y manda el header `HX-Trigger: closeAreaModal`, que el JS del cliente traduce en cerrar el modal (ver `areas.ejs`).
-
-**`/usuarios.html` (US-601)** sigue el mismo patrón del resto de catálogos de Configuraciones. Los íconos de Permisos (US-604), Baja (US-603) y Resetear contraseña (US-605) ya son reales. Dos diferencias reales frente a doctores/áreas/plantillas: (1) el filtro no es un toggle de 2 estados sino un combobox con 6 valores (`usuarios.estatus`: activo/bloqueo_temp/bloqueado/cambio_pwd/inactivo, más "Todos") — por defecto muestra solo `activo` (decisión confirmada explícitamente con el cliente, ya que el AC no lo especificaba); (2) la tabla incluye una columna "Doctor vinculado" (LEFT JOIN a `doctores` vía `usuarios.doctor_id`, no sortable ni parte de la búsqueda) que muestra el nombre completo del doctor o "Sin vínculo". El badge de Estatus usa cuatro colores (`is-active` verde, `is-warning` ámbar para bloqueo_temp y cambio_pwd, `is-danger` rojo para bloqueado, gris por defecto para inactivo). Se corrigieron también los permisos sembrados: US-000 había creado `usuarios.desactivar` sin `usuarios.resetear_password`; ahora es `usuarios.eliminar` y se agregó `usuarios.resetear_password` que faltaba — mismo tipo de ajuste ya hecho dos veces antes (US-606, US-612).
-
-**El alta y la edición combinada de usuarios también son reales (US-602)** — un solo formulario (`src/views/partials/usuario-form.ejs`) en un modal propio, con más campos que cualquier otro catálogo hasta ahora: Nombre(s), Apellidos, Correo, Teléfono (opcional), Username, Contraseña inicial (**solo en alta** — en edición ese campo ni se muestra ni se puede tocar desde aquí, el reseteo es la US-605 aparte) y Doctor vinculado; Estatus aparece **solo en edición** (el AC exige que toda alta arranque en `activo`). "Doctor vinculado" es un combobox con búsqueda (`GET /usuarios/nuevo`/`GET /usuarios/:id/editar` embeben el catálogo de doctores activos como una isla de datos JSON inerte, filtrado 100% en cliente igual que el picker de especialidades de doctores en US-607) — de único valor, opcional (`usuarios.doctor_id = NULL` si se deja "Sin vínculo", la primera opción de la lista siempre), y ofrece solo doctores **activos** para una selección nueva; si el usuario ya tenía vinculado un doctor que después se dio de baja, ese vínculo se sigue mostrando precargado al editar (no desaparece del formulario solo porque el doctor ya no está activo). Al guardar, `POST /usuarios` (alta) inserta con `estatus='activo'`, `intentos_fallidos=0`, `bloqueado_en=NULL`, `creado_por`/`creado_en`, y la contraseña se guarda **únicamente** como `bcrypt.hash(password, 12)` (mismo costo que el admin sembrado en `05_admin_usuario.js`) — nunca en texto plano, ni siquiera de paso. `PUT /usuarios/:id` (edición) actualiza los datos generales y el Estatus, sin tocar jamás `password_hash`. La validación de duplicados de `username`/`correo` es case-insensitive y, a diferencia de áreas/plantillas, **no tiene "reactivar"**: cualquier registro existente con ese username/correo lo bloquea sin importar su estatus (AC explícito: "independientemente de su estatus") — la reactivación de una cuenta es un camino totalmente distinto (cambiar su Estatus a `activo` desde este mismo formulario), no algo ligado a reutilizar un username. El campo Estatus, cuando cambia a `activo` desde cualquier otro valor, resetea `intentos_fallidos=0`/`bloqueado_en=NULL` (mismo efecto sea la transición desde `bloqueado`, `bloqueo_temp` o `inactivo` — los tres ACs de la historia piden exactamente esto); y cuando entra o sale de `inactivo`, fija/limpia `desactivado_por`/`desactivado_en`, generalizando a un `estatus` de 4 valores el mismo criterio de trazabilidad que doctores/áreas/plantillas ya aplican sobre un `activo` booleano. Toda la transición se calcula dentro de una transacción de Knex contra el estatus **actual** en la base (`usuarios.repository.js#update`), no contra lo que el formulario cargó al abrirse — mismo patrón que `doctores.repository.js#editar`/`plantillas_whatsapp.repository.js#update`. `usuarios.crear` y `usuarios.editar` son permisos independientes, igual que en el resto de catálogos.
-
-**La matriz de permisos (usuario_permisos) vive dentro del mismo formulario (US-604)** — no es una pantalla aparte. Cuando quien abre el modal tiene `usuarios.permisos`, `usuario-form.ejs` se parte en dos columnas (`.modal-form-columns`/`.modal-col`, el mismo patrón de dos columnas del mockup `laboratorio.ejs`, primera vez que se usa en una vista real) y el modal pasa a `.modal-card-xwide`; sin ese permiso, el formulario sigue siendo de una sola columna, sin rastro del apartado en el HTML (no solo oculto por CSS). El apartado se organiza en **exactamente 3 tabs puro-CSS** (radio+label, sin JS, mismo criterio que el switch de plantillas US-613) — "Menú Principal", "Agendas" y "Configuraciones", cada uno con su propio set de columnas (solo las acciones que de verdad usan sus módulos):
-
-- **Menú Principal**: Tutores y pacientes (`tutores.*`, CRUD completo — el permiso se siembra por adelantado, aunque esa pantalla todavía no existe), Laboratorio (`laboratorio.*`: ver/crear/editar/eliminar + un checkbox combinado "Carga y Envío" que representa `laboratorio.cargar`+`laboratorio.enviar` juntos — un solo `value="idCargar,idEnviar"`, nunca por separado) y una sub-sección "Métricas" (WhatsApp/Laboratorios/Agenda, cada una con un único permiso `metricas.<sección>.ver` — reemplaza el antiguo `metricas.ver` único y hace que `sidebar.ejs` gatee cada link del submenú de Métricas individualmente).
-- **Agendas**: sus filas se leen **en vivo de la tabla `areas`** (no de un catálogo fijo en código) — cada área activa se empareja por `slug` contra el módulo `agenda_<slug>` sembrado en `permissions` (`01_permissions.js#AGENDA_CATEGORIAS`: Consultas/Cirugías/Grooming + Cardiología/Oftalmología/Terapia/Dermatología/Neurología, con columnas Ver/Crear/Editar/Cancelar/Confirmar). Un seed dedicado (`06_areas_agenda.js`, idempotente por slug) precarga esas 8 áreas desde el arranque; un área nueva sin un módulo `agenda_<slug>` emparejado simplemente no aparece en este tab. El nombre de cada fila sale de `area.nombre` en vivo, nunca de un mapa estático — una renombrada de área se refleja sola.
-- **Configuraciones**: Gestión de usuarios/Catálogo de doctores/Catálogo de áreas/Plantillas de WhatsApp, cada uno con Ver/Crear/Editar/Eliminar.
-
-Un módulo que no calce en ninguno de los 3 tabs (los `agenda`/`grooming` fijos originales de US-000, que se dejaron sin tocar para no romper el gate real de `/agenda.html`/`/grooming.html` en `app.js`) simplemente **no aparece en la matriz** — a propósito no hay un tab "Otros" de resiliencia. `usuarios.permisos`/`usuarios.resetear_password` tampoco tienen checkbox propio: **si un usuario tiene `usuarios.editar`, automáticamente tiene los otros dos también** (`usuarios.service.js#aplicarReglaEditarUsuariosIncluyePermisos`) — al guardar, si `usuarios.editar` viene marcado se agregan solos; si no viene marcado, simplemente no hay forma de marcarlos y el diff normal los retira si el usuario ya los tenía. Al guardar, `usuarios.repository.js#create`/`update` diffean la selección contra `usuario_permisos` (dentro de la misma transacción que el resto del alta/edición): inserta los nuevos con `otorgado_por`/`otorgado_en` frescos, borra los que se desmarcaron, y dejan intactos los que se quedan marcados (no reescriben su `otorgado_por`/`otorgado_en` original). Un checkbox group sin nada marcado no manda ninguna clave al body, así que un campo oculto `permisosSeccion` es lo único que distingue "el apartado no se mostró" (quien edita no tiene `usuarios.permisos`) de "se mostró y se guardó vacío" — sin él, ambos casos lucen idénticos del lado del servidor. Ese mismo campo activa `requirePermisosSiSePresenta` (`usuarios.routes.js`), un middleware extra en `POST /usuarios`/`PUT /usuarios/:id` que exige `usuarios.permisos` **solo si** el body trae `permisosSeccion` — así una petición directa al servidor (sin pasar por la UI) que intente colar cambios de permisos se rechaza igual, aunque tenga `usuarios.crear`/`usuarios.editar` (AC explícito). También se protege que la clínica se quede sin nadie que administre permisos: editar a un usuario para retirarle `usuarios.permisos` se rechaza si no queda ningún OTRO usuario **activo** con ese mismo permiso (`usuarios.service.js#validarNoDejarSinAdministradores`).
-
-**Validaciones y automatismos adicionales del formulario (US-604, sexta iteración)**: el Correo se valida con un formato razonable (`usuario@dominio.tld`, sin espacios) tanto en alta como en edición — bloquea errores de tecleo obvios, no persigue el RFC 5322 completo. La regla **"Ver implica las demás acciones"**, pedida explícitamente por el cliente ("no se puede ni crear, ni editar... algo que no se puede ver"), tiene dos capas: en el cliente (`usuarios.ejs`), marcar cualquier checkbox de una fila marca "Ver" de esa misma fila si no estaba, y desmarcar "Ver" desmarca toda la fila (UX en tiempo real, delegado sobre `.permisos-matrix` vía `data-accion`); en el servidor (`usuarios.service.js#aplicarReglaVerImplicaAcciones`), si cualquier otra acción de un módulo viene seleccionada y "Ver" no, se agrega "Ver" — deliberadamente de una sola dirección (nunca quita una acción ya marcada), como backstop de defensa en profundidad contra una petición directa que se salte el JS del formulario. Por último, el **Username se autopropone** mientras se escriben Nombre(s)/Apellidos, **solo en alta** (en edición no se toca, para no arriesgarse a cambiar el username de una cuenta ya en uso solo por corregir un acento): toma la primera palabra de cada campo, quita acentos/símbolos, arma `primerNombre.primerApellido` en minúsculas, y si ya existe consulta `POST /usuarios/username-sugerido` (ver API) para calcular el siguiente consecutivo disponible tomando el **mayor sufijo `.N` existente + 1** (no el primer hueco libre — `juan.sanchez`/`.2`/`.4` existentes propone `.5`, nunca `.3`). La propuesta se muestra como editable; en cuanto el administrador toca el campo Username a mano, deja de recalcularse aunque siga editando Nombre(s)/Apellidos (`usuarios.ejs`: la asignación programática de la sugerencia nunca dispara un evento `input`, así que un `input` real en ese campo es inequívocamente una edición manual). Si entre la propuesta y el guardado otro usuario tomó ese mismo username (condición de carrera), `DuplicateUsernameError` recalcula el consecutivo en ese momento y **re-renderiza el formulario con la nueva propuesta ya precargada** en vez de guardar solo — el administrador confirma con un segundo clic en Guardar, nunca se guarda silenciosamente con un valor distinto al que se pidió.
-
-**La baja de usuarios es real (US-603)** — mismo patrón de baja lógica que doctores/áreas/plantillas (`DELETE /usuarios/:id`, ícono de la tabla con `hx-confirm` nativo de HTMX, nunca un DELETE físico), pero con dos reglas propias que las otras bajas no tienen: no se puede dar de baja la propia cuenta (el ícono ni siquiera se renderiza para la fila del usuario en sesión, y el servidor lo rechaza también si se fuerza vía una petición directa — con un mensaje que se muestra en un banner arriba de la tabla, primer uso de ese patrón fuera de un formulario), y reprocesar la baja de alguien ya inactivo es un no-op atómico que **no** vuelve a pisar `desactivado_por`/`desactivado_en` (una sola query `UPDATE ... WHERE estatus != 'inactivo'`, sin necesidad de leer el estatus actual antes). El login ya rechazaba credenciales correctas de una cuenta inactiva desde US-101/106 (con el mismo mensaje genérico que usuario inexistente/contraseña incorrecta, decisión anti-enumeración deliberada que esta historia **no** modificó); lo nuevo es que dar de baja a alguien con una sesión YA abierta invalida esa sesión de inmediato — se borra directo de la tabla `session` (Postgres, connect-pg-simple) cualquier fila cuyo `sess.user.id` coincida, así su siguiente request a cualquier ruta protegida cae al mismo comportamiento genérico que ya existía para sesión expirada (`requireAuth.js`), sin agregarle una consulta a la base de datos a cada request de toda la aplicación.
-
-**El restablecimiento de contraseña es real (US-605)** — `POST /usuarios/:id/resetear-password` (icono de la tabla, con confirmación vía el modal genérico `#confirmModalBackdrop`, ahora con etiqueta de botón configurable por `data-confirm-label` para no decir "Dar de baja" en una acción que no lo es). Genera una contraseña temporal de 12 caracteres (`crypto.randomInt`, alfabeto sin caracteres ambiguos 0/O/1/l/I — nunca `Math.random()` para algo que se guarda como contraseña real), la hashea con bcrypt (costo 12) y la muestra al administrador **una sola vez**, vía un segundo modal poblado por el header `HX-Trigger: mostrarPasswordTemporal` (nunca embebida en el HTML del panel, que persiste en el DOM tras el swap) — el valor se borra del DOM al cerrar ese modal, y el servidor nunca la guarda en ningún lado más allá de esa respuesta. La operación además invalida cualquier sesión activa del usuario objetivo (mismo mecanismo que la baja, US-603) y se rechaza si el administrador intenta resetear su propia cuenta (mismo criterio que "no dar de baja la propia cuenta"). Introduce un quinto valor de `usuarios.estatus`, `cambio_pwd` (migración que amplía el `CHECK` constraint existente, espejada en `assets/sql/Omega-Database.sql`) — un usuario `activo`/`bloqueo_temp`/`bloqueado` pasa a `cambio_pwd` tras el reset; uno `inactivo` conserva ese estatus (resetear su contraseña no lo reactiva, aunque sí actualiza el hash). `cambio_pwd` **nunca** es un valor elegible a mano desde "Editar usuario" — solo se llega ahí vía esta acción.
-
-`auth.service.js#login` gana una rama dedicada para `estatus='cambio_pwd'`: evalúa la temporal con un contador de intentos fallidos **propio**, independiente del bloqueo escalonado de US-106 (a los 5 intentos incorrectos pasa directo a `bloqueado`, sin el paso intermedio de `bloqueo_temp` de 15/30 min) — si es correcta, no crea una sesión normal: devuelve `mustChangePassword:true`, que el controller guarda en `req.session.user` con `permissions:[]`. `requireAuth.js` (el único punto por el que pasan TODAS las rutas protegidas) confina esa sesión a `GET/POST /cambiar-password` y `GET /logout`, redirigiendo cualquier otra petición de vuelta — nunca llega al menú principal ni a ninguna otra pantalla. `POST /cambiar-password` (`auth.controller.js#cambiarPassword`, misma política compartida — Decisión 24, mínimo 15 caracteres — que el alta de usuarios) actualiza `password_hash`, pone `estatus='activo'` y **continúa en la misma sesión ya autenticada** (se le agregan los permisos reales y se le quita la marca `mustChangePassword`) — no hace falta un segundo login. `src/views/cambiar-password.ejs` es una página independiente (mismo estilo que `index.ejs`/login, fuera del layout con sidebar).
-
-**"Mi perfil" es real (US-109)** — primer módulo nuevo desde US-101 que vive fuera de `usuarios/` (`src/modules/perfil/`), a propósito: aunque toca la misma tabla `usuarios`, no es una acción administrativa sobre OTRO usuario (como todo lo demás en `usuarios/`) sino que el propio usuario en sesión edita su propio registro, sin ningún permiso de por medio — "Permiso requerido: Ninguno" es literal del AC, `perfil.routes.js` es la única ruta del panel que solo exige `requireAuth`, sin `requirePermission`. El enlace "Mi perfil" del sidebar (`partials/sidebar.ejs`) existía desde el principio como un `href="#"` decorativo — al no depender de ningún permiso, forzó corregir `showConfigGroup` (antes solo se mostraba el grupo "Configuraciones" si el usuario tenía AL MENOS uno de los 4 permisos de los otros catálogos; ahora siempre se muestra, porque "Mi perfil" por sí solo ya lo justifica). Nombre/Apellidos/Teléfono/Correo son editables; Username se muestra de solo lectura y **sin `name`** en el `<input>` — ni siquiera viaja al body del POST, así que no hay nada que "ignorar" del lado del servidor, es físicamente imposible mandarlo desde este formulario. El id del usuario objetivo sale **siempre** de `req.session.user.id` — ninguna ruta ni parámetro de este módulo acepta un id distinto, así que no existe una vía para consultar o editar el perfil de otra persona. El Teléfono es opcional (vacío se guarda como `NULL`) pero si se captura se valida contra el mismo formato ya usado en "Editar usuario" (`NN-NNNN-NNNN`, 10 dígitos) — a diferencia de esa pantalla, aquí la validación de formato SÍ corre también del lado del servidor (nueva, específica de esta historia). Al guardar, la respuesta es un fragmento HTMX (`partials/perfil-form.ejs`, mismo patrón que el resto del panel) con un banner de éxito verde — primer uso de ese componente en el sistema, hasta ahora solo existía el banner de error. Un correo duplicado (perteneciente a otro usuario) se rechaza igual que en "Editar usuario" (US-602), y cualquier error de validación conserva los valores anteriores en la base (nunca hay una actualización parcial: la validación completa corre antes de tocar la fila).
-
-**"Mi perfil" fue rediseñada por completo a partir de un mockup (extensión de US-109)** — ya no es un único formulario en una tarjeta angosta: ahora es una pila de tarjetas a lo ancho completo de `.main-content` (pedido explícito: "la pantalla tiene que estar al ancho al 100%"). "Mi cuenta" es un resumen siempre visible (username/correo como texto plano — ya no un `<input>` — más doctor vinculado, último acceso y un badge de estatus), seguido de 4 secciones `<details>/<summary>` sin JS (mismo criterio "sin enganchar" que el switch de US-613 y los tabs de permisos de US-604): **Datos personales** (abre por default; Nombre/Apellidos/Correo/Teléfono editables, dos filas de 2 columnas) es la única con lógica real; **Áreas asignadas** (cerrada por default) muestra las especialidades del doctor vinculado como `.area-tag`, de solo lectura; **Permisos** (cerrada) reconstruye la MISMA matriz con tabs fijos (Menú Principal/Agendas/Configuraciones) que "Editar usuario" (US-604) — duplicada íntegra en `perfil.service.js#construirMatrizPermisos` y sus auxiliares (mismo criterio de independencia entre módulos que el resto del proyecto), pero de solo lectura: cada celda muestra un check o un guion según `permisosAsignadosIds`, nunca un checkbox; **Cambiar contraseña** (cerrada) es real (ver US-110 más abajo). `perfil.repository.js` gana `listPermissionsCatalog`/`listAreasActivas`/`listPermisosAsignados` (duplicadas de `usuarios.repository.js`) además de `findDoctorVinculado`/`findAreasDelDoctor`. Nombre/Apellidos son datos compartidos entre `usuarios` y `doctores` cuando hay un doctor vinculado (pedido explícito: "se almacenan en usuarios y doctores") — `perfil.repository.js#actualizar` corre ambos updates en una sola transacción, cada uno con su propio `actualizado_por`/`actualizado_en`; Correo/Teléfono NO se replican (`doctores` no tiene esas columnas). Verificado en vivo con Playwright vinculando temporalmente al admin a un doctor real con 4 especialidades y permisos reales de varios módulos (incluyendo módulos dinámicos `agenda_<slug>`), confirmando también que un guardado de Nombre desde Mi Perfil actualiza `doctores.nombre` en la misma transacción — la tabla `doctores` se dejó fuera de las pruebas de integración automatizadas a propósito (tiene "dueño único" compartido con `doctores.test.js`, ver el bug ya documentado en US-601).
-
-**"Cambiar contraseña" en Mi Perfil es real (US-110)** — activa la sección que en el rediseño de arriba había quedado deliberadamente `disabled`. Ruta separada `POST /mi-perfil/password` (no `/mi-perfil.html`, mismo criterio que `/usuarios/:id/resetear-password`: es una acción, no una página), con su propio fragmento HTMX (`partials/perfil-password-form.ejs`) que hace swap sobre `#cambiar-password-panel` — un `<div>` DENTRO del `<details>` de la sección, no sobre `#perfil-panel` completo, así el `<details>` nunca se cierra tras guardar o tras un error, y el controller no necesita volver a consultar doctor/áreas/matriz de permisos por un cambio que no los afecta. `perfil.service.js#cambiarPassword` valida en este orden (igual al de los ACs): los 3 campos son obligatorios → la contraseña actual capturada se compara con `usuarios.password_hash` vía bcrypt (si no coincide, se conserva el hash sin tocar) → nueva y confirmación deben coincidir → la nueva pasa por la política de contraseñas compartida (ver Decisión 24 abajo), que además de longitud/lista de comunes/HIBP valida que sea diferente a la actual (regla exclusiva de un cambio VOLUNTARIO, no aplica al alta ni al restablecimiento administrativo). Nunca invalida la sesión actual ni otras sesiones — a diferencia de US-603/605 (un administrador actuando sobre la cuenta de OTRA persona), aquí es la propia persona cambiando su contraseña; el AC es explícito: "puede continuar utilizando el sistema sin volver a iniciar sesión".
-
-**Ajuste posterior de mobile, pedido explícito del usuario**: en mobile, tanto "Datos personales" (Nombre/Apellidos/Correo/Teléfono) como "Cambiar contraseña" (Actual/Nueva/Confirmar) deben apilarse en una sola columna, uno debajo del otro, en vez de las 2 columnas de desktop. `.profile-form-row` (el grid de 2 columnas) es compartida por AMBAS secciones — únicos dos usos en todo el proyecto — así que un solo override (`grid-template-columns: 1fr` en mobile) resuelve las dos a la vez, y en el orden pedido sin tocar el HTML: "Datos personales" ya son `<label>` sueltos hermanos que se apilan en su propio orden (Nombre, Apellidos, Correo, Teléfono); "Cambiar contraseña" ya tiene Actual en la primera columna y Nueva+Confirmar en la segunda (`.profile-form-col`), así que apilar por columna también cae en el orden correcto. Verificado en vivo: mobile muestra 1 columna (`gridTemplateColumns` de un solo valor), desktop conserva las 2 columnas sin cambios.
-
-**Política de contraseñas del sistema — Decisión 24 (Bitácora de Decisiones Técnicas v5)**: mínimo 15 caracteres (antes 8), permite hasta al menos 64 (passphrases), sin exigir una combinación específica de tipos de carácter, rechaza contraseñas de una lista de comunes/predecibles (comparación sobre la cadena completa, nunca por fragmento) y valida contra Have I Been Pwned vía k-anonimato (solo se manda el prefijo de 5 caracteres del hash SHA-1, nunca la contraseña completa a un tercero). Nuevo módulo compartido `src/config/passwordPolicy.js` — **única excepción deliberada** a la convención de "cada módulo duplica su propia validación" que rige el resto del proyecto: la lista de comunes y la llamada a HIBP tienen que ser byte-idénticas en los 3 módulos que establecen contraseñas (alta de usuario, cambio propio, cambio obligatorio tras reseteo), así que vive en `config/` como `csrf.js`, no en un módulo de dominio. Fail-open explícito si HIBP no responde en 3s o falla (se registra un warning y se permite continuar — la disponibilidad de un tercero no debe poder bloquear una operación de seguridad propia). `PASSWORD_MAX_LENGTH=72` no es una elección de negocio: es el techo real del algoritmo bcrypt. Retrofit de los 3 flujos que ya existían: `usuarios.service.js#crear` (alta) y `auth.service.js#cambiarPasswordObligatorio` (cambio forzado) ahora llaman a la política compartida (reenvolviendo el error en su propio tipo de siempre, `UsuarioValidationError`/`PasswordInvalidaError`, para no tocar el resto de cada módulo); `usuarios.service.js#generarPasswordTemporal` subió de 12 a 16 caracteres (por encima del nuevo mínimo) pero NO pasa por la política completa — es una cadena aleatoria recién generada por el servidor, no elegida por una persona. Los tests de integración nunca dependen de red real: `tests/setup-env.js` intercepta cualquier llamada a `pwnedpasswords.com` con una respuesta "no encontrado"; solo `tests/unit/passwordPolicy.test.js` mockea `global.fetch` por caso para probar el comportamiento real de HIBP (detección, fail-open por error HTTP, fail-open por timeout/red caída). Verificado además en vivo contra la API real de HIBP (no mockeada) con una contraseña confirmada como comprometida.
-
-**El sidebar se reconstruyó para que "Agenda" salga de la tabla `areas`, no de código fijo** — pedido explícito del usuario: "cada área es una agenda". Antes el submenú "Agenda" eran 2 links fijos (`agenda.ver`→`agenda.html`, `grooming.ver`→`grooming.html`); ahora `sidebar.ejs` itera cada área **activa** y la empareja por slug contra el permiso granular `agenda.<slug>.ver` (mismo catálogo de 40 permisos que ya alimentaba el tab "Agendas" de la matriz de permisos desde US-604, `usuarios.service.js#construirTabAgendas` — antes solo se usaba ahí, nunca en la navegación real). Un área nueva (o una reactivada) aparece sola en el menú de quien tenga su permiso, sin tocar código. También se agregó **"Tutores y pacientes"** como link de nivel superior (gateado por `tutores.ver`, permiso ya sembrado desde US-000 pero sin página hasta ahora) — mismo criterio que los 3 links de Métricas: aparece si hay permiso, pero es `href="#"` hasta que exista la pantalla real (fuera del alcance de esta reconstrucción del menú).
-
-Solo 2 de las hasta 8 áreas tienen página real construida hoy (Consultas y Cirugías comparten `agenda.html`; Grooming tiene `grooming.html`) — el resto de áreas con permiso se listan igual (el menú no debe ocultar un permiso real) pero como `<span class="submenu-link is-disabled">` con la etiqueta "Próximamente", sin `href`, hasta que exista una página real por área (Decisión 7 de la bitácora, FullCalendar, todavía pendiente). Nuevo middleware `src/middlewares/attachSidebarAreas.js` — consulta `areas` UNA vez y la deja en `res.locals.areasAgendaSidebar`, que EJS mezcla automáticamente en cada `res.render()` (mismo mecanismo que `cspNonce`); se encadena explícitamente después de `requireAuth` en las 9 rutas que renderizan una página completa (`/main.html`, `/agenda.html`, `/grooming.html`, `/laboratorio.html`, `/areas.html`, `/doctores.html`, `/plantillas.html`, `/usuarios.html`, `/mi-perfil.html`) — nunca en fragmentos HTMX, que no incluyen el sidebar.
-
-`/agenda.html` y `/grooming.html` dejan de protegerse con los permisos planos legacy `agenda.ver`/`grooming.ver` (nunca se expusieron en la matriz de permisos desde que existe el tab "Agendas" granular — ningún administrador pudo otorgarlos/revocarlos jamás desde la UI) y pasan a los granulares: `agenda.html` combina Consultas y Cirugías en una sola página, así que basta con `agenda.consultas.ver` **O** `agenda.cirugias.ver` (`requirePermission` ahora acepta también un array con semántica OR, retrocompatible con el uso de un solo código). Migración de datos (no de esquema) `20260817000001_migrar_permisos_agenda_grooming_a_granulares.js`: aditiva y no destructiva a propósito — cualquier usuario con un permiso legacy ya otorgado recibe también el/los granulares equivalentes, sin borrar ni tocar el catálogo legacy (queda inerte). `down()` es intencionalmente un no-op: no hay forma de distinguir un grant creado por la migración de uno otorgado después a mano.
-
-**Dar de alta (o reactivar) un área aprovisiona automáticamente sus 5 permisos de agenda** (`areas.repository.js#asegurarPermisosAgenda`, mismo día que la reconstrucción del sidebar) — antes, un área nueva creada desde el catálogo de Áreas quedaba invisible tanto en el tab "Agendas" de la matriz de permisos como en el menú de navegación, porque sus permisos `agenda_<slug>.<accion>` solo existían para las 8 áreas fijas sembradas por `01_permissions.js`. Ahora `create()`/`reactivar()` corren dentro de una `db.transaction` que también inserta (o asegura, vía `onConflict('codigo').ignore()`, idempotente) los 5 permisos `ver/crear/editar/cancelar/confirmar` del área — mismo `modulo`/`codigo`/`descripcion` que genera el seed para las áreas fijas, duplicado a propósito (un seed de arranque no es lo mismo que código de producción que corre en cada alta real). Con esto, el flujo completo queda cerrado: área nueva → sus permisos existen → un administrador con `usuarios.permisos` los ve y otorga en el tab "Agendas" del formulario de usuario (que ya leía `areas` en vivo desde US-604, solo le faltaban los permisos que emparejar) → en cuanto alguien los tiene, `sidebar.ejs` la lista sola en su menú (marcada "Próximamente" si el área no tiene página real todavía). Migración de datos `20260817000002_backfill_permisos_agenda_areas_existentes.js` (aditiva, `down()` no-op) asegura los permisos de cualquier área creada ANTES de este cambio (se encontró un caso real en `.env.localhost`: un área de prueba de una sesión anterior sin sus permisos, ahora corregida).
-
-**El catálogo de Tutores y Pacientes es real (US-155, primera historia del módulo 3.2)** — mismo patrón `routes → controller → service → repository` que doctores/áreas/plantillas, pero con una relación 1 a muchos real (`propietarios` 1 — N `mascotas`, vía `mascotas.propietario_id`) en vez de un catálogo plano, así que necesitó dos piezas nuevas que ningún otro módulo tenía: **dos filtros de estado independientes** (Tutores: Activos/Todos y Pacientes: Activos/Todos, cada uno con su propio `.toggle-group` y etiqueta — `estadoTutores` decide qué propietarios entran a la tabla, `estadoPacientes` decide qué mascotas se muestran dentro de cada uno, sin que uno pise al otro) y **búsqueda cruzada tutor↔paciente** (el texto puede coincidir con nombre/teléfono/correo del tutor o con nombre/tipo/raza de cualquiera de sus pacientes). El AC distingue explícitamente dos casos para decidir qué pacientes se muestran bajo un tutor que sí matcheó: si coincidió por sus **propios** campos (o no hay búsqueda), se le muestran TODOS los pacientes que ya pasen el filtro de estado; si coincidió únicamente porque uno de sus pacientes hizo match, solo se muestran los pacientes que TAMBIÉN cumplan la búsqueda — `tutores.repository.js` resuelve con SQL (`WHERE ... OR EXISTS (...)`) qué tutores entran y se paginan, y `tutores.service.js` decide en JS, por tutor ya resuelto, cuáles de sus pacientes mostrar (evita repetir esa lógica de "coincidió por quién" en SQL puro). Cada fila de tutor muestra sus pacientes en un `<details>/<summary>` sin JS (mismo criterio que los 4 acordeones de Mi Perfil y "Varios estudios" de Laboratorio) — el resumen dice cuántos pacientes hay, y al desplegarlo aparece una mini-tabla con Tipo/Nombre/Raza/Estado de cada uno; un tutor sin pacientes que cumplan el filtro muestra el texto exacto del AC ("No hay pacientes para mostrar.") en vez del `<details>`. El botón "+ Nuevo Propietario" y los íconos de Editar/Eliminar de cada fila se muestran gateados por `tutores.crear`/`tutores.editar`/`tutores.eliminar`, igual que cualquier otro catálogo — al momento de esta historia (US-155) ninguno tenía acción real todavía (`disabled`, con tooltip "Disponible en una próxima historia"; el AC es explícito en que la funcionalidad queda fuera de esta historia), pero **"+ Nuevo Propietario" y Editar ya son reales desde US-156, y Eliminar desde US-157** (ver más abajo). Se optó por `disabled` en vez de un botón sin `hx-*`/`href` (que se vería clicable pero no haría nada) para no simular una funcionalidad rota, mientras cada acción esperaba su propia historia. El pie de tabla usa el texto exacto pedido por el AC, "`N` resultados – `M` tutores en total" (separador en-dash), distinto del "·" que usan doctores/áreas/plantillas/usuarios — se siguió el AC al pie de la letra en vez de la convención visual ya establecida en el resto del panel.
-
-**Ajuste posterior de mobile, pedido explícito del usuario**: en mobile la columna "Pacientes asociados" quedaba fuera del ancho visible del contenedor, obligando a hacer scroll horizontal para ver los pacientes de cada tutor — justo la información que se pedía dejar "en la misma línea" que el propietario. Se liberó la columna "Estado" para acercar Pacientes asociados: su badge se duplica dentro de la celda de Propietario (bajo el teléfono), oculto en desktop (`.person-cell-status-mobile`, `display:none` por default) y mostrado solo en mobile — no se pierde la distinción Activo/Inactivo al ver "Todos", solo deja de tener su propia columna. Nueva clase `tutores-table` exclusiva de esta tabla (en `tutores-panel.ejs`) para no afectar a doctores/áreas/plantillas/usuarios, que comparten el mismo `.lab-table` base. Verificado en vivo contra datos reales y con un tutor inactivo dedicado (el badge "Inactivo" se sigue viendo completo, duplicado bajo el teléfono).
-
-**El alta y edición combinada de Tutores y Pacientes es real (US-156)** — primera y única pantalla de alta/edición del sistema que **no es un modal**: el mockup de esta historia la pide como página completa propia (con su propio ícono+título+"Regresar al listado", una tarjeta "Información del propietario", una tabla de "Pacientes asociados", un panel "Resumen" y un panel "Información" a un lado), a diferencia de doctores/áreas/plantillas/usuarios (formulario en un `.modal-card` sobre la propia tabla). Por eso tampoco usa HTMX: el guardado es un `fetch()` + JSON contra `POST /tutores`/`PUT /tutores/:id`, mismo patrón que `index.ejs` (login) y `cambiar-password.ejs`, no el patrón `hx-post` del resto de formularios del panel. **Gotcha real de esta decisión**: como `/tutores/nuevo` y `/tutores/:id/editar` viven un nivel más profundo que el resto de páginas (`/doctores.html`, `/areas.html`... todas de un solo segmento), CUALQUIER referencia relativa de la página — sus propios `<link>`/`<a>`/`fetch()`, pero también las del partial compartido `partials/sidebar.ejs`, que da por hecho que siempre se sirve desde la raíz — resolvía contra `/tutores/` en vez de `/`, rompiendo en silencio el menú lateral entero y el guardado; se resolvió con un solo `<base href="/">` en el `<head>` de `tutor-form.ejs` (cubre `<link>`/`<a>`/`<img>` y también `fetch()`/`history.replaceState()`) en vez de reescribir cada referencia a mano, propia y de partials compartidos. **Ajuste posterior, pedido explícito del usuario**: `.tutor-form-page` traía `max-width:1100px` — en pantallas anchas dejaba más de 1000px sin usar a la derecha, a diferencia del resto del sistema (que sí ocupa el 100% del `.main-content` disponible). Se quitó el `max-width` por completo; verificado en vivo que `.tutor-form-layout` (grid `1fr 300px`) sigue viéndose bien sin él — el panel "Resumen"/"Información" se queda fijo en 300px y la columna principal simplemente absorbe todo el ancho extra.
-
-Nombre/Teléfono son obligatorios (`propietarios.telefono` es además `UNIQUE` de verdad a nivel de base de datos); Correo es opcional con validación de formato. Cada paciente capturado en "Pacientes asociados" necesita como mínimo Nombre (Tipo/Raza son opcionales, igual que en el esquema); Nombre/Raza son `<input>` siempre editables directamente en la fila de la tabla (sin un modo "editar" aparte, más simple y robusto que alternar entre texto de solo lectura y un mini-formulario) — **Tipo, ajuste posterior**, ya no es texto libre: por ahora el negocio solo maneja dos tipos de mascota (Perro/Gato), así que es un control `.tipo-picker` de 2 íconos (uno con orejas caídas, otro con orejas puntiagudas y bigotes) de selección única, sin validación server-side de esos dos valores (decisión deliberadamente mínima: el control solo restringe la CAPTURA, no la base de datos — un `tipo` preexistente con otro valor simplemente no marca ningún ícono como activo hasta que el usuario elige uno). Un paciente ya guardado (trae `id`) usa el switch puro-CSS Activo/Inactivo de US-613 para dar de baja **y** reactivar con un solo control (AC17/AC19: ambas son la misma acción, alternar `mascotas.activo`) y nunca puede quitarse de la lista (nunca se elimina físicamente); uno nuevo (sin `id`) siempre nace Activo (sin switch) y sí puede quitarse antes de guardar, porque nada se creó todavía — **ajuste posterior**: ya no hay una columna "Acciones" aparte; la cruz para quitarlo vive dentro de la propia celda de Estado, y solo existe mientras el paciente sigue siendo nuevo. Esa celda tampoco repite el badge "Activo" (**segundo ajuste**, pedido del usuario): un alta siempre nace activa, así que mostrarlo en cada fila era redundante y ensanchaba la fila lo suficiente para forzar un scroll horizontal en la tabla — un paciente nuevo queda con la celda de Estado vacía salvo por la cruz. **Tercer ajuste, bug real de raíz compartida con el primero**: agregar varios pacientes mostraba también un scrollbar VERTICAL no deseado dentro de la tabla — causa: `.lab-table-wrap` (usado por TODAS las tablas del sistema) fija `overflow-x:auto`, y por spec de CSS eso fuerza el `overflow-y` computado a "auto" también; los tooltips `[data-tooltip]` de los íconos de la última fila (`.tipo-picker-btn`/`.paciente-cancelar-btn`), aunque invisibles (`opacity:0`), están posicionados fuera de los límites de la caja y cuentan como "contenido desbordado" para ese cómputo — en el resto de las tablas esto nunca se nota porque su `table-footer`/paginación (dentro del mismo `.lab-table-wrap`) ya le da colchón de sobra a esa última fila, pero la tabla de pacientes de este formulario no tiene paginación. Se corrigió la regla BASE de `.lab-table-wrap` (`overflow-y: hidden` en vez de heredar el "auto" implícito) — verificado que no afecta ninguna tabla existente (su `scrollHeight` ya coincidía con su `clientHeight` de sobra, así que "hidden" nunca llega a recortar nada real ahí, y los tooltips de su última fila se siguen viendo completos al hacer hover). **Cuarto ajuste, consecuencia real del tercero, reportado con captura**: ese mismo `overflow-y:hidden` SÍ recortaba un tooltip REAL (no fantasma) en la tabla de pacientes — al no tener `table-footer` que le dé colchón como al resto de las tablas, el tooltip de la cruz "Quitar"/de los íconos Perro-Gato de la última fila se veía cortado a la mitad. Primer intento (`.lab-table-wrap:has(.tipo-picker) { overflow: visible; }`, mismo patrón que la excepción del estado vacío) se revirtió: en mobile esta tabla SÍ necesita scroll horizontal real (4 columnas angostas no caben en ~340px), y CSS no permite `overflow-x:auto` + `overflow-y:visible` a la vez — el eje "visible" se computa como "auto" también, reintroduciendo el scrollbar vertical fantasma del tercer ajuste. Fix final: `.lab-table-wrap:has(.tipo-picker) { padding-bottom: 45px; }` (sin tocar `overflow` en absoluto) — le da a la caja espacio real del tamaño del tooltip, así el `hidden` de la regla base nunca llega a recortarlo, y `overflow-x:auto` sigue disponible para el scroll horizontal. Confirmado en vivo: `doctores.html`/`tutores.html` conservan `overflow-y:hidden` intacto, el tooltip se ve completo, y en mobile la tabla puede hacer scroll horizontal hasta revelar Raza/Estado. **Quinto ajuste, bug real de mobile reportado con captura**: `.tutor-form-layout` (grid `1fr 300px`) nunca colapsaba a una columna en mobile — el panel "Resumen"/"Información" (300px fijos) terminaba flotando encima de la columna principal en una pantalla de ~340-390px. La regla mobile se agregó DESPUÉS de la definición base de `.tutor-form-layout` en el archivo (no dentro del `@media` general del proyecto, que vive mucho antes) — con la misma especificidad, la regla que aparece después en el archivo gana en cascada sin importar si está dentro de un media query, así que ponerla en el bloque temprano no tenía efecto real aunque la condición sí aplicara. Verificado en vivo con viewport de 390px: el grid colapsa a una columna, el aside se apila debajo del contenido principal, sin overlap. **Sexto ajuste, mismo mensaje, tres pedidos más para mobile**: (1) ocultar por completo "Resumen" y el aviso "En este formulario puede agregar..." en mobile (no aportan nada que la pantalla no muestre ya, sin el espacio de sobra de desktop); (2) los 3 botones del pie ("Cancelar"/"Guardar y continuar"/"Guardar") deben caber en una sola línea, nunca envolver a una segunda — se redujo tamaño/padding SOLO de esos botones (selector descendiente `.tutor-form-actions .btn-primary/.btn-secondary`, nunca las clases base usadas en todo el sistema); (3) el título del encabezado fijo debe mostrar solo "Nuevo propietario"/"Editar propietario" en mobile, sin el prefijo "Tutores y Pacientes › Catálogo ›" (se amontonaba junto al menú hamburguesa) — el prefijo se envolvió en su propio `<span>` para poder ocultarlo solo ahí. **Mismo bug de cascada que el quinto ajuste, encontrado DOS VECES seguidas** al intentar arreglar (1) y (2): el primer intento puso los overrides justo después de `.tutor-form-layout`, pero `.tutor-form-aside`/`.tutor-form-actions`/`.tutor-form-actions-right` tienen sus PROPIAS reglas base más abajo en el archivo — perdían en cascada igual que antes. Los 3 overrides de mobile de tutor-form.ejs quedaron consolidados en un solo bloque al FINAL de `main.css`, después de TODAS sus reglas base, para no repetir el error. Verificado en vivo: título muestra solo "Nuevo propietario", aside oculto, los 3 botones en una sola fila sin desbordar su contenedor. **Séptimo ajuste, mismo hilo de mobile**: también se ocultó en mobile la leyenda "Capture la información del propietario y sus pacientes." bajo el título grande — mismo criterio, no aporta nada nuevo sin el espacio de sobra de desktop; nueva regla agregada directo al bloque consolidado del final del archivo, sin repetir el error de cascada de los ajustes 11/12. Los dos botones de guardar del mockup, decidido con el usuario: **"Guardar"** guarda y regresa al listado (AC24 literal); **"Guardar y continuar"** guarda igual pero se queda en el formulario — un alta se convierte in situ en una edición (nuevo id, `history.replaceState` cambia la URL a `/tutores/:id/editar` sin recargar, el título pasa a "Editar propietario") para poder seguir agregando pacientes sin salir.
-
-**Teléfono duplicado y reactivación — decidido con el usuario, con matices propios de esta historia**: como `propietarios.telefono` es `UNIQUE` de verdad, un teléfono que ya pertenece a otro propietario **activo** siempre se rechaza (AC5, mensaje "El teléfono ya se encuentra registrado."). Si pertenece a uno **inactivo**, el comportamiento depende de si es alta o edición — a propósito, mismo criterio que áreas (`areas.service.js#crear`/`editar`, "no hay reactivar al editar, sería fusionar la identidad de dos registros distintos"): en **alta**, en vez de violar el `UNIQUE` con un INSERT nuevo, se reactiva ese registro — pero, a diferencia de áreas/plantillas (que reactivan directo), aquí el usuario pidió una confirmación explícita primero: el servidor responde `200 { requiereConfirmacion: true, tutorExistente: { nombre, telefono } }` sin guardar nada, el cliente muestra un modal **custom** (nunca `confirm()` nativo, regla transversal del proyecto) con el nombre/teléfono del registro existente para que el usuario verifique que es la misma persona, y solo si acepta se reenvía la petición con `confirmarReactivacion: true`, que reactiva ese mismo registro con los datos que traiga el formulario en ese momento (`activo=true`, se limpian `desactivado_por`/`desactivado_en`; ver el ajuste posterior más abajo sobre qué trae el formulario). En **edición**, un teléfono de otro propietario (activo o inactivo) siempre se rechaza igual, sin nunca ofrecer reactivar — sería fusionar la identidad del propietario que se está editando con la de otro registro distinto, algo que ningún AC pidió. Este chequeo en el guardado sigue existiendo como **respaldo** tras el ajuste posterior de abajo (p. ej. si el usuario pegó el teléfono y dio clic en Guardar sin llegar a salir del campo).
-
-**Búsqueda en vivo del teléfono en el alta — pedido posterior del usuario**: el campo Teléfono pasó a ser el primero del formulario y, solo en alta, es un `.combobox` que busca en vivo (debounce de 400ms) contra `POST /tutores/buscar-telefono` — mismo patrón `.combobox`/`.combobox-list` ya usado en el resto del sistema (Doctor vinculado en `usuario-form.ejs`), pero con búsqueda contra el servidor en cada tecla en vez de filtrar una lista ya cargada de antemano (`propietarios` puede crecer mucho más que el catálogo de doctores). Es **incremental** (pedido explícito): con el campo vacío ya sugiere los primeros propietarios (hasta 8, sin mínimo de caracteres); conforme se escribe, filtra por coincidencia parcial; sin ninguna coincidencia, la lista simplemente se oculta (nunca un mensaje de "sin resultados"). Solo incluye propietarios **activos** — un inactivo con ese teléfono nunca aparece aquí, a propósito. Visible para cualquiera que llegue a esta página (mismo permiso `tutores.crear` de la página en sí, sin condicionarlo además a `tutores.editar`: la ruta de destino ya exige ese permiso por su cuenta si el usuario llega a seleccionar una coincidencia). Si el usuario selecciona una coincidencia, la página navega directo a `/tutores/:id/editar` — el alta se abandona por completo. En edición, Teléfono se queda como el `<input>` de texto plano de siempre (ya se está editando a alguien específico, no hay nada que buscar).
-
-**Ajuste posterior, pedido explícito del usuario: chequeo exacto al salir del campo (blur), no solo al guardar**. Este dropdown incremental convive con una segunda verificación, disparada al salir del campo Teléfono con un número completo y válido: `POST /tutores/verificar-telefono` (nuevo, distinto de `buscar-telefono` de arriba) hace un match EXACTO y, a diferencia del dropdown, sí revela un propietario **inactivo** — es justo el nuevo punto de entrada de la reactivación. El resultado se cachea (`telefonoVerificado`) para no repetir la consulta si el usuario vuelve a salir del campo sin cambiar el valor; cualquier tecla en el teléfono invalida esa caché.
-
-- Si coincide con un propietario **activo**: alerta custom "El teléfono ya está registrado por _{nombre}_. ¿Desea editarlo?" con Aceptar/Cancelar. Aceptar navega directo a `/tutores/:id/editar` (mismo destino que seleccionar del dropdown); Cancelar solo cierra la alerta, el alta sigue como estaba.
-- Si coincide con un propietario **inactivo**: reutiliza el modal de reactivación (`#reactivarModalBackdrop`, mismo de AC5 arriba). Al aceptar, **ya no navega a ningún lado** — se queda en `/tutores/nuevo` pero precarga Nombre/Correo/Pacientes con la información completa de ese propietario (`tutor.pacientes`, con sus ids reales) para que el usuario la revise/ajuste antes de guardar. Al hacer clic en Guardar, el formulario ya sabe que está reactivando (`reactivandoId`) y manda `confirmarReactivacion: true` directo, sin volver a preguntar.
-- **Bug real encontrado y corregido durante esta implementación**: `tutores.repository.js#reactivar` hacía un INSERT ciego de TODO el arreglo `pacientes` recibido, ignorando cualquier `id` — inofensivo mientras `pacientes` solo podía traer mascotas nuevas (el formulario siempre arrancaba vacío), pero con la precarga ahora sí llegan mascotas EXISTENTES con `id` real, y ese INSERT ciego las hubiera duplicado en cada reactivación. Se corrigió para que `reactivar()` use el mismo criterio upsert que `editar()` (con `id` → `UPDATE`, sin `id` → `INSERT` nueva) — cubierto por un test de integración dedicado.
-- **Ajuste posterior, pedido explícito del usuario**: Cancelar en cualquiera de las dos alertas (activo o inactivo) borra TODO el formulario, incluido el teléfono — no tendría sentido dejar capturado un número que el usuario decidió no usar. Implementado en `cerrarReactivarModal`/`cerrarTelefonoActivoModal` (la función `limpiarFormulario()` corre en el camino de "false" de ambas), así que también cubre cerrar con la `×` o hacer clic fuera del modal, no solo el botón "Cancelar" explícito.
-
-**Formato de teléfono consistente con el resto del sistema — pedido explícito del usuario**: `propietarios.telefono` ahora exige el mismo formato mexicano ya establecido (10 dígitos, `NN-NNNN-NNNN`) que `usuario-form.ejs`/`perfil-form.ejs` — mismos atributos del `<input>` (`placeholder="NN-NNNN-NNNN"`, `inputmode="numeric"`, `pattern="\d{2}-\d{4}-\d{4}"`, `maxlength="12"`, `title`) y la misma máscara cliente (se reconstruye el valor completo en cada tecla a partir de los dígitos, insertando los guiones, para que borrar un dígito de en medio no deje guiones "pegados"). A diferencia de `usuarios`/`perfil` (el teléfono ahí es opcional), en `propietarios` sigue siendo **obligatorio** (AC3/AC4) — el FORMATO es lo que se igualó, no la obligatoriedad, que es una regla de negocio propia de cada módulo. También corrige una inconsistencia que ya existía entre los dos módulos de referencia: `perfil.service.js` valida el formato del lado del servidor (`TELEFONO_REGEX`, mensaje "El teléfono debe tener el formato NN-NNNN-NNNN."), pero `usuarios.service.js` nunca lo hizo (solo el `pattern` del HTML, sin respaldo en el servidor) — `tutores.service.js` sigue el patrón de `perfil` (la validación completa, no solo la del cliente) por ser el más estricto de los dos existentes.
-
-**Ajuste posterior, pedido explícito del usuario: el formato `NN-NNNN-NNNN` es solo "look and feel"** — lo que se guarda en `propietarios.telefono` y `usuarios.telefono` son los 10 dígitos, sin guiones (migración de datos `20260819000001_normalizar_telefonos_sin_guiones.js`, reversible: un valor de exactamente 10 dígitos siempre puede reconstruirse a `NN-NNNN-NNNN` sin ambigüedad). Las máscaras de captura en el cliente no cambiaron — el usuario sigue viendo/escribiendo guiones — solo cambió la capa de guardado/comparación: `stripTelefono`/`formatTelefono` (duplicadas en `tutores.service.js`, `usuarios.service.js` y `perfil.service.js`, mismo criterio de independencia entre módulos que el resto del proyecto) quitan los guiones antes de guardar/comparar y los reconstruyen solo al devolver un teléfono para MOSTRARLO (listado, formulario precargado, resultados del buscador) — nunca se vuelve a guardar el resultado de `formatTelefono`. Disparador original del cambio: el buscador de `/tutores.html` no encontraba un tutor si se escribía su teléfono sin guiones (p. ej. buscar `5520108565` no encontraba a alguien guardado como `55-2010-8565`); ahora `tutores.service.js#list` calcula `qDigits = stripTelefono(q)` y lo manda junto con el `q` original hasta `tutores.repository.js`, que compara `qDigits` (no el `q` crudo) contra la columna `telefono` — la rama de búsqueda por teléfono se salta por completo si `qDigits` viene vacío (evita que un `ILIKE '%%'` — buscar solo por nombre, sin ningún dígito — haga match con todo).
-
-Toda la operación (propietario + N mascotas) corre en una sola transacción de Knex (`tutores.repository.js#crear`/`editar`/`reactivar`) — si algo falla a medias, no queda información parcial. La transición de `activo` de una mascota existente se compara contra su valor **actual en base de datos** dentro de la misma transacción (no contra lo que el cliente cree que era), mismo criterio que `doctores.repository.js#editar` para especialidades: `desactivado_por`/`desactivado_en` solo se tocan en una transición real, nunca en cada guardado.
-
-**La baja de Tutores y Pacientes es real (US-157)** — mismo patrón de baja lógica ya usado en doctores/áreas/plantillas/usuarios: `activo=false` + `desactivado_por`/`desactivado_en=NOW()`, nunca un `DELETE` físico (`tutores.repository.js#desactivar`, en una transacción Knex, sin el guardado idempotente `WHERE estatus != 'inactivo'` que usa `usuarios`). El historial de pacientes, citas y laboratorio de ese propietario sigue intacto y consultable vía `propietario_id`, que nunca se reasigna ni se borra. El ícono "Eliminar" (`.row-action-delete`) solo aparece si el tutor está activo y el usuario tiene `tutores.eliminar`; al confirmar, dispara `DELETE /tutores/:id` por HTMX, con `hx-include="#tutores-filters"` para que el fragmento devuelto respete el filtro/búsqueda/página donde el usuario ya estaba. Primer uso en este módulo del modal custom `#confirmModalBackdrop` (regla transversal del proyecto: nunca `confirm()` nativo) — vive en `tutores.ejs`, fuera de `#tutores-panel` a propósito, porque HTMX reemplaza ese contenedor en cada interacción y el modal se destruiría a medio uso si viviera adentro; mismo patrón exacto que `doctores.ejs`/`areas.ejs`. **Gotcha real replicado de doctores (US-608)**: la configuración por default de HTMX (`methodsThatUseUrlParams`) incluye `"delete"` junto con `"get"` — los valores de `hx-include` viajan como **query string** en un `DELETE`, no como body; `tutores.controller.js#desactivar` lee `{ ...req.query, ...req.body }` para no perder el estado del listado al re-renderizar. Un tutor desactivado desaparece del filtro Tutores:Activos pero sigue visible con Tutores:Todos, etiquetado "Inactivo", sin el ícono de Eliminar.
-
-**Ajuste posterior, pedido explícito del usuario**: la baja de un propietario **cascada a sus mascotas activas** (`activo=false` + su propio `desactivado_por`/`desactivado_en`, dentro de la misma transacción) — invierte lo que decía el AC7 original de la historia ("mascotas asociadas vía propietario_id NO son auto-modificadas"). Solo toca las mascotas que estaban **activas** en ese momento (`.where({ propietario_id: id, activo: true })`); una mascota ya inactiva de antes conserva su propia auditoría (su `desactivado_por`/`desactivado_en` originales, no se le pisan). La contraparte NO es simétrica, también a propósito: `tutores.repository.js#reactivar` (la única forma de reactivar un propietario hoy, vía el alta con teléfono duplicado de US-156) sigue reactivando **solo al propietario**, sin tocar las mascotas que quedaron inactivas por la cascada — se reactivan una por una desde el switch de "Pacientes asociados" en la edición. Hoy no existe un ícono de "reactivar" directo en el listado (decidido explícitamente así con el usuario al confirmar este ajuste); si se agrega en el futuro, debe respetar el mismo criterio de no-cascada.
-
-**Pendiente para una migración "completa" según la bitácora de decisiones técnicas**: `index.ejs`/`main.ejs`/`agenda.ejs`/`grooming.ejs`/`laboratorio.ejs` siguen siendo mayormente el HTML/JS del PoC copiado tal cual (el sidebar ya es la excepción: se extrajo a un partial con variables reales, ver arriba), y los datos de Agenda/Laboratorio siguen siendo arreglos de ejemplo en el `<script>` de cada página. Eso se resuelve historia por historia, conforme cada módulo se conecte a datos reales de la base.
-
-### API
-
-- `POST /login` — `{ username, password }` → `200 { redirectTo }` | `400` (Joi) | `401` credenciales inválidas, usuario inexistente o cuenta dada de baja — mismo mensaje genérico en los tres casos | `403` cuenta bloqueada (temporal o permanente, US-106) o token CSRF inválido/ausente.
-- `GET /logout` — destruye la sesión, `302` a `/`.
-- `GET /doctores.html` / `GET /areas.html` — página completa, siempre con el estado por defecto (ignora cualquier query string). HTML renderizado server-side (no JSON), `200`. `302` a `/main.html` si falta el permiso correspondiente (`HX-Redirect` en vez de `302` si la petición viene de HTMX).
-- `POST /doctores.html` / `POST /areas.html` — fragmento HTML del panel (`q`/`estado`/`sort`/`dir`/`page` en el body, `application/x-www-form-urlencoded`), disparado por HTMX, nunca visitado directo por el usuario. Requiere CSRF (`x-csrf-token`) y el mismo permiso de lectura del módulo.
-- `DELETE /doctores/:id` / `DELETE /areas/:id` / `DELETE /plantillas/:id` — baja lógica (US-608/611/614), disparado por HTMX tras confirmar en el modal. HTMX manda el filtro/orden/página actual como **query string** en el `DELETE` (`methodsThatUseUrlParams` de HTMX incluye "delete", no solo "get" — gotcha real, ver `doctores.controller.js`/`areas.controller.js`/`plantillas_whatsapp.controller.js`), no como body. Requiere CSRF y el permiso `doctores.eliminar`/`areas.eliminar`/`plantillas.eliminar` según corresponda.
-- `GET /areas/nuevo` / `GET /areas/:id/editar` (US-610) — fragmento HTML del formulario de alta/edición (vacío o precargado), swapeado dentro del modal correspondiente. Requiere `areas.crear`/`areas.editar` según corresponda.
-- `POST /areas` (alta) / `PUT /areas/:id` (edición) (US-610) — `{ nombre }` en el body. Éxito: `200` con un swap out-of-band (`hx-swap-oob`) de la tabla completa + header `HX-Trigger: closeAreaModal`. Nombre vacío/duplicado (entre áreas activas): `200` con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger` (el modal no se cierra). Requiere CSRF y `areas.crear`/`areas.editar` según corresponda.
-- `GET /doctores/nuevo` / `GET /doctores/:id/editar` (US-607) — fragmento HTML del formulario de alta/edición (vacío o precargado, con las especialidades ya asignadas), swapeado dentro del modal correspondiente. Requiere `doctores.crear`/`doctores.editar` según corresponda.
-- `POST /doctores` (alta) / `PUT /doctores/:id` (edición) (US-607) — `{ nombre, apellidos, activo, areaIds }` en el body (`areaIds` puede venir ausente, un solo valor, o varios). Éxito: `200` con un swap out-of-band de la tabla completa + header `HX-Trigger: closeDoctorModal`. Nombre/apellidos vacío: `200` con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger`. Requiere CSRF y `doctores.crear`/`doctores.editar` según corresponda.
-- `GET /plantillas/nuevo` / `GET /plantillas/:id/editar` (US-613) — fragmento HTML del formulario de alta/edición (vacío o precargado), swapeado dentro del modal correspondiente. Requiere `plantillas.crear`/`plantillas.editar` según corresponda.
-- `POST /plantillas` (alta) — `{ intencion, texto_respuesta }` en el body. `PUT /plantillas/:id` (edición) — además `activo` (el switch del formulario; ausente = desactiva). Éxito: `200` con un swap out-of-band de la tabla completa + header `HX-Trigger: closePlantillaModal`. Campo vacío/intención duplicada (entre plantillas activas): `200` con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger`. Requiere CSRF y `plantillas.crear`/`plantillas.editar` según corresponda.
-- `GET /usuarios.html` — página completa, siempre con el estado por defecto (`estatus=activo`, ignora cualquier query string). `200`. `302` a `/main.html` si falta `usuarios.ver` (`HX-Redirect` si la petición viene de HTMX).
-- `POST /usuarios.html` (US-601) — fragmento HTML del panel (`q`/`estatus`/`sort`/`dir`/`page` en el body), disparado por HTMX. Requiere CSRF y `usuarios.ver`.
-- `GET /usuarios/nuevo` / `GET /usuarios/:id/editar` (US-602/604) — fragmento HTML del formulario de alta/edición (vacío o precargado, con el catálogo de doctores activos embebido para el combobox), swapeado dentro del modal correspondiente. Con `usuarios.permisos` incluye además la matriz de permisos (catálogo completo agrupado por módulo + los ya asignados marcados); sin ese permiso, el HTML de la matriz ni se genera. Requiere `usuarios.crear`/`usuarios.editar` según corresponda.
-- `POST /usuarios` (alta) — `{ nombre, apellidos, correo, telefono, username, password, doctorId, permisosSeccion, permisos[] }` en el body. `PUT /usuarios/:id` (edición) — igual pero sin `password`, y con `estatus` en vez de ella. `permisosSeccion` es un campo oculto que solo viaja si el formulario mostró la matriz; `permisos` es la lista de ids de `permissions` marcados (ausente = ninguno). Éxito: `200` con un swap out-of-band de la tabla completa + header `HX-Trigger: closeUsuarioModal`. Campo vacío/correo sin formato válido/contraseña corta (alta)/correo duplicado/intento de retirar `usuarios.permisos` al último administrador activo: `200` con el mismo fragmento del formulario y el mensaje de error, sin `HX-Trigger`. Username duplicado: mismo `200` sin `HX-Trigger`, pero además el `username` del formulario re-renderizado ya viene reemplazado por el siguiente consecutivo disponible (US-604, sexta iteración — ver arriba), listo para que el administrador solo confirme con otro clic en Guardar. Si el body trae `permisosSeccion` pero la sesión no tiene `usuarios.permisos` (intento directo contra el servidor, sin pasar por la UI): `302`/`HX-Redirect` a `/main.html`, igual que cualquier otro permiso faltante — se rechaza aunque tenga `usuarios.crear`/`usuarios.editar`. Requiere CSRF y `usuarios.crear`/`usuarios.editar` según corresponda.
-- `DELETE /usuarios/:id` (US-603) — baja lógica, disparado por HTMX tras confirmar en el `hx-confirm` nativo del ícono de la tabla. Éxito: `200` con el fragmento del panel ya actualizado (el usuario objetivo aparece como "Inactivo" y sin la acción de baja disponible). Intento de dar de baja la propia cuenta: mismo `200`, panel sin cambios + un banner de error arriba de la tabla. Un usuario ya inactivo no vuelve a ejecutar nada (no pisa `desactivado_por`/`desactivado_en` existentes) ni truena, simplemente no cambia nada. Además invalida de inmediato cualquier sesión activa de ese usuario (borra su fila en la tabla `session`) — su siguiente request a cualquier ruta protegida lo redirige al login. Requiere CSRF y `usuarios.eliminar`.
-- `POST /usuarios/username-sugerido` (US-604, sexta iteración) — `{ nombre, apellidos }` en el body (nunca query string, mismo criterio de privacidad que el resto de las rutas HTMX de este módulo: un nombre real no debe aparecer en la URL/historial). Devuelve `200 { username }` con la propuesta ya calculada (cadena vacía si falta nombre o apellidos). Solo la usa el formulario de alta — requiere CSRF y `usuarios.crear`.
-- `POST /usuarios/:id/resetear-password` (US-605) — sin body, disparado por HTMX tras confirmar en el `hx-confirm` del ícono de la tabla. Éxito: `200` con el panel actualizado (el usuario objetivo pasa a "Cambio de contraseña pendiente", salvo que ya estuviera inactivo) + header `HX-Trigger: mostrarPasswordTemporal` cuyo detalle trae `{ password }` en texto plano — la única vez que viaja así, nunca en el cuerpo HTML. Intento de resetear la propia cuenta: mismo `200`, panel sin cambios + banner de error, sin `HX-Trigger`. Requiere CSRF y `usuarios.editar`.
-- `GET /cambiar-password` / `POST /cambiar-password` (US-605) — pantalla y envío del cambio obligatorio de contraseña. Requiere sesión (`requireAuth`) pero **ningún permiso** — cualquier sesión autenticada, incluida una restringida por `mustChangePassword`, necesita poder llegar aquí. `POST` recibe `{ password, confirmacion }` → `200 { redirectTo: '/main.html' }` si la contraseña cumple la política compartida (Decisión 24: mínimo 15 caracteres, sin estar en la lista de comunes/comprometida en HIBP) y coincide con la confirmación — continúa en la misma sesión, ya sin la restricción. `400` si no cumple la política o no coincide. Requiere CSRF.
-- `GET /mi-perfil.html` (US-109) — página completa con los propios datos (Nombre/Apellidos/Teléfono/Correo/Username), `200`. Requiere sesión (`requireAuth`) pero **ningún permiso**; una sesión restringida por US-605 (`mustChangePassword:true`) NO puede llegar aquí — cuenta como cualquier otra funcionalidad de la que esa sesión debe quedar fuera.
-- `POST /mi-perfil.html` (US-109) — fragmento HTMX, `{ nombre, apellidos, telefono, correo }` en el body (`username` no es un campo aceptado ni falta: el formulario ni lo manda). Éxito: `200` con el mismo fragmento del formulario + un banner verde "Perfil actualizado correctamente.". Campo obligatorio vacío/correo sin formato válido/correo duplicado/teléfono con formato inválido: `200` con el mismo fragmento y un banner de error, sin modificar el registro. El usuario objetivo es **siempre** `req.session.user.id` — cualquier `id` que llegara en el body se ignora por completo, no existe forma de editar a otro usuario desde esta ruta. Requiere CSRF.
-- `POST /mi-perfil/password` (US-110) — fragmento HTMX independiente de `/mi-perfil.html` (no re-renderiza el resto de la página), `{ passwordActual, passwordNueva, confirmarPassword }` en el body. Éxito: `200` con el fragmento de esta sección + banner verde "Contraseña actualizada correctamente."; la sesión actual permanece activa (a diferencia de `usuarios.repository.js#resetearPassword`/`darDeBaja`, esta operación nunca invalida sesiones — es la propia persona actuando sobre su propia cuenta). Contraseña actual incorrecta/nueva y confirmación no coinciden/nueva no cumple la política compartida (incluida "diferente a la actual", exclusiva de este flujo voluntario): `200` con el mismo fragmento y un banner de error, sin modificar `password_hash`. El usuario objetivo es **siempre** `req.session.user.id`. Requiere CSRF.
-- `GET /tutores.html` — página completa, siempre con el estado por defecto (`estadoTutores=activos`, `estadoPacientes=activos`, ignora cualquier query string). `200`. `302` a `/main.html` si falta `tutores.ver` (`HX-Redirect` si la petición viene de HTMX).
-- `POST /tutores.html` (US-155) — fragmento HTML del panel (`q`/`estadoTutores`/`estadoPacientes`/`page` en el body), disparado por HTMX. Requiere CSRF y `tutores.ver`.
-- `POST /tutores/buscar-telefono` (US-156, ajustado después) — `{ q }` en el body (nunca query string, mismo criterio de privacidad que el resto de las búsquedas del sistema). Búsqueda incremental sin mínimo de caracteres: con `q` vacío devuelve `200 [{ id, nombre, telefono }]` con los primeros 8 propietarios (orden por teléfono); con texto, filtra por coincidencia parcial; sin coincidencias, `[]` (nunca un error). Solo incluye propietarios **activos** — uno inactivo con ese teléfono nunca aparece aquí, a propósito. Solo la usa el combobox de Teléfono en el alta. Requiere CSRF y `tutores.crear`.
-- `POST /tutores/verificar-telefono` (ajuste posterior) — `{ telefono }` exacto en el body. A diferencia de `buscar-telefono`, sí revela un propietario **inactivo**: es el punto de entrada de la reactivación al salir del campo (blur), no solo al guardar. Sin coincidencia: `200 { existe: false }`. Coincide con uno **activo**: `200 { existe: true, activo: true, tutor: { id, nombre } }` (mínimo, solo para la alerta "¿desea editarlo?"). Coincide con uno **inactivo**: `200 { existe: true, activo: false, tutor: { id, nombre, telefono, correo, pacientes } }` — trae TODA su información para precargar el formulario de alta tras confirmar la reactivación. Mismo permiso/CSRF que `buscar-telefono`.
-- `DELETE /tutores/:id` (US-157, ajustado después) — baja lógica del propietario, disparada por HTMX desde el ícono de Eliminar del listado (con `hx-confirm`, modal custom, nunca el `confirm()` nativo). Nunca un `DELETE` físico: pone `activo=false` + `desactivado_por`/`desactivado_en`, y **cascada a sus mascotas actualmente activas** (mismos campos de auditoría, todo en una sola transacción) — una mascota ya inactiva de antes no se toca. Devuelve `200` con el fragmento `partials/tutores-panel.ejs`, respetando el filtro/búsqueda/página donde estaba el usuario — lee tanto `req.query` como `req.body`, porque la config por default de HTMX manda los valores de `hx-include` en un `DELETE` como query string, no como body. Un `id` inválido/inexistente no truena. Requiere CSRF y `tutores.eliminar`.
-- `GET /tutores/nuevo` / `GET /tutores/:id/editar` (US-156) — página completa (no un fragmento) con el formulario de alta/edición, vacío o precargado con el propietario y sus pacientes. Requiere `tutores.crear`/`tutores.editar` según corresponda.
-- `POST /tutores` (alta) / `PUT /tutores/:id` (edición) (US-156) — `{ nombre, telefono, correo, pacientes: [{ id?, nombre, tipo, raza, activo? }], confirmarReactivacion? }` en el body, JSON (no HTMX — `tutor-form.ejs` habla por `fetch()`, mismo patrón que `POST /login`). Éxito: `200 { id, redirectTo: '/tutores.html', propietario }` (`propietario` trae el estado ya guardado, con los ids reales de mascotas nuevas — lo usa "Guardar y continuar" para seguir editando sin recargar). Campo obligatorio vacío/correo inválido: `400 { error }`. Teléfono ya registrado en otro propietario activo: `400 { error }`. Teléfono de un propietario **inactivo** — solo en alta, nunca en edición (ver más abajo): `200 { requiereConfirmacion: true, tutorExistente: { nombre, telefono } }`, sin guardar nada; reenviando con `confirmarReactivacion: true` reactiva ESE registro en vez de crear uno nuevo. Requiere CSRF y `tutores.crear`/`tutores.editar` según corresponda.
-- `GET /health` — `200 { status: "ok" }`.
-
-El resto de endpoints reales de cada módulo (agenda, laboratorio, usuarios, etc.) se documentará conforme se implementen sus historias de usuario correspondientes.
-
-### Scripts disponibles
-
-| Script                                             | Descripción                                                                        |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `pnpm start`                                       | Levanta el servidor Express en modo producción, usando `.env`                      |
-| `pnpm run dev`                                     | Levanta el servidor con recarga automática (`node --watch`), usando `.env`         |
-| `pnpm run migrate`                                 | Ejecuta las migraciones pendientes (`knex migrate:latest`), usando `.env`          |
-| `pnpm run migrate:rollback`                        | Revierte el último batch de migraciones                                            |
-| `pnpm run migrate:status`                          | Muestra el estado de las migraciones                                               |
-| `pnpm run seed`                                    | Ejecuta los seeds (catálogos base + usuario admin), usando `.env`                  |
-| `pnpm run dev:localhost`                           | Igual que `dev`, pero carga variables desde `.env.localhost` (sin tocar `.env`)    |
-| `pnpm run migrate:localhost`                       | Igual que `migrate`, cargando `.env.localhost`                                     |
-| `pnpm run seed:localhost`                          | Igual que `seed`, cargando `.env.localhost`                                        |
-| `pnpm run lint`                                    | Corre ESLint sobre todo el proyecto                                                |
-| `pnpm run lint:fix`                                | Corre ESLint y corrige automáticamente lo que pueda                                |
-| `pnpm run format`                                  | Formatea todo el proyecto con Prettier                                             |
-| `pnpm run format:check`                            | Verifica el formato sin modificar archivos (usado en CI)                           |
-| `pnpm test`                                        | Corre la suite de pruebas con Jest + Supertest (`tests/`)                          |
-| `pnpm run google:renovar-token`                    | Regenera `GOOGLE_REFRESH_TOKEN` cuando Google lo revoca/expira (ver nota abajo)    |
-| `pnpm run whatsapp:registrar-plantillas`           | Da de alta en Meta las plantillas elegidas del experimento (ver nota abajo)        |
-| `pnpm run whatsapp:estado-plantillas`              | Consulta en vivo el estado de aprobación de las plantillas ya registradas          |
-| `pnpm run whatsapp:registrar-plantilla-resultados` | Registro único de la plantilla "resultados de laboratorio listos" (ver nota abajo) |
-
-Los scripts `*:localhost` usan [`dotenv-cli`](https://github.com/entropitor/dotenv-cli) para inyectar las variables de un archivo específico sin necesidad de copiarlo a `.env` (evita el riesgo de sobrescribir por accidente un `.env` real). El mismo patrón se usará para `.env.qa` y `.env.prod` cuando existan (`dev:qa`, `start:prod`, etc.).
-
-#### Renovar el token de Google Calendar (`GOOGLE_REFRESH_TOKEN` expirado)
-
-La app de Google Cloud de este proyecto usa una cuenta de **Gmail personal** (no Workspace) en estado de publicación **"Prueba"** — decisión explícita del usuario: pasar por la verificación completa de Google (política de privacidad publicada, revisión de días/semanas) es demasiado trámite para una herramienta de un solo consultorio, y con Gmail personal tampoco existe la opción de marcar la app como "Interna" (eso solo aplica a cuentas de Google Workspace).
-
-El costo de quedarse en "Prueba": Google expira el `GOOGLE_REFRESH_TOKEN` cada **7 días**, sin importar que se esté usando activamente. Cuando eso pasa, `agenda.googleSync.js` empieza a fallar con `invalid_grant: "Token has been expired or revoked"` en los logs (tanto el push inmediato al crear/editar una cita como el pull periódico) — la app sigue funcionando normal para todo lo demás, solo la sincronización con Google Calendar se detiene.
-
-Para regenerarlo:
-
-1. Detén `dev:localhost` (Ctrl+C) — el script de renovación necesita el puerto 3000 libre, porque usa el mismo redirect URI ya registrado en Google Cloud Console (`http://localhost:3000/auth/google/callback`).
-2. Corre `pnpm run google:renovar-token` y abre la URL que imprime en el navegador, con la cuenta de Gmail correcta.
-3. Autoriza — la terminal imprime el `GOOGLE_REFRESH_TOKEN` nuevo.
-4. Pégalo en `.env.localhost` (reemplazando el que ya no sirve) y vuelve a correr `pnpm run dev:localhost`.
-
-#### WhatsApp Business (envío de resultados de laboratorio — Decisión 21)
-
-Igual que Google Calendar, opcional y desacoplado del resto de la app (`isWhatsappConfigured()` en `src/config/whatsapp.js`; sin las variables, la app funciona normal, el envío por WhatsApp simplemente no se activa):
-
-```
-WHATSAPP_TOKEN=...
-WHATSAPP_PHONE_NUMBER_ID=...
-WHATSAPP_BUSINESS_ACCOUNT_ID=...
-```
-
-**Estado actual (2026-09-02)**: usando el **número de prueba** que Meta da gratis al dar de alta el producto WhatsApp en Meta for Developers (hasta 5 destinatarios de prueba verificados, token temporal de 24h renovable desde la misma consola) — la app de Meta está bajo la cuenta personal del desarrollador, todavía no la de Omega. `src/config/whatsapp.js` expone `messagesUrl()` (envío) y `templatesUrl()` (alta/consulta de plantillas), ambos vía `fetch` nativo contra la Graph API, sin SDK.
-
-**Experimento en curso**: se registraron en Meta 3 de las plantillas reales que ya existen en `plantillas_whatsapp` (`cambio_horario_medicacion`, `dosis_olvidada`, `revision_herida_foto`, categoría `UTILITY`) solo para validar el tiempo real de aprobación y el mecanismo de consulta de estado — **no** porque las necesiten para su uso actual (son respuestas dentro de una conversación ya abierta, WhatsApp no exige aprobación de Meta para eso; la aprobación previa solo aplica a mensajes que el negocio inicia fuera de la ventana de 24h, como avisar que un resultado ya está listo). Corre `pnpm run whatsapp:estado-plantillas` para ver si ya las aprobó.
-
-**Pendiente** (según la Bitácora de Decisiones Técnicas v4, "LLM clasificador de intención de WhatsApp"): un clasificador con `claude-haiku-4-5` vía Claude API (Commercial Terms) que solo clasifica la intención del mensaje entrante y enruta a una plantilla fija de `plantillas_whatsapp` — nunca genera texto médico libre. Todavía no existen las credenciales de Anthropic (Commercial Terms, cuenta de negocio) para esto.
-
-Ver `scripts/renovar-google-token.js` para el detalle de implementación.
-
-#### Recibir mensajes de WhatsApp en localhost (webhook + cloudflared)
-
-El webhook de mensajes entrantes (`GET`/`POST /webhooks/whatsapp`, módulo `whatsapp/`) es un callback que Meta llama directamente sobre tu servidor — necesita una URL pública con HTTPS, algo que `localhost:3000` no es. Para probarlo en desarrollo se usa un **quick tunnel** de [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) (`cloudflared` ya instalado en la máquina de desarrollo) — no requiere cuenta ni login, pero tampoco guarda configuración: **cada vez que lo levantas te da una URL nueva** de `*.trycloudflare.com`.
-
-Dos terminales:
-
-```bash
-# Terminal 1 — el servidor
-pnpm run dev:localhost
-
-# Terminal 2 — el túnel
-cloudflared tunnel --url http://localhost:3000
-```
-
-`cloudflared` imprime algo como `https://algo-random.trycloudflare.com`. Si es distinta a la que ya tenías registrada en Meta, hay que actualizarla ahí:
-
-1. [Meta for Developers](https://developers.facebook.com/) → tu app → **WhatsApp → Configuration → Webhook**.
-2. Callback URL: `https://algo-random.trycloudflare.com/webhooks/whatsapp`.
-3. Verify Token: el valor de `WHATSAPP_WEBHOOK_VERIFY_TOKEN` en tu `.env.localhost` (lo elegimos nosotros, Meta solo lo repite — ver `esVerifyTokenValido()` en `src/config/whatsapp.js`).
-4. "Verify and save" — si el servidor ya está corriendo y el token coincide, Meta lo acepta al toque.
-
-Deja `cloudflared` corriendo mientras pruebas; ciérralo con `Ctrl+C` cuando termines (no hace falta "apagarlo" en ningún lado de Meta, simplemente la URL deja de responder).
-
-#### Envío de resultados de laboratorio (WhatsApp + correo)
-
-Pedido explícito del usuario: al terminar de cargar todos los archivos de una orden, "Enviar resultados" (`/laboratorio/:id/cargar`) manda el/los archivo(s) por **correo** si el tutor tiene `correo` registrado, por **WhatsApp** siempre (`propietarios.telefono` es obligatorio), o por ambos — y al final reporta al usuario exactamente qué medio(s) funcionaron. Igual que Google/WhatsApp, cada canal es opcional y desacoplado (`isEmailConfigured()` en `src/config/email.js`; sin WhatsApp configurado, ese canal simplemente no se intenta).
-
-**Correo — SMTP vía Nodemailer**:
-
-```
-SMTP_HOST=...
+```dotenv
+SMTP_HOST=
 SMTP_PORT=587
 SMTP_SECURE=false
-SMTP_USER=...
-SMTP_PASSWORD=...
-SMTP_FROM=Omega Veterinaria & Estética <no-reply@tudominio.com>
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=Omega Veterinaria & Estética <no-reply@example.com>
 ```
 
-**Ambiente de desarrollo (Gmail)**: para probar el envío de correo en local sin tocar la cuenta real de producción, sirve una cuenta de Gmail con una **contraseña de aplicación** (no tu contraseña normal — Gmail ya no acepta SMTP con esa desde hace tiempo):
+Usa `SMTP_SECURE=true` para TLS implícito, normalmente en el puerto 465. Sin una configuración SMTP completa, el canal de correo se omite y el resto de la aplicación continúa disponible.
 
-1. Entra a la cuenta de Gmail que quieras usar para pruebas (puede ser una nueva, solo para esto).
-2. Activa la verificación en 2 pasos: [myaccount.google.com/security](https://myaccount.google.com/security).
-3. Genera una contraseña de aplicación en [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (tipo de app "Otra", ponle un nombre como "Omega Vet dev" y genera).
-4. Copia los 16 caracteres que te da Google (sin espacios) — es lo que va en `SMTP_PASSWORD`, no tu contraseña normal.
-5. Llena tu `.env.localhost`:
+## Arquitectura
+
+La aplicación es un monolito modular. Cada dominio sigue, cuando aplica, esta separación:
+
+```text
+routes → controller → service → repository → PostgreSQL
+```
+
+- `routes`: URL, autenticación, permisos, CSRF y rate limiting.
+- `controller`: adaptación HTTP y renderizado de vistas o fragmentos.
+- `service`: reglas de negocio y validaciones del dominio.
+- `repository`: consultas y transacciones de Knex.
+
+Los listados y formularios parciales utilizan HTMX. Los filtros se envían normalmente por `POST`, de modo que nombres, teléfonos y búsquedas no queden registrados en la URL o el historial del navegador.
+
+### Estructura principal
+
+```text
+OmegaVet_AdminSite/
+├── .github/workflows/ci.yml
+├── assets/sql/                    # SQL, DBML y diagrama del modelo
+├── public/
+│   ├── assets/imgs/
+│   ├── css/
+│   └── js/                        # JS propio y librerías vendorizadas
+├── scripts/                       # Utilidades de Google y WhatsApp
+├── src/
+│   ├── config/                    # Entorno, BD, sesión e integraciones
+│   ├── db/
+│   │   ├── migrations/
+│   │   └── seeds/
+│   ├── jobs/                      # Sincronizaciones periódicas
+│   ├── middlewares/
+│   ├── modules/
+│   │   ├── agenda/
+│   │   ├── areas/
+│   │   ├── auth/
+│   │   ├── doctores/
+│   │   ├── laboratorio/
+│   │   ├── metricas/
+│   │   ├── perfil/
+│   │   ├── plantillas_whatsapp/
+│   │   ├── tutores/
+│   │   ├── usuarios/
+│   │   └── whatsapp/
+│   ├── views/                     # Páginas EJS y fragmentos HTMX
+│   ├── app.js                     # Configuración de Express
+│   └── server.js                  # Entrada y apagado ordenado
+└── tests/
+    ├── integration/
+    └── unit/
+```
+
+`src/modules/grooming/` y `src/modules/doctores_areas/` son placeholders y no montan rutas propias. Grooming se atiende como un área mediante la agenda genérica.
+
+## Módulos y rutas principales
+
+| Ruta                         | Permiso                     | Función                                           |
+| ---------------------------- | --------------------------- | ------------------------------------------------- |
+| `/` y `/index.html`          | Pública                     | Inicio de sesión                                  |
+| `/main.html`                 | Sesión                      | Dashboard principal                               |
+| `/cambiar-password`          | Sesión                      | Cambio obligatorio de contraseña                  |
+| `/mi-perfil.html`            | Sesión                      | Perfil y cambio voluntario de contraseña          |
+| `/agenda/:slug.html`         | `agenda.<slug>.ver`         | Calendario por área                               |
+| `/tutores.html`              | `tutores.ver`               | Tutores y pacientes                               |
+| `/laboratorio.html`          | `laboratorio.ver`           | Órdenes y resultados de laboratorio               |
+| `/metricas/laboratorio.html` | `metricas.laboratorios.ver` | Métricas de laboratorio                           |
+| `/doctores.html`             | `doctores.ver`              | Catálogo de doctores y especialidades             |
+| `/areas.html`                | `areas.ver`                 | Catálogo de áreas                                 |
+| `/plantillas.html`           | `plantillas.ver`            | Plantillas de respuestas de WhatsApp              |
+| `/usuarios.html`             | `usuarios.ver`              | Usuarios, estatus, permisos y reset de contraseña |
+| `/webhooks/whatsapp`         | Firma/token de Meta         | Handshake y recepción del webhook                 |
+| `/health`                    | Pública                     | Estado del servidor                               |
+
+Las operaciones de creación, edición, cancelación, carga, envío y baja exigen sus permisos específicos. Las bajas de los catálogos son lógicas para conservar auditoría y relaciones históricas.
+
+## API y endpoints
+
+La aplicación no expone una API pública separada: sus endpoints sirven páginas EJS, fragmentos HTML para HTMX o JSON para interacciones concretas del panel. Todas las rutas se montan sobre el mismo servidor Express.
+
+### Convenciones HTTP
+
+- Las rutas públicas son el login, el health check y el webhook de Meta.
+- El resto requiere una sesión válida mediante `requireAuth`.
+- Cada módulo aplica permisos como `usuarios.ver`, `laboratorio.cargar` o `agenda.<slug>.editar`.
+- Los `POST`, `PUT` y `DELETE` del panel usan protección CSRF y, salvo el login, el limitador general de 100 solicitudes por minuto por usuario.
+- Los listados filtrados con HTMX envían sus criterios por `POST` para no exponer búsquedas en la URL.
+- Una petición HTMX sin sesión o permiso recibe `HX-Redirect`; una navegación normal recibe una redirección HTTP.
+- Las bajas de doctores, áreas, plantillas, tutores, usuarios y órdenes de laboratorio son lógicas.
+
+### Autenticación y perfil
+
+| Método | Ruta                  | Protección    | Respuesta/uso                                                    |
+| ------ | --------------------- | ------------- | ---------------------------------------------------------------- |
+| `GET`  | `/` o `/index.html`   | Pública       | Renderiza el login o redirige a `/main.html` si ya existe sesión |
+| `POST` | `/login`              | CSRF + Joi    | Valida credenciales y devuelve JSON con el destino de navegación |
+| `GET`  | `/logout`             | Pública       | Destruye la sesión actual y redirige al login                    |
+| `GET`  | `/main.html`          | Sesión        | Dashboard principal                                              |
+| `GET`  | `/cambiar-password`   | Sesión        | Pantalla de cambio obligatorio tras un reset administrativo      |
+| `POST` | `/cambiar-password`   | Sesión + CSRF | Completa el cambio obligatorio y libera la sesión restringida    |
+| `GET`  | `/mi-perfil.html`     | Sesión        | Datos y permisos del usuario autenticado                         |
+| `POST` | `/mi-perfil.html`     | Sesión + CSRF | Actualiza nombre, apellidos, teléfono y correo propios           |
+| `POST` | `/mi-perfil/password` | Sesión + CSRF | Cambia voluntariamente la contraseña propia                      |
+| `GET`  | `/health`             | Pública       | Devuelve `200 {"status":"ok"}`                                   |
+
+### Catálogos administrativos
+
+Los endpoints `POST ...html` de esta tabla devuelven únicamente el fragmento HTML actualizado del listado.
+
+| Módulo     | Lectura y filtro            | Formularios                                                                      | Escritura                                        |
+| ---------- | --------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Doctores   | `GET/POST /doctores.html`   | `GET /doctores/nuevo`, `GET /doctores/:id/editar`                                | `POST /doctores`, `PUT/DELETE /doctores/:id`     |
+| Áreas      | `GET/POST /areas.html`      | `GET /areas/nuevo`, `GET /areas/:id/editar`                                      | `POST /areas`, `PUT/DELETE /areas/:id`           |
+| Plantillas | `GET/POST /plantillas.html` | `GET /plantillas/nuevo`, `GET /plantillas/:id/ver`, `GET /plantillas/:id/editar` | `POST /plantillas`, `PUT/DELETE /plantillas/:id` |
+| Usuarios   | `GET/POST /usuarios.html`   | `GET /usuarios/nuevo`, `GET /usuarios/:id/editar`                                | `POST /usuarios`, `PUT/DELETE /usuarios/:id`     |
+
+Endpoints adicionales de usuarios:
+
+- `POST /usuarios/username-sugerido`: propone un username disponible durante el alta.
+- `POST /usuarios/:id/resetear-password`: genera la contraseña temporal, cambia el estatus a `cambio_pwd` e invalida las sesiones activas del usuario afectado.
+- Si el formulario incluye una matriz de permisos, crear o editar exige también `usuarios.permisos`.
+
+### Tutores y pacientes
+
+| Método     | Ruta                             | Función                                                                |
+| ---------- | -------------------------------- | ---------------------------------------------------------------------- |
+| `GET/POST` | `/tutores.html`                  | Página completa y filtrado HTMX del catálogo                           |
+| `GET`      | `/tutores/nuevo`                 | Formulario completo de alta                                            |
+| `GET`      | `/tutores/:id/editar`            | Formulario completo de edición                                         |
+| `POST`     | `/tutores`                       | Crea o reactiva un tutor con sus pacientes                             |
+| `PUT`      | `/tutores/:id`                   | Edita al tutor y sus pacientes en una transacción                      |
+| `DELETE`   | `/tutores/:id`                   | Baja lógica del tutor y de sus mascotas activas                        |
+| `POST`     | `/tutores/buscar-telefono`       | Búsqueda incremental de tutores activos para el alta                   |
+| `POST`     | `/tutores/verificar-telefono`    | Coincidencia exacta y detección de un tutor inactivo para reactivación |
+| `POST`     | `/tutores/buscar-mascota`        | Busca pacientes desde el formulario de una cita                        |
+| `POST`     | `/tutores/buscar-tutor-telefono` | Busca un tutor por teléfono desde Agenda                               |
+| `POST`     | `/tutores/buscar-tutor-nombre`   | Busca un tutor por nombre desde Agenda                                 |
+
+### Agenda
+
+`:slug` identifica un área activa, por ejemplo `consultas`, `cirugias` o `grooming`.
+
+| Método   | Ruta                                | Permiso                  | Función                                                      |
+| -------- | ----------------------------------- | ------------------------ | ------------------------------------------------------------ |
+| `GET`    | `/agenda/:slug.html`                | `agenda.<slug>.ver`      | Página de FullCalendar para el área                          |
+| `GET`    | `/agenda/:slug/citas.json`          | `agenda.<slug>.ver`      | Feed de citas del rango visible                              |
+| `GET`    | `/agenda/:slug/citas/ocupado.json`  | `agenda.<slug>.ver`      | Bloques ocupados del doctor en otras áreas                   |
+| `GET`    | `/agenda/:slug/citas/nueva`         | `agenda.<slug>.crear`    | Fragmento del formulario de alta                             |
+| `POST`   | `/agenda/:slug/citas`               | `agenda.<slug>.crear`    | Crea una cita y la sincroniza con Google si está configurado |
+| `GET`    | `/agenda/:slug/citas/:id/editar`    | `agenda.<slug>.editar`   | Fragmento del formulario de edición                          |
+| `PUT`    | `/agenda/:slug/citas/:id`           | `agenda.<slug>.editar`   | Actualiza una cita                                           |
+| `POST`   | `/agenda/:slug/citas/:id/confirmar` | `agenda.<slug>.editar`   | Confirma una reserva externa pendiente                       |
+| `DELETE` | `/agenda/:slug/citas/:id`           | `agenda.<slug>.cancelar` | Cancela lógicamente una cita                                 |
+
+### Laboratorio y métricas
+
+| Método        | Ruta                                           | Permiso                     | Función                                                       |
+| ------------- | ---------------------------------------------- | --------------------------- | ------------------------------------------------------------- |
+| `GET/POST`    | `/laboratorio.html`                            | `laboratorio.ver`           | Página completa y filtrado HTMX de órdenes                    |
+| `GET`         | `/laboratorio/nuevo`                           | `laboratorio.crear`         | Formulario de nueva orden                                     |
+| `GET`         | `/laboratorio/:id/ver`                         | `laboratorio.ver`           | Consulta de una orden en modo solo lectura                    |
+| `GET`         | `/laboratorio/:id/editar`                      | `laboratorio.ver`           | Abre la orden; el permiso de edición decide si es modificable |
+| `POST`        | `/laboratorio`                                 | `laboratorio.crear`         | Crea una orden multiestudio                                   |
+| `PUT`         | `/laboratorio/:id`                             | `laboratorio.editar`        | Actualiza una orden                                           |
+| `DELETE`      | `/laboratorio/:id`                             | `laboratorio.eliminar`      | Baja lógica de la orden                                       |
+| `POST`        | `/laboratorio/buscar-tutor`                    | `laboratorio.crear`         | Busca tutor por teléfono                                      |
+| `POST`        | `/laboratorio/buscar-tutor-nombre`             | `laboratorio.crear`         | Busca tutor por nombre                                        |
+| `GET`         | `/laboratorio/:id/cargar`                      | `laboratorio.cargar`        | Pantalla de carga de resultados                               |
+| `POST/DELETE` | `/laboratorio/:id/archivos`                    | `laboratorio.cargar`        | Carga o elimina archivos generales de la orden                |
+| `POST/DELETE` | `/laboratorio/:id/estudios/:estudioId/archivo` | `laboratorio.cargar`        | Carga o elimina el archivo de un estudio                      |
+| `GET`         | `/laboratorio/archivos/:archivoId`             | `laboratorio.ver`           | Descarga autenticada de un resultado                          |
+| `POST`        | `/laboratorio/:id/enviar`                      | `laboratorio.enviar`        | Envía los resultados por los canales configurados             |
+| `GET/POST`    | `/metricas/laboratorio.html`                   | `metricas.laboratorios.ver` | Página y filtro HTMX de métricas por fecha                    |
+
+Las cargas aceptan PDF, JPG, PNG, WebP, MP4, MOV y WebM. Multer limita cada archivo a 50 MB y cada lote a 10 archivos. Si se cargan varios archivos, solo JPG, PNG y PDF pueden fusionarse en un PDF; WebP y video deben cargarse individualmente. Los resultados se guardan bajo `LABS_RESULT_FILE_STORAGE`, nunca en `public/`.
+
+### Webhook de WhatsApp
+
+| Método | Ruta                 | Validación                           | Función                                    |
+| ------ | -------------------- | ------------------------------------ | ------------------------------------------ |
+| `GET`  | `/webhooks/whatsapp` | `WHATSAPP_WEBHOOK_VERIFY_TOKEN`      | Handshake que registra el callback en Meta |
+| `POST` | `/webhooks/whatsapp` | Firma HMAC con `WHATSAPP_APP_SECRET` | Recibe mensajes, clasifica y responde      |
+
+El webhook responde `200` a Meta después de validar la firma aunque el procesamiento interno falle, para evitar reintentos repetidos del mismo mensaje. El fallo queda registrado con Pino.
+
+## Configuración de integraciones
+
+### Google Calendar
+
+La agenda interna utiliza FullCalendar y no depende de un iframe. Google Calendar es una integración opcional para importar reservas externas, reflejar cancelaciones o cambios y sincronizar las citas creadas por el panel. El job corre cada `GOOGLE_SYNC_INTERVAL_MINUTES` minutos; el valor predeterminado es 10.
+
+#### Configuración inicial en Google Cloud
+
+1. Crea o selecciona un proyecto en [Google Cloud Console](https://console.cloud.google.com/).
+2. Habilita **Google Calendar API**.
+3. Configura la pantalla de consentimiento OAuth. En modo `Testing`, agrega como usuario de prueba la cuenta de Google que administra el calendario.
+4. Crea credenciales OAuth de tipo **Web application**.
+5. Registra exactamente este redirect URI:
+
+   ```text
+   http://localhost:3000/auth/google/callback
    ```
+
+   Esa ruta la atiende temporalmente `scripts/renovar-google-token.js`, no la aplicación Express normal.
+
+6. Copia el client ID y client secret a `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
+7. En Google Calendar, abre la configuración del calendario que se sincronizará y copia su identificador a `GOOGLE_CALENDAR_ID`.
+
+El script solicita únicamente el scope `https://www.googleapis.com/auth/calendar.events`. Google documenta el flujo y las causas de expiración en [Using OAuth 2.0 to Access Google APIs](https://developers.google.com/identity/protocols/oauth2).
+
+#### Generar o renovar el token de Google
+
+Si el proyecto OAuth está publicado como `Testing`, Google expira normalmente el refresh token a los 7 días. En los logs aparece `invalid_grant` o `Token has been expired or revoked`; la aplicación sigue funcionando, pero la sincronización se detiene.
+
+1. Detén `pnpm run dev:localhost`, porque el servidor y el script necesitan el puerto 3000.
+2. Confirma que `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` estén en `.env.localhost`.
+3. Ejecuta:
+
+   ```bash
+   pnpm run google:renovar-token
+   ```
+
+4. Abre la URL impresa en la terminal, inicia sesión con la cuenta correcta y acepta el permiso.
+5. Copia la línea `GOOGLE_REFRESH_TOKEN=...` que imprime el script y reemplaza el valor anterior en `.env.localhost`.
+6. Reinicia `pnpm run dev:localhost`. El arranque debe registrar que la sincronización de Google Calendar está activa.
+
+Si Google no devuelve un refresh token, elimina el acceso previo de `omega-hosp-vet-calsync` en [Permisos de la cuenta de Google](https://myaccount.google.com/permissions) y repite el proceso. En QA o producción, guarda el token nuevo en el gestor de secretos o archivo de entorno correspondiente y reinicia PM2; no lo copies al repositorio.
+
+#### Configuración de la página pública de reservas
+
+El sistema reconoce únicamente la página de reservas de Consultas. Debe conservar:
+
+- Un título que contenga `Consultas Veterinarias`.
+- La frase `Agenda aquí la cita de tu compañero de cuatro patas de forma rápida y sencilla.` en la descripción.
+- Las etiquetas exactas `Teléfono`, `Nombre de la Mascota` y `Motivo de Consulta` en las preguntas personalizadas.
+
+Las reservas reconocidas se importan en el área Consultas. Si teléfono y mascota coinciden con datos existentes, pueden quedar confirmadas; si no, se registran pendientes para que el personal complete la información.
+
+Las reservas importadas utilizan el doctor genérico `Consultas Omega Generico`, creado automáticamente si no existe. No debe renombrarse ni eliminarse: la sincronización lo localiza por ese nombre exacto.
+
+### Correo SMTP con Nodemailer
+
+Nodemailer crea y reutiliza un transporter SMTP cuando están presentes `SMTP_HOST`, `SMTP_USER` y `SMTP_PASSWORD`. Si falta alguno, el correo se omite sin deshabilitar el resto del sistema.
+
+Configuración general con STARTTLS:
+
+```dotenv
+SMTP_HOST=smtp.del-proveedor.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=usuario
+SMTP_PASSWORD=contraseña-o-token
+SMTP_FROM=Omega Veterinaria & Estética <no-reply@dominio.com>
+```
+
+Para TLS implícito se usa normalmente el puerto 465 con `SMTP_SECURE=true`. `SMTP_FROM` es el remitente visible; el proveedor debe autorizar a `SMTP_USER` para enviar con esa dirección.
+
+#### Prueba local con Gmail
+
+Este proyecto usa autenticación SMTP por usuario y contraseña, no OAuth para correo. Para Gmail debe utilizarse una contraseña de aplicación:
+
+1. Inicia sesión en la cuenta destinada a pruebas.
+2. Activa la [verificación en dos pasos](https://myaccount.google.com/security).
+3. Genera una [contraseña de aplicación](https://myaccount.google.com/apppasswords). Google solo muestra sus 16 caracteres una vez.
+4. Configura `.env.localhost`:
+
+   ```dotenv
    SMTP_HOST=smtp.gmail.com
    SMTP_PORT=465
    SMTP_SECURE=true
-   SMTP_USER=tu-cuenta-de-pruebas@gmail.com
-   SMTP_PASSWORD=la-contraseña-de-aplicación-de-16-caracteres
-   SMTP_FROM=Omega Veterinaria & Estética <tu-cuenta-de-pruebas@gmail.com>
+   SMTP_USER=cuenta-de-prueba@gmail.com
+   SMTP_PASSWORD=contraseña-de-aplicación-sin-espacios
+   SMTP_FROM=Omega Veterinaria & Estética <cuenta-de-prueba@gmail.com>
    ```
-   (`SMTP_SECURE=true` porque el 465 es TLS implícito — con el 587/STARTTLS de arriba se deja en `false`.)
 
-**WhatsApp — plantilla con documento adjunto**: a diferencia de las plantillas de solo texto de arriba, avisar que un resultado está listo es un mensaje que el negocio inicia fuera de una conversación abierta — Meta exige una plantilla APROBADA, y esta además lleva un archivo adjunto en el encabezado (el PDF/imagen real de cada envío). Requiere una variable nueva, solo para el registro (no para el envío del día a día):
+5. Reinicia el servidor; las variables se leen al arrancar.
+6. Usa un tutor con correo, carga todos los resultados de una orden y ejecuta **Enviar resultados**. La interfaz indica si el canal de correo tuvo éxito.
 
+No uses la contraseña normal de Gmail. Google exige verificación en dos pasos para crear contraseñas de aplicación y puede revocarlas al cambiar la contraseña principal; consulta [Sign in with app passwords](https://support.google.com/accounts/answer/185833). Para el puerto 587, Gmail documenta TLS/STARTTLS en su [configuración SMTP](https://support.google.com/mail/answer/7104828).
+
+En producción se recomienda una cuenta o servicio SMTP dedicado. Después de rotar una contraseña o token SMTP, actualiza el secreto del entorno y reinicia PM2.
+
+### Meta y WhatsApp Business
+
+La integración usa llamadas `fetch` directas a WhatsApp Cloud API, sin SDK. La versión fijada en `src/config/whatsapp.js` es Graph API `v23.0`.
+
+#### Crear la aplicación de prueba y obtener los valores
+
+1. Entra a [Meta for Developers](https://developers.facebook.com/), crea una app de tipo negocio y agrega el producto **WhatsApp**.
+2. En **WhatsApp → API Setup**, selecciona o crea la cuenta de WhatsApp Business de prueba.
+3. Copia los valores del panel:
+   - Token de acceso → `WHATSAPP_TOKEN`.
+   - Phone number ID → `WHATSAPP_PHONE_NUMBER_ID`.
+   - WhatsApp Business Account ID → `WHATSAPP_BUSINESS_ACCOUNT_ID`.
+4. En la configuración básica de la app copia:
+   - App ID → `WHATSAPP_APP_ID`.
+   - App Secret → `WHATSAPP_APP_SECRET`.
+5. Inventa una cadena larga y aleatoria para `WHATSAPP_WEBHOOK_VERIFY_TOKEN`. No la genera Meta; solo debe coincidir entre Meta y el servidor.
+6. Agrega y verifica en el panel los teléfonos destinatarios que usarás durante las pruebas. El número de prueba solo puede enviar a los destinatarios permitidos por esa configuración.
+
+Variables locales completas:
+
+```dotenv
+WHATSAPP_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_BUSINESS_ACCOUNT_ID=
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=
+WHATSAPP_APP_SECRET=
+WHATSAPP_APP_ID=
+WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES=60
 ```
-WHATSAPP_APP_ID=...   # ID de la app de Meta for Developers (Configuración básica de la app), NO el de la cuenta de negocio/número
+
+`WHATSAPP_APP_ID` solo participa en el registro de la plantilla con documento; no se usa para enviar mensajes cotidianos. `WHATSAPP_BUSINESS_ACCOUNT_ID` identifica el catálogo de plantillas y `WHATSAPP_PHONE_NUMBER_ID` identifica el endpoint de mensajes y archivos.
+
+La documentación oficial de referencia es [WhatsApp Cloud API: Get Started](https://developers.facebook.com/docs/whatsapp/cloud-api/get-started), [Set up Webhooks](https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks) y [Message Templates](https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates).
+
+#### Qué hacer con el token de Meta
+
+El token mostrado por **API Setup** es temporal y se usa para desarrollo:
+
+1. Copia el token nuevo a `WHATSAPP_TOKEN` en `.env.localhost`.
+2. Reinicia `pnpm run dev:localhost`; el proceso no relee variables en caliente.
+3. Repite cualquier prueba o script que hubiera fallado por token expirado.
+
+Para producción, genera un token de larga duración mediante un usuario del sistema de Meta Business con acceso a la app y a la cuenta de WhatsApp. Debe contar con los permisos que correspondan a envío y administración de plantillas, normalmente `whatsapp_business_messaging` y `whatsapp_business_management`. Guarda el token únicamente en el entorno del servidor. Cuando se rote o revoque, reemplaza `WHATSAPP_TOKEN` y ejecuta `pm2 restart omega-vet-adminsite --update-env`.
+
+#### Configurar y probar el webhook en localhost
+
+Meta necesita una URL HTTPS pública. Un quick tunnel de Cloudflare sirve para pruebas, pero genera una URL nueva cada vez:
+
+```bash
+# Terminal 1
+pnpm run dev:localhost
+
+# Terminal 2
+cloudflared tunnel --url http://localhost:3000
 ```
 
-Registro único (una sola vez por número de WhatsApp, no en cada deploy):
+Después:
+
+1. Copia la URL `https://<subdominio>.trycloudflare.com` mostrada por cloudflared.
+2. En **Meta for Developers → WhatsApp → Configuration → Webhook**, registra:
+   - Callback URL: `https://<subdominio>.trycloudflare.com/webhooks/whatsapp`.
+   - Verify Token: el valor exacto de `WHATSAPP_WEBHOOK_VERIFY_TOKEN`.
+3. Pulsa **Verify and save** con el servidor y el túnel todavía activos.
+4. Suscribe el campo `messages` para la cuenta de WhatsApp.
+5. Envía un mensaje desde uno de los teléfonos de prueba al número mostrado por Meta.
+6. Revisa la respuesta en WhatsApp y los logs del servidor.
+
+El `GET` del webhook hace el handshake con el verify token. Cada `POST` posterior se valida mediante `X-Hub-Signature-256` y `WHATSAPP_APP_SECRET`. Si cambia la URL del quick tunnel, actualiza el Callback URL en Meta. Al cerrar cloudflared no hay que eliminar nada: la URL simplemente deja de responder.
+
+Para una URL estable de QA o producción, usa el dominio HTTPS real y conserva la ruta `/webhooks/whatsapp`.
+
+#### Registrar plantillas de texto
+
+Las altas y reactivaciones del catálogo intentan registrar su plantilla `UTILITY` en Meta de forma inmediata. Para registrar en lote todas las plantillas activas:
+
+```bash
+pnpm run whatsapp:registrar-plantillas
+```
+
+Este script:
+
+- Lee las plantillas activas de PostgreSQL.
+- Convierte el slug a un nombre compatible con Meta.
+- Usa idioma `es_MX` y categoría `UTILITY`.
+- Excluye `resultados-laboratorio-listos`, porque requiere un encabezado de documento.
+- Imprime el código HTTP y la respuesta de Meta para cada registro.
+
+Después de ejecutarlo:
+
+1. Guarda o revisa cualquier error mostrado en la terminal. Un nombre ya registrado puede producir un error de duplicado.
+2. Consulta el estado con:
+
+   ```bash
+   pnpm run whatsapp:estado-plantillas
+   ```
+
+3. Espera `APPROVED`. Si aparece `REJECTED`, revisa `motivo_rechazo`, corrige la plantilla según Meta y vuelve a registrarla con un nombre válido cuando corresponda.
+4. El job `plantillasWhatsappMetaSyncJob` consulta Meta cada `WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES` minutos y cambia `aprobado_meta=true` en la base cuando detecta `APPROVED`.
+
+Importante: el job periódico solo consulta aprobaciones; no reintenta un registro que falló. Editar el texto local de una plantilla ya registrada tampoco actualiza automáticamente la versión de Meta.
+
+#### Registrar la plantilla de resultados con documento
+
+La notificación de resultados puede iniciar una conversación fuera de la ventana de atención y adjunta un archivo. Por ello necesita la plantilla `resultados_laboratorio_listos`, categoría `UTILITY`, idioma `es_MX`, con encabezado `DOCUMENT`.
+
+Antes de registrarla:
+
+1. Ejecuta las migraciones para asegurar que exista y esté activa la fila `resultados-laboratorio-listos`.
+2. Configura `WHATSAPP_TOKEN`, `WHATSAPP_BUSINESS_ACCOUNT_ID` y `WHATSAPP_APP_ID`.
+3. Confirma que el token todavía sea válido.
+
+Ejecuta una sola vez por cuenta o cuando la plantilla deba crearse nuevamente:
 
 ```bash
 pnpm run whatsapp:registrar-plantilla-resultados
 ```
 
-El script sube un PDF de ejemplo (generado con `pdf-lib`, ya dependencia del proyecto) vía el [Resumable Upload API de Meta](https://developers.facebook.com/docs/graph-api/guides/upload) para obtener el `header_handle` que la creación de la plantilla exige, y da de alta `resultados_laboratorio_listos` (categoría `UTILITY`, idioma `es_MX`). La aprobación de Meta puede tardar **horas** — corre `pnpm run whatsapp:estado-plantillas` para ver cuándo pasa a `APPROVED`. Mientras el número siga siendo el de PRUEBA (ver arriba), el envío real solo llegará a los 5 destinatarios ya verificados, aunque la plantilla ya esté aprobada.
+El script genera un PDF de ejemplo con `pdf-lib`, abre una sesión de Resumable Upload, sube el ejemplo, recibe el `header_handle` y crea la plantilla. El archivo real de cada paciente se sube después, durante el envío desde Laboratorio.
 
-### Calidad y CI
+Después de correrlo:
 
-- **Lint + formato**: ESLint (`eslint.config.js`, flat config, con `eslint-config-prettier` para no pelear reglas de estilo) sobre todo `src/` y `tests/`, y Prettier (`.prettierrc`) como formateador único — decisión cerrada en el documento de Arquitectura y Buenas Prácticas.
-- **Tests**: Jest + Supertest, separados en `tests/unit/` (lógica de negocio mockeando el repository — `auth.service.test.js` cubre las combinaciones de credenciales/estatus de cuenta del login, incluida la máquina de estados del bloqueo escalonado, sin tocar la base de datos) y `tests/integration/` (levanta la app Express completa: `app.test.js` cubre rutas públicas/404/páginas protegidas sin sesión sin necesitar BD; `auth.test.js` corre el flujo de login de punta a punta —AC1-AC6 de US-101 y el bloqueo escalonado de US-106— contra una base de datos real, simulando el paso del tiempo manipulando `bloqueado_en` directamente en vez de esperar minutos reales). Se ampliará por historia conforme exista más lógica de negocio que probar (Decisión 19 de la bitácora técnica).
-- **CI**: GitHub Actions (`.github/workflows/ci.yml`) corre lint + formato (`format:check`) + tests en cada push/PR a `main`, contra un contenedor de PostgreSQL efímero (migrado y sembrado con `.env.test` antes de los tests) — necesario desde que `auth.test.js` requiere una base real. Un push que no pasa alguno no debería fusionarse. Sin despliegue continuo (Decisión 20 de la bitácora — el deploy es manual vía PM2).
-- **Seguridad de base**: `helmet` (cabeceras HTTP) y `compression` (gzip) activos en `src/app.js`. Tras una prueba de penetración de caja negra: **Content-Security-Policy real** vía nonce por request (`res.locals.cspNonce`, middleware antes de `helmet()`) — `script-src 'self' 'nonce-...'`, sin `'unsafe-inline'`; cada uno de los 15 `<script>` de las 11 vistas lleva `nonce="<%= cspNonce %>"` (los `<script src="js/htmx.min.js">` también, no solo los inline — con nonce presente, el navegador ignora `'self'` para host-sources en esa directiva). `style-src` sí conserva `'unsafe-inline'` a propósito: el cliente posiciona los combobox flotantes vía `elemento.style.top = ...`, un valor calculado en tiempo real que no se puede nonce-ar como un script estático. `frame-src` permite `calendar.google.com` (el embed de Agenda/Grooming). HTMX se configura explícitamente (`<meta name="htmx-config">`) con `allowEval:false`/`allowScriptTags:false`/`selfRequestsOnly:true` — las islas de datos JSON para los combobox de Doctor vinculado/Especialidades usan `<div hidden>`, nunca `<script type="application/json">`, porque `allowScriptTags:false` elimina CUALQUIER `<script>` del contenido swapeado por HTMX sin importar su `type`. `express-rate-limit` (`src/middlewares/writeLimiter.js`, 100 req/min por usuario autenticado) en toda ruta de escritura de áreas/doctores/plantillas/usuarios — no en `/login`, que ya tiene su propio bloqueo por intentos (US-106). Los comentarios de desarrollo en las vistas usan `<%# %>` (EJS, nunca llega al cliente), no `<!-- -->`. `csrf-csrf` protege `POST /login` y el resto de las rutas de escritura (Decisión 5 de la bitácora; `csurf` se descartó por estar deprecado).
-- **Autenticación y sesiones (US-101)**: contraseñas con `bcrypt` (costo 12), comparadas con tiempo constante incluso cuando el usuario no existe (hash señuelo, evita filtrar por timing quién está registrado). Sesión con `express-session` + `connect-pg-simple` (tabla `session`, migración dedicada). El id de sesión se regenera al iniciar sesión (previene session fixation). Los permisos se resuelven una sola vez al hacer login y quedan cacheados en sesión (Decisión 5), consumidos por `requirePermission.js` y por el partial del sidebar.
-- **Cierre de sesión automático por inactividad (US-108)**: 30 minutos sin ninguna petición autenticada válida expiran la sesión, con ventana móvil (`rolling`) que se renueva en CUALQUIER petición autenticada (navegar, consultar, guardar) — no solo GET. La regla la aplica **la propia aplicación** (`requireAuth.js`), no el vencimiento físico de la cookie/fila de `session`: `cookie.maxAge` se subió de 30 min al mismo techo que el tope absoluto (`ABSOLUTE_SESSION_MAX_MS`, ver US-111 abajo) a propósito, para que la fila siga existiendo en Postgres cuando el usuario regresa tras estar inactivo — si dependiera de que la cookie muriera sola a los 30 min, no habría manera de distinguir "expiró por inactividad" de "nunca hubo sesión" para mostrar el mensaje específico del AC, ni de detectar el caso "la fila todavía existe físicamente, pendiente de poda por connect-pg-simple, pero debe tratarse como expirada" (AC explícito). `req.session.lastActivityAt` se fija en el login (`auth.controller.js`) y se renueva al final de cada paso exitoso por `requireAuth.js` — como vive en la misma fila de `session` compartida por cookie, la actividad en una pestaña renueva la ventana para todas las que compartan la sesión (AC de "múltiples pestañas"). Un `expirarSesion(req, res, motivo)` centraliza el `destroy`+`clearCookie`+redirect a `/?expired=<motivo>` (`inactividad` para este AC, `absoluto` para el tope de US-111 — mensajes distintos). Para peticiones no-HTMX vía `fetch()` puro (`cambiar-password.ejs`, la sugerencia de username en `usuarios.ejs`), el navegador sigue un 302 automáticamente y entrega el HTML de login ya renderizado en vez de dejar fallar `res.json()` en silencio — se corrigió chequeando `res.redirected` antes de leer la respuesta y navegando de verdad a `res.url` cuando es `true` (HTMX ya resolvía este caso solo, vía `HX-Redirect`). No hay migración nueva: la tabla `session` ya existía, solo cambió configuración (`cookie.maxAge`) y lógica de aplicación. Verificado en vivo con Playwright contra un servidor HTTPS descartable (la CSP `upgrade-insecure-requests` de la propia app exige TLS real para poder seguir la navegación del fetch corregido).
-- **Tope absoluto de sesión de 8h, independiente de la actividad (US-111)**: formaliza y ajusta el tope absoluto que ya existía desde antes de US-108 (Decisión 4 de la bitácora, corregida v4, dejaba abierto un rango 8-12h) — `ABSOLUTE_SESSION_MAX_MS` queda fijo en exactamente 8h. Se valida contra `req.session.loginAt` (fijado en el login, `auth.controller.js`), nunca contra `lastActivityAt`: la actividad SOLO renueva la ventana de inactividad de US-108, jamás el tope absoluto (AC explícito: "únicamente se reinicia el contador de inactividad"), así que una sesión con actividad constante igual expira a las 8h en punto. Reusa exactamente el mismo mecanismo de US-108 (`expirarSesion`, decoupling de `cookie.maxAge` del enforcement real, motivo en `?expired=<motivo>`) — la única pieza nueva de código es el valor de la constante y el mensaje, que ahora tiene su propio texto exacto: "Tu sesión ha expirado. Favor de iniciar sesión nuevamente." (antes de esta historia era un texto genérico interino, "Tu sesión expiró. Inicia sesión de nuevo."). Cuando ambos límites (inactividad de 30 min y absoluto de 8h) podrían aplicar, gana el que se cumple primero — en la práctica siempre el de inactividad, porque 30 min < 8h. Reingresar tras expirar por cualquiera de los dos mecanismos crea una sesión nueva con su propio `loginAt`/período de 8h, sin arrastrar nada del anterior. Verificado con Jest+Supertest (`tests/integration/expiracionSesion.test.js`, mismo archivo y usuario de prueba dedicado que US-108, ya que comparten el mismo middleware).
-- **Bloqueo escalonado por intentos fallidos (US-106)**: `usuarios.estatus` (`activo` | `bloqueo_temp` | `bloqueado` | `inactivo`, más `cambio_pwd` desde US-605) + `intentos_fallidos`/`bloqueado_en` reemplazan el antiguo `usuarios.activo` boolean — persistidos en la base, NO en un store de rate-limiting en memoria, porque el nivel más severo (bloqueo **permanente**, a los 15 intentos) tiene que sobrevivir un reinicio del servidor para que "permanente" signifique eso de verdad. A los 5 intentos fallidos consecutivos, bloqueo temporal de 15 min; a los 10, 30 min (el contador NO se resetea al expirar un bloqueo temporal, sigue acumulando hacia el siguiente umbral); a los 15, bloqueo permanente — solo un administrador lo puede levantar (vía un nuevo restablecimiento de contraseña, US-605; no hay una UI de desbloqueo "en seco" separada). Toda la máquina de estados vive en `auth.service.js#login` (PASO 1-6, documentado inline) — una cuenta inexistente, dada de baja (`inactivo`), o con contraseña incorrecta responden exactamente el mismo `401 "Usuario o contraseña incorrectos."` (no se distingue ni siquiera después de confirmar la contraseña, a diferencia del comportamiento anterior de US-101); un bloqueo temporal vigente o permanente responde `403` con el mensaje específico de cada caso, sin evaluar la contraseña ni tocar el contador. Un intento contra una cuenta bloqueada (temporal o permanente) NO cuenta como uno nuevo. `estatus='cambio_pwd'` (US-605) usa un contador de intentos fallidos **propio**, con un solo umbral (5 intentos -> `bloqueado` directo, sin el paso intermedio de `bloqueo_temp`) — ver la sección de US-605 más arriba para el resto de ese flujo.
-- **Logging**: estructurado con Pino (`src/config/logger.js` + `pino-http` en `src/app.js`) — formato legible en desarrollo (`pino-pretty`), JSON en producción, silenciado en tests. `pino-http` está recortado a propósito para **solo loguear fallos** (4xx como `warn`, 5xx/errores como `error`); las peticiones exitosas no generan ningún log, para no gastar disco de más en el servidor de recursos limitados de la clínica. Reemplaza los `console.log` sueltos.
-- **Manejo de errores**: 404 y errores no controlados centralizados en `src/middlewares/errorHandler.js`, devuelven JSON consistente en vez de la página de error por defecto de Express.
-- **Apagado ordenado**: `src/server.js` cierra el servidor HTTP y el pool de PostgreSQL ante `SIGTERM`/`SIGINT` (necesario para que PM2 reinicie sin dejar conexiones colgadas), y registra `unhandledRejection`/`uncaughtException` en vez de fallar en silencio.
+1. Verifica que la terminal muestre una respuesta HTTP exitosa y el identificador de Meta.
+2. Ejecuta periódicamente `pnpm run whatsapp:estado-plantillas` hasta ver `APPROVED`.
+3. Cuando esté aprobada, reinicia el servidor si cambiaste algún secreto y prueba **Enviar resultados** con un tutor cuyo teléfono esté autorizado como destinatario de prueba.
+4. Si el número sigue siendo el de prueba, Meta solo entregará el mensaje a teléfonos verificados en el panel.
+
+No ejecutes repetidamente el registro si la plantilla ya existe: Meta conserva los nombres y puede rechazar el duplicado. La aprobación puede tardar y no implica que cualquier destinatario sea válido mientras se utilice el número de prueba.
+
+#### Checklist para pasar de pruebas a producción
+
+- La app y la cuenta de WhatsApp Business deben quedar bajo la organización propietaria, no bajo una cuenta personal del desarrollador.
+- Registra y valida el número real que utilizará la clínica.
+- Sustituye el token temporal por el token de larga duración del usuario del sistema.
+- Cambia `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_BUSINESS_ACCOUNT_ID` si los recursos productivos son distintos.
+- Configura el webhook con una URL HTTPS estable y vuelve a suscribir el campo `messages`.
+- Conserva el mismo `WHATSAPP_WEBHOOK_VERIFY_TOKEN` en Meta y el servidor, y actualiza `WHATSAPP_APP_SECRET` si cambia la app.
+- Confirma que `resultados_laboratorio_listos` esté `APPROVED` para la cuenta productiva; la aprobación de la cuenta de prueba no se transfiere automáticamente a otra WABA.
+- Reinicia con `pm2 restart omega-vet-adminsite --update-env` y realiza una prueba controlada de recepción y otra de envío de resultados.
+
+### Claude API
+
+Configura `ANTHROPIC_API_KEY` para procesar mensajes entrantes. El cliente usa `fetch` nativo con el modelo fijo `claude-haiku-4-5-20251001` y no necesita el SDK de Anthropic.
+
+Claude realiza dos niveles de clasificación cerrada:
+
+1. Categoría: `emergencia`, `duda_medica`, `agendar_cita` o `resultados_laboratorio`.
+2. Para `duda_medica`, intención contra las plantillas activas del catálogo.
+
+La salida se acepta únicamente si coincide exactamente con una etiqueta permitida. Las respuestas al tutor siempre proceden de `plantillas_whatsapp`; el modelo no redacta recomendaciones médicas.
+
+Después de agregar o rotar `ANTHROPIC_API_KEY`, reinicia el proceso. Para una prueba completa se necesitan también el webhook de Meta, `WHATSAPP_TOKEN`, un destinatario permitido y plantillas activas en la base. Si Claude o el envío falla, el webhook responde `200` para evitar reintentos agresivos de Meta y registra el error para revisión.
+
+## Scripts disponibles
+
+| Script                                             | Descripción                                                 |
+| -------------------------------------------------- | ----------------------------------------------------------- |
+| `pnpm start`                                       | Inicia `src/server.js` con las variables del entorno actual |
+| `pnpm run dev`                                     | Inicia con `node --watch`, usando `.env`                    |
+| `pnpm run dev:localhost`                           | Inicia con `node --watch`, cargando `.env.localhost`        |
+| `pnpm run migrate`                                 | Aplica migraciones usando `.env`                            |
+| `pnpm run migrate:rollback`                        | Revierte el último lote de migraciones                      |
+| `pnpm run migrate:status`                          | Muestra el estado de las migraciones                        |
+| `pnpm run migrate:localhost`                       | Aplica migraciones con `.env.localhost`                     |
+| `pnpm run migrate:test`                            | Aplica migraciones con `.env.test`                          |
+| `pnpm run seed`                                    | Ejecuta seeds usando `.env`                                 |
+| `pnpm run seed:localhost`                          | Ejecuta seeds con `.env.localhost`                          |
+| `pnpm run seed:test`                               | Ejecuta seeds con `.env.test`                               |
+| `pnpm run google:renovar-token`                    | Renueva el refresh token de Google Calendar                 |
+| `pnpm run whatsapp:registrar-plantillas`           | Registra en Meta las plantillas activas de texto            |
+| `pnpm run whatsapp:estado-plantillas`              | Consulta el estado de aprobación en Meta                    |
+| `pnpm run whatsapp:registrar-plantilla-resultados` | Registra la plantilla de resultados con PDF                 |
+| `pnpm run lint`                                    | Ejecuta ESLint                                              |
+| `pnpm run lint:fix`                                | Ejecuta ESLint con correcciones automáticas                 |
+| `pnpm run format`                                  | Formatea el repositorio con Prettier                        |
+| `pnpm run format:check`                            | Verifica el formato sin modificar archivos                  |
+| `pnpm test`                                        | Ejecuta pruebas unitarias e integración                     |
+
+`pnpm start` no establece por sí mismo `NODE_ENV=production`; debe definirse en el entorno. PM2 sí lo establece mediante `ecosystem.config.js`.
+
+## Seguridad
+
+- Contraseñas almacenadas con bcrypt, costo 12.
+- Sesión regenerada al autenticar para prevenir session fixation.
+- Expiración por 30 minutos de inactividad y tope absoluto de 8 horas.
+- Cookies `httpOnly`, `sameSite=lax` y `secure` en producción.
+- Content Security Policy con nonce por petición; `script-src` no usa `unsafe-inline`.
+- `frame-src 'self'`; la agenda ya no depende de iframes de Google.
+- Protección CSRF en login y rutas protegidas que usan métodos de escritura.
+- Rate limit de 100 solicitudes por minuto para rutas de escritura.
+- Sanitización recursiva de cuerpos para reducir XSS almacenado.
+- Descarga autenticada de resultados de laboratorio.
+- Verificación HMAC de los webhooks entrantes de Meta.
+- Errores y 404 centralizados; Pino registra respuestas fallidas de forma estructurada.
+
+## Calidad y CI
+
+El repositorio usa ESLint con flat config y Prettier. Las pruebas se dividen en:
+
+- `tests/unit/`: reglas de negocio con repositories y servicios externos simulados.
+- `tests/integration/`: Express completo con Supertest y PostgreSQL real de pruebas.
+
+GitHub Actions ejecuta en cada push y pull request contra `main`:
+
+1. Instalación con lockfile congelado.
+2. ESLint.
+3. Verificación de Prettier.
+4. Migraciones y seeds en PostgreSQL 16 efímero.
+5. Suite completa de Jest.
 
 ## Deploy
 
-Con el frontend ya migrado a vistas EJS renderizadas por Express, el sitio dejó de ser desplegable como estático — **ya no aplica el deploy en Netlify** (no hay `index.html` en la raíz del repositorio para servir). El despliegue es siempre a través del servidor Node.js:
+La configuración incluida usa una instancia de PM2 en modo `fork`, reinicio automático y límite de memoria de 300 MB:
 
-- Pensado para ejecutarse 24/7 vía **PM2** (`pm2 start ecosystem.config.js`) en el servidor de despliegue (servidor físico local en la clínica, Decisión 9 de la bitácora), una vez completadas las historias de infraestructura y despliegue restantes (Decisión 12).
-- Exposición pública planeada vía **Cloudflare Tunnel** + dominio propio (Decisión 10 de la bitácora) — aún no configurado en este repositorio.
+```bash
+pnpm install --prod --frozen-lockfile
+pnpm run migrate
+pnpm run seed
+pm2 start ecosystem.config.js
+pm2 save
+```
 
-## Repositorios
+Los comandos anteriores asumen que PM2 está instalado en el servidor. El deploy es manual. `ecosystem.config.js` establece `NODE_ENV=production`; las variables sensibles deben proporcionarse en el entorno del servidor y no versionarse.
 
-| Repositorio            | Estado                      | Enlace                                                                               |
-| ---------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
-| **Frontend + Backend** | Este repositorio (monorepo) | [github.com/VikingKning/omega_hospvet](https://github.com/VikingKning/omega_hospvet) |
+## Repositorio
+
+- Panel administrativo: [github.com/VikingKning/omega_hospvet](https://github.com/VikingKning/omega_hospvet)
