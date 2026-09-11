@@ -155,3 +155,15 @@ describe('Permissions-Policy', () => {
     );
   });
 });
+
+// Reporte de seguridad (hallazgo INFO): Helmet ya manda este valor por
+// default sin configurar nada — se deja explícito en app.js y se cubre
+// aquí para que un cambio accidental de esas opciones (o de versión de
+// Helmet) no pase inadvertido. El navegador lo ignora sobre HTTP (como en
+// dev/test); en producción con HTTPS real sí lo aplica.
+describe('Strict-Transport-Security (HSTS)', () => {
+  it('GET / responde con max-age de 1 año e includeSubDomains', async () => {
+    const res = await request(app).get('/');
+    expect(res.headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains');
+  });
+});

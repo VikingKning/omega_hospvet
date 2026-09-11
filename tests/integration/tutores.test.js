@@ -570,12 +570,35 @@ describe('GET /tutores/nuevo y GET /tutores/:id/editar (US-156 AC1/AC2 — formu
     expect(res.headers.location).toBe('/main.html');
   });
 
-  it('un id inexistente responde 404', async () => {
+  it('un id inexistente redirige al listado con un mensaje (nunca un 404 en blanco)', async () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
     const res = await agent.get('/tutores/999999/editar');
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/tutores.html?error=no-encontrado&id=999999');
+  });
+
+  // Bug reportado por el usuario: /tutores/4654sd46a5sd4asdad/editar (id
+  // basura, no numérico) mostraba un 404 en blanco sin el diseño del
+  // sistema. Ahora redirige igual que un id numérico inexistente.
+  it('AC: un id no numérico también redirige al listado con un mensaje', async () => {
+    const agent = await loginAs(SOLO_EDITAR_USER);
+
+    const res = await agent.get('/tutores/4654sd46a5sd4asdad/editar');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/tutores.html?error=no-encontrado&id=4654sd46a5sd4asdad');
+  });
+
+  it('AC: el listado, tras el redirect, muestra el banner con el id buscado', async () => {
+    const agent = await loginAs(SOLO_EDITAR_USER);
+
+    const res = await agent.get('/tutores.html?error=no-encontrado&id=999999');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('El propietario &#34;999999&#34; no existe.');
+    expect(res.text).toContain('tutoresBannerErrorDismiss');
   });
 });
 

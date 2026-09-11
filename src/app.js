@@ -11,6 +11,7 @@ const { middleware: sessionMiddleware } = require('./config/session');
 const { generateCsrfToken } = require('./config/csrf');
 const requireAuth = require('./middlewares/requireAuth');
 const attachSidebarAreas = require('./middlewares/attachSidebarAreas');
+const sanitizeBody = require('./middlewares/sanitizeBody');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const authRoutes = require('./modules/auth/auth.routes');
 const doctoresRoutes = require('./modules/doctores/doctores.routes');
@@ -94,6 +95,18 @@ app.use(
         upgradeInsecureRequests: [],
       },
     },
+    // Reporte de seguridad (hallazgo INFO, no un bug): Helmet YA manda este
+    // header con este mismo valor por default (`hsts` sin configurar
+    // produce exactamente maxAge=31536000 + includeSubDomains) — se deja
+    // explícito aquí, no porque haga falta cambiar nada, sino para que quien
+    // audite este archivo no tenga que conocer los defaults internos de la
+    // librería para confirmar que 1 año + subdominios es intencional. El
+    // navegador simplemente lo ignora sobre HTTP (como en `dev:localhost`);
+    // en producción, detrás de HTTPS real, sí lo aplica.
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+    },
   }),
 );
 // Recomendación de seguridad (buena práctica OWASP, no un hallazgo de un
@@ -124,6 +137,12 @@ app.use(
 // defecto de un form HTML (application/x-www-form-urlencoded), no JSON —
 // express.json() no lo parsea, hace falta este middleware aparte.
 app.use(express.urlencoded({ extended: false }));
+// Reporte de seguridad M-07: defensa en profundidad contra XSS almacenado —
+// se aplica UNA vez aquí, sobre req.body de TODAS las rutas, en vez de
+// depender de que cada endpoint de escritura de cada módulo se acuerde de
+// llamar sanitizarTexto() por su cuenta (ver el comentario largo en
+// sanitizeBody.js/sanitizarTexto.js para el porqué y sus límites).
+app.use(sanitizeBody);
 app.use(express.static(path.join(rootDir, 'public')));
 app.use(cookieParser());
 app.use(sessionMiddleware);

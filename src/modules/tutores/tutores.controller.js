@@ -2,14 +2,19 @@ const service = require('./tutores.service');
 const { generateCsrfToken } = require('../../config/csrf');
 
 // Carga inicial de la página: siempre el estado por defecto (Tutores y
-// Pacientes en "Activos"), nunca lee query params — mismo criterio que
-// doctores/areas.controller.js: una URL pegada a mano nunca filtra nada,
-// el filtrado real solo ocurre por el POST de abajo, vía HTMX.
+// Pacientes en "Activos"), nunca lee query params PARA FILTRAR — mismo
+// criterio que doctores/areas.controller.js: una URL pegada a mano nunca
+// filtra nada, el filtrado real solo ocurre por el POST de abajo, vía HTMX.
+// La única excepción es `?error=no-encontrado&id=...`, que no filtra nada
+// — es el mismo mecanismo de mensaje-tras-redirect que ya usa app.js con
+// `?expired=<motivo>` para index.ejs (ver editarForm más abajo).
 async function list(req, res, next) {
   try {
     const data = await service.list({});
     const csrfToken = generateCsrfToken(req, res);
-    res.render('tutores', { ...data, user: req.session.user, csrfToken });
+    const error =
+      req.query.error === 'no-encontrado' ? `El propietario "${req.query.id}" no existe.` : null;
+    res.render('tutores', { ...data, user: req.session.user, csrfToken, error });
   } catch (err) {
     next(err);
   }
@@ -47,7 +52,13 @@ async function editarForm(req, res, next) {
   try {
     const propietario = await service.obtenerParaEditar(req.params.id);
     if (!propietario) {
-      return res.status(404).send('Propietario no encontrado');
+      // Pedido explícito del usuario: un id inexistente (o basura, ej.
+      // /tutores/4654sd46a5sd4asdad/editar) ya no muestra un 404 en blanco
+      // sin el diseño del sistema — regresa al listado con un mensaje,
+      // mismo mecanismo de `?expired=<motivo>` que ya usa app.js.
+      return res.redirect(
+        `/tutores.html?error=no-encontrado&id=${encodeURIComponent(req.params.id)}`,
+      );
     }
     const csrfToken = generateCsrfToken(req, res);
     res.render('tutor-form', {

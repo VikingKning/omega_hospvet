@@ -3,15 +3,21 @@ const { generateCsrfToken } = require('../../config/csrf');
 const fs = require('fs');
 
 // Carga inicial de la página: siempre el estado por defecto, nunca lee query
-// params (mismo criterio que doctores.controller.js#list — así una URL
-// pegada a mano nunca filtra nada, el filtrado real solo ocurre por el POST
-// de abajo, vía HTMX, sin tocar la URL).
+// params PARA FILTRAR (mismo criterio que doctores.controller.js#list — así
+// una URL pegada a mano nunca filtra nada, el filtrado real solo ocurre por
+// el POST de abajo, vía HTMX, sin tocar la URL). La única excepción es
+// `?error=no-encontrado&id=...`, que no filtra nada — es el mismo mecanismo
+// de mensaje-tras-redirect que ya usa app.js con `?expired=<motivo>` para
+// index.ejs, aquí para avisar por qué se volvió a esta lista (ver
+// formularioDeRegistro más abajo).
 async function pagina(req, res, next) {
   try {
     const data = await service.list({});
     const categorias = await service.listCategorias();
     const csrfToken = generateCsrfToken(req, res);
-    res.render('laboratorio', { ...data, categorias, user: req.session.user, csrfToken });
+    const error =
+      req.query.error === 'no-encontrado' ? `El registro "${req.query.id}" no existe.` : null;
+    res.render('laboratorio', { ...data, categorias, user: req.session.user, csrfToken, error });
   } catch (err) {
     next(err);
   }
@@ -105,7 +111,13 @@ async function formularioDeRegistro(req, res, next, { forzarSoloLectura, modoCar
   try {
     const registro = await service.obtenerParaEditar(req.params.id);
     if (!registro) {
-      return res.status(404).send('Registro no encontrado');
+      // Pedido explícito del usuario: un id inexistente (o basura, ej.
+      // /laboratorio/asdfasddfsdf/ver) ya no muestra un 404 en blanco sin
+      // el diseño del sistema — regresa al listado con un mensaje, mismo
+      // mecanismo de `?expired=<motivo>` que ya usa app.js para index.ejs.
+      return res.redirect(
+        `/laboratorio.html?error=no-encontrado&id=${encodeURIComponent(req.params.id)}`,
+      );
     }
     const [catalogo, doctores] = await Promise.all([
       service.catalogoParaFormulario(),

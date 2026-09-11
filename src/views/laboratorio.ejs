@@ -39,7 +39,7 @@
     <%- include('partials/sidebar', { user, currentPage: 'laboratorio' }) %>
 
     <main class="main-content" id="laboratorio-panel">
-      <%- include('partials/laboratorio-panel', { registros, total, catalogoVacio, page, totalPages, pageSize, q, estado, categoriaId, sort, dir, categorias, user, csrfToken }) %>
+      <%- include('partials/laboratorio-panel', { registros, total, catalogoVacio, page, totalPages, pageSize, q, estado, categoriaId, sort, dir, categorias, user, csrfToken, error }) %>
     </main>
     </div>
   </div>
@@ -99,6 +99,16 @@
     document.querySelectorAll('.combobox-list').forEach((list) => {
       if (list.parentElement === document.body) list.remove();
     });
+  });
+
+  // Cerrar el banner de "registro no existe" (ver laboratorio.controller.js#
+  // formularioDeRegistro) — delegado sobre document.body por el mismo
+  // motivo que el resto de los listeners de este archivo: HTMX reemplaza
+  // #laboratorio-panel entero en cada filtro/orden/página.
+  document.body.addEventListener('click', (event) => {
+    if (event.target.closest('#laboratorioBannerErrorDismiss')) {
+      event.target.closest('.form-error-banner')?.remove();
+    }
   });
 
   // ---- Filtros del toolbar (Estado / Tipo de estudio): mismo patrón que el

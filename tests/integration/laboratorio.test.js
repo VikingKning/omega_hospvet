@@ -416,10 +416,13 @@ describe('GET /laboratorio/:id/editar', () => {
 
     const res = await agent.get('/laboratorio/999999/editar');
 
-    // Un id inexistente es 404 real (no un no-op silencioso como eliminar) —
-    // igual confirma que el permiso de SOLO ver ya pasó el middleware de la
-    // ruta y llegó al controller.
-    expect(res.status).toBe(404);
+    // Un id inexistente redirige al listado con un mensaje (pedido explícito
+    // del usuario: nunca un 404 en blanco sin el diseño del sistema) — el
+    // 302 (en vez de un no-op silencioso como eliminar) igual confirma que
+    // el permiso de SOLO ver ya pasó el middleware de la ruta y llegó al
+    // controller.
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/laboratorio.html?error=no-encontrado&id=999999');
   });
 
   it('un usuario sin laboratorio.ver es rebotado a /main.html', async () => {
@@ -429,6 +432,29 @@ describe('GET /laboratorio/:id/editar', () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
+  });
+
+  // Bug reportado por el usuario: entrar a un id inexistente (o basura, ej.
+  // /laboratorio/asdfasddfsdf/ver) mostraba un 404 en blanco sin el diseño
+  // del sistema. Ahora regresa al listado y ese listado muestra un banner
+  // cerrable con el id que se buscó.
+  it('AC: un id no numérico también redirige al listado con un mensaje', async () => {
+    const agent = await loginAs(SOLO_VER);
+
+    const res = await agent.get('/laboratorio/asdfasddfsdf/editar');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/laboratorio.html?error=no-encontrado&id=asdfasddfsdf');
+  });
+
+  it('AC: el listado, tras el redirect, muestra el banner con el id buscado', async () => {
+    const agent = await loginAs(SOLO_VER);
+
+    const res = await agent.get('/laboratorio.html?error=no-encontrado&id=999999');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('El registro &#34;999999&#34; no existe.');
+    expect(res.text).toContain('laboratorioBannerErrorDismiss');
   });
 });
 
@@ -444,7 +470,8 @@ describe('GET /laboratorio/:id/ver', () => {
 
     const res = await agent.get('/laboratorio/999999/ver');
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/laboratorio.html?error=no-encontrado&id=999999');
   });
 
   it('un usuario sin laboratorio.ver es rebotado a /main.html', async () => {
@@ -466,7 +493,8 @@ describe('GET /laboratorio/:id/cargar', () => {
 
     const res = await agent.get('/laboratorio/999999/cargar');
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/laboratorio.html?error=no-encontrado&id=999999');
   });
 
   it('un usuario sin laboratorio.cargar es rebotado a /main.html (aunque tenga laboratorio.ver)', async () => {

@@ -92,6 +92,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
         <div class="lab-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           <input type="text" id="usuarios-search" name="q" value="<%= q %>" placeholder="Buscar por nombre, usuario o correo...">
+          <span class="lab-search-spinner htmx-indicator" aria-hidden="true"></span>
         </div>
         <%
         // US-601 (segunda iteración, pedido de estilo): un <select> nativo

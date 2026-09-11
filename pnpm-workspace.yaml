@@ -1,3 +1,15 @@
 allowBuilds:
   bcrypt: false
   unrs-resolver: false
+
+# sanitize-html (usado por src/config/sanitizarTexto.js, reporte de
+# seguridad M-07) trae por transitiva htmlparser2 — desde su v11, esa
+# librería dejó de publicar un build CommonJS (exports solo trae "import",
+# nunca "require"). Jest sigue resolviendo módulos con su propio loader
+# CommonJS (no entiende `require()` de un paquete puro ESM, a diferencia
+# del Node nativo del proyecto, que sí desde v22+) — sin este pin, `pnpm
+# test` truena al cargar sanitize-html aunque la app corra bien con `node
+# server.js`. v10.0.0 es la última que todavía expone un "require"
+# funcional en su mapa de exports.
+overrides:
+  htmlparser2: ^10.0.0

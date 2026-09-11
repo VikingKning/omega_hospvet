@@ -12,6 +12,10 @@ const attachSidebarAreas = require('./attachSidebarAreas');
 // normales) porque notFound es el único lugar de la app que renderiza una
 // página completa fuera de una ruta ya registrada.
 function notFound(req, res, next) {
+  // Nunca cachear esta respuesta: un navegador que la guardara podría
+  // seguir mostrándola (o una versión vieja, de antes de un fix futuro) al
+  // volver a la misma URL rota — mismo criterio que requireAuth.js.
+  res.set('Cache-Control', 'no-store');
   if (!req.session.user) {
     return hxRedirect(req, res, '/');
   }

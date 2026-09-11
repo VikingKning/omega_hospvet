@@ -41,7 +41,7 @@
     <%- include('partials/sidebar', { user, currentPage: 'tutores' }) %>
 
     <main class="main-content" id="tutores-panel">
-      <%- include('partials/tutores-panel', { tutores, total, catalogoVacio, page, totalPages, pageSize, q, estadoTutores, estadoPacientes, user, csrfToken }) %>
+      <%- include('partials/tutores-panel', { tutores, total, catalogoVacio, page, totalPages, pageSize, q, estadoTutores, estadoPacientes, user, csrfToken, error }) %>
     </main>
     </div>
   </div>
@@ -70,6 +70,17 @@
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
+<script nonce="<%= cspNonce %>">
+  // Cerrar el banner de "propietario no existe" (ver tutores.controller.js#
+  // editarForm) — delegado sobre document.body porque HTMX reemplaza
+  // #tutores-panel entero en cada filtro/orden/página, mismo criterio que
+  // usuarios.ejs/laboratorio.ejs.
+  document.body.addEventListener('click', (event) => {
+    if (event.target.closest('#tutoresBannerErrorDismiss')) {
+      event.target.closest('.form-error-banner')?.remove();
+    }
+  });
+</script>
 
 </body>
 </html>

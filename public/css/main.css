@@ -967,13 +967,36 @@ body:has(.app)::after {
 
 .lab-search input {
   width: 100%;
-  padding: 9px 12px 9px 34px;
+  padding: 9px 30px 9px 34px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
   font-family: inherit;
   background: var(--surface);
   color: var(--text-dark);
+}
+
+/* M-11: feedback visual de carga en las 6 tablas con buscador — htmx ya
+   agrega/quita opacidad via su propia clase .htmx-indicator (config
+   includeIndicatorStyles, ver public/js/htmx.min.js) apenas el <form
+   hx-post> del toolbar (ancestro de este span) entra/sale de .htmx-request;
+   aquí solo se define la FORMA del spinner, nunca cuándo mostrarlo. */
+.lab-search-spinner {
+  position: absolute;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: lab-search-spin 0.6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes lab-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .lab-select {
