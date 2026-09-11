@@ -885,9 +885,14 @@ describe('laboratorio.service.enviarResultados', () => {
     );
     expect(repository.registrarEnvio).toHaveBeenCalledWith({
       registroLaboratorioId: 42,
+      canalIntentado: 'ambos',
       medio: 'ambos',
       destinatarioCorreo: 'ana@correo.com',
       destinatarioTelefono: '5512345678',
+      correoExitoso: true,
+      whatsappExitoso: true,
+      errorCorreo: null,
+      errorWhatsapp: null,
       archivoIds: [10],
       usuarioId: 7,
     });
@@ -904,7 +909,13 @@ describe('laboratorio.service.enviarResultados', () => {
 
     expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
-      expect.objectContaining({ medio: 'whatsapp', destinatarioCorreo: null }),
+      expect.objectContaining({
+        canalIntentado: 'whatsapp',
+        medio: 'whatsapp',
+        destinatarioCorreo: null,
+        correoExitoso: null,
+        whatsappExitoso: true,
+      }),
     );
   });
 
@@ -914,7 +925,14 @@ describe('laboratorio.service.enviarResultados', () => {
     const resultado = await enviarResultados('42', 7);
 
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
-      expect.objectContaining({ medio: 'correo', destinatarioTelefono: null }),
+      expect.objectContaining({
+        canalIntentado: 'ambos',
+        medio: 'correo',
+        destinatarioTelefono: '5512345678',
+        correoExitoso: true,
+        whatsappExitoso: false,
+        errorWhatsapp: 'Meta rechazó el envío.',
+      }),
     );
     expect(resultado.whatsapp).toEqual({
       intentado: true,
@@ -923,13 +941,24 @@ describe('laboratorio.service.enviarResultados', () => {
     });
   });
 
-  it('si ningún canal tiene éxito, no registra nada en BD', async () => {
+  it('si ningún canal tiene éxito, audita ambos fallos sin marcar ningún medio exitoso', async () => {
     envios.enviarPorCorreo.mockResolvedValue({ ok: false, error: 'SMTP caído.' });
     envios.enviarPorWhatsapp.mockResolvedValue({ ok: false, error: 'Meta caído.' });
 
     const resultado = await enviarResultados('42', 7);
 
-    expect(repository.registrarEnvio).not.toHaveBeenCalled();
+    expect(repository.registrarEnvio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canalIntentado: 'ambos',
+        medio: null,
+        destinatarioCorreo: 'ana@correo.com',
+        destinatarioTelefono: '5512345678',
+        correoExitoso: false,
+        whatsappExitoso: false,
+        errorCorreo: 'SMTP caído.',
+        errorWhatsapp: 'Meta caído.',
+      }),
+    );
     expect(resultado).toEqual({
       correo: { intentado: true, enviado: false, error: 'SMTP caído.' },
       whatsapp: { intentado: true, enviado: false, error: 'Meta caído.' },

@@ -76,6 +76,11 @@ function horasLabel(horas) {
       <canvas id="metricasChartEstados"></canvas>
     </div>
     <div class="metricas-chart-card">
+      <h3>Órdenes por especie</h3>
+      <p class="metricas-chart-description">Distribución de la demanda de laboratorio entre perros y gatos.</p>
+      <canvas id="metricasChartEspecies"></canvas>
+    </div>
+    <div class="metricas-chart-card">
       <h3>Estudios más solicitados</h3>
       <canvas id="metricasChartEstudios"></canvas>
     </div>
@@ -87,6 +92,30 @@ function horasLabel(horas) {
       <h3>Doctores que más solicitan</h3>
       <canvas id="metricasChartDoctores"></canvas>
     </div>
+    <div class="metricas-chart-card">
+      <h3>Antigüedad de órdenes abiertas</h3>
+      <p class="metricas-chart-description">Tiempo transcurrido desde la recepción, separado entre pendientes y cargadas sin enviar.</p>
+      <canvas id="metricasChartAntiguedad"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>Envíos por canal y resultado</h3>
+      <p class="metricas-chart-description">Intentos exitosos y fallidos por canal. “Ambos medios” es exitoso únicamente cuando funcionaron WhatsApp y correo.</p>
+      <canvas id="metricasChartEnviosCanal"></canvas>
+    </div>
+    <div class="metricas-chart-card metricas-chart-card-wide">
+      <h3>Mapa de calor de recepción de órdenes</h3>
+      <p class="metricas-chart-description">Órdenes recibidas por día de la semana y hora local. Los tonos más intensos señalan las horas pico.</p>
+      <div class="metricas-heatmap-scroll">
+        <div id="metricasMapaRecepcion" class="metricas-heatmap" role="img" aria-label="Mapa de calor de órdenes recibidas por día y hora"></div>
+      </div>
+      <div class="metricas-heatmap-legend" aria-hidden="true">
+        <span>Menor demanda</span>
+        <% for (let nivel = 0; nivel <= 5; nivel += 1) { %>
+          <span class="metricas-heatmap-swatch metricas-heatmap-level-<%= nivel %>"></span>
+        <% } %>
+        <span>Mayor demanda</span>
+      </div>
+    </div>
   </div>
 <% } %>
 
@@ -97,4 +126,4 @@ function horasLabel(horas) {
 // gráficas de Chart.js — mismo patrón ya establecido en el proyecto (ver
 // #citaTutorData en cita-form.ejs).
 %>
-<div id="metricasLabData" hidden><%- JSON.stringify({ porDia, porEstado, topEstudios, topCategorias, topDoctores }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
+<div id="metricasLabData" hidden><%- JSON.stringify({ porDia, porEstado, topEstudios, topCategorias, topDoctores, mapaRecepcion, porEspecie, antiguedadAbiertas, enviosPorCanal }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>

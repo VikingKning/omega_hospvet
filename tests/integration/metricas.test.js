@@ -134,6 +134,7 @@ describe('POST /metricas/laboratorio.html (rango de fechas + agregados)', () => 
   let estudioId;
   let categoriaNombre;
   const registroIds = [];
+  const envioIds = [];
 
   beforeAll(async () => {
     const [{ id: propId }] = await db('propietarios')
@@ -216,9 +217,47 @@ describe('POST /metricas/laboratorio.html (rango de fechas + agregados)', () => 
         creado_en: db.fn.now(),
       })),
     );
+
+    const envios = await db('envios_laboratorio')
+      .insert([
+        {
+          registro_laboratorio_id: idPendiente,
+          canal_intentado: 'whatsapp',
+          medio: 'whatsapp',
+          destinatario_telefono: '5588888888',
+          whatsapp_exitoso: true,
+          enviado_por: admin.id,
+          enviado_en: new Date(ANCLA),
+        },
+        {
+          registro_laboratorio_id: idCargado,
+          canal_intentado: 'correo',
+          medio: null,
+          destinatario_correo: 'fallo@omegavet.test',
+          correo_exitoso: false,
+          error_correo: 'SMTP de prueba no disponible',
+          enviado_por: admin.id,
+          enviado_en: new Date(ANCLA),
+        },
+        {
+          registro_laboratorio_id: idEnviado,
+          canal_intentado: 'ambos',
+          medio: 'correo',
+          destinatario_correo: 'exito@omegavet.test',
+          destinatario_telefono: '5588888888',
+          correo_exitoso: true,
+          whatsapp_exitoso: false,
+          error_whatsapp: 'Meta de prueba rechazó el envío',
+          enviado_por: admin.id,
+          enviado_en: new Date(ANCLA),
+        },
+      ])
+      .returning('id');
+    envioIds.push(...envios.map((envio) => envio.id));
   });
 
   afterAll(async () => {
+    await db('envios_laboratorio').whereIn('id', envioIds).del();
     await db('estudios_solicitados').whereIn('registro_laboratorio_id', registroIds).del();
     await db('registros_laboratorio').whereIn('id', registroIds).del();
     await db('mascotas').where('id', mascotaId).del();
@@ -266,6 +305,34 @@ describe('POST /metricas/laboratorio.html (rango de fechas + agregados)', () => 
 
     expect(datos.topEstudios.some((f) => f.total === 3)).toBe(true);
     expect(datos.topCategorias.map((f) => f.nombre)).toContain(categoriaNombre);
+  });
+
+  it('AC: entrega los datos de recepción, especie y antigüedad para las nuevas gráficas', async () => {
+    const agent = await loginAs(SOLO_VER);
+    const csrfToken = await getMetricasCsrfToken(agent);
+
+    const res = await consultarFixture(agent, csrfToken);
+    const match = res.text.match(/<div id="metricasLabData" hidden>(.*?)<\/div>/s);
+    const datos = JSON.parse(match[1].replace(/\\u003c/g, '<'));
+
+    expect(res.text).toContain('id="metricasMapaRecepcion"');
+    expect(res.text).toContain('id="metricasChartEspecies"');
+    expect(res.text).toContain('id="metricasChartAntiguedad"');
+    expect(datos.mapaRecepcion.flatMap((dia) => dia.horas).reduce((a, b) => a + b, 0)).toBe(3);
+    expect(datos.porEspecie).toEqual([
+      { especie: 'perro', etiqueta: 'Perros', total: 3 },
+      { especie: 'gato', etiqueta: 'Gatos', total: 0 },
+    ]);
+    expect(datos.antiguedadAbiertas.find((fila) => fila.rango === 'mas_3d')).toMatchObject({
+      pendiente: 1,
+      cargado: 1,
+    });
+    expect(res.text).toContain('id="metricasChartEnviosCanal"');
+    expect(datos.enviosPorCanal).toEqual([
+      { canal: 'whatsapp', etiqueta: 'Solo WhatsApp', exitosos: 1, fallidos: 0 },
+      { canal: 'correo', etiqueta: 'Solo Correo', exitosos: 0, fallidos: 1 },
+      { canal: 'ambos', etiqueta: 'Ambos medios', exitosos: 0, fallidos: 1 },
+    ]);
   });
 
   it('AC: un rango de fechas que no cubre el fixture no encuentra los registros', async () => {

@@ -8,6 +8,10 @@ function mockearRepository(overrides = {}) {
   repository.topEstudios.mockResolvedValue(overrides.topEstudios ?? []);
   repository.topCategorias.mockResolvedValue(overrides.topCategorias ?? []);
   repository.topDoctores.mockResolvedValue(overrides.topDoctores ?? []);
+  repository.contarRecepcionPorDiaHora.mockResolvedValue(overrides.mapaRecepcion ?? []);
+  repository.contarPorEspecie.mockResolvedValue(overrides.porEspecie ?? []);
+  repository.contarAntiguedadAbiertas.mockResolvedValue(overrides.antiguedadAbiertas ?? []);
+  repository.contarEnviosPorCanalResultado.mockResolvedValue(overrides.enviosPorCanal ?? []);
   repository.tiemposPromedio.mockResolvedValue(
     overrides.tiempos ?? {
       horasPendienteACargado: null,
@@ -181,5 +185,73 @@ describe('obtenerMetricasLaboratorio — armado del resto de los datos', () => {
 
     expect(topEstudios).toEqual([{ nombre: 'Biometría hemática', total: 7 }]);
     expect(topCategorias).toEqual([{ nombre: 'Hematología', total: 9 }]);
+  });
+
+  it('el mapa de recepción siempre contiene los 7 días y las 24 horas, rellenando huecos con 0', async () => {
+    mockearRepository({
+      mapaRecepcion: [
+        { dia_semana: '1', hora: '8', total: '3' },
+        { dia_semana: '7', hora: '23', total: '2' },
+      ],
+    });
+
+    const { mapaRecepcion } = await obtenerMetricasLaboratorio({});
+
+    expect(mapaRecepcion).toHaveLength(7);
+    expect(mapaRecepcion.every((dia) => dia.horas.length === 24)).toBe(true);
+    expect(mapaRecepcion[0]).toMatchObject({ dia: 1, etiqueta: 'Lunes' });
+    expect(mapaRecepcion[0].horas[8]).toBe(3);
+    expect(mapaRecepcion[6].horas[23]).toBe(2);
+    expect(mapaRecepcion[2].horas.every((total) => total === 0)).toBe(true);
+  });
+
+  it('órdenes por especie siempre entrega Perros y Gatos aunque alguno no tenga órdenes', async () => {
+    mockearRepository({ porEspecie: [{ especie: 'perro', total: '4' }] });
+
+    const { porEspecie } = await obtenerMetricasLaboratorio({});
+
+    expect(porEspecie).toEqual([
+      { especie: 'perro', etiqueta: 'Perros', total: 4 },
+      { especie: 'gato', etiqueta: 'Gatos', total: 0 },
+    ]);
+  });
+
+  it('la antigüedad conserva los 5 rangos y separa pendientes de cargadas sin enviar', async () => {
+    mockearRepository({
+      antiguedadAbiertas: [
+        { rango: 'menos_1h', estado: 'pendiente', total: '2' },
+        { rango: '1_6h', estado: 'cargado', total: '3' },
+        { rango: 'mas_3d', estado: 'pendiente', total: '1' },
+      ],
+    });
+
+    const { antiguedadAbiertas } = await obtenerMetricasLaboratorio({});
+
+    expect(antiguedadAbiertas).toEqual([
+      { rango: 'menos_1h', etiqueta: 'Menos de 1 hora', pendiente: 2, cargado: 0 },
+      { rango: '1_6h', etiqueta: '1–6 horas', pendiente: 0, cargado: 3 },
+      { rango: '6_24h', etiqueta: '6–24 horas', pendiente: 0, cargado: 0 },
+      { rango: '1_3d', etiqueta: '1–3 días', pendiente: 0, cargado: 0 },
+      { rango: 'mas_3d', etiqueta: 'Más de 3 días', pendiente: 1, cargado: 0 },
+    ]);
+  });
+
+  it('los envíos conservan los 3 canales y separan resultados exitosos y fallidos', async () => {
+    mockearRepository({
+      enviosPorCanal: [
+        { canal: 'whatsapp', resultado: 'exitoso', total: '5' },
+        { canal: 'correo', resultado: 'fallido', total: '2' },
+        { canal: 'ambos', resultado: 'exitoso', total: '3' },
+        { canal: 'ambos', resultado: 'fallido', total: '1' },
+      ],
+    });
+
+    const { enviosPorCanal } = await obtenerMetricasLaboratorio({});
+
+    expect(enviosPorCanal).toEqual([
+      { canal: 'whatsapp', etiqueta: 'Solo WhatsApp', exitosos: 5, fallidos: 0 },
+      { canal: 'correo', etiqueta: 'Solo Correo', exitosos: 0, fallidos: 2 },
+      { canal: 'ambos', etiqueta: 'Ambos medios', exitosos: 3, fallidos: 1 },
+    ]);
   });
 });

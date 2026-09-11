@@ -559,8 +559,8 @@ async function obtenerArchivoParaDescarga(rawArchivoId) {
 // correo, según qué dato de contacto tenga el tutor — teléfono siempre
 // existe (propietarios.telefono NOT NULL), correo es opcional). Los 2
 // intentos corren en paralelo (Promise.allSettled: uno fallando nunca
-// bloquea al otro) y SOLO se registra en BD lo que de verdad tuvo éxito —
-// si ninguno lo tuvo, no se toca ni el archivo ni el registro.
+// bloquea al otro). La auditoría registra tanto éxitos como fallos; el estado
+// del archivo y de la orden solo cambia cuando al menos un canal tuvo éxito.
 async function enviarResultados(rawRegistroId, usuarioId) {
   const registroId = parseId(rawRegistroId);
   if (registroId === null) throw errorRegistroNoEncontrado();
@@ -618,14 +618,27 @@ async function enviarResultados(rawRegistroId, usuarioId) {
   if (correo?.ok) mediosExitosos.push('correo');
   if (whatsapp?.ok) mediosExitosos.push('whatsapp');
 
-  if (mediosExitosos.length > 0) {
+  const canalesIntentados = Object.entries(intentos)
+    .filter(([, intentado]) => intentado)
+    .map(([canal]) => canal);
+  const canalIntentado = canalesIntentados.length === 2 ? 'ambos' : (canalesIntentados[0] ?? null);
+
+  if (canalIntentado) {
     await repository.registrarEnvio({
       registroLaboratorioId: registroId,
-      medio: mediosExitosos.length === 2 ? 'ambos' : mediosExitosos[0],
-      destinatarioCorreo: mediosExitosos.includes('correo') ? registro.propietario_correo : null,
-      destinatarioTelefono: mediosExitosos.includes('whatsapp')
-        ? registro.propietario_telefono
-        : null,
+      canalIntentado,
+      medio:
+        mediosExitosos.length === 2
+          ? 'ambos'
+          : mediosExitosos.length === 1
+            ? mediosExitosos[0]
+            : null,
+      destinatarioCorreo: intentos.correo ? registro.propietario_correo : null,
+      destinatarioTelefono: intentos.whatsapp ? registro.propietario_telefono : null,
+      correoExitoso: intentos.correo ? Boolean(correo?.ok) : null,
+      whatsappExitoso: intentos.whatsapp ? Boolean(whatsapp?.ok) : null,
+      errorCorreo: intentos.correo && !correo?.ok ? correo?.error : null,
+      errorWhatsapp: intentos.whatsapp && !whatsapp?.ok ? whatsapp?.error : null,
       archivoIds,
       usuarioId,
     });

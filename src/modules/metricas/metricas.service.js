@@ -6,6 +6,23 @@ const PRESETS_VALIDOS = [7, 30, 90];
 
 const ESTADOS = ['pendiente', 'cargado', 'enviado'];
 const ESTADO_LABEL = { pendiente: 'Pendiente', cargado: 'Cargado', enviado: 'Enviado' };
+const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+const ESPECIES = [
+  { especie: 'perro', etiqueta: 'Perros' },
+  { especie: 'gato', etiqueta: 'Gatos' },
+];
+const RANGOS_ANTIGUEDAD = [
+  { rango: 'menos_1h', etiqueta: 'Menos de 1 hora' },
+  { rango: '1_6h', etiqueta: '1–6 horas' },
+  { rango: '6_24h', etiqueta: '6–24 horas' },
+  { rango: '1_3d', etiqueta: '1–3 días' },
+  { rango: 'mas_3d', etiqueta: 'Más de 3 días' },
+];
+const CANALES_ENVIO = [
+  { canal: 'whatsapp', etiqueta: 'Solo WhatsApp' },
+  { canal: 'correo', etiqueta: 'Solo Correo' },
+  { canal: 'ambos', etiqueta: 'Ambos medios' },
+];
 
 function formatoFecha(date) {
   return date.toISOString().slice(0, 10);
@@ -65,18 +82,77 @@ function redondear(valor) {
   return valor === null ? null : Math.round(Number(valor) * 10) / 10;
 }
 
+function normalizarMapaRecepcion(filas) {
+  const totales = new Map(
+    filas.map((fila) => [`${Number(fila.dia_semana)}:${Number(fila.hora)}`, Number(fila.total)]),
+  );
+
+  return DIAS_SEMANA.map((etiqueta, indice) => ({
+    dia: indice + 1,
+    etiqueta,
+    horas: Array.from({ length: 24 }, (_, hora) => totales.get(`${indice + 1}:${hora}`) ?? 0),
+  }));
+}
+
+function normalizarPorEspecie(filas) {
+  const totales = new Map(filas.map((fila) => [fila.especie, Number(fila.total)]));
+  return ESPECIES.map(({ especie, etiqueta }) => ({
+    especie,
+    etiqueta,
+    total: totales.get(especie) ?? 0,
+  }));
+}
+
+function normalizarAntiguedad(filas) {
+  const totales = new Map(
+    filas.map((fila) => [`${fila.rango}:${fila.estado}`, Number(fila.total)]),
+  );
+  return RANGOS_ANTIGUEDAD.map(({ rango, etiqueta }) => ({
+    rango,
+    etiqueta,
+    pendiente: totales.get(`${rango}:pendiente`) ?? 0,
+    cargado: totales.get(`${rango}:cargado`) ?? 0,
+  }));
+}
+
+function normalizarEnviosPorCanal(filas) {
+  const totales = new Map(
+    filas.map((fila) => [`${fila.canal}:${fila.resultado}`, Number(fila.total)]),
+  );
+  return CANALES_ENVIO.map(({ canal, etiqueta }) => ({
+    canal,
+    etiqueta,
+    exitosos: totales.get(`${canal}:exitoso`) ?? 0,
+    fallidos: totales.get(`${canal}:fallido`) ?? 0,
+  }));
+}
+
 async function obtenerMetricasLaboratorio(filtros) {
   const rango = normalizarRango(filtros);
 
-  const [porEstadoRaw, porDiaRaw, topEstudios, topCategorias, topDoctoresRaw, tiempos] =
-    await Promise.all([
-      repository.contarPorEstado(rango),
-      repository.contarPorDia(rango),
-      repository.topEstudios(rango),
-      repository.topCategorias(rango),
-      repository.topDoctores(rango),
-      repository.tiemposPromedio(rango),
-    ]);
+  const [
+    porEstadoRaw,
+    porDiaRaw,
+    topEstudios,
+    topCategorias,
+    topDoctoresRaw,
+    recepcionRaw,
+    porEspecieRaw,
+    antiguedadRaw,
+    enviosPorCanalRaw,
+    tiempos,
+  ] = await Promise.all([
+    repository.contarPorEstado(rango),
+    repository.contarPorDia(rango),
+    repository.topEstudios(rango),
+    repository.topCategorias(rango),
+    repository.topDoctores(rango),
+    repository.contarRecepcionPorDiaHora(rango),
+    repository.contarPorEspecie(rango),
+    repository.contarAntiguedadAbiertas(rango),
+    repository.contarEnviosPorCanalResultado(rango),
+    repository.tiemposPromedio(rango),
+  ]);
 
   const totalesPorEstado = new Map(porEstadoRaw.map((f) => [f.estado, Number(f.total)]));
   const porEstado = ESTADOS.map((estado) => ({
@@ -103,6 +179,10 @@ async function obtenerMetricasLaboratorio(filtros) {
     topEstudios: topEstudios.map((f) => ({ nombre: f.nombre, total: Number(f.total) })),
     topCategorias: topCategorias.map((f) => ({ nombre: f.nombre, total: Number(f.total) })),
     topDoctores,
+    mapaRecepcion: normalizarMapaRecepcion(recepcionRaw),
+    porEspecie: normalizarPorEspecie(porEspecieRaw),
+    antiguedadAbiertas: normalizarAntiguedad(antiguedadRaw),
+    enviosPorCanal: normalizarEnviosPorCanal(enviosPorCanalRaw),
     tiempos: {
       horasPendienteACargado: redondear(tiempos.horasPendienteACargado),
       horasCargadoAEnviado: redondear(tiempos.horasCargadoAEnviado),

@@ -48,7 +48,7 @@
     <%- include('partials/sidebar', { user, currentPage: 'metricas-laboratorio' }) %>
 
     <main class="main-content" id="metricas-laboratorio-panel">
-      <%- include('partials/metricas-laboratorio-panel', { rango, total, porEstado, porDia, topEstudios, topCategorias, topDoctores, tiempos, user, csrfToken }) %>
+      <%- include('partials/metricas-laboratorio-panel', { rango, total, porEstado, porDia, topEstudios, topCategorias, topDoctores, mapaRecepcion, porEspecie, antiguedadAbiertas, enviosPorCanal, tiempos, user, csrfToken }) %>
     </main>
     </div>
   </div>
@@ -147,6 +147,108 @@
 
     const doctoresEl = document.getElementById('metricasChartDoctores');
     if (doctoresEl) graficasLab.doctores = graficaBarrasHorizontal(doctoresEl, datos.topDoctores, '#F5A623');
+
+    const mapaEl = document.getElementById('metricasMapaRecepcion');
+    if (mapaEl) {
+      const maximo = Math.max(0, ...datos.mapaRecepcion.flatMap((dia) => dia.horas));
+      const crearCelda = (clase, texto) => {
+        const celda = document.createElement('span');
+        celda.className = clase;
+        celda.textContent = texto;
+        mapaEl.appendChild(celda);
+        return celda;
+      };
+
+      crearCelda('metricas-heatmap-corner', 'Día / hora');
+      Array.from({ length: 24 }, (_, hora) => {
+        crearCelda('metricas-heatmap-hour', String(hora).padStart(2, '0'));
+      });
+      datos.mapaRecepcion.forEach((dia) => {
+        crearCelda('metricas-heatmap-day', dia.etiqueta);
+        dia.horas.forEach((total, hora) => {
+          const nivel = total === 0 || maximo === 0 ? 0 : Math.max(1, Math.ceil((total / maximo) * 5));
+          const celda = crearCelda(
+            `metricas-heatmap-cell metricas-heatmap-level-${nivel}`,
+            total ? String(total) : '',
+          );
+          const detalle = `${dia.etiqueta}, ${String(hora).padStart(2, '0')}:00: ${total} ${total === 1 ? 'orden' : 'órdenes'}`;
+          celda.title = detalle;
+          celda.setAttribute('aria-label', detalle);
+        });
+      });
+    }
+
+    const especiesEl = document.getElementById('metricasChartEspecies');
+    if (especiesEl) {
+      graficasLab.especies = new Chart(especiesEl, {
+        type: 'doughnut',
+        data: {
+          labels: datos.porEspecie.map((fila) => fila.etiqueta),
+          datasets: [
+            {
+              data: datos.porEspecie.map((fila) => fila.total),
+              backgroundColor: ['#2E5090', '#F5A623'],
+            },
+          ],
+        },
+        options: { responsive: true },
+      });
+    }
+
+    const antiguedadEl = document.getElementById('metricasChartAntiguedad');
+    if (antiguedadEl) {
+      graficasLab.antiguedad = new Chart(antiguedadEl, {
+        type: 'bar',
+        data: {
+          labels: datos.antiguedadAbiertas.map((fila) => fila.etiqueta),
+          datasets: [
+            {
+              label: 'Pendientes',
+              data: datos.antiguedadAbiertas.map((fila) => fila.pendiente),
+              backgroundColor: COLOR_ESTADO.pendiente,
+            },
+            {
+              label: 'Cargadas sin enviar',
+              data: datos.antiguedadAbiertas.map((fila) => fila.cargado),
+              backgroundColor: COLOR_ESTADO.cargado,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
+    }
+
+    const enviosCanalEl = document.getElementById('metricasChartEnviosCanal');
+    if (enviosCanalEl) {
+      graficasLab.enviosCanal = new Chart(enviosCanalEl, {
+        type: 'bar',
+        data: {
+          labels: datos.enviosPorCanal.map((fila) => fila.etiqueta),
+          datasets: [
+            {
+              label: 'Exitosos',
+              data: datos.enviosPorCanal.map((fila) => fila.exitosos),
+              backgroundColor: '#1E8E3E',
+            },
+            {
+              label: 'Fallidos',
+              data: datos.enviosPorCanal.map((fila) => fila.fallidos),
+              backgroundColor: '#C53929',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: { stacked: true },
+            y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+          },
+        },
+      });
+    }
   }
 
   construirGraficasLab();

@@ -599,18 +599,19 @@ async function actualizarRegistro(
 }
 
 // Envío real de resultados (pedido explícito del usuario) — se llama UNA
-// vez por intento de laboratorio.service.js#enviarResultados, ya con
-// `medio` resuelto ('correo'|'whatsapp'|'ambos', ver el COMMENT de la
-// tabla) según qué canal(es) SÍ tuvieron éxito; nunca se llama si ninguno
-// lo tuvo. Todo en una sola transacción: si algo truena a medias (el envío
-// ya salió, esto es solo la contabilidad en BD), se reintenta la próxima
-// vez que se dé clic en "Enviar resultados" — el archivo YA llegó al
-// tutor, perder el registro no es tan grave como dejarlo a medias.
+// vez por intento de laboratorio.service.js#enviarResultados. Guarda qué
+// canales se intentaron y el resultado individual incluso si todos fallan;
+// `medio` conserva únicamente los canales que sí tuvieron éxito.
 async function registrarEnvio({
   registroLaboratorioId,
+  canalIntentado,
   medio,
   destinatarioCorreo,
   destinatarioTelefono,
+  correoExitoso,
+  whatsappExitoso,
+  errorCorreo,
+  errorWhatsapp,
   archivoIds,
   usuarioId,
 }) {
@@ -618,9 +619,14 @@ async function registrarEnvio({
     const [envio] = await trx('envios_laboratorio')
       .insert({
         registro_laboratorio_id: registroLaboratorioId,
+        canal_intentado: canalIntentado,
         medio,
         destinatario_correo: destinatarioCorreo,
         destinatario_telefono: destinatarioTelefono,
+        correo_exitoso: correoExitoso,
+        whatsapp_exitoso: whatsappExitoso,
+        error_correo: errorCorreo,
+        error_whatsapp: errorWhatsapp,
         enviado_por: usuarioId,
         enviado_en: trx.fn.now(),
       })
@@ -630,15 +636,17 @@ async function registrarEnvio({
       archivoIds.map((archivoId) => ({ envio_id: envio.id, archivo_id: archivoId })),
     );
 
-    await trx('archivos_laboratorio')
-      .whereIn('id', archivoIds)
-      .andWhere('estado', '!=', 'enviado')
-      .update({ estado: 'enviado', enviado_por: usuarioId, enviado_en: trx.fn.now() });
+    if (medio) {
+      await trx('archivos_laboratorio')
+        .whereIn('id', archivoIds)
+        .andWhere('estado', '!=', 'enviado')
+        .update({ estado: 'enviado', enviado_por: usuarioId, enviado_en: trx.fn.now() });
 
-    await trx('registros_laboratorio')
-      .where({ id: registroLaboratorioId })
-      .andWhere('estado', '!=', 'enviado')
-      .update({ estado: 'enviado', enviado_en: trx.fn.now() });
+      await trx('registros_laboratorio')
+        .where({ id: registroLaboratorioId })
+        .andWhere('estado', '!=', 'enviado')
+        .update({ estado: 'enviado', enviado_en: trx.fn.now() });
+    }
   });
 }
 
