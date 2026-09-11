@@ -347,10 +347,10 @@ describe('DELETE /areas/:id (US-611 — baja lógica)', () => {
     expect(res.status).toBe(200);
     expect(res.text).not.toContain(`Baja ${SUFFIX}`); // recién desactivada, ya no aparece
     expect(res.text).toContain(`Bajado ${SUFFIX}`); // el otro match de "Baja" sigue activo
-    // "1 resultados" es el assert que realmente distingue el bug: si el
+    // "1 resultado" es el assert que realmente distingue el bug: si el
     // fragmento hubiera vuelto al estado por defecto (req.body vacío en vez
     // de req.query), aparecerían TODAS las demás áreas activas de la base.
-    expect(res.text).toContain('1 resultados');
+    expect(res.text).toContain('1 resultado ');
 
     const row = await db('areas').where({ id: areaId }).first();
     expect(row.activo).toBe(false);

@@ -167,10 +167,15 @@ function initialesTutor(nombre, apellidos) {
       <% } %>
 
       <div class="table-footer">
-        <%# AC: texto exacto "[encontrados] resultados – [total] tutores en
-            total" — separador en-dash, distinto del "·" que usan
-            doctores/áreas; se sigue el AC al pie de la letra. %>
-        <span><%= tutores.length %> resultados – <%= total %> tutores en total</span>
+        <%
+        // Pedido explícito del usuario: mismo formato en TODOS los módulos
+        // (este separador en-dash, antes exclusivo de Tutores por su AC
+        // original, ahora es el estándar del sistema — ver
+        // doctores-panel.ejs/areas-panel.ejs/etc.) — singular cuando el
+        // número es 1 (encontrados Y total, cada uno por su cuenta), plural
+        // en cualquier otro caso (0, 2, 50...).
+        %>
+        <span><%= tutores.length %> resultado<%= tutores.length === 1 ? '' : 's' %> – <%= total %> tutor<%= total === 1 ? '' : 'es' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">
             <button type="button" class="pagination-btn" aria-disabled="<%= page <= 1 %>" <%= page <= 1 ? 'disabled' : '' %>

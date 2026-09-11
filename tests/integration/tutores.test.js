@@ -512,12 +512,12 @@ describe('Paginación (US-155 AC23-AC26)', () => {
 
     const res = await filtrarTutores(agent, { q: `Filler 01 ${PAG_SUFFIX}` });
 
-    expect(res.text).toContain('1 resultados');
-    expect(res.text).toContain('1 tutores en total');
+    expect(res.text).toContain('1 resultado ');
+    expect(res.text).toContain('1 tutor en total');
     expect(res.text).not.toContain('pagination'); // 1 sola página, sin nav
   });
 
-  it('AC26: el footer muestra el texto exacto "[encontrados] resultados – [total] tutores en total"', async () => {
+  it('AC26: el footer muestra el texto exacto "[encontrados] resultados – [total] tutores en total" (plural)', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await filtrarTutores(agent, { q: PAG_SUFFIX });
@@ -1236,11 +1236,11 @@ describe('DELETE /tutores/:id (US-157 — baja lógica)', () => {
     expect(res.status).toBe(200);
     expect(res.text).not.toContain(`Baja Tutor ${SUFFIX_156}`); // recién desactivado, ya no aparece
     expect(res.text).toContain(`Baja Tutor Activo ${SUFFIX_156}`); // el otro match de "Baja Tutor" sigue activo
-    // "1 resultados" es el assert que realmente distingue el bug: si el
+    // "1 resultado" es el assert que realmente distingue el bug: si el
     // fragmento hubiera vuelto al estado por defecto (req.body vacío en vez
     // de req.query), aparecerían TODOS los demás tutores activos de la
     // base (más de 1), no solo el que matchea q="Baja Tutor".
-    expect(res.text).toContain('1 resultados');
+    expect(res.text).toContain('1 resultado ');
 
     const row = await db('propietarios').where({ id: tutorBajaId }).first();
     expect(row.activo).toBe(false);

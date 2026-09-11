@@ -131,7 +131,14 @@ function sortVals(column) {
       <% } %>
 
       <div class="table-footer">
-        <span><%= areas.length %> resultados · <%= total %> áreas en total</span>
+        <%
+        // Pedido explícito del usuario: mismo formato en TODOS los módulos
+        // (antes cada tabla tenía su propio separador/singular a medias) —
+        // singular cuando el número es 1 (encontrados Y total, cada uno por
+        // su cuenta), plural en cualquier otro caso (0, 2, 50...), separador
+        // en-dash.
+        %>
+        <span><%= areas.length %> resultado<%= areas.length === 1 ? '' : 's' %> – <%= total %> área<%= total === 1 ? '' : 's' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">
             <button type="button" class="pagination-btn" aria-disabled="<%= page <= 1 %>" <%= page <= 1 ? 'disabled' : '' %>

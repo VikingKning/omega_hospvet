@@ -359,11 +359,11 @@ describe('DELETE /doctores/:id (US-608 — baja lógica)', () => {
     expect(res.status).toBe(200);
     expect(res.text).not.toContain(`Baja ${SUFFIX}`); // recién desactivado, ya no aparece
     expect(res.text).toContain(`Bajado ${SUFFIX}`); // el otro match de "Baja" sigue activo
-    // "1 resultados" es el assert que realmente distingue el bug: si el
+    // "1 resultado" es el assert que realmente distingue el bug: si el
     // fragmento hubiera vuelto al estado por defecto (req.body vacío en vez
     // de req.query), aparecerían TODOS los demás doctores activos de la
     // base (más de 1), no solo el que matchea q=Baja.
-    expect(res.text).toContain('1 resultados');
+    expect(res.text).toContain('1 resultado ');
 
     const row = await db('doctores').where({ id: doctorId }).first();
     expect(row.activo).toBe(false);
