@@ -15,8 +15,8 @@
 // nombre.
 //
 // El texto del BODY se lee de `plantillas_whatsapp` (slug
-// 'resultados-laboratorio-listos', migración
-// 20260903000004_agregar_plantilla_resultados_laboratorio_listos.js) en
+// 'resultados-laboratorio-listos-v2', migración
+// 20260911000003_agregar_plantilla_resultados_laboratorio_listos_v2.js) en
 // vez de vivir hardcodeado aquí — pedido explícito del usuario: esa fila
 // es la fuente de verdad editable desde el catálogo de Plantillas, este
 // script solo la lee al momento de registrar/re-registrar en Meta. El
@@ -24,15 +24,22 @@
 // con TEMPLATE_NAME de abajo para que plantillas_whatsapp.metaSync.js
 // (el job que revisa aprobaciones) la reconozca como la misma plantilla.
 //
+// v2 (2026-09-11): rediseño del texto (más cercano/amigable, con folio y
+// links de agendar cita/ubicación) — nombre NUEVO a propósito
+// ('..._v2'), nunca se reusa el nombre de una plantilla ya aprobada (Meta
+// la rechazaría, y de cualquier forma su body/header/footer ya aprobados
+// son inmutables). La plantilla vieja ('resultados_laboratorio_listos')
+// se deja activa en Meta como respaldo hasta que esta v2 quede aprobada.
+//
 // Uso: pnpm run whatsapp:registrar-plantilla-resultados
 const { PDFDocument, StandardFonts } = require('pdf-lib');
 const env = require('../src/config/env');
 const db = require('../src/config/database');
 const { templatesUrl, authHeaders, GRAPH_API_VERSION } = require('../src/config/whatsapp');
 
-const TEMPLATE_NAME = 'resultados_laboratorio_listos';
+const TEMPLATE_NAME = 'resultados_laboratorio_listos_v2';
 const TEMPLATE_LANGUAGE = 'es_MX';
-const SLUG = 'resultados-laboratorio-listos';
+const SLUG = 'resultados-laboratorio-listos-v2';
 
 async function generarPdfDeEjemplo() {
   const pdf = await PDFDocument.create();
@@ -98,11 +105,22 @@ async function crearPlantilla(headerHandle, bodyText) {
       {
         type: 'BODY',
         text: bodyText,
-        example: { body_text: [['Juan Pérez', 'Firulais']] },
+        example: {
+          body_text: [
+            [
+              'Juan Pérez',
+              'Firulais',
+              '005',
+              env.enlaces.calendarioCitas,
+              env.enlaces.ubicacionMaps,
+              'tarde',
+            ],
+          ],
+        },
       },
       {
         type: 'FOOTER',
-        text: 'Omega Veterinaria & Estética',
+        text: 'Omega Hospital Veterinario',
       },
     ],
   };
@@ -118,6 +136,14 @@ async function crearPlantilla(headerHandle, bodyText) {
 async function main() {
   if (!env.whatsapp.appId) {
     console.error('Falta WHATSAPP_APP_ID en el entorno (ver .env.example).');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!env.enlaces.calendarioCitas || !env.enlaces.ubicacionMaps) {
+    console.error(
+      'Faltan GOOGLE_CALENDAR_MEETING_URL o GOOGLE_MAPS_URL en el entorno (ver .env.example).',
+    );
     process.exitCode = 1;
     return;
   }

@@ -2,7 +2,7 @@
   "name": "omega-vet-adminsite",
   "version": "0.1.0",
   "private": true,
-  "description": "Panel administrativo de Omega Veterinaria & Estética — servidor web y base de datos",
+  "description": "Panel administrativo de Omega Hospital Veterinario — servidor web y base de datos",
   "main": "src/server.js",
   "license": "UNLICENSED",
   "engines": {

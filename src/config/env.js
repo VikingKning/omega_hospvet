@@ -98,4 +98,14 @@ module.exports = {
     password: process.env.SMTP_PASSWORD,
     from: process.env.SMTP_FROM,
   },
+  // Links públicos que se mandan tal cual al cliente (correo/WhatsApp de
+  // resultados de laboratorio) — pedido explícito del usuario: que apuntar
+  // a un calendario o mapa distinto sea cambiar una variable de entorno,
+  // nunca tocar código. Distinto de `google.calendarId` de arriba (ese es
+  // el calendario interno con el que se sincroniza la agenda vía OAuth,
+  // este es un link público de agendar cita que ve el cliente).
+  enlaces: {
+    calendarioCitas: process.env.GOOGLE_CALENDAR_MEETING_URL,
+    ubicacionMaps: process.env.GOOGLE_MAPS_URL,
+  },
 };

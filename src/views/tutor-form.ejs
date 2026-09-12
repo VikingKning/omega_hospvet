@@ -16,7 +16,7 @@
   reescribir cada referencia (propia y de partials compartidos) a mano.
 %>
 <base href="/">
-<title><%= propietario ? 'Editar propietario' : 'Nuevo propietario' %> | Omega Veterinaria & Estética</title>
+<title><%= propietario ? 'Editar propietario' : 'Nuevo propietario' %> | Omega Hospital Veterinario</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="css/main.css">
@@ -46,7 +46,7 @@
   <div class="app" id="app">
     <div class="top-row">
       <div class="sidebar-header">
-        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <img src="assets/imgs/icon.png" alt="Omega Hospital Veterinario">
         <span class="sidebar-title">Omega Vet</span>
         <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
@@ -943,7 +943,7 @@
       tutorId = data.id;
       pacientes = data.propietario.pacientes;
       document.getElementById('tutorFormTitulo').textContent = 'Editar propietario';
-      document.title = 'Editar propietario | Omega Veterinaria & Estética';
+      document.title = 'Editar propietario | Omega Hospital Veterinario';
       history.replaceState(null, '', `tutores/${tutorId}/editar`);
       renderPacientes();
       showSuccess('Propietario guardado correctamente.');

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/assets/imgs/icon.png" alt="Omega Veterinaria & Estética" width="120">
+  <img src="public/assets/imgs/icon.png" alt="Omega Hospital Veterinario" width="120">
 </p>
 
-<h1 align="center">Omega Veterinaria & Estética — Panel Administrativo</h1>
+<h1 align="center">Omega Hospital Veterinario — Panel Administrativo</h1>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Node.js_24+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js 24+">
@@ -53,7 +53,7 @@
 
 ## Descripción
 
-Panel administrativo para el personal de **Omega Veterinaria & Estética**. Es una aplicación web renderizada en el servidor con Node.js, Express y EJS, respaldada por PostgreSQL mediante Knex. El frontend usa HTML, CSS y JavaScript vanilla, con HTMX para actualizaciones parciales y sin bundler ni proceso de compilación.
+Panel administrativo para el personal de **Omega Hospital Veterinario**. Es una aplicación web renderizada en el servidor con Node.js, Express y EJS, respaldada por PostgreSQL mediante Knex. El frontend usa HTML, CSS y JavaScript vanilla, con HTMX para actualizaciones parciales y sin bundler ni proceso de compilación.
 
 El sistema incluye:
 
@@ -232,10 +232,19 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASSWORD=
-SMTP_FROM=Omega Veterinaria & Estética <no-reply@example.com>
+SMTP_FROM=Omega Hospital Veterinario <no-reply@example.com>
 ```
 
 Usa `SMTP_SECURE=true` para TLS implícito, normalmente en el puerto 465. Sin una configuración SMTP completa, el canal de correo se omite y el resto de la aplicación continúa disponible.
+
+### Links públicos de resultados de laboratorio — opcionales
+
+```dotenv
+GOOGLE_CALENDAR_MEETING_URL=
+GOOGLE_MAPS_URL=
+```
+
+Se mandan tal cual al cliente en el correo y el WhatsApp de resultados de laboratorio: `GOOGLE_CALENDAR_MEETING_URL` es el link de agendar cita (botón del correo y variable del mensaje de WhatsApp) y `GOOGLE_MAPS_URL` es el link de ubicación de la sucursal (link "Google Maps" en el pie del correo y variable del mensaje de WhatsApp). Cambiar el calendario o la sucursal es solo cambiar estas variables, sin tocar código ni volver a registrar la plantilla en Meta.
 
 ## Arquitectura
 
@@ -489,7 +498,7 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=usuario
 SMTP_PASSWORD=contraseña-o-token
-SMTP_FROM=Omega Veterinaria & Estética <no-reply@dominio.com>
+SMTP_FROM=Omega Hospital Veterinario <no-reply@dominio.com>
 ```
 
 Para TLS implícito se usa normalmente el puerto 465 con `SMTP_SECURE=true`. `SMTP_FROM` es el remitente visible; el proveedor debe autorizar a `SMTP_USER` para enviar con esa dirección.
@@ -509,7 +518,7 @@ Este proyecto usa autenticación SMTP por usuario y contraseña, no OAuth para c
    SMTP_SECURE=true
    SMTP_USER=cuenta-de-prueba@gmail.com
    SMTP_PASSWORD=contraseña-de-aplicación-sin-espacios
-   SMTP_FROM=Omega Veterinaria & Estética <cuenta-de-prueba@gmail.com>
+   SMTP_FROM=Omega Hospital Veterinario <cuenta-de-prueba@gmail.com>
    ```
 
 5. Reinicia el servidor; las variables se leen al arrancar.
@@ -603,7 +612,7 @@ Este script:
 - Lee las plantillas activas de PostgreSQL.
 - Convierte el slug a un nombre compatible con Meta.
 - Usa idioma `es_MX` y categoría `UTILITY`.
-- Excluye `resultados-laboratorio-listos`, porque requiere un encabezado de documento.
+- Excluye `resultados-laboratorio-listos-v2`, porque requiere un encabezado de documento.
 - Imprime el código HTTP y la respuesta de Meta para cada registro.
 
 Después de ejecutarlo:
@@ -622,13 +631,14 @@ Importante: el job periódico solo consulta aprobaciones; no reintenta un regist
 
 #### Registrar la plantilla de resultados con documento
 
-La notificación de resultados puede iniciar una conversación fuera de la ventana de atención y adjunta un archivo. Por ello necesita la plantilla `resultados_laboratorio_listos`, categoría `UTILITY`, idioma `es_MX`, con encabezado `DOCUMENT`.
+La notificación de resultados puede iniciar una conversación fuera de la ventana de atención y adjunta un archivo. Por ello necesita la plantilla `resultados_laboratorio_listos_v2`, categoría `UTILITY`, idioma `es_MX`, con encabezado `DOCUMENT`. El texto del cuerpo trae 6 variables (tutor, mascota, folio, link de agendar cita, link de ubicación y saludo según la hora) e incluye como texto plano los links de `GOOGLE_CALENDAR_MEETING_URL` y `GOOGLE_MAPS_URL` — configúralos antes de registrar o de enviar un resultado real.
 
 Antes de registrarla:
 
-1. Ejecuta las migraciones para asegurar que exista y esté activa la fila `resultados-laboratorio-listos`.
+1. Ejecuta las migraciones para asegurar que exista y esté activa la fila `resultados-laboratorio-listos-v2`.
 2. Configura `WHATSAPP_TOKEN`, `WHATSAPP_BUSINESS_ACCOUNT_ID` y `WHATSAPP_APP_ID`.
-3. Confirma que el token todavía sea válido.
+3. Configura `GOOGLE_CALENDAR_MEETING_URL` y `GOOGLE_MAPS_URL` (ver sección de variables de entorno) — se mandan tal cual en el cuerpo del mensaje y en el correo de resultados.
+4. Confirma que el token todavía sea válido.
 
 Ejecuta una sola vez por cuenta o cuando la plantilla deba crearse nuevamente:
 
@@ -647,6 +657,8 @@ Después de correrlo:
 
 No ejecutes repetidamente el registro si la plantilla ya existe: Meta conserva los nombres y puede rechazar el duplicado. La aprobación puede tardar y no implica que cualquier destinatario sea válido mientras se utilice el número de prueba.
 
+Una plantilla ya `APPROVED` es inmutable en Meta (no se puede editar su texto): un cambio de contenido siempre implica registrar una plantilla con un `name`/slug nuevo (ver migración `20260911000003_agregar_plantilla_resultados_laboratorio_listos_v2.js`) y desactivar la fila vieja, sin borrarla, para no romper el histórico de mensajes ni un envío en curso. Mientras la nueva versión sigue pendiente de aprobación, conserva la vieja activa en Meta como respaldo.
+
 #### Checklist para pasar de pruebas a producción
 
 - La app y la cuenta de WhatsApp Business deben quedar bajo la organización propietaria, no bajo una cuenta personal del desarrollador.
@@ -655,7 +667,7 @@ No ejecutes repetidamente el registro si la plantilla ya existe: Meta conserva l
 - Cambia `WHATSAPP_PHONE_NUMBER_ID` y `WHATSAPP_BUSINESS_ACCOUNT_ID` si los recursos productivos son distintos.
 - Configura el webhook con una URL HTTPS estable y vuelve a suscribir el campo `messages`.
 - Conserva el mismo `WHATSAPP_WEBHOOK_VERIFY_TOKEN` en Meta y el servidor, y actualiza `WHATSAPP_APP_SECRET` si cambia la app.
-- Confirma que `resultados_laboratorio_listos` esté `APPROVED` para la cuenta productiva; la aprobación de la cuenta de prueba no se transfiere automáticamente a otra WABA.
+- Confirma que `resultados_laboratorio_listos_v2` esté `APPROVED` para la cuenta productiva; la aprobación de la cuenta de prueba no se transfiere automáticamente a otra WABA.
 - Reinicia con `pm2 restart omega-vet-adminsite --update-env` y realiza una prueba controlada de recepción y otra de envío de resultados.
 
 ### Claude API

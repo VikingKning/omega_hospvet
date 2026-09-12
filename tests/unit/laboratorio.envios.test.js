@@ -35,7 +35,11 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
       destinatario: 'ana@correo.com',
       nombreTutor: 'Ana Ruiz',
       nombreMascota: 'Firulais',
+      fechaSolicitud: '2026-08-27',
+      folioId: 42,
       archivos: [ARCHIVO],
+      calendarioCitas: 'https://calendar.example/agendar',
+      googleMapsUrl: 'https://maps.example/ubicacion',
     });
 
     expect(resultado).toEqual({ ok: true });
@@ -43,7 +47,13 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
       expect.objectContaining({
         to: 'ana@correo.com',
         subject: expect.stringContaining('Firulais'),
-        attachments: [{ filename: 'resultados.pdf', path: '/storage/laboratorio/42/x.pdf' }],
+        html: expect.stringContaining('cid:logo-omega'),
+        // El logo (Content-ID) siempre va primero, seguido de los archivos
+        // reales del registro — ver laboratorio.envios.js#enviarPorCorreo.
+        attachments: [
+          expect.objectContaining({ cid: 'logo-omega' }),
+          { filename: 'resultados.pdf', path: '/storage/laboratorio/42/x.pdf' },
+        ],
       }),
     );
   });
@@ -54,12 +64,15 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
       destinatario: 'ana@correo.com',
       nombreTutor: 'Ana Ruiz',
       nombreMascota: 'Firulais',
+      fechaSolicitud: '2026-08-27',
+      folioId: 42,
       archivos: [ARCHIVO, otro],
     });
 
     expect(sendMail).toHaveBeenCalledWith(
       expect.objectContaining({
         attachments: [
+          expect.objectContaining({ cid: 'logo-omega' }),
           { filename: 'resultados.pdf', path: '/storage/laboratorio/42/x.pdf' },
           { filename: 'otro.jpg', path: '/x/otro.jpg' },
         ],
@@ -74,6 +87,8 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
       destinatario: 'ana@correo.com',
       nombreTutor: 'Ana Ruiz',
       nombreMascota: 'Firulais',
+      fechaSolicitud: '2026-08-27',
+      folioId: 42,
       archivos: [ARCHIVO],
     });
 
@@ -89,6 +104,8 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
       destinatario: 'ana@correo.com',
       nombreTutor: 'Ana Ruiz',
       nombreMascota: 'Firulais',
+      fechaSolicitud: '2026-08-27',
+      folioId: 42,
       archivos: [ARCHIVO],
     });
 
@@ -109,7 +126,10 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       telefono: '5512345678',
       nombreTutor: 'Ana Ruiz',
       nombreMascota: 'Firulais',
+      folioId: 5,
       archivos: [ARCHIVO],
+      googleCalendarMeetingUrl: 'https://calendar.example/agendar',
+      googleMapsUrl: 'https://maps.example/ubicacion',
     });
 
     expect(resultado).toEqual({ ok: true });
@@ -123,6 +143,10 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
         telefono: '5512345678',
         nombreTutor: 'Ana Ruiz',
         nombreMascota: 'Firulais',
+        folio: '005',
+        calendarUrl: 'https://calendar.example/agendar',
+        mapsUrl: 'https://maps.example/ubicacion',
+        saludo: expect.stringMatching(/^(día|tarde|noche)$/),
         mediaId: 'media-id-1',
         nombreArchivo: 'resultados.pdf',
       }),

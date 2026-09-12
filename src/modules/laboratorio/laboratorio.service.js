@@ -4,6 +4,7 @@ const tutoresService = require('../tutores/tutores.service');
 const doctoresRepository = require('../doctores/doctores.repository');
 const archivos = require('./laboratorio.archivos');
 const envios = require('./laboratorio.envios');
+const env = require('../../config/env');
 
 // Mismo patrón de errores con `.status` que agenda.service.js/doctores.service.js
 // — el controller los atrapa para responder con el mensaje, en vez de un 500
@@ -595,7 +596,11 @@ async function enviarResultados(rawRegistroId, usuarioId) {
           destinatario: registro.propietario_correo,
           nombreTutor,
           nombreMascota: registro.mascota_nombre,
+          fechaSolicitud: registro.fecha_solicitud,
+          folioId: registro.id,
           archivos: archivosParaEnviar,
+          calendarioCitas: env.enlaces.calendarioCitas,
+          googleMapsUrl: env.enlaces.ubicacionMaps,
         })
       : Promise.resolve(null),
     intentos.whatsapp
@@ -603,7 +608,10 @@ async function enviarResultados(rawRegistroId, usuarioId) {
           telefono: registro.propietario_telefono,
           nombreTutor,
           nombreMascota: registro.mascota_nombre,
+          folioId: registro.id,
           archivos: archivosParaEnviar,
+          googleCalendarMeetingUrl: env.enlaces.calendarioCitas,
+          googleMapsUrl: env.enlaces.ubicacionMaps,
         })
       : Promise.resolve(null),
   ]);

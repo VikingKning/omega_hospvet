@@ -64,13 +64,17 @@ describe('whatsapp.envios.subirMedia', () => {
 });
 
 describe('whatsapp.envios.enviarPlantillaResultados', () => {
-  it('manda la plantilla con el encabezado de documento y las 2 variables del cuerpo', async () => {
+  it('manda la plantilla v2 con el encabezado de documento y las 6 variables del cuerpo', async () => {
     global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
 
     await enviarPlantillaResultados({
       telefono: '5512345678',
       nombreTutor: 'Ana Ruiz',
       nombreMascota: 'Firulais',
+      folio: '005',
+      calendarUrl: 'https://calendar.example/agendar',
+      mapsUrl: 'https://maps.example/ubicacion',
+      saludo: 'tarde',
       mediaId: 'media-123',
       nombreArchivo: 'resultados.pdf',
     });
@@ -85,7 +89,7 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
     // prueba, porque Meta no lo reconocía sin el "52" al frente.
     expect(body.to).toBe('525512345678');
     expect(body.type).toBe('template');
-    expect(body.template.name).toBe('resultados_laboratorio_listos');
+    expect(body.template.name).toBe('resultados_laboratorio_listos_v2');
     expect(body.template.components[0]).toEqual({
       type: 'header',
       parameters: [{ type: 'document', document: { id: 'media-123', filename: 'resultados.pdf' } }],
@@ -95,6 +99,10 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
       parameters: [
         { type: 'text', text: 'Ana Ruiz' },
         { type: 'text', text: 'Firulais' },
+        { type: 'text', text: '005' },
+        { type: 'text', text: 'https://calendar.example/agendar' },
+        { type: 'text', text: 'https://maps.example/ubicacion' },
+        { type: 'text', text: 'tarde' },
       ],
     });
   });
@@ -111,6 +119,10 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
         telefono: '5512345678',
         nombreTutor: 'Ana',
         nombreMascota: 'Firulais',
+        folio: '005',
+        calendarUrl: 'https://calendar.example/agendar',
+        mapsUrl: 'https://maps.example/ubicacion',
+        saludo: 'tarde',
         mediaId: 'media-123',
         nombreArchivo: 'resultados.pdf',
       }),

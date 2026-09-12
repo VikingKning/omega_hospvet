@@ -11,14 +11,16 @@ const db = require('../src/config/database');
 const { templatesUrl, authHeaders } = require('../src/config/whatsapp');
 const { nombreMeta } = require('../src/modules/plantillas_whatsapp/plantillas_whatsapp.service');
 
-// 'resultados-laboratorio-listos' se excluye a propósito: necesita un
+// 'resultados-laboratorio-listos-v2' se excluye a propósito: necesita un
 // encabezado de DOCUMENT (el PDF/imagen real de cada envío) que esta
 // registración de solo-texto no sabe construir — registrarla aquí primero
 // "ganaría" el nombre en Meta sin encabezado, y
 // scripts/registrar-plantilla-resultados-laboratorio.js (la que sí arma el
 // encabezado, vía Resumable Upload API) ya no podría crearla. Ver esa
-// migración/script para el registro real de esta plantilla.
-const SLUG_EXCLUIDO_DOCUMENTO = 'resultados-laboratorio-listos';
+// migración/script para el registro real de esta plantilla. (v2, 2026-09-11:
+// la fila vieja 'resultados-laboratorio-listos' ya quedó `activo=false`,
+// así que ya no necesita estar en esta exclusión, pero no está de más).
+const SLUG_EXCLUIDO_DOCUMENTO = 'resultados-laboratorio-listos-v2';
 
 async function main() {
   const plantillas = await db('plantillas_whatsapp')

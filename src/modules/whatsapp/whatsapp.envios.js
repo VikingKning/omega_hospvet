@@ -13,7 +13,11 @@
 // ok; laboratorio.envios.js es quien decide "nunca lanzar" hacia arriba.
 const whatsapp = require('../../config/whatsapp');
 
-const TEMPLATE_NAME = 'resultados_laboratorio_listos';
+// v2 (2026-09-11): rediseño del texto del mensaje — nombre nuevo a
+// propósito, ver scripts/registrar-plantilla-resultados-laboratorio.js y
+// la migración 20260911000003_agregar_plantilla_resultados_laboratorio_
+// listos_v2.js (una plantilla ya aprobada por Meta es inmutable).
+const TEMPLATE_NAME = 'resultados_laboratorio_listos_v2';
 const TEMPLATE_LANGUAGE = 'es_MX';
 
 // `propietarios.telefono` se guarda como 10 dígitos puros, SIN código de
@@ -48,10 +52,20 @@ async function subirMedia(buffer, mimetype, nombreArchivo) {
   return data.id;
 }
 
+// `folio` llega ya formateado (solo el número, ej. "005" — ver idLabel()
+// en laboratorio.envios.js) porque el "LAB-" es texto literal dentro del
+// body de la plantilla, no parte de la variable. `saludo` es "día"/
+// "tarde"/"noche" según la hora de envío en America/Mexico_City (ver
+// saludoPorHora() en laboratorio.envios.js) — se calcula en cada envío,
+// nunca se guarda.
 async function enviarPlantillaResultados({
   telefono,
   nombreTutor,
   nombreMascota,
+  folio,
+  calendarUrl,
+  mapsUrl,
+  saludo,
   mediaId,
   nombreArchivo,
 }) {
@@ -75,6 +89,10 @@ async function enviarPlantillaResultados({
             parameters: [
               { type: 'text', text: nombreTutor },
               { type: 'text', text: nombreMascota },
+              { type: 'text', text: folio },
+              { type: 'text', text: calendarUrl },
+              { type: 'text', text: mapsUrl },
+              { type: 'text', text: saludo },
             ],
           },
         ],
