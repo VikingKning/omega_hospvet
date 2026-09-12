@@ -4161,7 +4161,8 @@ body:has(.app)::after {
   color: var(--text-muted);
 }
 
-.metricas-rango-fechas input[type='date'] {
+.metricas-rango-fechas input[type='date'],
+.metricas-rango-fechas select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -4200,6 +4201,41 @@ body:has(.app)::after {
   font-size: 24px;
   font-weight: 700;
   color: var(--text-dark);
+}
+
+.metricas-kpi-value-text {
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.metricas-kpi-description {
+  display: block;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.metricas-kpis-agenda .metricas-kpi-card {
+  display: grid;
+  grid-template-rows: minmax(24px, auto) 34px auto;
+  align-content: start;
+  row-gap: 3px;
+  box-sizing: border-box;
+}
+
+.metricas-kpis-agenda .metricas-kpi-label {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.metricas-kpis-agenda .metricas-kpi-value {
+  align-self: center;
+  line-height: 1.15;
+}
+
+.metricas-kpis-agenda .metricas-kpi-description {
+  margin: 0;
 }
 
 .metricas-charts {
@@ -4247,6 +4283,11 @@ body:has(.app)::after {
   min-width: 780px;
   gap: 3px;
   align-items: center;
+}
+
+.metricas-heatmap-agenda {
+  grid-template-columns: 76px repeat(11, minmax(42px, 1fr));
+  min-width: 620px;
 }
 
 .metricas-heatmap-corner,

@@ -17,6 +17,7 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const SUFFIX = 'QAMETRICAS';
 
 const SOLO_VER = { username: 'metricas.ver.test', password: 'MetricasVerTest123!' };
+const AGENDA_VER = { username: 'metricas.agenda.test', password: 'MetricasAgendaTest123!' };
 const SIN_PERMISOS = { username: 'metricas.sinpermiso.test', password: 'MetricasSinPermTest123!' };
 
 async function getCsrfToken(agent) {
@@ -42,7 +43,7 @@ async function getMetricasCsrfToken(agent) {
 }
 
 async function cleanup() {
-  const usernames = [SOLO_VER.username, SIN_PERMISOS.username];
+  const usernames = [SOLO_VER.username, AGENDA_VER.username, SIN_PERMISOS.username];
   const usuarioIds = await db('usuarios').whereIn('username', usernames).pluck('id');
   if (usuarioIds.length) {
     await db('usuario_permisos').whereIn('usuario_id', usuarioIds).del();
@@ -77,7 +78,35 @@ async function createTestUser({ username, password }, permissionCodes) {
 beforeAll(async () => {
   await cleanup();
   await createTestUser(SOLO_VER, ['metricas.laboratorios.ver']);
+  await createTestUser(AGENDA_VER, ['metricas.agenda.ver']);
   await createTestUser(SIN_PERMISOS, []);
+});
+
+describe('Métricas de Agenda', () => {
+  it('con metricas.agenda.ver muestra filtros, KPIs y las nueve gráficas solicitadas', async () => {
+    const agent = await loginAs(AGENDA_VER);
+
+    const res = await agent.get('/metricas/agenda.html');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('id="metricas-agenda-filters"');
+    expect(res.text).toContain('name="area"');
+    expect(res.text).toContain('name="doctor"');
+    expect(res.text).toContain('Citas agendadas');
+    expect(res.text).toContain('id="metricasAgendaData"');
+    expect(res.text).toContain("document.getElementById('agendaChartAreaDoctor')");
+    expect(res.text).toContain("document.getElementById('agendaMapaHorarios')");
+    expect(res.text).toContain('href="metricas/agenda.html" class="submenu-link current"');
+  });
+
+  it('sin metricas.agenda.ver redirige a la página principal', async () => {
+    const agent = await loginAs(SIN_PERMISOS);
+
+    const res = await agent.get('/metricas/agenda.html');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
 });
 
 afterAll(async () => {

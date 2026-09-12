@@ -1,4 +1,5 @@
 const service = require('./metricas.service');
+const agendaService = require('./metricas-agenda.service');
 const { generateCsrfToken } = require('../../config/csrf');
 
 // Carga inicial de la página: siempre el rango por defecto (últimos 30
@@ -33,4 +34,28 @@ async function filter(req, res, next) {
   }
 }
 
-module.exports = { pagina, filter };
+async function paginaAgenda(req, res, next) {
+  try {
+    const data = await agendaService.obtenerMetricasAgenda({});
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('metricas-agenda', { ...data, user: req.session.user, csrfToken });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function filterAgenda(req, res, next) {
+  try {
+    const data = await agendaService.obtenerMetricasAgenda(req.body);
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/metricas-agenda-panel', {
+      ...data,
+      user: req.session.user,
+      csrfToken,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { pagina, filter, paginaAgenda, filterAgenda };

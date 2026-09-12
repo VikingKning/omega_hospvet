@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="/">
+<title>Métricas de Agenda | Omega Veterinaria & Estética</title>
+<link rel="icon" type="image/png" href="assets/imgs/icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/main.css">
+<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
+<script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <div class="top-row">
+      <div class="sidebar-header">
+        <img src="assets/imgs/icon.png" alt="Omega Veterinaria & Estética">
+        <span class="sidebar-title">Omega Vet</span>
+        <button id="sidebarToggle" class="sidebar-toggle-btn" type="button" aria-label="Mostrar u ocultar menú">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+      <header class="topbar">
+        <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <h1 class="topbar-title">Métricas de Agenda</h1>
+        <a class="topbar-user" href="mi-perfil.html">
+          <span class="topbar-user-avatar avatar-color-<%= user.avatar %>"><img src="assets/imgs/<%= user.avatar %>.png" alt=""></span>
+          <span class="topbar-user-name"><%= user.nombre %> <%= user.apellidos %></span>
+        </a>
+      </header>
+    </div>
+    <div class="body-row">
+      <div class="nav-backdrop" id="navBackdrop"></div>
+      <%- include('partials/sidebar', { user, currentPage: 'metricas-agenda' }) %>
+      <main class="main-content" id="metricas-agenda-panel">
+        <%- include('partials/metricas-agenda-panel', { rango, areas, doctores, areaSeleccionada, doctorSeleccionado, total, promedioDiario, diaMayorDemanda, promedioDiaMayorDemanda, horarioMayorDemanda, areaMasSolicitada, porcentajeAreaMasSolicitada, porDia, porDiaArea, porDoctor, porDiaSemana, demandaDiaHorario, porEspecie, porDuracion, porAreaDoctor, mapaHorarios, csrfToken }) %>
+      </main>
+    </div>
+  </div>
+<script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
+<script src="js/chart.umd.js" nonce="<%= cspNonce %>"></script>
+<script nonce="<%= cspNonce %>">
+  const agendaPanel = document.getElementById('metricas-agenda-panel');
+  const graficasAgenda = {};
+
+  function destruirGraficasAgenda() {
+    Object.values(graficasAgenda).forEach((chart) => chart?.destroy());
+  }
+
+  function construirGraficasAgenda() {
+    destruirGraficasAgenda();
+    const dataEl = document.getElementById('metricasAgendaData');
+    if (!dataEl) return;
+    const datos = JSON.parse(dataEl.textContent);
+
+    const barras = (elemento, filas, color, horizontal = true) => new Chart(elemento, {
+      type: 'bar',
+      data: { labels: filas.map((f) => f.nombre ?? f.etiqueta), datasets: [{ label: 'Citas', data: filas.map((f) => f.total), backgroundColor: color }] },
+      options: { indexAxis: horizontal ? 'y' : 'x', responsive: true, plugins: { legend: { display: false } }, scales: horizontal ? { x: { beginAtZero: true, ticks: { precision: 0 } } } : { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+
+    const tendencia = document.getElementById('agendaChartTendencia');
+    if (tendencia) graficasAgenda.tendencia = new Chart(tendencia, {
+      type: 'line',
+      data: { labels: datos.porDia.map((f) => f.fecha), datasets: [{ label: 'Citas', data: datos.porDia.map((f) => f.total), borderColor: '#2E5090', backgroundColor: '#E8ECF5', fill: true, tension: 0.3 }] },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+
+    const configuraciones = [
+      ['agendaChartDoctores', 'doctores', datos.porDoctor, '#1E8E3E', true],
+      ['agendaChartDiaSemana', 'diaSemana', datos.porDiaSemana, '#7356A8', false],
+      ['agendaChartEspecies', 'especies', datos.porEspecie, '#F5A623', false],
+      ['agendaChartDuracion', 'duracion', datos.porDuracion, '#3C91A6', false],
+    ];
+    configuraciones.forEach(([id, clave, filas, color, horizontal]) => {
+      const elemento = document.getElementById(id);
+      if (elemento) graficasAgenda[clave] = barras(elemento, filas, color, horizontal);
+    });
+
+    const demandaHorario = document.getElementById('agendaChartDemandaHorario');
+    if (demandaHorario) {
+      const colores = ['#2E5090', '#1E8E3E', '#F5A623', '#7356A8', '#3C91A6', '#C53929', '#557A46'];
+      graficasAgenda.demandaHorario = new Chart(demandaHorario, {
+        type: 'line',
+        data: {
+          labels: Array.from({ length: 24 }, (_, hora) => `${String(hora).padStart(2, '0')}:00`),
+          datasets: datos.demandaDiaHorario.map((dia, indice) => ({ label: dia.etiqueta, data: dia.horas, borderColor: colores[indice], tension: 0.25 })),
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+      });
+    }
+
+    function graficaApilada(elemento, filas, campoSerie, campoEtiqueta) {
+      const etiquetas = [...new Set(filas.map((fila) => fila[campoEtiqueta]))];
+      const series = [...new Set(filas.map((fila) => fila[campoSerie]))];
+      const colores = ['#2E5090', '#1E8E3E', '#F5A623', '#7356A8', '#3C91A6', '#C53929', '#557A46', '#9C6B30'];
+      return new Chart(elemento, {
+        type: 'bar',
+        data: {
+          labels: etiquetas,
+          datasets: series.map((serie, indice) => ({
+            label: serie,
+            data: etiquetas.map((etiqueta) => filas.find((fila) => fila[campoSerie] === serie && fila[campoEtiqueta] === etiqueta)?.total ?? 0),
+            backgroundColor: colores[indice % colores.length],
+          })),
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label(context) {
+                  const total = context.parsed.y;
+                  return `${context.dataset.label}: ${total} ${total === 1 ? 'cita' : 'citas'}`;
+                },
+              },
+            },
+          },
+          scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
+    }
+
+    const diaArea = document.getElementById('agendaChartDiaArea');
+    if (diaArea) graficasAgenda.diaArea = graficaApilada(diaArea, datos.porDiaArea, 'area', 'fecha');
+    const areaDoctor = document.getElementById('agendaChartAreaDoctor');
+    if (areaDoctor) graficasAgenda.areaDoctor = graficaApilada(areaDoctor, datos.porAreaDoctor, 'doctor', 'area');
+
+    const mapa = document.getElementById('agendaMapaHorarios');
+    if (mapa) {
+      const maximo = Math.max(0, ...datos.mapaHorarios.flatMap((dia) => dia.horas));
+      const agregar = (clase, texto) => {
+        const celda = document.createElement('span');
+        celda.className = clase;
+        celda.textContent = texto;
+        mapa.appendChild(celda);
+        return celda;
+      };
+      agregar('metricas-heatmap-corner', 'Día / hora');
+      Array.from({ length: 11 }, (_, indice) => agregar('metricas-heatmap-hour', String(indice + 8).padStart(2, '0')));
+      datos.mapaHorarios.forEach((dia) => {
+        agregar('metricas-heatmap-day', dia.etiqueta);
+        dia.horas.forEach((total, indice) => {
+          const hora = indice + 8;
+          const nivel = total === 0 || maximo === 0 ? 0 : Math.max(1, Math.ceil((total / maximo) * 5));
+          const celda = agregar(`metricas-heatmap-cell metricas-heatmap-level-${nivel}`, total ? String(total) : '');
+          celda.title = `${dia.etiqueta}, ${String(hora).padStart(2, '0')}:00: ${total} ${total === 1 ? 'cita' : 'citas'}`;
+        });
+      });
+    }
+  }
+
+  construirGraficasAgenda();
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target === agendaPanel) construirGraficasAgenda();
+  });
+</script>
+</body>
+</html>

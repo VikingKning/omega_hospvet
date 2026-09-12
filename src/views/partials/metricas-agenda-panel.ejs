@@ -1,0 +1,102 @@
+<form id="metricas-agenda-filters"
+      hx-post="metricas/agenda.html" hx-target="#metricas-agenda-panel" hx-swap="innerHTML"
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+  <div class="lab-toolbar">
+    <div class="metricas-rango-fechas">
+      <label>Desde
+        <input type="date" name="desde" value="<%= rango.desde %>">
+      </label>
+      <label>Hasta
+        <input type="date" name="hasta" value="<%= rango.hasta %>">
+      </label>
+      <label>Área
+        <select name="area">
+          <option value="">Todas las áreas</option>
+          <% areas.forEach((area) => { %>
+            <option value="<%= area.id %>" <%= areaSeleccionada === area.id ? 'selected' : '' %>><%= area.nombre %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>Doctor
+        <select name="doctor">
+          <option value="">Todos los doctores</option>
+          <% doctores.forEach((doctor) => { %>
+            <option value="<%= doctor.id %>" <%= doctorSeleccionado === doctor.id ? 'selected' : '' %>><%= doctor.nombre %></option>
+          <% }) %>
+        </select>
+      </label>
+      <button type="submit" class="btn-primary">Aplicar</button>
+    </div>
+    <div class="toggle-group">
+      <% [7, 30, 90].forEach((dias) => { %>
+        <button type="button" class="toggle-btn"
+                hx-post="metricas/agenda.html" hx-include="#metricas-agenda-filters" hx-target="#metricas-agenda-panel"
+                hx-vals='{"preset":<%= dias %>}'>Últimos <%= dias %> días</button>
+      <% }) %>
+    </div>
+  </div>
+</form>
+
+<div class="metricas-kpis metricas-kpis-agenda">
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Citas agendadas</span>
+    <span class="metricas-kpi-value"><%= total %></span>
+    <span class="metricas-kpi-description">Citas en total</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Promedio diario</span>
+    <span class="metricas-kpi-value"><%= promedioDiario %></span>
+    <span class="metricas-kpi-description">Citas por día</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Día con más demanda</span>
+    <span class="metricas-kpi-value metricas-kpi-value-text"><%= diaMayorDemanda %></span>
+    <span class="metricas-kpi-description">Promedio: <%= promedioDiaMayorDemanda %> <%= promedioDiaMayorDemanda === 1 ? 'cita' : 'citas' %></span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Horario con más demanda</span>
+    <span class="metricas-kpi-value"><%= horarioMayorDemanda %></span>
+    <span class="metricas-kpi-description">Día con más citas</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Área más solicitada</span>
+    <span class="metricas-kpi-value metricas-kpi-value-text"><%= areaMasSolicitada %></span>
+    <span class="metricas-kpi-description"><%= porcentajeAreaMasSolicitada %>% de las citas</span>
+  </div>
+</div>
+
+<% if (total === 0) { %>
+  <div class="lab-table-wrap">
+    <div class="empty-state-panel">
+      <p class="empty-state-title">No hay citas registradas en este rango</p>
+      <p class="empty-state-description">Prueba con otro rango de fechas o restablece los filtros de área y doctor.</p>
+    </div>
+  </div>
+<% } else { %>
+  <div class="metricas-charts">
+    <div class="metricas-chart-card"><h3>Tendencia diaria de citas</h3><canvas id="agendaChartTendencia"></canvas></div>
+    <div class="metricas-chart-card"><h3>Citas por día y área</h3><canvas id="agendaChartDiaArea"></canvas></div>
+    <div class="metricas-chart-card"><h3>Citas por doctor</h3><canvas id="agendaChartDoctores"></canvas></div>
+    <div class="metricas-chart-card"><h3>Citas por día de la semana</h3><canvas id="agendaChartDiaSemana"></canvas></div>
+    <div class="metricas-chart-card"><h3>Demanda por día y horario</h3><canvas id="agendaChartDemandaHorario"></canvas></div>
+    <div class="metricas-chart-card"><h3>Citas por especie en el periodo</h3><canvas id="agendaChartEspecies"></canvas></div>
+    <div class="metricas-chart-card"><h3>Duración de las citas</h3><canvas id="agendaChartDuracion"></canvas></div>
+    <div class="metricas-chart-card"><h3>Citas por área y doctor</h3><canvas id="agendaChartAreaDoctor"></canvas></div>
+    <div class="metricas-chart-card metricas-chart-card-wide">
+      <h3>Mapa de calor de horarios reservados</h3>
+      <p class="metricas-chart-description">Citas registradas de lunes a domingo, entre las 08:00 y las 18:00.</p>
+      <div class="metricas-heatmap-scroll">
+        <div id="agendaMapaHorarios" class="metricas-heatmap metricas-heatmap-agenda" role="img" aria-label="Mapa de calor de citas por día y hora"></div>
+      </div>
+      <div class="metricas-heatmap-legend" aria-hidden="true">
+        <span>Menor demanda</span>
+        <% for (let nivel = 0; nivel <= 5; nivel += 1) { %>
+          <span class="metricas-heatmap-swatch metricas-heatmap-level-<%= nivel %>"></span>
+        <% } %>
+        <span>Mayor demanda</span>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<div id="metricasAgendaData" hidden><%- JSON.stringify({ porDia, porDiaArea, porDoctor, porDiaSemana, demandaDiaHorario, porEspecie, porDuracion, porAreaDoctor, mapaHorarios }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>

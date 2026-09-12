@@ -3,9 +3,9 @@
   const has = (code) => permissions.includes(code);
   // Mismo criterio que configOpen más abajo: cada página REAL del grupo se
   // enumera aparte (nunca un valor genérico 'metricas') — así un link
-  // todavía sin pantalla (WhatsApp/Agenda, href="#") no necesita su propio
-  // valor de currentPage hasta que exista de verdad.
-  const metricasOpen = currentPage === 'metricas-laboratorio';
+  // todavía sin pantalla (WhatsApp, href="#") no necesita su propio valor
+  // de currentPage hasta que exista de verdad.
+  const metricasOpen = currentPage === 'metricas-laboratorio' || currentPage === 'metricas-agenda';
   // US-109: "Mi perfil" no requiere ningún permiso (disponible para
   // cualquier usuario autenticado) y vive dentro de este mismo grupo — el
   // grupo completo tiene que poder mostrarse aunque el usuario no tenga
@@ -124,7 +124,7 @@
           </a>
         <% } %>
         <% if (has('metricas.agenda.ver')) { %>
-          <a href="#" class="submenu-link">
+          <a href="metricas/agenda.html" class="submenu-link<%= currentPage === 'metricas-agenda' ? ' current' : '' %>">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
             <span>Agenda</span>
           </a>

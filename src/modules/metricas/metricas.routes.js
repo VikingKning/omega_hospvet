@@ -29,4 +29,21 @@ router.post(
   controller.filter,
 );
 
+router.get(
+  '/metricas/agenda.html',
+  requireAuth,
+  requirePermission('metricas.agenda.ver'),
+  attachSidebarAreas,
+  controller.paginaAgenda,
+);
+
+router.post(
+  '/metricas/agenda.html',
+  requireAuth,
+  requirePermission('metricas.agenda.ver'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.filterAgenda,
+);
+
 module.exports = router;
