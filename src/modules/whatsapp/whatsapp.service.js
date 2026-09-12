@@ -42,6 +42,7 @@
 const claude = require('../../config/claude');
 const whatsapp = require('../../config/whatsapp');
 const logger = require('../../config/logger');
+const { normalizarFormatoWhatsapp } = require('../../../public/js/whatsapp-format');
 const plantillasRepository = require('../plantillas_whatsapp/plantillas_whatsapp.repository');
 const repository = require('./whatsapp.repository');
 
@@ -84,6 +85,7 @@ async function auditarEnvio(datos) {
 
 async function enviarRespuesta(telefono, texto, { plantillaId, plantilla }) {
   const destinatarioTelefono = normalizarNumeroSalida(telefono);
+  const textoNormalizado = normalizarFormatoWhatsapp(texto);
   let res;
   let data;
   try {
@@ -94,7 +96,7 @@ async function enviarRespuesta(telefono, texto, { plantillaId, plantilla }) {
         messaging_product: 'whatsapp',
         to: destinatarioTelefono,
         type: 'text',
-        text: { body: texto },
+        text: { body: textoNormalizado },
       }),
     });
     data = typeof res.json === 'function' ? await res.json() : {};

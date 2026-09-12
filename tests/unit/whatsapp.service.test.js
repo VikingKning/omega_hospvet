@@ -128,6 +128,24 @@ describe('whatsapp.service.procesarMensajeEntrante — clasificación en una sol
     );
   });
 
+  it('normaliza al enviar el formato inválido guardado por versiones anteriores del editor', async () => {
+    const plantillaLegada = {
+      id: 3,
+      intencion: 'urgencia_por_ahogamiento',
+      slug: 'urgencia-por-ahogamiento',
+      texto_respuesta: '_*No respira: *_cierra el hocico.',
+    };
+    plantillasRepository.findActivasParaClasificar.mockResolvedValue([
+      ...PLANTILLAS_ACTIVAS,
+      plantillaLegada,
+    ]);
+    mockClasificarMensaje(plantillaLegada.intencion);
+
+    await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'se está ahogando' });
+
+    expect(textoEnviado()).toBe('_*No respira:*_ cierra el hocico.');
+  });
+
   it.each([
     ['emergencia', PLANTILLA_EMERGENCIA],
     ['agendar_cita', PLANTILLA_AGENDAR_CITA],

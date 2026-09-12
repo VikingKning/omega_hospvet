@@ -444,6 +444,21 @@ describe('plantillas_whatsapp.service.editar (US-613, ampliada: intención/slug 
     });
   });
 
+  it('normaliza antes de guardar el espacio incluido accidentalmente en formatos combinados', async () => {
+    await editar({
+      id: 5,
+      texto_respuesta: '_*No respira: *_cierra el hocico.',
+      activo: 'true',
+      usuarioId: 2,
+    });
+
+    expect(repository.update).toHaveBeenCalledWith(5, {
+      texto_respuesta: '_*No respira:*_ cierra el hocico.',
+      activo: true,
+      usuarioId: 2,
+    });
+  });
+
   it('el switch Activo ausente (desmarcado) se interpreta como false, no como error', async () => {
     await editar({
       id: 5,

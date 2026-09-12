@@ -1,5 +1,6 @@
 const logger = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
+const { normalizarFormatoWhatsapp } = require('../../../public/js/whatsapp-format');
 const repository = require('./plantillas_whatsapp.repository');
 
 // Mismo patrón de errores con `.status` que areas.service.js — el
@@ -260,7 +261,11 @@ async function crear({
   usuarioId,
 }) {
   const intencion = validateTexto(rawIntencion, 'Intención', INTENCION_MAX_LENGTH);
-  const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta', TEXTO_RESPUESTA_MAX_LENGTH);
+  const texto_respuesta = validateTexto(
+    normalizarFormatoWhatsapp(rawTexto),
+    'Texto de respuesta',
+    TEXTO_RESPUESTA_MAX_LENGTH,
+  );
   const categoria_meta = rawCategoriaMeta || CATEGORIA_TEXTO_LIBRE;
 
   const existing = await findDuplicado(intencion);
@@ -332,7 +337,11 @@ async function editar({
   esPredeterminada,
   usuarioId,
 }) {
-  const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta', TEXTO_RESPUESTA_MAX_LENGTH);
+  const texto_respuesta = validateTexto(
+    normalizarFormatoWhatsapp(rawTexto),
+    'Texto de respuesta',
+    TEXTO_RESPUESTA_MAX_LENGTH,
+  );
   const activo = esPredeterminada ? true : parseActivo(rawActivo);
 
   await repository.update(id, { texto_respuesta, activo, usuarioId });

@@ -89,6 +89,7 @@
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
+<script src="js/whatsapp-format.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
   // Modal de alta/edición (US-613). El contenido de #plantillaFormModalBody
   // lo reemplaza HTMX en cada apertura/reintento, así que los botones de
@@ -135,36 +136,7 @@
   // aunque ya no se ofrece como control de edición.
   const CODE_A_MARCADOR = { 'wa-mono': '```', 'wa-code': '`' };
   const ETIQUETA_A_MARCADOR_INLINE = { STRONG: '*', B: '*', EM: '_', I: '_', S: '~', STRIKE: '~', DEL: '~' };
-
-  // Escapa HTML antes de insertar texto plano como innerHTML — necesario
-  // porque el texto guardado es texto plano de verdad (puede traer < > &
-  // sueltos) y este editor jamás debe interpretarlo como marcado.
-  function escaparHtml(texto) {
-    const div = document.createElement('div');
-    div.textContent = texto;
-    return div.innerHTML;
-  }
-
-  // Convierte el marcado inline de UNA línea (*negrita*, _cursiva_,
-  // ~tachado~, ```mono```, `código`) a HTML — deliberadamente sin soportar
-  // combinaciones anidadas (ej. negrita+cursiva a la vez): cubre el caso
-  // real de una plantilla de respuesta corta, sin la complejidad de un
-  // parser de Markdown completo. El orden importa: monoespaciado (```)
-  // ANTES que código en línea (`), si no el regex de código en línea
-  // partiría los marcadores triples a la mitad.
-  function parsearInlineWhatsapp(texto) {
-    let html = escaparHtml(texto);
-    html = html.replace(/```([^`]+)```/g, '<code class="wa-mono">$1</code>');
-    html = html.replace(/`([^`]+)`/g, '<code class="wa-code">$1</code>');
-    // Los límites evitan interpretar como cursiva nombres técnicos como
-    // resultados_laboratorio_listos_v2 o fragmentos similares de una URL.
-    const limiteInicial = '(^|[\\s\\(\\[\\{>"\'¿¡])';
-    const limiteFinal = '(?=$|[\\s\\)\\]\\}<"\'.,!?;:])';
-    html = html.replace(new RegExp(`${limiteInicial}\\*([^*]+)\\*${limiteFinal}`, 'g'), '$1<strong>$2</strong>');
-    html = html.replace(new RegExp(`${limiteInicial}_([^_]+)_${limiteFinal}`, 'g'), '$1<em>$2</em>');
-    html = html.replace(new RegExp(`${limiteInicial}~([^~]+)~${limiteFinal}`, 'g'), '$1<s>$2</s>');
-    return html;
-  }
+  const { envolverConMarcadorWhatsapp, parsearInlineWhatsapp } = window.WhatsappFormat;
 
   // Texto plano (con la sintaxis real de WhatsApp) -> HTML del editor.
   // Agrupa renglones consecutivos de lista. Las citas se conservan como
@@ -231,11 +203,11 @@
     if (nodo.nodeName === 'BR') return '\n';
     if (nodo.nodeName === 'CODE') {
       const marcador = CODE_A_MARCADOR[nodo.className] || '`';
-      return `${marcador}${nodo.textContent}${marcador}`;
+      return envolverConMarcadorWhatsapp(nodo.textContent, marcador);
     }
     if (ETIQUETA_A_MARCADOR_INLINE[nodo.nodeName]) {
       const marcador = ETIQUETA_A_MARCADOR_INLINE[nodo.nodeName];
-      return `${marcador}${serializarInline(nodo)}${marcador}`;
+      return envolverConMarcadorWhatsapp(serializarInline(nodo), marcador);
     }
     // Cualquier otra etiqueta que el navegador haya metido sola
     // (ej. un <span> al pegar texto de otro lado) se "desenvuelve":
