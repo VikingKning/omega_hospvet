@@ -344,6 +344,8 @@ describe('POST /metricas/laboratorio.html (rango de fechas + agregados)', () => 
     expect(res.status).toBe(200);
     expect(res.text).toContain('metricas-kpi-value">3</span>'); // Total de órdenes
     expect(res.text).toContain('metricas-kpi-value">1</span>'); // cada estado tiene exactamente 1
+    expect(res.text).toContain('Órdenes en total');
+    expect(res.text).toContain('33% de las órdenes');
   });
 
   it('AC: los tiempos promedio de atención reflejan las horas exactas del fixture', async () => {

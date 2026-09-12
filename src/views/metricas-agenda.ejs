@@ -48,8 +48,20 @@
     Object.values(graficasAgenda).forEach((chart) => chart?.destroy());
   }
 
+  function ajustarValoresTextoAgenda() {
+    document.querySelectorAll('#metricas-agenda-panel [data-fit-kpi-text]').forEach((elemento) => {
+      elemento.style.fontSize = '';
+      let tamanio = Number.parseFloat(window.getComputedStyle(elemento).fontSize);
+      while (elemento.scrollWidth > elemento.clientWidth && tamanio > 12) {
+        tamanio -= 1;
+        elemento.style.fontSize = `${tamanio}px`;
+      }
+    });
+  }
+
   function construirGraficasAgenda() {
     destruirGraficasAgenda();
+    ajustarValoresTextoAgenda();
     const dataEl = document.getElementById('metricasAgendaData');
     if (!dataEl) return;
     const datos = JSON.parse(dataEl.textContent);
@@ -156,6 +168,7 @@
   document.body.addEventListener('htmx:afterSwap', (event) => {
     if (event.detail.target === agendaPanel) construirGraficasAgenda();
   });
+  window.addEventListener('resize', ajustarValoresTextoAgenda);
 </script>
 </body>
 </html>

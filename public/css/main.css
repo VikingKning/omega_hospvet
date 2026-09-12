@@ -4204,8 +4204,9 @@ body:has(.app)::after {
 }
 
 .metricas-kpi-value-text {
-  font-size: 17px;
+  font-size: 24px;
   line-height: 1.25;
+  white-space: nowrap;
 }
 
 .metricas-kpi-description {
@@ -4218,9 +4219,10 @@ body:has(.app)::after {
 
 .metricas-kpis-agenda .metricas-kpi-card {
   display: grid;
-  grid-template-rows: minmax(24px, auto) 34px auto;
-  align-content: start;
-  row-gap: 3px;
+  grid-template-rows: minmax(18px, auto) 32px auto;
+  align-items: start;
+  min-width: 180px;
+  row-gap: 2px;
   box-sizing: border-box;
 }
 
@@ -4230,12 +4232,31 @@ body:has(.app)::after {
 }
 
 .metricas-kpis-agenda .metricas-kpi-value {
-  align-self: center;
+  align-self: start;
   line-height: 1.15;
 }
 
 .metricas-kpis-agenda .metricas-kpi-description {
   margin: 0;
+}
+
+.metricas-kpis-laboratorio .metricas-kpi-card {
+  display: grid;
+  grid-template-rows: minmax(18px, auto) 32px auto;
+  align-items: start;
+  min-width: 180px;
+  row-gap: 2px;
+  box-sizing: border-box;
+}
+
+.metricas-kpis-laboratorio .metricas-kpi-label {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.metricas-kpis-laboratorio .metricas-kpi-value {
+  align-self: start;
+  line-height: 1.15;
 }
 
 .metricas-charts {

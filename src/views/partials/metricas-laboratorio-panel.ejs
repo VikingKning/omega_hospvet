@@ -30,28 +30,33 @@ function horasLabel(horas) {
   </div>
 </form>
 
-<div class="metricas-kpis">
+<div class="metricas-kpis metricas-kpis-laboratorio">
   <div class="metricas-kpi-card">
     <span class="metricas-kpi-label">Total de órdenes</span>
     <span class="metricas-kpi-value"><%= total %></span>
+    <span class="metricas-kpi-description">Órdenes en total</span>
   </div>
   <% porEstado.forEach((fila) => { %>
     <div class="metricas-kpi-card">
       <span class="metricas-kpi-label"><%= fila.etiqueta %></span>
       <span class="metricas-kpi-value"><%= fila.total %></span>
+      <span class="metricas-kpi-description"><%= total ? Math.round((fila.total / total) * 100) : 0 %>% de las órdenes</span>
     </div>
   <% }) %>
   <div class="metricas-kpi-card">
-    <span class="metricas-kpi-label">Pendiente → Cargado (prom.)</span>
+    <span class="metricas-kpi-label">Pendiente → Cargado</span>
     <span class="metricas-kpi-value"><%= horasLabel(tiempos.horasPendienteACargado) %></span>
+    <span class="metricas-kpi-description">Transición promedio</span>
   </div>
   <div class="metricas-kpi-card">
-    <span class="metricas-kpi-label">Cargado → Enviado (prom.)</span>
+    <span class="metricas-kpi-label">Cargado → Enviado</span>
     <span class="metricas-kpi-value"><%= horasLabel(tiempos.horasCargadoAEnviado) %></span>
+    <span class="metricas-kpi-description">Transición promedio</span>
   </div>
   <div class="metricas-kpi-card">
-    <span class="metricas-kpi-label">Total: Pendiente → Enviado (prom.)</span>
+    <span class="metricas-kpi-label">Total: Pendiente → Enviado</span>
     <span class="metricas-kpi-value"><%= horasLabel(tiempos.horasPendienteAEnviado) %></span>
+    <span class="metricas-kpi-description">Transición promedio</span>
   </div>
 </div>
 
