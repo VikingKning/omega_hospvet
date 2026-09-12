@@ -391,6 +391,30 @@ describe('GET /plantillas/nuevo, /:id/editar y /:id/ver (US-613 — formulario, 
     expect(res.text).not.toContain('name="intencion"');
   });
 
+  // El editor visible conserva la selección y el textarea oculto recibe
+  // la sintaxis de WhatsApp justo antes del submit.
+  it('AC: el formulario de alta trae el editor visual, los 7 formatos y el panel flotante de emoticonos', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/plantillas/nuevo');
+
+    expect(res.text).toContain('data-formato="negrita"');
+    expect(res.text).toContain('data-formato="cursiva"');
+    expect(res.text).toContain('data-formato="tachado"');
+    expect(res.text).toContain('data-formato="monoespaciado"');
+    expect(res.text).not.toContain('data-formato="codigo"');
+    expect(res.text).toContain('data-formato="lista"');
+    expect(res.text).toContain('data-formato="numerada"');
+    expect(res.text).toContain('data-formato="cita"');
+    expect(res.text).toContain('id="plantillaEmojiToggle"');
+    expect(res.text).toContain('id="plantillaEmojiPanel" hidden');
+    expect(res.text).not.toContain('id="plantillaEmojiSelect"');
+    expect(res.text).toContain('id="plantillaTextoEditor" contenteditable="true"');
+    expect(res.text).toContain('id="plantillaEditorError" hidden');
+    expect(res.text).toContain('id="plantillaTextoRespuesta"');
+    expect(res.text).not.toContain('id="plantillaTextoRespuesta" hidden required');
+  });
+
   it('un usuario sin plantillas.crear no puede abrir el formulario de alta', async () => {
     const agent = await loginAs(SOLO_EDITAR_USER);
 
@@ -418,8 +442,22 @@ describe('GET /plantillas/nuevo, /:id/editar y /:id/ver (US-613 — formulario, 
     expect(res.text).toContain('Detalle de la plantilla');
     expect(res.text).toContain(`value="Formulario ${SUFFIX}"`);
     expect(res.text).toContain('Texto original de la plantilla.');
+    expect(res.text).toContain('data-whatsapp-preview');
+    expect(res.text).toContain('data-whatsapp-preview-source');
     expect(res.text).toContain('value="0"'); // veces_usada
     expect(res.text).toContain('value="En revisión"'); // aprobado_meta=false por default
+  });
+
+  // Migración 20260912000001: categoria_meta default 'UTILITY' para toda
+  // fila ya existente — coincide con lo que de verdad se manda hoy a Meta
+  // (category: 'UTILITY' hardcodeado en plantillas_whatsapp.service.js).
+  it('AC: el detalle trae "Categoría Meta" con la etiqueta legible de la categoría real', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/plantillas/${plantillaId}/ver`);
+
+    expect(res.text).toContain('Categoría Meta');
+    expect(res.text).toContain('value="Utility"');
   });
 
   it('un usuario con solo plantillas.ver SÍ puede abrir el detalle (a diferencia de editar, que exige plantillas.editar)', async () => {

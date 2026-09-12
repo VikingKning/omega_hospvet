@@ -475,7 +475,22 @@
           <h2 id="labEnviarModalTitulo">Resultados enviados</h2>
           <button class="modal-close-btn" type="button" id="labEnviarModalClose" aria-label="Cerrar">&times;</button>
         </div>
+        <%
+        // Pedido explícito del usuario: antes correo y WhatsApp se
+        // anunciaban con un solo párrafo ("Resultados enviados por correo.
+        // WhatsApp: Authentication Error"), difícil de leer de un vistazo —
+        // ahora cada canal intentado es su propia fila con ícono de
+        // éxito/error (ver renderCanalesEnvio() más abajo). #labEnviarModalMensaje
+        // se conserva aparte para el caso de una falla TOTAL sin desglose
+        // por canal (error genérico del servidor o de red, ver
+        // enviarResultados() más abajo) — nunca se muestran los dos a la
+        // vez, uno de los dos siempre queda vacío.
+        %>
         <p id="labEnviarModalMensaje"></p>
+        <div class="lab-envio-resultado-lista" id="labEnviarModalCanales"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-primary" id="labEnviarModalCerrar">Cerrar</button>
+        </div>
       </div>
     </div>
 
@@ -1685,35 +1700,77 @@
       const enviarModal = document.getElementById('labEnviarModalBackdrop');
       const enviarModalTitulo = document.getElementById('labEnviarModalTitulo');
       const enviarModalMensaje = document.getElementById('labEnviarModalMensaje');
+      const enviarModalCanales = document.getElementById('labEnviarModalCanales');
 
-      // Arma el título/mensaje final a partir de { correo, whatsapp }
-      // ({intentado, enviado, error} cada uno) — pedido explícito del
-      // usuario: "al final anunciar al usuario si se mandaron
-      // correctamente y por qué medio".
+      const ICONO_EXITO =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>';
+      const ICONO_ERROR =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M14.5 9.5l-5 5M9.5 9.5l5 5"/></svg>';
+
+      // Pedido explícito del usuario: antes correo y WhatsApp se
+      // anunciaban en un solo párrafo ("Resultados enviados por correo.
+      // WhatsApp: Authentication Error"), difícil de leer de un vistazo —
+      // arma una fila POR CANAL intentado, con su propio ícono de éxito/
+      // error (ver renderCanalesEnvio()). Un canal nunca intentado (ej. el
+      // tutor no tiene correo registrado) no genera fila, igual que antes.
       function resumenEnvio(resultado) {
-        const exitosos = [];
-        if (resultado.correo?.enviado) exitosos.push('correo');
-        if (resultado.whatsapp?.enviado) exitosos.push('WhatsApp');
-
-        const fallas = [];
-        if (resultado.correo?.intentado && !resultado.correo.enviado) {
-          fallas.push(`Correo: ${resultado.correo.error || 'no se pudo enviar.'}`);
+        const filas = [];
+        if (resultado.correo?.intentado) {
+          filas.push({
+            canal: 'Correo',
+            exito: Boolean(resultado.correo.enviado),
+            detalle: resultado.correo.enviado
+              ? 'Enviado correctamente.'
+              : resultado.correo.error || 'No se pudo enviar.',
+          });
         }
-        if (resultado.whatsapp?.intentado && !resultado.whatsapp.enviado) {
-          fallas.push(`WhatsApp: ${resultado.whatsapp.error || 'no se pudo enviar.'}`);
+        if (resultado.whatsapp?.intentado) {
+          filas.push({
+            canal: 'WhatsApp',
+            exito: Boolean(resultado.whatsapp.enviado),
+            detalle: resultado.whatsapp.enviado
+              ? 'Enviado correctamente.'
+              : resultado.whatsapp.error || 'No se pudo enviar.',
+          });
         }
-
-        if (exitosos.length === 0) {
-          return {
-            titulo: 'No se pudo enviar',
-            mensaje: fallas.join(' ') || 'No se pudo enviar por ningún medio.',
-          };
-        }
-        const exito = `Resultados enviados por ${exitosos.join(' y ')}.`;
+        const huboExito = filas.some((fila) => fila.exito);
         return {
-          titulo: 'Resultados enviados',
-          mensaje: fallas.length ? `${exito} ${fallas.join(' ')}` : exito,
+          titulo: huboExito ? 'Resultados enviados' : 'No se pudo enviar',
+          filas,
         };
+      }
+
+      function renderCanalesEnvio(filas) {
+        enviarModalCanales.innerHTML = filas
+          .map(
+            (fila) => `
+              <div class="lab-envio-resultado-fila lab-envio-resultado-${fila.exito ? 'exito' : 'error'}">
+                <span class="lab-envio-resultado-icono">${fila.exito ? ICONO_EXITO : ICONO_ERROR}</span>
+                <span class="lab-envio-resultado-texto">
+                  <strong>${escapeHtml(fila.canal)}</strong>
+                  <span>${escapeHtml(fila.detalle)}</span>
+                </span>
+              </div>`,
+          )
+          .join('');
+      }
+
+      // Un solo mensaje genérico (falla TOTAL, sin desglose por canal —
+      // error del servidor o de red) vs. el desglose por canal de arriba:
+      // nunca se muestran los dos al mismo tiempo, así que cada camino
+      // limpia el otro contenedor antes de abrir el modal.
+      function mostrarResultadoGenerico(titulo, mensaje) {
+        enviarModalTitulo.textContent = titulo;
+        enviarModalMensaje.textContent = mensaje;
+        enviarModalCanales.innerHTML = '';
+        enviarModal.classList.add('open');
+      }
+
+      function mostrarResultadoPorCanal(titulo, filas) {
+        enviarModalTitulo.textContent = titulo;
+        enviarModalMensaje.textContent = '';
+        renderCanalesEnvio(filas);
+        enviarModal.classList.add('open');
       }
 
       // Pedido explícito del usuario: el modal de "Enviando resultados..."
@@ -1742,16 +1799,12 @@
           }
           const data = await res.json().catch(() => ({}));
           if (!res.ok) {
-            enviarModalTitulo.textContent = 'No se pudo enviar';
-            enviarModalMensaje.textContent = data.error || 'Ocurrió un error inesperado.';
-            enviarModal.classList.add('open');
+            mostrarResultadoGenerico('No se pudo enviar', data.error || 'Ocurrió un error inesperado.');
             return;
           }
 
-          const { titulo, mensaje } = resumenEnvio(data);
-          enviarModalTitulo.textContent = titulo;
-          enviarModalMensaje.textContent = mensaje;
-          enviarModal.classList.add('open');
+          const { titulo, filas } = resumenEnvio(data);
+          mostrarResultadoPorCanal(titulo, filas);
 
           if (data.correo?.enviado || data.whatsapp?.enviado) {
             const badge = document.getElementById('labEstadoBadge');
@@ -1769,9 +1822,7 @@
           // mismo archivo en envíos posteriores").
         } catch {
           ocultarLoaderGlobal();
-          enviarModalTitulo.textContent = 'No se pudo enviar';
-          enviarModalMensaje.textContent = 'No se pudo conectar con el servidor.';
-          enviarModal.classList.add('open');
+          mostrarResultadoGenerico('No se pudo enviar', 'No se pudo conectar con el servidor.');
         }
       }
 
@@ -1780,6 +1831,9 @@
         enviarResultados();
       });
       document.getElementById('labEnviarModalClose').addEventListener('click', () => {
+        enviarModal.classList.remove('open');
+      });
+      document.getElementById('labEnviarModalCerrar').addEventListener('click', () => {
         enviarModal.classList.remove('open');
       });
       enviarModal.addEventListener('click', (event) => {

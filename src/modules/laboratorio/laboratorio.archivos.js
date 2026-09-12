@@ -6,8 +6,10 @@
 // por una ruta propia autenticada (laboratorio.controller.js#descargarArchivo),
 // nunca por static serving directo.
 const fs = require('fs/promises');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 const { PDFDocument } = require('pdf-lib');
 const config = require('../../config/env');
 
@@ -32,13 +34,83 @@ const TIPOS_PERMITIDOS = new Set([
   'video/webm',
 ]);
 
-// pdf-lib solo puede EMBEBER jpeg/png de verdad (webp no tiene soporte
-// nativo en la librería, un video no se puede convertir a página de PDF, y
-// un .doc/.docx tampoco — pdf-lib no interpreta el formato de Word) — esos
-// tipos siguen siendo válidos como archivo ÚNICO (se guardan tal cual, sin
-// fusionar), pero no pueden combinarse con otros archivos en el mismo
-// lote.
-const TIPOS_FUSIONABLES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+// pdf-lib solo puede EMBEBER jpeg/png/PDF de verdad (webp no tiene soporte
+// nativo en la librería, y un video no se puede convertir a página de PDF)
+// — esos 2 tipos siguen siendo válidos como archivo ÚNICO (se guardan tal
+// cual, sin fusionar), pero no pueden combinarse con otros archivos en el
+// mismo lote. doc/docx SÍ se pueden fusionar (pedido explícito del
+// usuario) pese a que pdf-lib tampoco los interpreta directo: se
+// convierten a PDF primero vía LibreOffice headless (ver
+// convertirWordAPdf) y de ahí se fusionan como cualquier PDF.
+const TIPOS_FUSIONABLES = new Set([
+  'image/jpeg',
+  'image/png',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
+// LibreOffice headless es una dependencia del SISTEMA OPERATIVO del
+// servidor (no un paquete npm) — instalar `libreoffice` (o al menos
+// `libreoffice-writer`) es requisito para poder combinar doc/docx en el
+// PDF consolidado; ver README (sección Deploy). Cada conversión usa su
+// propio perfil de usuario aislado (`-env:UserInstallation`) para poder
+// correr varias en paralelo sin que se bloqueen entre sí (soffice se
+// niega a compartir un mismo perfil entre procesos concurrentes) —
+// confirmado en vivo. El timeout evita que un documento problemático deje
+// la petición colgada indefinidamente.
+const LIBREOFFICE_TIMEOUT_MS = 60_000;
+
+async function convertirWordAPdf(buffer, nombreOriginal) {
+  const extension = path.extname(nombreOriginal).toLowerCase() || '.docx';
+  const carpetaTemp = await fs.mkdtemp(path.join(os.tmpdir(), 'omega-lab-word-'));
+  const rutaEntrada = path.join(carpetaTemp, `documento${extension}`);
+  const rutaPerfil = path.join(carpetaTemp, 'perfil');
+
+  try {
+    await fs.writeFile(rutaEntrada, buffer);
+    await new Promise((resolve, reject) => {
+      execFile(
+        'soffice',
+        [
+          '--headless',
+          '--norestore',
+          `-env:UserInstallation=file://${rutaPerfil}`,
+          '--convert-to',
+          'pdf:writer_pdf_Export',
+          '--outdir',
+          carpetaTemp,
+          rutaEntrada,
+        ],
+        { timeout: LIBREOFFICE_TIMEOUT_MS },
+        (err) => (err ? reject(err) : resolve()),
+      );
+    });
+    return await fs.readFile(path.join(carpetaTemp, 'documento.pdf'));
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      // No es culpa del usuario ni de su archivo — el servidor no tiene
+      // LibreOffice instalado. Error normal (500), no ArchivoValidationError.
+      throw new Error(
+        'LibreOffice no está instalado en el servidor — no se puede convertir documentos de Word a PDF.',
+        { cause: err },
+      );
+    }
+    throw new ArchivoValidationError(
+      `No se pudo convertir "${nombreOriginal}" a PDF. Verifica que el documento no esté dañado.`,
+      { cause: err },
+    );
+  } finally {
+    // Limpieza de mejor esfuerzo, mismo criterio que eliminarFisico() más
+    // abajo — nunca debe tapar el error real que se esté propagando.
+    await fs.rm(carpetaTemp, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+const TIPOS_WORD = new Set([
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
 
 // archivos_laboratorio no guarda el mimetype (nunca hizo falta: la
 // descarga autenticada deja que Express lo infiera de la extensión al
@@ -67,8 +139,8 @@ function mimetypeDeArchivo(nombreOriginal) {
 }
 
 class ArchivoValidationError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(message, options) {
+    super(message, options);
     this.status = 400;
   }
 }
@@ -86,7 +158,7 @@ function validarArchivos(files) {
     const noFusionable = files.find((file) => !TIPOS_FUSIONABLES.has(file.mimetype));
     if (noFusionable) {
       throw new ArchivoValidationError(
-        `"${noFusionable.originalname}" no se puede combinar con otros archivos en un solo PDF (solo JPG, PNG o PDF) — sube ese archivo solo.`,
+        `"${noFusionable.originalname}" no se puede combinar con otros archivos en un solo PDF (solo JPG, PNG, PDF, DOC o DOCX) — sube ese archivo solo.`,
       );
     }
   }
@@ -95,14 +167,22 @@ function validarArchivos(files) {
 async function fusionarEnPdf(files) {
   const pdf = await PDFDocument.create();
   for (const file of files) {
-    // new Uint8Array(...) a propósito, no file.buffer tal cual: pdf-lib
+    // Un doc/docx no lo entiende pdf-lib — se convierte a PDF con
+    // LibreOffice primero (ver convertirWordAPdf) y de ahí en adelante se
+    // trata exactamente igual que un PDF que ya venía como tal.
+    const esWord = TIPOS_WORD.has(file.mimetype);
+    const bufferPdfOrigen = esWord
+      ? await convertirWordAPdf(file.buffer, file.originalname)
+      : file.buffer;
+
+    // new Uint8Array(...) a propósito, no el Buffer tal cual: pdf-lib
     // espera un Uint8Array "puro" — un Buffer de Node lo ES (hereda de
     // Uint8Array), pero un `instanceof` de otra realm/VM lo puede rechazar
     // (confirmado en vivo: fallaba con "SOI not found" dentro de Jest,
     // nunca en Node normal, con los mismos bytes) — este wrap es inocuo en
     // producción y evita ese caso raro en cualquier entorno.
-    const bytes = new Uint8Array(file.buffer);
-    if (file.mimetype === 'application/pdf') {
+    const bytes = new Uint8Array(bufferPdfOrigen);
+    if (esWord || file.mimetype === 'application/pdf') {
       const origen = await PDFDocument.load(bytes);
       const paginas = await pdf.copyPages(origen, origen.getPageIndices());
       paginas.forEach((pagina) => pdf.addPage(pagina));

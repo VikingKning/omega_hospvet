@@ -6,43 +6,71 @@
 // dentro del contenedor tras el swap de HTMX), y los ids
 // plantillaFormClose/plantillaFormCancel ya tienen su delegación de clicks
 // puesta ahí — no hace falta JS nuevo.
+//
+// Pedido explícito del usuario: 2 columnas en vez de una lista vertical de
+// 6 campos apilados (.profile-form-row, mismo patrón ya usado en
+// perfil-form.ejs) — el modal es más ancho a propósito
+// (#plantillaFormModalBody trae .modal-card-wide, ver plantillas.ejs).
 %>
 <div class="modal-header">
   <h2>Detalle de la plantilla</h2>
   <button class="modal-close-btn" type="button" id="plantillaFormClose" aria-label="Cerrar">&times;</button>
 </div>
 <form class="modal-form">
-  <label>
-    Intención
-    <input type="text" value="<%= plantilla.intencion %>" readonly disabled>
-  </label>
-  <label>
-    Slug (para el LLM)
-    <input type="text" value="<%= plantilla.slug %>" readonly disabled>
-  </label>
-  <label>
-    Texto de respuesta
-    <textarea rows="4" readonly disabled><%= plantilla.texto_respuesta %></textarea>
-  </label>
-  <label>
-    Estado
-    <input type="text" value="<%= plantilla.activo ? 'Activo' : 'Inactivo' %>" readonly disabled>
-  </label>
-  <label>
-    Estado en Meta
-    <%
-      // Igual que en la tabla: inactiva no se manda a Meta, así que
-      // "Aprobado"/"En revisión" no aplica — mismas etiquetas que
-      // plantillas-panel.ejs (coinciden con el texto que usa Meta en su
-      // propio panel).
-      const estadoMeta = !plantilla.activo ? 'N/A' : plantilla.aprobado_meta ? 'Aprobado' : 'En revisión';
-    %>
-    <input type="text" value="<%= estadoMeta %>" readonly disabled>
-  </label>
-  <label>
-    Veces utilizada
-    <input type="text" value="<%= plantilla.veces_usada %>" readonly disabled>
-  </label>
+  <div class="profile-form-row">
+    <label>
+      Intención
+      <input type="text" value="<%= plantilla.intencion %>" readonly disabled>
+    </label>
+    <label>
+      Slug (para el LLM)
+      <input type="text" value="<%= plantilla.slug %>" readonly disabled>
+    </label>
+  </div>
+  <div class="profile-form-row">
+    <label>
+      Estado
+      <input type="text" value="<%= plantilla.activo ? 'Activo' : 'Inactivo' %>" readonly disabled>
+    </label>
+    <label>
+      Veces utilizada
+      <input type="text" value="<%= plantilla.veces_usada %>" readonly disabled>
+    </label>
+  </div>
+  <div class="profile-form-row">
+    <label>
+      Estado en Meta
+      <%
+        // Igual que en la tabla: inactiva no se manda a Meta, así que
+        // "Aprobado"/"En revisión" no aplica — mismas etiquetas que
+        // plantillas-panel.ejs (coinciden con el texto que usa Meta en su
+        // propio panel).
+        const estadoMeta = !plantilla.activo ? 'N/A' : plantilla.aprobado_meta ? 'Aprobado' : 'En revisión';
+      %>
+      <input type="text" value="<%= estadoMeta %>" readonly disabled>
+    </label>
+    <label>
+      Categoría Meta
+      <%
+        // Las 3 categorías reales que existen en la API de Meta para
+        // plantillas de WhatsApp — hoy todo el catálogo se registra como
+        // UTILITY (ver comentario de la migración que agregó esta
+        // columna), este mapa es solo para mostrar la etiqueta legible.
+        const CATEGORIA_META_LABEL = {
+          MARKETING: 'Marketing',
+          UTILITY: 'Utility',
+          AUTHENTICATION: 'Authentication',
+        };
+        const categoriaMetaLabel = CATEGORIA_META_LABEL[plantilla.categoria_meta] || plantilla.categoria_meta;
+      %>
+      <input type="text" value="<%= categoriaMetaLabel %>" readonly disabled>
+    </label>
+  </div>
+  <div class="plantilla-texto-field">
+    <span class="plantilla-detalle-label">Texto de respuesta</span>
+    <div class="plantilla-texto-editor plantilla-texto-preview" data-whatsapp-preview aria-label="Vista previa del texto de respuesta"></div>
+    <textarea data-whatsapp-preview-source hidden><%= plantilla.texto_respuesta %></textarea>
+  </div>
   <% if (plantilla.es_predeterminada) { %>
     <p class="tutor-form-hint">Plantilla predeterminada del sistema — no se puede eliminar, solo editar su texto de respuesta.</p>
   <% } %>

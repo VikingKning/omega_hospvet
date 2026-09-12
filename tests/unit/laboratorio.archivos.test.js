@@ -4,8 +4,15 @@
 // para no escribir a disco de verdad en un test unitario; el Buffer que se
 // le pasa a writeFile sí es un PDF/imagen real (generado con pdf-lib), así
 // que se puede releer con PDFDocument.load() para verificar el resultado.
+// `child_process` mockeado porque combinar doc/docx invoca LibreOffice de
+// verdad (convertirWordAPdf) — nunca se corre soffice en un test unitario;
+// el mock simula una conversión exitosa y fs.readFile (también mockeado)
+// entrega el PDF "convertido" como si LibreOffice ya lo hubiera escrito en
+// el directorio temporal.
 jest.mock('fs/promises');
+jest.mock('child_process');
 const fs = require('fs/promises');
+const { execFile } = require('child_process');
 const { PDFDocument } = require('pdf-lib');
 const crypto = require('crypto');
 const {
@@ -42,6 +49,12 @@ describe('laboratorio.archivos.procesarArchivos', () => {
     jest.clearAllMocks();
     fs.mkdir.mockResolvedValue(undefined);
     fs.writeFile.mockResolvedValue(undefined);
+    // Mocks de convertirWordAPdf (solo se ejercitan en los tests que
+    // combinan un doc/docx con algo más — un docx solo nunca llama a
+    // fusionarEnPdf, ver "un solo .docx se guarda tal cual" más abajo).
+    fs.mkdtemp.mockResolvedValue('/tmp/omega-lab-word-fake');
+    fs.rm.mockResolvedValue(undefined);
+    execFile.mockImplementation((cmd, args, opts, cb) => cb(null));
   });
 
   it('rechaza una lista vacía', async () => {
@@ -169,20 +182,82 @@ describe('laboratorio.archivos.procesarArchivos', () => {
     expect(resultado.consolidado).toBe(false);
   });
 
-  it('rechaza combinar un .docx con otro archivo (pdf-lib no interpreta Word)', async () => {
+  it('un .docx SÍ se puede combinar con otro archivo — se convierte a PDF con LibreOffice antes de fusionar', async () => {
+    const pdfConvertido = await pdfConPaginas(1);
+    fs.readFile.mockResolvedValue(pdfConvertido);
+
+    const resultado = await procesarArchivos({
+      registroId: 7,
+      files: [
+        archivo(
+          'resultados.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          Buffer.from('contenido-de-word-falso'),
+        ),
+        archivo('foto.jpg', 'image/jpeg', JPG_1PX),
+      ],
+    });
+
+    expect(resultado.consolidado).toBe(true);
+    // 1 página del docx "convertido" + 1 página nueva por la imagen.
+    const bufferGuardado = fs.writeFile.mock.calls.at(-1)[1];
+    const pdfResultante = await PDFDocument.load(bufferGuardado);
+    expect(pdfResultante.getPageCount()).toBe(2);
+
+    // La conversión corre con un perfil de LibreOffice AISLADO por
+    // invocación (para poder correr varias en paralelo sin bloquearse) —
+    // ver convertirWordAPdf.
+    const [, argumentos] = execFile.mock.calls[0];
+    expect(argumentos).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^-env:UserInstallation=file:\/\//)]),
+    );
+  });
+
+  it('un .doc (formato viejo) también se puede combinar, mismo mecanismo de conversión', async () => {
+    fs.readFile.mockResolvedValue(await pdfConPaginas(2));
+
+    const resultado = await procesarArchivos({
+      registroId: 7,
+      files: [
+        archivo('resultados.doc', 'application/msword', Buffer.from('x')),
+        archivo('rx.png', 'image/png', PNG_1PX),
+      ],
+    });
+
+    expect(resultado.consolidado).toBe(true);
+    const bufferGuardado = fs.writeFile.mock.calls.at(-1)[1];
+    const pdfResultante = await PDFDocument.load(bufferGuardado);
+    expect(pdfResultante.getPageCount()).toBe(3);
+  });
+
+  it('si LibreOffice no está instalado en el servidor, lanza un error normal (no de validación)', async () => {
+    const errorSinBinario = new Error('spawn soffice ENOENT');
+    errorSinBinario.code = 'ENOENT';
+    execFile.mockImplementation((cmd, args, opts, cb) => cb(errorSinBinario));
+
     await expect(
       procesarArchivos({
         registroId: 7,
         files: [
-          archivo(
-            'resultados.docx',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            Buffer.from('x'),
-          ),
+          archivo('resultados.docx', 'application/msword', Buffer.from('x')),
           archivo('foto.jpg', 'image/jpeg', JPG_1PX),
         ],
       }),
-    ).rejects.toThrow(/no se puede combinar/);
+    ).rejects.not.toBeInstanceOf(ArchivoValidationError);
+  });
+
+  it('si LibreOffice falla al convertir un documento (dañado/corrupto), lanza ArchivoValidationError', async () => {
+    execFile.mockImplementation((cmd, args, opts, cb) => cb(new Error('conversion failed')));
+
+    await expect(
+      procesarArchivos({
+        registroId: 7,
+        files: [
+          archivo('resultados.docx', 'application/msword', Buffer.from('x')),
+          archivo('foto.jpg', 'image/jpeg', JPG_1PX),
+        ],
+      }),
+    ).rejects.toThrow(ArchivoValidationError);
   });
 
   it('crea la carpeta del registro antes de escribir', async () => {

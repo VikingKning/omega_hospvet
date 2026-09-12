@@ -2051,6 +2051,196 @@ body:has(.app)::after {
   gap: 14px;
 }
 
+/* Plantillas de WhatsApp (plantilla-form.ejs): barra de formato real sobre
+   el texto de respuesta: negrita, cursiva, tachado, monoespaciado, lista
+   con viñetas, lista numerada y cita, visibles YA formateados
+   en el editor (contenteditable #plantillaTextoEditor) mientras se
+   escriben, y guardados como texto plano con la sintaxis real de WhatsApp
+   en el <textarea> oculto (ver parsearWhatsapp()/serializarWhatsappEditor()
+   en plantillas.ejs). Mismo criterio visual que .row-action-btn (botón
+   cuadrado con borde) y el tooltip transversal [data-tooltip] ya usado en
+   todo el sistema (por eso `position: relative` aquí). */
+.plantilla-texto-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plantilla-texto-field > label,
+.plantilla-detalle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.plantilla-formato-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.plantilla-formato-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-dark);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.plantilla-formato-btn-mono {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.plantilla-formato-btn:hover {
+  background: var(--primary-light);
+  border-color: var(--primary);
+}
+
+.plantilla-formato-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+/* El propio editor visual — mismo look que un <textarea> normal
+   (.modal-form input/textarea) para que no se sienta como un control
+   distinto, pero es un <div contenteditable> de verdad. El placeholder
+   nativo no existe en contenteditable, se simula con ::before + el
+   :empty del propio div. */
+.plantilla-texto-editor {
+  min-height: 140px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-dark);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.plantilla-texto-editor:focus {
+  outline: 2px solid var(--primary-light);
+  outline-offset: -1px;
+  border-color: var(--primary);
+}
+
+.plantilla-texto-editor[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.plantilla-texto-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+}
+
+.plantilla-texto-editor div,
+.plantilla-texto-editor p {
+  min-height: 1.5em;
+  margin: 0;
+}
+
+.plantilla-texto-editor code.wa-mono {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.plantilla-texto-editor code.wa-code {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-base);
+}
+
+.plantilla-texto-editor ul,
+.plantilla-texto-editor ol {
+  margin: 4px 0;
+  padding-left: 24px;
+}
+
+.plantilla-texto-editor blockquote {
+  margin: 4px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+
+.plantilla-editor-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.plantilla-texto-preview {
+  min-height: 140px;
+  background: var(--bg-base);
+  cursor: default;
+  white-space: normal;
+}
+
+/* Selector flotante de emojis: sale del flujo del formulario para no
+   aumentar la altura del modal. Cada columna contiene cinco elementos y
+   el resto continúa a la derecha, sin scroll interno. */
+.plantilla-emoji-picker {
+  position: relative;
+}
+
+.plantilla-emoji-panel:not([hidden]) {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: auto;
+  left: 0;
+  display: grid;
+  grid-template-rows: repeat(5, 32px);
+  grid-auto-flow: column;
+  grid-auto-columns: 34px;
+  gap: 4px;
+  width: max-content;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 18%);
+}
+
+.plantilla-emoji-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.plantilla-emoji-btn:hover,
+.plantilla-emoji-btn:focus-visible {
+  outline: none;
+  background: var(--primary-light);
+}
+
 /* Pedido explícito del usuario: picker de 5 íconos fijos (ver
    partials/perfil-form.ejs) — mismo círculo azul del avatar de la barra
    de título (.topbar-user-avatar), pero clickeable y con anillo cuando
@@ -2352,7 +2542,7 @@ body:has(.app)::after {
    campos para que el formulario quepa sin scroll dentro del modal. Mismo
    grid que .profile-form-row (perfil-form.ejs/perfil-password-form.ejs),
    con su propio nombre a propósito: son módulos distintos, mismo criterio
-   ya usado entre tutor-form-*/lab-form-* aunque el CSS sea equivalente. */
+   ya usado entre tutor-form y lab-form aunque el CSS sea equivalente. */
 .cita-form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3958,6 +4148,82 @@ body:has(.app)::after {
 
 .toast--danger {
   background: #fddbe1;
+  color: var(--danger);
+}
+
+/* Modal de resultado de "Enviar resultados" (#labEnviarModalBackdrop) —
+   pedido explícito del usuario: antes correo y WhatsApp se anunciaban en
+   un solo párrafo corrido ("Resultados enviados por correo. WhatsApp:
+   Authentication Error"), difícil de leer. Cada canal intentado es ahora
+   su propia tarjeta con ícono de éxito/error — mismo criterio de color
+   fondo-claro/texto-de-marca que .badge-enviado/.badge-pendiente más
+   arriba, aplicado aquí a un bloque en vez de una píldora. */
+#labEnviarModalMensaje:not(:empty) {
+  margin: 4px 0 20px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-dark);
+}
+
+.lab-envio-resultado-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 20px;
+}
+
+.lab-envio-resultado-fila {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.lab-envio-resultado-icono {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+
+.lab-envio-resultado-icono svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lab-envio-resultado-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.lab-envio-resultado-texto strong {
+  font-size: 13px;
+  color: var(--text-dark);
+}
+
+.lab-envio-resultado-texto span {
+  color: var(--text-muted);
+}
+
+.lab-envio-resultado-exito {
+  background: rgba(30, 142, 62, 0.08);
+  border-color: rgba(30, 142, 62, 0.3);
+}
+
+.lab-envio-resultado-exito .lab-envio-resultado-icono {
+  color: var(--success);
+}
+
+.lab-envio-resultado-error {
+  background: rgba(240, 15, 53, 0.08);
+  border-color: rgba(240, 15, 53, 0.3);
+}
+
+.lab-envio-resultado-error .lab-envio-resultado-icono {
   color: var(--danger);
 }
 

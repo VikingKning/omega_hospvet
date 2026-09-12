@@ -38,24 +38,76 @@ const esEdicion = Boolean(plantilla);
     // esta plantilla (switch de abajo) y crear una nueva.
   %>
   <% if (esEdicion) { %>
-    <label>
-      Intención
-      <input type="text" value="<%= intencion %>" readonly disabled>
-    </label>
-    <label>
-      Slug (para el LLM)
-      <input type="text" value="<%= slug %>" readonly disabled>
-    </label>
+    <div class="profile-form-row">
+      <label>
+        Intención
+        <input type="text" value="<%= intencion %>" readonly disabled>
+      </label>
+      <label>
+        Slug (para el LLM)
+        <input type="text" value="<%= slug %>" readonly disabled>
+      </label>
+    </div>
   <% } else { %>
     <label>
       Intención
       <input type="text" name="intencion" value="<%= intencion %>" required maxlength="100" autofocus>
     </label>
   <% } %>
-  <label>
-    Texto de respuesta
-    <textarea name="texto_respuesta" rows="4" required <%= esEdicion ? 'autofocus' : '' %>><%= texto_respuesta %></textarea>
-  </label>
+  <%
+    // Barra de formato (pedido explícito del usuario, con 7 formatos
+    // REALES que soporta WhatsApp — no solo negrita/cursiva): negrita
+    // (*texto*), cursiva (_texto_), tachado (~texto~), monoespaciado
+    // (```texto```), lista con viñetas ("- item"), lista numerada
+    // ("1. item") y cita ("> texto"). El editor
+    // visible (#plantillaTextoEditor) es un contenteditable que SÍ muestra
+    // el formato aplicado en vivo (pedido explícito: "que se vea negritas
+    // ya en el textbox") — el <textarea> real que de verdad viaja en el
+    // submit (name="texto_respuesta") queda oculto, y se mantiene
+    // sincronizado con la sintaxis real de WhatsApp a cada cambio (ver
+    // serializarWhatsapp() en plantillas.ejs). Toda la lógica (parseo,
+    // serializado, botones) vive en plantillas.ejs (script que NUNCA se
+    // re-swapea) por el mismo motivo que confirmModal.js: un <script>
+    // DENTRO de un fragmento que HTMX reemplaza con hx-swap="innerHTML"
+    // nunca se re-ejecuta en swaps siguientes.
+  %>
+  <div class="plantilla-texto-field">
+    <label for="plantillaTextoEditor">Texto de respuesta</label>
+    <div class="plantilla-formato-toolbar" role="toolbar" aria-label="Formato de texto de WhatsApp">
+      <button type="button" class="plantilla-formato-btn" data-formato="negrita" aria-label="Negrita" data-tooltip="Negrita (*texto*)"><strong>B</strong></button>
+      <button type="button" class="plantilla-formato-btn" data-formato="cursiva" aria-label="Cursiva" data-tooltip="Cursiva (_texto_)"><em>I</em></button>
+      <button type="button" class="plantilla-formato-btn" data-formato="tachado" aria-label="Tachado" data-tooltip="Tachado (~texto~)"><s>S</s></button>
+      <span class="plantilla-formato-toolbar-sep" aria-hidden="true"></span>
+      <button type="button" class="plantilla-formato-btn plantilla-formato-btn-mono" data-formato="monoespaciado" aria-label="Monoespaciado" data-tooltip="Monoespaciado (```texto```)"><strong>M</strong></button>
+      <button type="button" class="plantilla-formato-btn" data-formato="cita" aria-label="Cita" data-tooltip="Cita (&gt; texto)">Cita</button>
+      <span class="plantilla-formato-toolbar-sep" aria-hidden="true"></span>
+      <button type="button" class="plantilla-formato-btn plantilla-formato-btn-mono" data-formato="lista" aria-label="Lista con viñetas" data-tooltip="Lista con viñetas (- item)">•</button>
+      <button type="button" class="plantilla-formato-btn plantilla-formato-btn-mono" data-formato="numerada" aria-label="Lista numerada" data-tooltip="Lista numerada (1. item)">1.</button>
+      <span class="plantilla-formato-toolbar-sep" aria-hidden="true"></span>
+      <div class="plantilla-emoji-picker">
+        <button type="button" class="plantilla-formato-btn" id="plantillaEmojiToggle" aria-label="Insertar emoticono" aria-expanded="false" data-tooltip="Insertar emoticono">🙂</button>
+        <div class="plantilla-emoji-panel" id="plantillaEmojiPanel" hidden>
+        <%
+          // WhatsApp acepta emojis Unicode. El panel es flotante y usa
+          // cinco columnas, por lo que no modifica la altura del modal.
+          ['👋','🙏','👍','👏','🙌','😊','😀','😉','🥲','😢','❤️','💙','🐾','🐶','🐱','🐰','🐹','🦴','🩺','💊','💉','🌡️','🏥','👨‍⚕️','👩‍⚕️','🚑','📅','⏰','⏳','📍','📞','📱','✉️','📄','📎','✅','☑️','❌','⚠️','🚫','❗','❓','⭐','🔔','🔥','💡','🎉'].forEach((emoji) => {
+        %>
+            <button type="button" class="plantilla-emoji-btn" aria-label="Insertar <%= emoji %>" data-emoji="<%= emoji %>"><%= emoji %></button>
+        <% }) %>
+        </div>
+      </div>
+    </div>
+    <%
+      // El contenteditable arranca vacío — plantillas.ejs lo llena en cada
+      // apertura del modal (htmx:afterSwap) parseando el valor real del
+      // <textarea> oculto de abajo (parsearWhatsapp()), tanto en alta
+      // (vacío) como en edición/reintento tras error (con el texto ya
+      // guardado o el que el usuario acababa de escribir).
+    %>
+    <div class="plantilla-texto-editor" id="plantillaTextoEditor" contenteditable="true" role="textbox" aria-multiline="true" aria-required="true" aria-label="Texto de respuesta" data-placeholder="Escribe la respuesta que verá el tutor…"></div>
+    <p class="plantilla-editor-error" id="plantillaEditorError" hidden>Escribe el texto de respuesta.</p>
+    <textarea name="texto_respuesta" id="plantillaTextoRespuesta" hidden><%= texto_respuesta %></textarea>
+  </div>
   <%
     // Switch Activo/Inactivo: solo en edición, a petición explícita (no
     // estaba en el AC original de la historia). En alta no tiene sentido

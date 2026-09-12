@@ -754,6 +754,16 @@ pm2 save
 
 Los comandos anteriores asumen que PM2 está instalado en el servidor. El deploy es manual. `ecosystem.config.js` establece `NODE_ENV=production`; las variables sensibles deben proporcionarse en el entorno del servidor y no versionarse.
 
+### Dependencia del sistema: LibreOffice
+
+Combinar un archivo Word (.doc/.docx) con otros archivos en el PDF consolidado de resultados de laboratorio (`laboratorio.archivos.js#convertirWordAPdf`) requiere LibreOffice instalado en el servidor — es un binario del sistema operativo, no un paquete de npm:
+
+```bash
+sudo apt install libreoffice-writer
+```
+
+Sin LibreOffice, subir un doc/docx SOLO (sin combinarlo con nada más) sigue funcionando normal; solo falla el intento de combinarlo con otro archivo, con un error claro en vez de un 500 genérico.
+
 ## Repositorio
 
 - Panel administrativo: [github.com/VikingKning/omega_hospvet](https://github.com/VikingKning/omega_hospvet)
