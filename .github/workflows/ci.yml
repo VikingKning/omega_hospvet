@@ -29,16 +29,23 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      # v7: GitHub dejó de dar soporte al runtime node20 con el que corrían
+      # las acciones mismas (no confundir con el Node.js del propio job, ver
+      # setup-node más abajo) — v4 seguía funcionando pero con el warning de
+      # deprecación "Node.js 20 is deprecated" en cada corrida; v7 ya declara
+      # node24 como su runtime.
+      - uses: actions/checkout@v7
 
       # La versión de pnpm se toma de "packageManager" en package.json, no se
-      # fija aquí: pnpm/action-setup@v4 falla si se declara en ambos lugares.
-      - uses: pnpm/action-setup@v4
+      # fija aquí: pnpm/action-setup@v6 falla si se declara en ambos lugares.
+      # v6 (como checkout@v7/setup-node@v7 de abajo): mismo runtime node24,
+      # mismo motivo.
+      - uses: pnpm/action-setup@v6
 
       # pnpm 11 requiere Node.js >= 22.13; se usa la LTS activa (Node 24,
       # ver "engines" en package.json) en vez del mínimo, ya que Node 22
       # pasó a Maintenance LTS en octubre 2025.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm

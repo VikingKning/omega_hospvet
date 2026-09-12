@@ -19,6 +19,7 @@
 // fases se construyan.
 const claude = require('../../config/claude');
 const whatsapp = require('../../config/whatsapp');
+const logger = require('../../config/logger');
 const plantillasRepository = require('../plantillas_whatsapp/plantillas_whatsapp.repository');
 const repository = require('./whatsapp.repository');
 
@@ -49,16 +50,62 @@ function normalizarNumeroSalida(telefono) {
   return telefono.replace(/^521(\d{10})$/, '52$1');
 }
 
-async function enviarRespuesta(telefono, texto) {
-  await fetch(whatsapp.messagesUrl(), {
-    method: 'POST',
-    headers: whatsapp.authHeaders(),
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: normalizarNumeroSalida(telefono),
-      type: 'text',
-      text: { body: texto },
-    }),
+async function auditarEnvio(datos) {
+  try {
+    await repository.registrarEnvioWhatsapp(datos);
+  } catch (err) {
+    logger.error({ err }, 'No se pudo registrar la auditoría del envío de WhatsApp.');
+  }
+}
+
+async function enviarRespuesta(telefono, texto, { plantillaId, plantilla }) {
+  const destinatarioTelefono = normalizarNumeroSalida(telefono);
+  let res;
+  let data;
+  try {
+    res = await fetch(whatsapp.messagesUrl(), {
+      method: 'POST',
+      headers: whatsapp.authHeaders(),
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: destinatarioTelefono,
+        type: 'text',
+        text: { body: texto },
+      }),
+    });
+    data = typeof res.json === 'function' ? await res.json() : {};
+  } catch (err) {
+    await auditarEnvio({
+      plantilla,
+      plantillaId,
+      destinatarioTelefono,
+      exitoso: false,
+      errorMensaje: err.message,
+      origen: 'respuesta_automatica',
+    });
+    throw err;
+  }
+
+  if (!res.ok) {
+    const error = new Error(data.error?.message || `Meta rechazó el envío (HTTP ${res.status}).`);
+    await auditarEnvio({
+      plantilla,
+      plantillaId,
+      destinatarioTelefono,
+      exitoso: false,
+      errorCodigo: data.error?.code ? String(data.error.code) : null,
+      errorMensaje: error.message,
+      origen: 'respuesta_automatica',
+    });
+    throw error;
+  }
+
+  await auditarEnvio({
+    plantilla,
+    plantillaId,
+    destinatarioTelefono,
+    exitoso: true,
+    origen: 'respuesta_automatica',
   });
 }
 
@@ -70,10 +117,14 @@ async function enviarRespuesta(telefono, texto) {
 async function resolverPlantillaPredeterminada(slug) {
   const plantilla = await plantillasRepository.findBySlug(slug);
   if (!plantilla || !plantilla.activo) {
-    return { texto: TEXTO_RESPALDO_ABSOLUTO, plantillaId: null };
+    return { texto: TEXTO_RESPALDO_ABSOLUTO, plantillaId: null, plantillaSlug: null };
   }
   await plantillasRepository.incrementarUso(plantilla.id);
-  return { texto: plantilla.texto_respuesta, plantillaId: plantilla.id };
+  return {
+    texto: plantilla.texto_respuesta,
+    plantillaId: plantilla.id,
+    plantillaSlug: plantilla.slug,
+  };
 }
 
 // Segundo nivel — solo se llama dentro de la rama 'duda_medica'. Regresa
@@ -96,6 +147,7 @@ async function resolverDudaMedica(mensaje) {
     return {
       texto: resuelto.texto,
       plantillaId: resuelto.plantillaId,
+      plantillaSlug: resuelto.plantillaSlug,
       tokensEntrada,
       tokensSalida,
     };
@@ -105,6 +157,7 @@ async function resolverDudaMedica(mensaje) {
   return {
     texto: plantilla.texto_respuesta,
     plantillaId: plantilla.id,
+    plantillaSlug: plantilla.slug,
     tokensEntrada,
     tokensSalida,
   };
@@ -117,33 +170,47 @@ async function procesarMensajeEntrante({ telefono, texto, recibidoEn }) {
 
   let respuesta;
   let plantillaId;
+  let plantillaSlug;
   let categoriaGuardada = categoria.etiqueta ?? claude.SIN_COINCIDENCIA;
 
   if (categoria.etiqueta === 'duda_medica') {
     const resuelto = await resolverDudaMedica(texto);
     respuesta = resuelto.texto;
     plantillaId = resuelto.plantillaId;
+    plantillaSlug = resuelto.plantillaSlug;
     tokensEntrada += resuelto.tokensEntrada;
     tokensSalida += resuelto.tokensSalida;
   } else if (categoria.etiqueta === 'emergencia') {
     const resuelto = await resolverPlantillaPredeterminada(SLUG_EMERGENCIA);
     respuesta = resuelto.texto;
     plantillaId = resuelto.plantillaId;
+    plantillaSlug = resuelto.plantillaSlug;
   } else if (categoria.etiqueta === 'agendar_cita') {
     const resuelto = await resolverPlantillaPredeterminada(SLUG_AGENDAR_CITA);
     respuesta = resuelto.texto;
     plantillaId = resuelto.plantillaId;
+    plantillaSlug = resuelto.plantillaSlug;
   } else if (categoria.etiqueta === 'resultados_laboratorio') {
     const resuelto = await resolverPlantillaPredeterminada(SLUG_RESULTADOS_LABORATORIO);
     respuesta = resuelto.texto;
     plantillaId = resuelto.plantillaId;
+    plantillaSlug = resuelto.plantillaSlug;
   } else {
     const resuelto = await resolverPlantillaPredeterminada(SLUG_SIN_COINCIDENCIA);
     respuesta = resuelto.texto;
     plantillaId = resuelto.plantillaId;
+    plantillaSlug = resuelto.plantillaSlug;
   }
 
-  await enviarRespuesta(telefono, respuesta);
+  let errorEnvio;
+  try {
+    await enviarRespuesta(telefono, respuesta, {
+      plantillaId,
+      plantilla: plantillaSlug ? plantillaSlug.replace(/-/g, '_') : 'respuesta_sin_plantilla',
+    });
+  } catch (err) {
+    errorEnvio = err;
+  }
 
   await repository.crearMensaje({
     telefonoOrigen: telefono,
@@ -156,6 +223,8 @@ async function procesarMensajeEntrante({ telefono, texto, recibidoEn }) {
     tokensSalida,
     recibidoEn,
   });
+
+  if (errorEnvio) throw errorEnvio;
 }
 
 module.exports = { procesarMensajeEntrante };

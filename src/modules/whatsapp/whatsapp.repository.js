@@ -34,4 +34,28 @@ async function crearMensaje({
   return row.id;
 }
 
-module.exports = { crearMensaje };
+async function registrarEnvioWhatsapp({
+  plantilla,
+  plantillaId,
+  destinatarioTelefono,
+  exitoso,
+  errorCodigo,
+  errorMensaje,
+  origen,
+  referenciaId,
+  enviadoEn,
+}) {
+  await db('envios_whatsapp').insert({
+    plantilla,
+    plantilla_id: plantillaId ?? null,
+    destinatario_telefono: destinatarioTelefono,
+    exitoso,
+    error_codigo: errorCodigo ?? null,
+    error_mensaje: errorMensaje ?? null,
+    origen,
+    referencia_id: referenciaId ?? null,
+    enviado_en: enviadoEn ?? db.fn.now(),
+  });
+}
+
+module.exports = { crearMensaje, registrarEnvioWhatsapp };

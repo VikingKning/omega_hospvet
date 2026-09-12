@@ -18,6 +18,7 @@ const SUFFIX = 'QAMETRICAS';
 
 const SOLO_VER = { username: 'metricas.ver.test', password: 'MetricasVerTest123!' };
 const AGENDA_VER = { username: 'metricas.agenda.test', password: 'MetricasAgendaTest123!' };
+const WHATSAPP_VER = { username: 'metricas.whatsapp.test', password: 'MetricasWhatsapp123!' };
 const SIN_PERMISOS = { username: 'metricas.sinpermiso.test', password: 'MetricasSinPermTest123!' };
 
 async function getCsrfToken(agent) {
@@ -43,7 +44,12 @@ async function getMetricasCsrfToken(agent) {
 }
 
 async function cleanup() {
-  const usernames = [SOLO_VER.username, AGENDA_VER.username, SIN_PERMISOS.username];
+  const usernames = [
+    SOLO_VER.username,
+    AGENDA_VER.username,
+    WHATSAPP_VER.username,
+    SIN_PERMISOS.username,
+  ];
   const usuarioIds = await db('usuarios').whereIn('username', usernames).pluck('id');
   if (usuarioIds.length) {
     await db('usuario_permisos').whereIn('usuario_id', usuarioIds).del();
@@ -79,7 +85,39 @@ beforeAll(async () => {
   await cleanup();
   await createTestUser(SOLO_VER, ['metricas.laboratorios.ver']);
   await createTestUser(AGENDA_VER, ['metricas.agenda.ver']);
+  await createTestUser(WHATSAPP_VER, ['metricas.whatsapp.ver']);
   await createTestUser(SIN_PERMISOS, []);
+});
+
+describe('Métricas de WhatsApp', () => {
+  it('muestra los seis KPIs, las ocho gráficas y el mapa de calor', async () => {
+    const agent = await loginAs(WHATSAPP_VER);
+
+    const res = await agent.get('/metricas/whatsapp.html');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('id="metricas-whatsapp-filters"');
+    expect(res.text).toContain('name="agrupacion"');
+    expect(res.text).toContain('Mensajes enviados');
+    expect(res.text).toContain('Promedio diario');
+    expect(res.text).toContain('Plantilla más utilizada');
+    expect(res.text).toContain('Error más frecuente');
+    expect(res.text).toContain('metricas-kpi-tooltip" data-tooltip=');
+    expect(res.text).toContain('metricas-kpi-truncate"');
+    expect(res.text).toContain('id="metricasWhatsappData"');
+    expect(res.text).toContain("document.getElementById('whatsappChartTasa')");
+    expect(res.text).toContain("document.getElementById('whatsappMapaCalor')");
+    expect(res.text).toContain('href="metricas/whatsapp.html" class="submenu-link current"');
+  });
+
+  it('sin metricas.whatsapp.ver redirige a la página principal', async () => {
+    const agent = await loginAs(SIN_PERMISOS);
+
+    const res = await agent.get('/metricas/whatsapp.html');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
 });
 
 describe('Métricas de Agenda', () => {

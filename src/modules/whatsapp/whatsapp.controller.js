@@ -46,27 +46,30 @@ function extraerMensajesDeTexto(body) {
 
 // Recepción real de mensajes (POST). Verifica la firma ANTES que nada —
 // 401 si no coincide (nunca 200 para una petición sin firmar por Meta de
-// verdad). Con firma válida, procesa y SIEMPRE responde 200 al final,
-// incluso si algo dentro de procesarMensajeEntrante truena — un error de
-// clasificación/envío no debe convertirse en que Meta reintente
-// agresivamente el mismo mensaje (queda logueado para revisar a mano).
+// verdad). Con firma válida, procesa y SIEMPRE responde 200 al final. El
+// try/catch va DENTRO del for, por mensaje — no envolviendo todo el bucle:
+// desde que enviarRespuesta() empezó a lanzar en un rechazo de Meta (ver
+// whatsapp.service.js#enviarRespuesta), un solo mensaje fallido dentro de
+// un mismo lote de Meta ya no debe cortar el procesamiento de los demás
+// mensajes de ese lote. Cualquier error queda logueado para revisar a
+// mano, nunca provoca que Meta reintente agresivamente el mismo mensaje.
 async function recibir(req, res) {
   const firmaValida = whatsapp.verificarFirma(req.rawBody, req.get('X-Hub-Signature-256'));
   if (!firmaValida) {
     return res.sendStatus(401);
   }
 
-  try {
-    const mensajes = extraerMensajesDeTexto(req.body);
-    for (const mensaje of mensajes) {
+  const mensajes = extraerMensajesDeTexto(req.body);
+  for (const mensaje of mensajes) {
+    try {
       await service.procesarMensajeEntrante({
         telefono: mensaje.from,
         texto: mensaje.texto,
         recibidoEn: new Date(Number(mensaje.timestamp) * 1000),
       });
+    } catch (err) {
+      req.log.error({ err }, 'No se pudo procesar un mensaje entrante de WhatsApp.');
     }
-  } catch (err) {
-    req.log.error({ err }, 'No se pudo procesar un mensaje entrante de WhatsApp.');
   }
 
   return res.sendStatus(200);

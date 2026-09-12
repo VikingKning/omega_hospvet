@@ -1,5 +1,6 @@
 const service = require('./metricas.service');
 const agendaService = require('./metricas-agenda.service');
+const whatsappService = require('./metricas-whatsapp.service');
 const { generateCsrfToken } = require('../../config/csrf');
 
 // Carga inicial de la página: siempre el rango por defecto (últimos 30
@@ -58,4 +59,35 @@ async function filterAgenda(req, res, next) {
   }
 }
 
-module.exports = { pagina, filter, paginaAgenda, filterAgenda };
+async function paginaWhatsapp(req, res, next) {
+  try {
+    const data = await whatsappService.obtenerMetricasWhatsapp({});
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('metricas-whatsapp', { ...data, user: req.session.user, csrfToken });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function filterWhatsapp(req, res, next) {
+  try {
+    const data = await whatsappService.obtenerMetricasWhatsapp(req.body);
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/metricas-whatsapp-panel', {
+      ...data,
+      user: req.session.user,
+      csrfToken,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  pagina,
+  filter,
+  paginaAgenda,
+  filterAgenda,
+  paginaWhatsapp,
+  filterWhatsapp,
+};

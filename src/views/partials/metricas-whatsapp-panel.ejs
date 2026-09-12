@@ -1,0 +1,111 @@
+<form id="metricas-whatsapp-filters"
+      hx-post="metricas/whatsapp.html" hx-target="#metricas-whatsapp-panel" hx-swap="innerHTML"
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+  <div class="lab-toolbar">
+    <div class="metricas-rango-fechas">
+      <label>Desde
+        <input type="date" name="desde" value="<%= rango.desde %>">
+      </label>
+      <label>Hasta
+        <input type="date" name="hasta" value="<%= rango.hasta %>">
+      </label>
+      <label>Agrupar tendencia
+        <select name="agrupacion">
+          <option value="dia" <%= agrupacion === 'dia' ? 'selected' : '' %>>Por día</option>
+          <option value="semana" <%= agrupacion === 'semana' ? 'selected' : '' %>>Por semana</option>
+          <option value="mes" <%= agrupacion === 'mes' ? 'selected' : '' %>>Por mes</option>
+        </select>
+      </label>
+      <button type="submit" class="btn-primary">Aplicar</button>
+    </div>
+    <div class="toggle-group">
+      <% [7, 30, 90].forEach((dias) => { %>
+        <button type="button" class="toggle-btn"
+                hx-post="metricas/whatsapp.html" hx-include="#metricas-whatsapp-filters" hx-target="#metricas-whatsapp-panel"
+                hx-vals='{"preset":<%= dias %>}'>Últimos <%= dias %> días</button>
+      <% }) %>
+    </div>
+  </div>
+</form>
+
+<div class="metricas-kpis metricas-kpis-whatsapp">
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Mensajes enviados</span>
+    <span class="metricas-kpi-value"><%= total %></span>
+    <span class="metricas-kpi-description">Intentos en total</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Envíos exitosos</span>
+    <span class="metricas-kpi-value"><%= exitosos %></span>
+    <span class="metricas-kpi-description"><%= total ? Math.round((exitosos / total) * 100) : 0 %>% de los intentos</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Envíos fallidos</span>
+    <span class="metricas-kpi-value"><%= fallidos %></span>
+    <span class="metricas-kpi-description"><%= total ? Math.round((fallidos / total) * 100) : 0 %>% de los intentos</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Tasa de éxito</span>
+    <span class="metricas-kpi-value"><%= tasaExito %>%</span>
+    <span class="metricas-kpi-description">De envios sin error</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Promedio diario</span>
+    <span class="metricas-kpi-value"><%= promedioDiario %></span>
+    <span class="metricas-kpi-description">Mensajes por día</span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Plantilla más utilizada</span>
+    <span class="metricas-kpi-value metricas-kpi-value-text metricas-kpi-tooltip" data-tooltip="<%= plantillaMasUtilizada %>"><span class="metricas-kpi-truncate"><%= plantillaMasUtilizada %></span></span>
+    <span class="metricas-kpi-description"><%= usosPlantillaMasUtilizada %> <%= usosPlantillaMasUtilizada === 1 ? 'mensaje' : 'mensajes' %></span>
+  </div>
+  <div class="metricas-kpi-card">
+    <span class="metricas-kpi-label">Error más frecuente</span>
+    <span class="metricas-kpi-value metricas-kpi-value-text metricas-kpi-tooltip" data-tooltip="<%= errorMasFrecuente %>"><span class="metricas-kpi-truncate"><%= errorMasFrecuente %></span></span>
+    <span class="metricas-kpi-description"><%= ocurrenciasErrorMasFrecuente %> <%= ocurrenciasErrorMasFrecuente === 1 ? 'fallo' : 'fallos' %></span>
+  </div>
+</div>
+
+<% if (total === 0) { %>
+  <div class="lab-table-wrap">
+    <div class="empty-state-panel">
+      <p class="empty-state-title">No hay envíos de WhatsApp en este rango</p>
+      <p class="empty-state-description">Prueba con un rango de fechas más amplio.</p>
+    </div>
+  </div>
+<% } else { %>
+  <div class="metricas-charts">
+    <div class="metricas-chart-card"><h3>Tendencia de mensajes</h3><canvas id="whatsappChartTendencia"></canvas></div>
+    <div class="metricas-chart-card"><h3>Resultado de los envíos</h3><canvas id="whatsappChartResultados"></canvas></div>
+    <div class="metricas-chart-card"><h3>Mensajes por plantilla</h3><canvas id="whatsappChartPlantillas"></canvas></div>
+    <div class="metricas-chart-card"><h3>Errores más frecuentes</h3><canvas id="whatsappChartErrores"></canvas></div>
+    <div class="metricas-chart-card"><h3>Mensajes por día de la semana</h3><canvas id="whatsappChartDiaSemana"></canvas></div>
+    <div class="metricas-chart-card"><h3>Mensajes por hora del día</h3><canvas id="whatsappChartHora"></canvas></div>
+    <div class="metricas-chart-card"><h3>Top de plantillas con fallos</h3><canvas id="whatsappChartPlantillasFallos"></canvas></div>
+    <div class="metricas-chart-card"><h3>Evolución de la tasa de éxito</h3><canvas id="whatsappChartTasa"></canvas></div>
+    <div class="metricas-chart-card metricas-chart-card-wide">
+      <div class="metricas-chart-heading-row">
+        <div>
+          <h3>Mapa de calor de mensajes</h3>
+          <p class="metricas-chart-description">Día de la semana por hora local del intento.</p>
+        </div>
+        <div class="toggle-group" aria-label="Dato mostrado en el mapa de calor">
+          <button type="button" class="toggle-btn active" data-whatsapp-mapa="enviados">Mensajes enviados</button>
+          <button type="button" class="toggle-btn" data-whatsapp-mapa="errores">Más errores</button>
+        </div>
+      </div>
+      <div class="metricas-heatmap-scroll">
+        <div id="whatsappMapaCalor" class="metricas-heatmap" role="img" aria-label="Mapa de calor de mensajes enviados por día y hora"></div>
+      </div>
+      <div class="metricas-heatmap-legend" aria-hidden="true">
+        <span>Menor cantidad</span>
+        <% for (let nivel = 0; nivel <= 5; nivel += 1) { %>
+          <span class="metricas-heatmap-swatch metricas-heatmap-level-<%= nivel %>"></span>
+        <% } %>
+        <span>Mayor cantidad</span>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<div id="metricasWhatsappData" hidden><%- JSON.stringify({ tendencia, resultadoEnvios, mensajesPorPlantilla, erroresFrecuentes, porDiaSemana, porHora, plantillasConFallos, mapaCalor }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>

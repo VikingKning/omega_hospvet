@@ -12,8 +12,18 @@ const { procesarMensajeEntrante } = require('../../src/modules/whatsapp/whatsapp
 const originalFetch = global.fetch;
 
 const PLANTILLAS_ACTIVAS = [
-  { id: 1, intencion: 'dosis_olvidada', texto_respuesta: 'Respuesta de dosis_olvidada.' },
-  { id: 2, intencion: 'duda_medica_general', texto_respuesta: 'Respuesta genérica.' },
+  {
+    id: 1,
+    intencion: 'dosis_olvidada',
+    slug: 'dosis-olvidada',
+    texto_respuesta: 'Respuesta de dosis_olvidada.',
+  },
+  {
+    id: 2,
+    intencion: 'duda_medica_general',
+    slug: 'duda-medica-general',
+    texto_respuesta: 'Respuesta genérica.',
+  },
 ];
 
 // Las 4 plantillas predeterminadas del sistema (migración 20260903000002)
@@ -91,6 +101,15 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
 
     expect(textoEnviado()).toBe('Respuesta de dosis_olvidada.');
     expect(plantillasRepository.incrementarUso).toHaveBeenCalledWith(1);
+    expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plantilla: 'dosis_olvidada',
+        plantillaId: 1,
+        destinatarioTelefono: '525500000000',
+        exitoso: true,
+        origen: 'respuesta_automatica',
+      }),
+    );
     expect(repository.crearMensaje).toHaveBeenCalledWith(
       expect.objectContaining({
         categoriaClasificacion: 'duda_medica',
@@ -189,6 +208,30 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
     await procesarMensajeEntrante({ telefono: '14155551234', texto: 'urgencia' });
 
     expect(destinatarioEnviado()).toBe('14155551234');
+  });
+
+  it('audita el error de Meta y conserva el mensaje entrante aunque falle la respuesta', async () => {
+    jest
+      .spyOn(claude, 'clasificarCategoria')
+      .mockResolvedValue({ etiqueta: 'emergencia', tokensEntrada: 5, tokensSalida: 1 });
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: { code: 131030, message: 'Teléfono inválido.' } }),
+    });
+
+    await expect(
+      procesarMensajeEntrante({ telefono: '5215500000000', texto: 'urgencia' }),
+    ).rejects.toThrow('Teléfono inválido.');
+
+    expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exitoso: false,
+        errorCodigo: '131030',
+        errorMensaje: 'Teléfono inválido.',
+      }),
+    );
+    expect(repository.crearMensaje).toHaveBeenCalled();
   });
 
   it('categoría sin match (respuesta inesperada del LLM): guarda sin_coincidencia y responde la plantilla predeterminada', async () => {

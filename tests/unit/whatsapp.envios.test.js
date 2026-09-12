@@ -5,6 +5,8 @@
 // lanzar cuando Meta responde con un error — laboratorio.envios.js es
 // quien decide "nunca lanzar hacia arriba" (ver ese test file).
 const whatsappConfig = require('../../src/config/whatsapp');
+jest.mock('../../src/modules/whatsapp/whatsapp.repository');
+const repository = require('../../src/modules/whatsapp/whatsapp.repository');
 const {
   subirMedia,
   enviarPlantillaResultados,
@@ -105,6 +107,14 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
         { type: 'text', text: 'tarde' },
       ],
     });
+    expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plantilla: 'resultados_laboratorio_listos_v2',
+        destinatarioTelefono: '525512345678',
+        exitoso: true,
+        origen: 'laboratorio',
+      }),
+    );
   });
 
   it('si Meta rechaza el envío, lanza con el mensaje de error de Meta', async () => {
@@ -127,5 +137,11 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
         nombreArchivo: 'resultados.pdf',
       }),
     ).rejects.toThrow('La plantilla no está aprobada todavía.');
+    expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exitoso: false,
+        errorMensaje: 'La plantilla no está aprobada todavía.',
+      }),
+    );
   });
 });

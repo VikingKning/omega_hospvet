@@ -12,6 +12,8 @@
 // errores — tiran un Error normal si Meta responde con algo distinto de
 // ok; laboratorio.envios.js es quien decide "nunca lanzar" hacia arriba.
 const whatsapp = require('../../config/whatsapp');
+const logger = require('../../config/logger');
+const repository = require('./whatsapp.repository');
 
 // v2 (2026-09-11): rediseño del texto del mensaje — nombre nuevo a
 // propósito, ver scripts/registrar-plantilla-resultados-laboratorio.js y
@@ -32,6 +34,14 @@ const TEMPLATE_LANGUAGE = 'es_MX';
 // sin el código de país, Meta no lo reconocía como el mismo número.
 function formatearNumeroMexicano(telefono) {
   return `52${telefono}`;
+}
+
+async function auditarEnvio(datos) {
+  try {
+    await repository.registrarEnvioWhatsapp(datos);
+  } catch (err) {
+    logger.error({ err }, 'No se pudo registrar la auditoría del envío de WhatsApp.');
+  }
 }
 
 async function subirMedia(buffer, mimetype, nombreArchivo) {
@@ -69,40 +79,71 @@ async function enviarPlantillaResultados({
   mediaId,
   nombreArchivo,
 }) {
-  const res = await fetch(whatsapp.messagesUrl(), {
-    method: 'POST',
-    headers: whatsapp.authHeaders(),
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: formatearNumeroMexicano(telefono),
-      type: 'template',
-      template: {
-        name: TEMPLATE_NAME,
-        language: { code: TEMPLATE_LANGUAGE },
-        components: [
-          {
-            type: 'header',
-            parameters: [{ type: 'document', document: { id: mediaId, filename: nombreArchivo } }],
-          },
-          {
-            type: 'body',
-            parameters: [
-              { type: 'text', text: nombreTutor },
-              { type: 'text', text: nombreMascota },
-              { type: 'text', text: folio },
-              { type: 'text', text: calendarUrl },
-              { type: 'text', text: mapsUrl },
-              { type: 'text', text: saludo },
-            ],
-          },
-        ],
-      },
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error?.message || `Meta rechazó el envío (HTTP ${res.status}).`);
+  const destinatarioTelefono = formatearNumeroMexicano(telefono);
+  let res;
+  let data;
+  try {
+    res = await fetch(whatsapp.messagesUrl(), {
+      method: 'POST',
+      headers: whatsapp.authHeaders(),
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: destinatarioTelefono,
+        type: 'template',
+        template: {
+          name: TEMPLATE_NAME,
+          language: { code: TEMPLATE_LANGUAGE },
+          components: [
+            {
+              type: 'header',
+              parameters: [
+                { type: 'document', document: { id: mediaId, filename: nombreArchivo } },
+              ],
+            },
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: nombreTutor },
+                { type: 'text', text: nombreMascota },
+                { type: 'text', text: folio },
+                { type: 'text', text: calendarUrl },
+                { type: 'text', text: mapsUrl },
+                { type: 'text', text: saludo },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    data = await res.json();
+  } catch (err) {
+    await auditarEnvio({
+      plantilla: TEMPLATE_NAME,
+      destinatarioTelefono,
+      exitoso: false,
+      errorMensaje: err.message,
+      origen: 'laboratorio',
+    });
+    throw err;
   }
+  if (!res.ok) {
+    const error = new Error(data.error?.message || `Meta rechazó el envío (HTTP ${res.status}).`);
+    await auditarEnvio({
+      plantilla: TEMPLATE_NAME,
+      destinatarioTelefono,
+      exitoso: false,
+      errorCodigo: data.error?.code ? String(data.error.code) : null,
+      errorMensaje: error.message,
+      origen: 'laboratorio',
+    });
+    throw error;
+  }
+  await auditarEnvio({
+    plantilla: TEMPLATE_NAME,
+    destinatarioTelefono,
+    exitoso: true,
+    origen: 'laboratorio',
+  });
 }
 
 module.exports = { subirMedia, enviarPlantillaResultados };

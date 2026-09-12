@@ -46,4 +46,21 @@ router.post(
   controller.filterAgenda,
 );
 
+router.get(
+  '/metricas/whatsapp.html',
+  requireAuth,
+  requirePermission('metricas.whatsapp.ver'),
+  attachSidebarAreas,
+  controller.paginaWhatsapp,
+);
+
+router.post(
+  '/metricas/whatsapp.html',
+  requireAuth,
+  requirePermission('metricas.whatsapp.ver'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.filterWhatsapp,
+);
+
 module.exports = router;

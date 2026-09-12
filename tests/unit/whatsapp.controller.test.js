@@ -112,6 +112,53 @@ describe('whatsapp.controller.recibir — qué mensajes se mandan a clasificar',
     expect(service.procesarMensajeEntrante).not.toHaveBeenCalled();
   });
 
+  it('si un mensaje del lote falla, los siguientes del mismo lote se siguen procesando', async () => {
+    const body = {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: '123',
+          changes: [
+            {
+              value: {
+                messages: [
+                  {
+                    from: '5215500000001',
+                    timestamp: '1700000000',
+                    type: 'text',
+                    text: { body: 'uno' },
+                  },
+                  {
+                    from: '5215500000002',
+                    timestamp: '1700000001',
+                    type: 'text',
+                    text: { body: 'dos' },
+                  },
+                ],
+              },
+              field: 'messages',
+            },
+          ],
+        },
+      ],
+    };
+    const req = makeReq(body);
+    const res = makeRes();
+    service.procesarMensajeEntrante
+      .mockRejectedValueOnce(new Error('Meta rechazó el envío.'))
+      .mockResolvedValueOnce();
+
+    await controller.recibir(req, res);
+
+    expect(service.procesarMensajeEntrante).toHaveBeenCalledTimes(2);
+    expect(service.procesarMensajeEntrante).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ telefono: '5215500000002', texto: 'dos' }),
+    );
+    expect(req.log.error).toHaveBeenCalledTimes(1);
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
+  });
+
   it('sin firma válida, responde 401 y no llama al service', async () => {
     whatsappConfig.verificarFirma.mockReturnValue(false);
     const req = makeReq(

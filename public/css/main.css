@@ -4172,6 +4172,12 @@ body:has(.app)::after {
   color: var(--text-dark);
 }
 
+/* flex, no grid: pedido explícito del usuario — cuando el renglón de abajo
+   se queda con menos tarjetas (ej. WhatsApp: 2 tarjetas de texto largo
+   solas en el último renglón al hacerse responsivo), flex:1 las estira
+   para llenar el 100% del ancho disponible entre ellas (ej. 50%/50%) en
+   vez de dejarlas a su min-width con espacio vacío flotando al lado, que
+   es lo que un grid de columnas fijas (probado y revertido) producía. */
 .metricas-kpis {
   display: flex;
   flex-wrap: wrap;
@@ -4196,8 +4202,18 @@ body:has(.app)::after {
   margin-bottom: 6px;
 }
 
+/* min-width: 0 — los 3 dashboards de métricas vuelven a .metricas-kpi-card
+   un grid container (ver .metricas-kpis-whatsapp/-laboratorio/-agenda
+   .metricas-kpi-card más abajo), y esta etiqueta es su grid item de la
+   fila del valor. Un grid item mide `min-width: auto` por default, que
+   para contenido `white-space: nowrap` (ver .metricas-kpi-value-text) es
+   el ancho COMPLETO del texto sin cortar — el item se niega a encogerse
+   por debajo de eso y el texto se desborda sobre la tarjeta vecina en vez
+   de recortarse, aunque el hijo tenga overflow:hidden. Bug real visto en
+   vivo (Métricas → WhatsApp). */
 .metricas-kpi-value {
   display: block;
+  min-width: 0;
   font-size: 24px;
   font-weight: 700;
   color: var(--text-dark);
@@ -4206,6 +4222,34 @@ body:has(.app)::after {
 .metricas-kpi-value-text {
   font-size: 24px;
   line-height: 1.25;
+  white-space: nowrap;
+}
+
+[data-fit-kpi-text] {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Truncado + tooltip con el texto completo (Métricas → WhatsApp:
+   "Plantilla más utilizada"/"Error más frecuente") — sin JS, solo CSS.
+   El tooltip transversal [data-tooltip] (ver más abajo en este archivo)
+   NO puede ir en el mismo elemento que trunca: sus pseudo-elementos son
+   hijos de ese elemento, y `overflow: hidden` (necesario para el "...")
+   los recorta también a ellos, dejando el tooltip invisible aunque el
+   CSS esté "bien" — bug real encontrado en vivo. Por eso el ancla del
+   tooltip (`data-tooltip` + position:relative) va en un span EXTERIOR sin
+   overflow, y el truncado vive en un span interior aparte. */
+.metricas-kpi-tooltip {
+  position: relative;
+  display: block;
+}
+
+.metricas-kpi-truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -4259,6 +4303,25 @@ body:has(.app)::after {
   line-height: 1.15;
 }
 
+.metricas-kpis-whatsapp .metricas-kpi-card {
+  display: grid;
+  grid-template-rows: minmax(18px, auto) 32px auto;
+  align-items: start;
+  min-width: 180px;
+  row-gap: 2px;
+  box-sizing: border-box;
+}
+
+.metricas-kpis-whatsapp .metricas-kpi-label {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.metricas-kpis-whatsapp .metricas-kpi-value {
+  align-self: start;
+  line-height: 1.15;
+}
+
 .metricas-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -4276,6 +4339,34 @@ body:has(.app)::after {
   margin: 0 0 12px;
   font-size: 14px;
   color: var(--text-dark);
+}
+
+.metricas-chart-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metricas-heatmap-errors .metricas-heatmap-level-1 {
+  background: #f4cbc7;
+}
+
+.metricas-heatmap-errors .metricas-heatmap-level-2 {
+  background: #eaa39c;
+}
+
+.metricas-heatmap-errors .metricas-heatmap-level-3 {
+  background: #dc756b;
+}
+
+.metricas-heatmap-errors .metricas-heatmap-level-4 {
+  background: #c94c40;
+}
+
+.metricas-heatmap-errors .metricas-heatmap-level-5 {
+  background: #a92e25;
 }
 
 .metricas-chart-card-wide {
@@ -4386,5 +4477,151 @@ body:has(.app)::after {
 @media (max-width: 600px) {
   .metricas-charts {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Loader global de bloqueo ---------- */
+/* partials/global-loader.ejs + public/js/globalLoader.js — pedido
+   explícito del usuario: huella de pata que se "rellena" (mismo truco que
+   un gradiente al doble de alto deslizándose verticalmente vía
+   background-position-y, ver global-loader-fill más abajo), sobre un
+   overlay negro semitransparente a pantalla completa que bloquea
+   cualquier clic mientras dura una operación que no se puede interrumpir
+   (ej. subir un archivo de resultados). z-index por encima de
+   .modal-backdrop (100): si algún día se dispara desde dentro de un
+   modal, el loader debe quedar encima, no debajo. Nunca hay <style>
+   inline en este proyecto (CSP style-src sin 'unsafe-eval' de por medio,
+   ver app.js) ni fuentes externas (Google Fonts violaría font-src/
+   style-src) — todo vive aquí como clases, con la tipografía y paleta ya
+   establecidas del resto del sistema. */
+.global-loader-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.global-loader-backdrop.open {
+  display: flex;
+}
+
+.global-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.global-loader-paw {
+  position: relative;
+  width: 132px;
+  height: 127px;
+  animation: global-loader-breathe 3.2s ease-in-out infinite;
+}
+
+.global-loader-toe,
+.global-loader-palm {
+  position: absolute;
+  border-radius: 50%;
+  background: linear-gradient(to top, var(--primary-light) 50%, rgba(255, 255, 255, 0.14) 50%);
+  background-size: 100% 200%;
+  background-position-y: 0%;
+  animation: global-loader-fill 3.2s ease-in-out infinite;
+}
+
+.global-loader-toe-1 {
+  left: 3px;
+  top: 38px;
+  width: 24px;
+  height: 33px;
+  transform: rotate(-26deg);
+}
+
+.global-loader-toe-2 {
+  left: 30px;
+  top: 16px;
+  width: 25px;
+  height: 36px;
+  transform: rotate(-9deg);
+  animation-delay: 0.14s;
+}
+
+.global-loader-toe-3 {
+  left: 61px;
+  top: 16px;
+  width: 25px;
+  height: 36px;
+  transform: rotate(9deg);
+  animation-delay: 0.28s;
+}
+
+.global-loader-toe-4 {
+  left: 88px;
+  top: 38px;
+  width: 24px;
+  height: 33px;
+  transform: rotate(26deg);
+  animation-delay: 0.42s;
+}
+
+.global-loader-palm {
+  left: 25px;
+  top: 64px;
+  width: 71px;
+  height: 57px;
+  border-radius: 52% 52% 44% 44% / 60% 60% 40% 40%;
+  animation-delay: 0.6s;
+}
+
+@keyframes global-loader-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+
+@keyframes global-loader-fill {
+  0% {
+    background-position-y: 0%;
+  }
+  42% {
+    background-position-y: 100%;
+  }
+  82% {
+    background-position-y: 100%;
+  }
+  100% {
+    background-position-y: 0%;
+  }
+}
+
+.global-loader-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.global-loader-cursor {
+  animation: global-loader-blink 1s steps(1, end) infinite;
+}
+
+@keyframes global-loader-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
   }
 }

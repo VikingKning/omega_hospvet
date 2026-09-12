@@ -135,10 +135,11 @@ async function obtenerMetricasAgenda(filtros = {}) {
     etiqueta,
     total: totalesDiaSemana.get(indice + 1) ?? 0,
   }));
-  const diaMayor = porDiaSemana.reduce(
-    (mayor, fila) => (fila.total > mayor.total ? fila : mayor),
-    { dia: 0, etiqueta: '—', total: 0 },
-  );
+  const diaMayor = porDiaSemana.reduce((mayor, fila) => (fila.total > mayor.total ? fila : mayor), {
+    dia: 0,
+    etiqueta: '—',
+    total: 0,
+  });
   const promedioDiaMayor = diaMayor.total
     ? diaMayor.total / (aparicionesDiaSemana.get(diaMayor.dia) ?? 1)
     : 0;

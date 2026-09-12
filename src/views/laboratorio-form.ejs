@@ -460,19 +460,22 @@
     <%
     // "Enviar resultados" (pedido explícito del usuario): envío real por
     // WhatsApp y/o correo según los datos de contacto del tutor (ver
-    // laboratorio.service.js#enviarResultados) — el título/mensaje se
-    // actualizan en cliente según la respuesta real del servidor (ver
-    // manejarEnvioResultados más abajo), nunca se cierra solo. Mismo
-    // patrón visual que #confirmModalBackdrop (.modal-backdrop/.modal-card/
-    // .modal-header, ya usado en el resto del sistema).
+    // laboratorio.service.js#enviarResultados). Este modal ya NO cubre la
+    // espera del envío (eso lo hace el loader global, ver
+    // partials/global-loader.ejs más abajo — bloqueante de verdad, sin
+    // botón de cerrar) — solo aparece DESPUÉS de que el servidor ya
+    // respondió, para mostrar el resultado final (éxito/error por canal,
+    // ver resumenEnvio() más abajo), y ahí sí se puede cerrar libremente.
+    // Mismo patrón visual que #confirmModalBackdrop (.modal-backdrop/
+    // .modal-card/.modal-header, ya usado en el resto del sistema).
     %>
     <div class="modal-backdrop" id="labEnviarModalBackdrop">
       <div class="modal-card">
         <div class="modal-header">
-          <h2 id="labEnviarModalTitulo">Enviando resultados</h2>
+          <h2 id="labEnviarModalTitulo">Resultados enviados</h2>
           <button class="modal-close-btn" type="button" id="labEnviarModalClose" aria-label="Cerrar">&times;</button>
         </div>
-        <p id="labEnviarModalMensaje">Enviando documentos al tutor…</p>
+        <p id="labEnviarModalMensaje"></p>
       </div>
     </div>
 
@@ -487,6 +490,15 @@
     // confirmación de paso). Primer toast del proyecto.
     %>
     <div class="toast" id="labArchivoToast" role="status" aria-live="polite"></div>
+
+    <%
+    // Loader global de bloqueo (pedido explícito del usuario) — se
+    // muestra mientras la subida de un archivo está en curso (ver
+    // marcarSubiendoArchivo/subirArchivosDeLaboratorio más abajo), para
+    // que el usuario no pueda tocar nada del formulario a medias de una
+    // subida. Primer uso de partials/global-loader.ejs en el proyecto.
+    %>
+    <%- include('partials/global-loader') %>
   <% } %>
 
   <%
@@ -522,6 +534,9 @@
   <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
   <script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
   <script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
+  <% if (puedeCargarArchivos) { %>
+    <script src="js/globalLoader.js" nonce="<%= cspNonce %>"></script>
+  <% } %>
   <script nonce="<%= cspNonce %>">
     function escapeHtml(text) {
       const div = document.createElement('div');
@@ -1364,10 +1379,15 @@
 
     // Pedido explícito del usuario: menos clics — en cuanto se eligen
     // archivos, se suben solos (sin un paso aparte de "Subir"). Deshabilita
-    // el input mientras sube para evitar un doble envío.
+    // el input mientras sube para evitar un doble envío. El loader global
+    // (partials/global-loader.ejs) bloquea el resto de la pantalla durante
+    // la subida real — se oculta apenas responde el servidor (ver
+    // subirArchivosDeLaboratorio), el toast de abajo sigue siendo quien
+    // confirma el resultado final.
     function marcarSubiendoArchivo(input) {
       input.disabled = true;
       mostrarToast('Guardando Archivo', 'warning');
+      mostrarLoaderGlobal('Guardando archivos');
       const span = input.closest('.lab-archivo-uploader')?.querySelector('.lab-archivo-picker-estado');
       if (span) span.textContent = 'Subiendo…';
     }
@@ -1499,11 +1519,29 @@
       hideBanners();
       const formData = new FormData();
       Array.from(fileList).forEach((file) => formData.append('archivos', file));
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'x-csrf-token': csrfToken },
-        body: formData,
-      });
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'x-csrf-token': csrfToken },
+          body: formData,
+        });
+      } catch (err) {
+        // Falla de red real (sin conexión, servidor caído) — a diferencia
+        // de un error HTTP normal (res.ok:false, manejado más abajo), acá
+        // ni siquiera hay respuesta: el loader global NUNCA debe quedarse
+        // pegado bloqueando toda la pantalla sin salida.
+        ocultarLoaderGlobal();
+        actualizarToast('Error al subir archivo', 'danger');
+        setTimeout(ocultarToast, 2000);
+        showError('No se pudo conectar con el servidor.');
+        return false;
+      }
+      // El loader global solo cubre la ESPERA de la subida — apenas hay
+      // respuesta (buena o mala) se quita, y el toast de abajo sigue
+      // dando la confirmación/error final sin bloquear el resto de la
+      // pantalla.
+      ocultarLoaderGlobal();
       if (res.redirected) {
         ocultarToast();
         window.location.href = res.url;
@@ -1677,16 +1715,26 @@
         };
       }
 
+      // Pedido explícito del usuario: el modal de "Enviando resultados..."
+      // se podía cerrar (botón x / clic afuera) MIENTRAS la solicitud
+      // seguía en curso, dejando al usuario libre de tocar el resto de la
+      // pantalla a medio envío — "unos modales horribles". El loader
+      // global (sin botón de cerrar, sin clic afuera) bloquea de verdad
+      // mientras dura la espera; el modal de #labEnviarModalBackdrop se
+      // conserva, pero ahora solo aparece DESPUÉS de que el servidor ya
+      // respondió, para mostrar el resultado final (éxito/error por
+      // canal) — en ese punto ya no hay nada en curso que proteger, así
+      // que sigue siendo válido dejarlo abierto hasta que el usuario lo
+      // cierre.
       async function enviarResultados() {
-        enviarModalTitulo.textContent = 'Enviando resultados';
-        enviarModalMensaje.textContent = 'Enviando documentos al tutor…';
-        enviarModal.classList.add('open');
+        mostrarLoaderGlobal('Enviando archivos por WhatsApp y/o email');
 
         try {
           const res = await fetch(`laboratorio/${DATOS.registro.id}/enviar`, {
             method: 'POST',
             headers: { 'x-csrf-token': csrfToken },
           });
+          ocultarLoaderGlobal();
           if (res.redirected) {
             window.location.href = res.url;
             return;
@@ -1695,12 +1743,14 @@
           if (!res.ok) {
             enviarModalTitulo.textContent = 'No se pudo enviar';
             enviarModalMensaje.textContent = data.error || 'Ocurrió un error inesperado.';
+            enviarModal.classList.add('open');
             return;
           }
 
           const { titulo, mensaje } = resumenEnvio(data);
           enviarModalTitulo.textContent = titulo;
           enviarModalMensaje.textContent = mensaje;
+          enviarModal.classList.add('open');
 
           if (data.correo?.enviado || data.whatsapp?.enviado) {
             const badge = document.getElementById('labEstadoBadge');
@@ -1717,8 +1767,10 @@
           // documenta envio_archivo en el schema ("permite reenviar el
           // mismo archivo en envíos posteriores").
         } catch {
+          ocultarLoaderGlobal();
           enviarModalTitulo.textContent = 'No se pudo enviar';
           enviarModalMensaje.textContent = 'No se pudo conectar con el servidor.';
+          enviarModal.classList.add('open');
         }
       }
 
