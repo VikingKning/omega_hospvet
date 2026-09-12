@@ -5,6 +5,10 @@
 //
 // Uso: pnpm run whatsapp:estado-plantillas
 const { templatesUrl, authHeaders } = require('../src/config/whatsapp');
+const db = require('../src/config/database');
+const {
+  sincronizarDatosMeta,
+} = require('../src/modules/plantillas_whatsapp/plantillas_whatsapp.metaSync');
 
 async function main() {
   const url = `${templatesUrl()}?fields=name,status,category,language,rejected_reason&limit=100`;
@@ -32,6 +36,14 @@ async function main() {
       motivo_rechazo: t.rejected_reason && t.rejected_reason !== 'NONE' ? t.rejected_reason : '',
     })),
   );
+
+  const actualizadas = await sincronizarDatosMeta(data.data);
+  console.log(`Base de datos sincronizada: ${actualizadas} plantilla(s) actualizada(s).`);
 }
 
-main();
+main()
+  .catch((err) => {
+    console.error('No se pudo consultar o sincronizar las plantillas:', err.message);
+    process.exitCode = 1;
+  })
+  .finally(() => db.destroy());

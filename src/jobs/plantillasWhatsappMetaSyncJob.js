@@ -1,7 +1,7 @@
 // Job de polling para plantillas_whatsapp.metaSync.js#revisarAprobaciones
-// — pedido explícito del usuario: revisar cada cierto tiempo
-// (WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES, default 60) si Meta ya aprobó
-// alguna plantilla pendiente. setInterval simple, mismo patrón que
+// — revisa cada cierto tiempo (WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES,
+// default 60) el estado y la categoría reales informados por Meta.
+// setInterval simple, mismo patrón que
 // googleCalendarSyncJob.js.
 const env = require('../config/env');
 const logger = require('../config/logger');
@@ -20,7 +20,7 @@ function start() {
 
   const intervalMs = env.whatsapp.templatesSyncIntervalMinutes * 60 * 1000;
   logger.info(
-    `Revisión de aprobación de plantillas de WhatsApp en Meta activa, cada ${env.whatsapp.templatesSyncIntervalMinutes} min.`,
+    `Sincronización de plantillas de WhatsApp con Meta activa, cada ${env.whatsapp.templatesSyncIntervalMinutes} min.`,
   );
 
   return setInterval(() => {

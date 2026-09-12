@@ -291,6 +291,8 @@
   // el navegador puede mover el foco y perder el rango que el usuario había
   // seleccionado. Se conserva una copia del último rango válido para que
   // cada comando actúe exactamente sobre esa selección o línea.
+  const TEXTO_RESPUESTA_MAX_LENGTH = 550;
+  const estadoValidoPorEditor = new WeakMap();
   let rangoEditorGuardado = null;
 
   function guardarRangoEditor(editor) {
@@ -326,16 +328,66 @@
     return true;
   }
 
+  function colocarCursorAlFinal(editor) {
+    const seleccion = window.getSelection();
+    if (!seleccion) return;
+    const rango = document.createRange();
+    rango.selectNodeContents(editor);
+    rango.collapse(false);
+    seleccion.removeAllRanges();
+    seleccion.addRange(rango);
+    guardarRangoEditor(editor);
+  }
+
+  function actualizarContadorEditor(texto) {
+    const contador = document.getElementById('plantillaEditorCounter');
+    if (!contador) return;
+    const restantes = TEXTO_RESPUESTA_MAX_LENGTH - Array.from(texto).length;
+    contador.textContent =
+      restantes >= 0
+        ? `${restantes} caracteres disponibles`
+        : `Excede por ${Math.abs(restantes)} caracteres`;
+    contador.classList.toggle('is-near-limit', restantes <= 25);
+    contador.classList.toggle('is-over-limit', restantes < 0);
+  }
+
   function sincronizarEditor(editor, mostrarError = false) {
     const textareaOculto = document.getElementById('plantillaTextoRespuesta');
-    if (!textareaOculto) return;
-    textareaOculto.value = serializarWhatsappEditor(editor).replace(/\u200B/g, '');
+    if (!textareaOculto) return false;
+    const textoNuevo = serializarWhatsappEditor(editor).replace(/\u200B/g, '');
+    const longitudNueva = Array.from(textoNuevo).length;
+    const estadoAnterior = estadoValidoPorEditor.get(editor);
+
+    // Si una escritura, pegado o formato rebasa el límite, se restaura el
+    // último estado válido. Los marcadores (*, _, ~, ``` y prefijos de
+    // listas/citas) forman parte del texto enviado y también se cuentan.
+    if (
+      estadoAnterior &&
+      longitudNueva > TEXTO_RESPUESTA_MAX_LENGTH &&
+      longitudNueva >= estadoAnterior.longitud
+    ) {
+      editor.innerHTML = estadoAnterior.html;
+      textareaOculto.value = estadoAnterior.texto;
+      actualizarContadorEditor(estadoAnterior.texto);
+      colocarCursorAlFinal(editor);
+      return false;
+    }
+
+    textareaOculto.value = textoNuevo;
+    estadoValidoPorEditor.set(editor, {
+      html: editor.innerHTML,
+      texto: textoNuevo,
+      longitud: longitudNueva,
+    });
+    actualizarContadorEditor(textoNuevo);
     const vacio = !textareaOculto.value.trim();
+    const excedido = longitudNueva > TEXTO_RESPUESTA_MAX_LENGTH;
     const error = document.getElementById('plantillaEditorError');
     if (!vacio || mostrarError) {
-      editor.toggleAttribute('aria-invalid', vacio);
+      editor.toggleAttribute('aria-invalid', vacio || excedido);
       error?.toggleAttribute('hidden', !vacio);
     }
+    return !vacio && !excedido;
   }
 
   function ejecutarComandoEditor(editor, comando, valor = null) {
@@ -666,6 +718,7 @@
     rangoEditorGuardado = null;
     editor.innerHTML = textareaOculto.value ? parsearWhatsapp(textareaOculto.value) : '';
     document.execCommand('defaultParagraphSeparator', false, 'div');
+    sincronizarEditor(editor);
 
     editor.addEventListener('focus', () => {
       if (editor.childNodes.length) return;
@@ -699,8 +752,8 @@
 
     const formulario = editor.closest('form');
     formulario?.addEventListener('submit', (event) => {
-      sincronizarEditor(editor, true);
-      if (!textareaOculto.value.trim()) {
+      const textoValido = sincronizarEditor(editor, true);
+      if (!textoValido) {
         event.preventDefault();
         event.stopImmediatePropagation();
         editor.focus();

@@ -4,6 +4,7 @@ const repository = require('../../src/modules/plantillas_whatsapp/plantillas_wha
 const whatsappConfig = require('../../src/config/whatsapp');
 const {
   revisarAprobaciones,
+  sincronizarDatosMeta,
 } = require('../../src/modules/plantillas_whatsapp/plantillas_whatsapp.metaSync');
 
 const originalFetch = global.fetch;
@@ -25,11 +26,11 @@ describe('plantillas_whatsapp.metaSync.revisarAprobaciones', () => {
 
     await revisarAprobaciones();
 
-    expect(repository.findPendientesAprobacionMeta).not.toHaveBeenCalled();
+    expect(repository.findParaSincronizarMeta).not.toHaveBeenCalled();
   });
 
-  it('sin plantillas pendientes, no llama a Meta', async () => {
-    repository.findPendientesAprobacionMeta.mockResolvedValue([]);
+  it('sin plantillas locales, no llama a Meta', async () => {
+    repository.findParaSincronizarMeta.mockResolvedValue([]);
     global.fetch = jest.fn();
 
     await revisarAprobaciones();
@@ -37,19 +38,28 @@ describe('plantillas_whatsapp.metaSync.revisarAprobaciones', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('marca aprobado_meta=true solo las que Meta ya reporta como APPROVED', async () => {
-    repository.findPendientesAprobacionMeta.mockResolvedValue([
-      { id: 1, slug: 'dosis-olvidada' },
-      { id: 2, slug: 'cambio-horario-medicacion' },
-      { id: 3, slug: 'revision-herida-foto' },
+  it('sincroniza estado y categoría, incluyendo reclasificaciones de Meta', async () => {
+    repository.findParaSincronizarMeta.mockResolvedValue([
+      { id: 1, slug: 'dosis-olvidada', aprobado_meta: false, categoria_meta: 'UTILITY' },
+      {
+        id: 2,
+        slug: 'pregunta-alimentacion-dieta',
+        aprobado_meta: true,
+        categoria_meta: 'UTILITY',
+      },
+      { id: 3, slug: 'revision-herida-foto', aprobado_meta: false, categoria_meta: 'UTILITY' },
     ]);
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
           data: [
-            { name: 'dosis_olvidada', status: 'APPROVED' },
-            { name: 'cambio_horario_medicacion', status: 'PENDING' },
+            { name: 'dosis_olvidada', status: 'APPROVED', category: 'UTILITY' },
+            {
+              name: 'pregunta_alimentacion_dieta',
+              status: 'APPROVED',
+              category: 'MARKETING',
+            },
             // revision_herida_foto ni siquiera aparece todavía en la lista de Meta
           ],
         }),
@@ -57,25 +67,53 @@ describe('plantillas_whatsapp.metaSync.revisarAprobaciones', () => {
 
     await revisarAprobaciones();
 
-    expect(repository.marcarAprobadoMeta).toHaveBeenCalledTimes(1);
-    expect(repository.marcarAprobadoMeta).toHaveBeenCalledWith(1);
+    expect(repository.actualizarDatosMeta).toHaveBeenCalledTimes(2);
+    expect(repository.actualizarDatosMeta).toHaveBeenCalledWith(1, {
+      categoriaMeta: 'UTILITY',
+      aprobadoMeta: true,
+    });
+    expect(repository.actualizarDatosMeta).toHaveBeenCalledWith(2, {
+      categoriaMeta: 'MARKETING',
+      aprobadoMeta: true,
+    });
+  });
+
+  // Pedido explícito del usuario (2026-09-12): una plantilla de texto
+  // libre nunca se registró a propósito — aunque Meta reporte un template
+  // con ese mismo nombre (ej. quedó de un registro manual viejo), no debe
+  // pisarse la decisión local. En la práctica repository.findParaSincronizarMeta
+  // ya las excluye por SQL, pero este test cubre también la ruta directa
+  // (scripts/estado-plantillas-whatsapp.js le pasa `plantillasLocales`
+  // explícito, sin pasar por ese filtro).
+  it('nunca sincroniza una plantilla de texto libre, aunque Meta reporte un template con ese nombre', async () => {
+    const actualizadas = await sincronizarDatosMeta(
+      [{ name: 'dosis_olvidada', status: 'APPROVED', category: 'UTILITY' }],
+      [{ id: 1, slug: 'dosis-olvidada', aprobado_meta: false, categoria_meta: 'TEXTO_LIBRE' }],
+    );
+
+    expect(actualizadas).toBe(0);
+    expect(repository.actualizarDatosMeta).not.toHaveBeenCalled();
   });
 
   it('si Meta responde con error HTTP, no marca nada y no truena', async () => {
-    repository.findPendientesAprobacionMeta.mockResolvedValue([{ id: 1, slug: 'dosis-olvidada' }]);
+    repository.findParaSincronizarMeta.mockResolvedValue([
+      { id: 1, slug: 'dosis-olvidada', aprobado_meta: false, categoria_meta: 'UTILITY' },
+    ]);
     global.fetch = jest
       .fn()
       .mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) });
 
     await expect(revisarAprobaciones()).resolves.toBeUndefined();
-    expect(repository.marcarAprobadoMeta).not.toHaveBeenCalled();
+    expect(repository.actualizarDatosMeta).not.toHaveBeenCalled();
   });
 
   it('si el fetch a Meta truena (red caída), no truena el ciclo', async () => {
-    repository.findPendientesAprobacionMeta.mockResolvedValue([{ id: 1, slug: 'dosis-olvidada' }]);
+    repository.findParaSincronizarMeta.mockResolvedValue([
+      { id: 1, slug: 'dosis-olvidada', aprobado_meta: false, categoria_meta: 'UTILITY' },
+    ]);
     global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
 
     await expect(revisarAprobaciones()).resolves.toBeUndefined();
-    expect(repository.marcarAprobadoMeta).not.toHaveBeenCalled();
+    expect(repository.actualizarDatosMeta).not.toHaveBeenCalled();
   });
 });

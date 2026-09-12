@@ -1,15 +1,30 @@
-// Registra en Meta todas las plantillas activas de `plantillas_whatsapp`
-// (pedido explícito del usuario, 2026-09-02) — siguen siendo respuestas
-// para DENTRO de una conversación ya abierta (WhatsApp no exige
-// aprobación de Meta para eso), se registran de todos modos para tener el
-// mecanismo de status ya validado (Decisión 24/Bitácora v4 línea 33). NO
-// modifica el schema — el registro/consulta de estado se hace en vivo
-// contra la API de Meta, sin guardar el estado en la BD todavía.
+// Registra en Meta las plantillas activas de `plantillas_whatsapp` que
+// TODAVÍA NO están aprobadas Y que tienen una categoría REAL de Meta
+// (pedido explícito del usuario, 2026-09-02; filtros de aprobado_meta y
+// categoria_meta agregados 2026-09-12). Decisión explícita del usuario:
+// de todo el catálogo, solo la plantilla de resultados de laboratorio de
+// verdad necesita ser una plantilla aprobada por Meta (la única que
+// INICIA el negocio, sin importar si el cliente escribió antes, y esa ya
+// tiene su propio script — ver la exclusión de abajo). Todas las demás
+// son 'TEXTO_LIBRE': respuestas DENTRO de una conversación que el cliente
+// ya abrió (whatsapp.service.js#enviarRespuesta manda type:'text', nunca
+// type:'template' — no necesitan ni deben registrarse en Meta, hacerlo
+// solo duplicaría plantillas sin ningún beneficio funcional). Este script
+// ya casi nunca debería encontrar algo que registrar en el uso normal —
+// sigue existiendo para el día que se dé de alta una plantilla real de
+// Marketing/Utility/Authentication (mercadotecnia, por ejemplo).
+//
+// aprobado_meta=false cubre tanto "nunca se registró" como "está PENDING
+// en Meta" — ambos casos deben reintentarse; solo una fila ya aprobada
+// debe quedar afuera.
 //
 // Uso: pnpm run whatsapp:registrar-plantillas
 const db = require('../src/config/database');
 const { templatesUrl, authHeaders } = require('../src/config/whatsapp');
-const { nombreMeta } = require('../src/modules/plantillas_whatsapp/plantillas_whatsapp.service');
+const {
+  nombreMeta,
+  CATEGORIA_TEXTO_LIBRE,
+} = require('../src/modules/plantillas_whatsapp/plantillas_whatsapp.service');
 
 // 'resultados-laboratorio-listos-v2' se excluye a propósito: necesita un
 // encabezado de DOCUMENT (el PDF/imagen real de cada envío) que esta
@@ -25,12 +40,15 @@ const SLUG_EXCLUIDO_DOCUMENTO = 'resultados-laboratorio-listos-v2';
 async function main() {
   const plantillas = await db('plantillas_whatsapp')
     .where('activo', true)
+    .where('aprobado_meta', false)
+    .whereNot('categoria_meta', CATEGORIA_TEXTO_LIBRE)
     .whereNot('slug', SLUG_EXCLUIDO_DOCUMENTO)
-    .select('slug', 'intencion', 'texto_respuesta');
+    .select('slug', 'intencion', 'texto_respuesta', 'categoria_meta');
 
   if (plantillas.length === 0) {
-    console.error('No hay plantillas activas en la BD.');
-    process.exitCode = 1;
+    console.log(
+      'No hay plantillas pendientes de registrar — todas las activas ya están aprobadas en Meta, o son de texto libre y no necesitan registrarse.',
+    );
     return;
   }
 
@@ -38,10 +56,7 @@ async function main() {
     const body = {
       name: nombreMeta(plantilla.slug),
       language: 'es_MX',
-      // UTILITY, no MARKETING: son respuestas informativas/de servicio al
-      // cliente, no promocionales — categoría correcta según las reglas
-      // de Meta.
-      category: 'UTILITY',
+      category: plantilla.categoria_meta,
       components: [{ type: 'BODY', text: plantilla.texto_respuesta }],
     };
 

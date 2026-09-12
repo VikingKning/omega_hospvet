@@ -2073,6 +2073,49 @@ body:has(.app)::after {
   color: var(--text-dark);
 }
 
+.plantilla-detalle-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.meta-category-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.meta-category-badge.is-utility {
+  background: rgba(30, 142, 62, 0.15);
+  color: var(--success);
+}
+
+.meta-category-badge.is-marketing {
+  background: rgba(242, 169, 0, 0.15);
+  color: var(--warning-text);
+}
+
+.meta-category-badge.is-other {
+  background: rgba(240, 15, 53, 0.15);
+  color: var(--danger);
+}
+
+/* Pedido explícito del usuario (2026-09-12): "Texto Libre" como pill
+   azul, distinta de las 3 categorías reales de Meta — es el caso normal
+   de casi todo el catálogo (solo la plantilla de resultados de
+   laboratorio de verdad se registra en Meta). */
+.meta-category-badge.is-texto-libre {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
 .plantilla-formato-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2183,6 +2226,31 @@ body:has(.app)::after {
   margin: 0;
   color: var(--danger);
   font-size: 12px;
+}
+
+.plantilla-editor-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 16px;
+  gap: 12px;
+}
+
+.plantilla-editor-counter {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.plantilla-editor-counter.is-near-limit {
+  color: var(--warning-text);
+}
+
+.plantilla-editor-counter.is-over-limit {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .plantilla-texto-preview {
@@ -2936,6 +3004,18 @@ body:has(.app)::after {
 
 .status-badge.is-danger::before {
   background: var(--danger);
+}
+
+/* Plantillas de WhatsApp: "No Requerido" en Estado en Meta para una
+   plantilla de texto libre (pedido explícito del usuario, 2026-09-12) —
+   azul para distinguirla de los otros 3 estados reales de Meta
+   (verde=Aprobado, ámbar=En revisión, gris=N/A). */
+.status-badge.is-info {
+  color: var(--primary);
+}
+
+.status-badge.is-info::before {
+  background: var(--primary);
 }
 
 /* Badge "Predeterminada" (catálogo de plantillas de WhatsApp) trae su

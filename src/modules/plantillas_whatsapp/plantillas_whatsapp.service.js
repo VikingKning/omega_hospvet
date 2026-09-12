@@ -33,6 +33,7 @@ class PlantillaPredeterminadaError extends Error {
 const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['intencion', 'slug', 'estado_meta', 'estado'];
 const INTENCION_MAX_LENGTH = 100;
+const TEXTO_RESPUESTA_MAX_LENGTH = 550;
 
 function parsePage(rawPage) {
   const page = Number.parseInt(rawPage, 10);
@@ -172,7 +173,7 @@ function validateTexto(rawValor, etiqueta, maxLength) {
   if (!valor) {
     throw new PlantillaValidationError(`El campo ${etiqueta} es obligatorio.`);
   }
-  if (maxLength && valor.length > maxLength) {
+  if (maxLength && Array.from(valor).length > maxLength) {
     throw new PlantillaValidationError(
       `El campo ${etiqueta} no puede tener más de ${maxLength} caracteres.`,
     );
@@ -189,17 +190,31 @@ function nombreMeta(slug) {
   return slug.replace(/-/g, '_');
 }
 
+// Único valor de categoria_meta que NO es una categoría real de Meta —
+// significa "esta plantilla es un mensaje de texto libre dentro de una
+// conversación ya abierta por el cliente, nunca se manda como plantilla
+// de Meta" (decisión explícita del usuario, 2026-09-12: de todo el
+// catálogo, solo la de resultados de laboratorio de verdad necesita ser
+// una plantilla aprobada — es la única que el NEGOCIO inicia, sin
+// importar si el cliente escribió antes). Es el default de toda plantilla
+// nueva creada desde este módulo; ver la migración
+// 20260912000002_categoria_meta_texto_libre_por_defecto.js para el
+// backfill de las que ya existían.
+const CATEGORIA_TEXTO_LIBRE = 'TEXTO_LIBRE';
+
 // Alta/reactivación → intenta registrar la plantilla en Meta de inmediato
 // (push best-effort, mismo criterio que agenda.googleSync.js#pushCita):
-// nunca lanza ni bloquea la operación local — estas plantillas ni
-// siquiera necesitan aprobación de Meta para funcionar (son respuestas
-// DENTRO de una conversación ya abierta), la aprobación es un tracking
-// aparte (Decisión 24/Bitácora v4). Si el POST falla (Meta caído, ya
-// registrada, etc.), la plantilla queda con aprobado_meta=false (su
-// default) y no hay reintento automático del registro en sí — solo el job
-// periódico (plantillas_whatsapp.metaSync.js) revisa si Meta YA la
-// aprobó, no si todavía no se registró.
-async function registrarEnMeta({ id, slug, texto_respuesta }) {
+// nunca lanza ni bloquea la operación local. Se salta por completo cuando
+// categoria_meta es CATEGORIA_TEXTO_LIBRE (el caso normal hoy) — no se
+// borra este flujo porque sigue haciendo falta el día que se dé de alta
+// una plantilla real de Marketing/Utility/Authentication (mercadotecnia,
+// por ejemplo). Si el POST falla (Meta caído, ya registrada, etc.), la
+// plantilla queda con aprobado_meta=false (su default) y no hay reintento
+// automático del registro en sí — solo el job periódico
+// (plantillas_whatsapp.metaSync.js) sincroniza el estado y la categoría
+// que Meta termine asignándole, pero no reintenta el registro.
+async function registrarEnMeta({ id, slug, texto_respuesta, categoria_meta }) {
+  if (categoria_meta === CATEGORIA_TEXTO_LIBRE) return;
   if (!whatsapp.isWhatsappConfigured()) return;
 
   try {
@@ -209,7 +224,7 @@ async function registrarEnMeta({ id, slug, texto_respuesta }) {
       body: JSON.stringify({
         name: nombreMeta(slug),
         language: 'es_MX',
-        category: 'UTILITY',
+        category: categoria_meta,
         components: [{ type: 'BODY', text: texto_respuesta }],
       }),
     });
@@ -233,9 +248,20 @@ async function registrarEnMeta({ id, slug, texto_respuesta }) {
 // activo -> duplicado real (se rechaza); inactivo -> se reactiva ese mismo
 // registro en vez de crear uno paralelo (una plantilla se desactiva desde
 // el switch del formulario de edición, ver editar()/repository.js#update).
-async function crear({ intencion: rawIntencion, texto_respuesta: rawTexto, usuarioId }) {
+// `categoria_meta` no tiene todavía un campo en el formulario (pedido
+// explícito del usuario: por ahora toda plantilla nueva es texto libre) —
+// se acepta como parámetro opcional para no tener que volver a tocar esta
+// función el día que se agregue un selector real (Marketing, por
+// ejemplo); mientras tanto siempre llega undefined y cae al default.
+async function crear({
+  intencion: rawIntencion,
+  texto_respuesta: rawTexto,
+  categoria_meta: rawCategoriaMeta,
+  usuarioId,
+}) {
   const intencion = validateTexto(rawIntencion, 'Intención', INTENCION_MAX_LENGTH);
-  const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta');
+  const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta', TEXTO_RESPUESTA_MAX_LENGTH);
+  const categoria_meta = rawCategoriaMeta || CATEGORIA_TEXTO_LIBRE;
 
   const existing = await findDuplicado(intencion);
   if (existing) {
@@ -247,19 +273,27 @@ async function crear({ intencion: rawIntencion, texto_respuesta: rawTexto, usuar
     await repository.reactivar(existing.id, intencion, usuarioId);
     // texto_respuesta NUEVO del formulario, ojo: reactivar() no lo guarda
     // (solo reactivar() en sí toca intencion/activo/desactivado_*), así
-    // que Meta se registra con el texto YA GUARDADO (existing.texto_respuesta),
-    // no con lo que se acaba de escribir en este alta.
+    // que Meta se registra con el texto Y LA CATEGORÍA YA GUARDADOS
+    // (existing.texto_respuesta/categoria_meta), no con lo que se acaba
+    // de escribir en este alta.
     await registrarEnMeta({
       id: existing.id,
       slug: existing.slug,
       texto_respuesta: existing.texto_respuesta,
+      categoria_meta: existing.categoria_meta,
     });
     return existing.id;
   }
 
   const slug = await generateUniqueSlug(intencion);
-  const id = await repository.create({ intencion, slug, texto_respuesta, usuarioId });
-  await registrarEnMeta({ id, slug, texto_respuesta });
+  const id = await repository.create({
+    intencion,
+    slug,
+    texto_respuesta,
+    categoriaMeta: categoria_meta,
+    usuarioId,
+  });
+  await registrarEnMeta({ id, slug, texto_respuesta, categoria_meta });
   return id;
 }
 
@@ -298,7 +332,7 @@ async function editar({
   esPredeterminada,
   usuarioId,
 }) {
-  const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta');
+  const texto_respuesta = validateTexto(rawTexto, 'Texto de respuesta', TEXTO_RESPUESTA_MAX_LENGTH);
   const activo = esPredeterminada ? true : parseActivo(rawActivo);
 
   await repository.update(id, { texto_respuesta, activo, usuarioId });
@@ -311,6 +345,7 @@ module.exports = {
   crear,
   editar,
   nombreMeta,
+  CATEGORIA_TEXTO_LIBRE,
   PlantillaValidationError,
   DuplicateIntencionError,
   PlantillaPredeterminadaError,

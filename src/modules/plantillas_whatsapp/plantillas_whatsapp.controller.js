@@ -6,7 +6,7 @@ const { generateCsrfToken } = require('../../config/csrf');
 // query params (mismo criterio de privacidad que doctores/areas.controller.js
 // — el filtrado real ocurre por el POST de abajo, vía HTMX, sin tocar la URL).
 //
-// Pedido explícito del usuario: revisar aprobaciones de Meta AL ENTRAR al
+// Pedido explícito del usuario: sincronizar estado y categoría de Meta AL ENTRAR al
 // módulo, no solo esperar el job de cada 60 min — revisarAprobaciones()
 // nunca lanza (atrapa sus propios errores, ver plantillas_whatsapp.metaSync.js),
 // así que un Meta caído nunca rompe la carga de la página, solo la deja

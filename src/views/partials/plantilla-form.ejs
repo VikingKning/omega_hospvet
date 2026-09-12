@@ -105,7 +105,10 @@ const esEdicion = Boolean(plantilla);
       // guardado o el que el usuario acababa de escribir).
     %>
     <div class="plantilla-texto-editor" id="plantillaTextoEditor" contenteditable="true" role="textbox" aria-multiline="true" aria-required="true" aria-label="Texto de respuesta" data-placeholder="Escribe la respuesta que verá el tutor…"></div>
-    <p class="plantilla-editor-error" id="plantillaEditorError" hidden>Escribe el texto de respuesta.</p>
+    <div class="plantilla-editor-meta">
+      <p class="plantilla-editor-error" id="plantillaEditorError" hidden>Escribe el texto de respuesta.</p>
+      <span class="plantilla-editor-counter" id="plantillaEditorCounter" aria-live="polite">550 caracteres disponibles</span>
+    </div>
     <textarea name="texto_respuesta" id="plantillaTextoRespuesta" hidden><%= texto_respuesta %></textarea>
   </div>
   <%

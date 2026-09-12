@@ -59,6 +59,12 @@ const PREDETERMINADAS_POR_SLUG = {
   'sin-coincidencia-default': PLANTILLA_SIN_COINCIDENCIA,
 };
 
+function mockClasificarMensaje(etiqueta, { tokensEntrada = 12, tokensSalida = 3 } = {}) {
+  jest
+    .spyOn(claude, 'clasificarMensaje')
+    .mockResolvedValue({ etiqueta, tokensEntrada, tokensSalida });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
@@ -88,17 +94,17 @@ function destinatarioEnviado() {
   return JSON.parse(opciones.body).to;
 }
 
-describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion', () => {
-  it('duda_medica con match: responde el texto_respuesta real de la plantilla e incrementa su uso', async () => {
-    jest
-      .spyOn(claude, 'clasificarCategoria')
-      .mockResolvedValue({ etiqueta: 'duda_medica', tokensEntrada: 10, tokensSalida: 2 });
-    jest
-      .spyOn(claude, 'clasificarIntencion')
-      .mockResolvedValue({ etiqueta: 'dosis_olvidada', tokensEntrada: 15, tokensSalida: 3 });
+describe('whatsapp.service.procesarMensajeEntrante — clasificación en una sola llamada, catálogo real y categorías fijas compitiendo juntas', () => {
+  it('el mensaje se clasifica contra TODO el catálogo real activo en una sola llamada a claude.clasificarMensaje', async () => {
+    mockClasificarMensaje('dosis_olvidada', { tokensEntrada: 15, tokensSalida: 3 });
 
     await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'se me olvidó la pastilla' });
 
+    expect(claude.clasificarMensaje).toHaveBeenCalledTimes(1);
+    expect(claude.clasificarMensaje).toHaveBeenCalledWith(
+      'se me olvidó la pastilla',
+      PLANTILLAS_ACTIVAS,
+    );
     expect(textoEnviado()).toBe('Respuesta de dosis_olvidada.');
     expect(plantillasRepository.incrementarUso).toHaveBeenCalledWith(1);
     expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
@@ -116,28 +122,8 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
         plantillaId: 1,
         citaGeneradaId: null,
         registroLaboratorioId: null,
-        tokensEntrada: 25, // suma de las 2 llamadas a Claude
-        tokensSalida: 5,
-      }),
-    );
-  });
-
-  it('duda_medica sin match de intención: responde la plantilla predeterminada sin_coincidencia_default', async () => {
-    jest
-      .spyOn(claude, 'clasificarCategoria')
-      .mockResolvedValue({ etiqueta: 'duda_medica', tokensEntrada: 10, tokensSalida: 2 });
-    jest
-      .spyOn(claude, 'clasificarIntencion')
-      .mockResolvedValue({ etiqueta: claude.SIN_COINCIDENCIA, tokensEntrada: 8, tokensSalida: 3 });
-
-    await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'algo fuera de catálogo' });
-
-    expect(textoEnviado()).toBe(PLANTILLA_SIN_COINCIDENCIA.texto_respuesta);
-    expect(plantillasRepository.incrementarUso).toHaveBeenCalledWith(PLANTILLA_SIN_COINCIDENCIA.id);
-    expect(repository.crearMensaje).toHaveBeenCalledWith(
-      expect.objectContaining({
-        categoriaClasificacion: 'duda_medica',
-        plantillaId: PLANTILLA_SIN_COINCIDENCIA.id,
+        tokensEntrada: 15,
+        tokensSalida: 3,
       }),
     );
   });
@@ -147,16 +133,12 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
     ['agendar_cita', PLANTILLA_AGENDAR_CITA],
     ['resultados_laboratorio', PLANTILLA_RESULTADOS_LAB],
   ])(
-    'categoria %s: guarda la categoría real y responde con la plantilla predeterminada del sistema (sin acción real todavía)',
+    'si Claude elige la categoría genérica %s en vez de una intención del catálogo, guarda esa categoría y responde con la plantilla predeterminada del sistema',
     async (etiqueta, plantillaPredeterminada) => {
-      jest
-        .spyOn(claude, 'clasificarCategoria')
-        .mockResolvedValue({ etiqueta, tokensEntrada: 5, tokensSalida: 1 });
-      const spyIntencion = jest.spyOn(claude, 'clasificarIntencion');
+      mockClasificarMensaje(etiqueta, { tokensEntrada: 13, tokensSalida: 4 });
 
       await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'mensaje de prueba' });
 
-      expect(spyIntencion).not.toHaveBeenCalled();
       expect(textoEnviado()).toBe(plantillaPredeterminada.texto_respuesta);
       expect(plantillasRepository.incrementarUso).toHaveBeenCalledWith(plantillaPredeterminada.id);
       expect(repository.crearMensaje).toHaveBeenCalledWith(
@@ -165,17 +147,42 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
           plantillaId: plantillaPredeterminada.id,
           citaGeneradaId: null,
           registroLaboratorioId: null,
-          tokensEntrada: 5,
-          tokensSalida: 1,
+          tokensEntrada: 13,
+          tokensSalida: 4,
         }),
       );
     },
   );
 
-  it('si la plantilla predeterminada no existe o está inactiva, usa el texto de respaldo absoluto sin tronar', async () => {
-    jest
-      .spyOn(claude, 'clasificarCategoria')
-      .mockResolvedValue({ etiqueta: 'emergencia', tokensEntrada: 5, tokensSalida: 1 });
+  it("categoría genérica 'duda_medica' (sin plantilla predeterminada propia) cae al respaldo sin_coincidencia_default", async () => {
+    mockClasificarMensaje('duda_medica');
+
+    await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'mensaje de prueba' });
+
+    expect(textoEnviado()).toBe(PLANTILLA_SIN_COINCIDENCIA.texto_respuesta);
+    expect(plantillasRepository.incrementarUso).toHaveBeenCalledWith(PLANTILLA_SIN_COINCIDENCIA.id);
+    expect(repository.crearMensaje).toHaveBeenCalledWith(
+      expect.objectContaining({ categoriaClasificacion: 'duda_medica' }),
+    );
+  });
+
+  it('sin match en el catálogo ni en las 4 categorías fijas (etiqueta null): responde la plantilla predeterminada sin_coincidencia_default', async () => {
+    mockClasificarMensaje(null);
+
+    await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'algo raro' });
+
+    expect(textoEnviado()).toBe(PLANTILLA_SIN_COINCIDENCIA.texto_respuesta);
+    expect(plantillasRepository.incrementarUso).toHaveBeenCalledWith(PLANTILLA_SIN_COINCIDENCIA.id);
+    expect(repository.crearMensaje).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categoriaClasificacion: claude.SIN_COINCIDENCIA,
+        plantillaId: PLANTILLA_SIN_COINCIDENCIA.id,
+      }),
+    );
+  });
+
+  it('si la plantilla predeterminada de respaldo no existe o está inactiva, usa el texto de respaldo absoluto sin tronar', async () => {
+    mockClasificarMensaje('emergencia');
     plantillasRepository.findBySlug.mockResolvedValue(undefined);
 
     await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'mensaje de prueba' });
@@ -188,9 +195,7 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
   });
 
   it('a un celular mexicano (521...) le quita el "1" extra al responder, aunque se guarda tal cual llegó', async () => {
-    jest
-      .spyOn(claude, 'clasificarCategoria')
-      .mockResolvedValue({ etiqueta: 'emergencia', tokensEntrada: 5, tokensSalida: 1 });
+    mockClasificarMensaje('emergencia');
 
     await procesarMensajeEntrante({ telefono: '5215529000090', texto: 'urgencia' });
 
@@ -201,9 +206,7 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
   });
 
   it('un número que no es celular mexicano con el patrón 521... se manda sin tocar', async () => {
-    jest
-      .spyOn(claude, 'clasificarCategoria')
-      .mockResolvedValue({ etiqueta: 'emergencia', tokensEntrada: 5, tokensSalida: 1 });
+    mockClasificarMensaje('emergencia');
 
     await procesarMensajeEntrante({ telefono: '14155551234', texto: 'urgencia' });
 
@@ -211,9 +214,7 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
   });
 
   it('audita el error de Meta y conserva el mensaje entrante aunque falle la respuesta', async () => {
-    jest
-      .spyOn(claude, 'clasificarCategoria')
-      .mockResolvedValue({ etiqueta: 'emergencia', tokensEntrada: 5, tokensSalida: 1 });
+    mockClasificarMensaje('emergencia');
     global.fetch.mockResolvedValue({
       ok: false,
       status: 400,
@@ -234,18 +235,14 @@ describe('whatsapp.service.procesarMensajeEntrante — categoria_clasificacion',
     expect(repository.crearMensaje).toHaveBeenCalled();
   });
 
-  it('categoría sin match (respuesta inesperada del LLM): guarda sin_coincidencia y responde la plantilla predeterminada', async () => {
-    jest
-      .spyOn(claude, 'clasificarCategoria')
-      .mockResolvedValue({ etiqueta: null, tokensEntrada: 5, tokensSalida: 1 });
-    const spyIntencion = jest.spyOn(claude, 'clasificarIntencion');
+  it('si Claude regresa una etiqueta que no está ni en el catálogo ni en las categorías (defensivo), cae igual al respaldo', async () => {
+    mockClasificarMensaje('una_intencion_que_ya_no_existe');
 
     await procesarMensajeEntrante({ telefono: '5215500000000', texto: 'algo raro' });
 
-    expect(spyIntencion).not.toHaveBeenCalled();
     expect(repository.crearMensaje).toHaveBeenCalledWith(
       expect.objectContaining({
-        categoriaClasificacion: claude.SIN_COINCIDENCIA,
+        categoriaClasificacion: 'una_intencion_que_ya_no_existe',
         plantillaId: PLANTILLA_SIN_COINCIDENCIA.id,
       }),
     );

@@ -169,7 +169,7 @@ describe('plantillas_whatsapp.service.crear (US-613)', () => {
     repository.reactivar.mockResolvedValue();
   });
 
-  it('inserta la plantilla con intención/texto_respuesta recortados y un slug generado a partir de la intención', async () => {
+  it('inserta la plantilla con intención/texto_respuesta recortados, un slug generado a partir de la intención, y categoría texto libre por default', async () => {
     await crear({
       intencion: '  Confirmar Cita  ',
       texto_respuesta: '  Tu cita fue confirmada.  ',
@@ -180,6 +180,7 @@ describe('plantillas_whatsapp.service.crear (US-613)', () => {
       intencion: 'Confirmar Cita',
       slug: 'confirmar-cita',
       texto_respuesta: 'Tu cita fue confirmada.',
+      categoriaMeta: 'TEXTO_LIBRE',
       usuarioId: 1,
     });
   });
@@ -217,9 +218,18 @@ describe('plantillas_whatsapp.service.crear (US-613)', () => {
     ).rejects.toThrow(PlantillaValidationError);
   });
 
-  it('no limita la longitud del texto de respuesta (columna text, no varchar)', async () => {
-    await crear({ intencion: 'Confirmar cita', texto_respuesta: 'a'.repeat(5000), usuarioId: 1 });
-    expect(repository.create).toHaveBeenCalled();
+  it('rechaza un texto de respuesta de más de 550 caracteres', async () => {
+    await expect(
+      crear({ intencion: 'Confirmar cita', texto_respuesta: 'a'.repeat(551), usuarioId: 1 }),
+    ).rejects.toThrow('El campo Texto de respuesta no puede tener más de 550 caracteres.');
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('cuenta emojis por puntos de código con Array.from, no por unidades UTF-16', async () => {
+    await crear({ intencion: 'Confirmar cita', texto_respuesta: '🐶'.repeat(550), usuarioId: 1 });
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ texto_respuesta: '🐶'.repeat(550) }),
+    );
   });
 
   it('rechaza una intención ya usada por una plantilla activa (AC de duplicados)', async () => {
@@ -260,6 +270,17 @@ describe('plantillas_whatsapp.service — nombreMeta', () => {
   });
 });
 
+// Pedido explícito del usuario (2026-09-12): de todo el catálogo, solo la
+// plantilla de resultados de laboratorio de verdad necesita registrarse en
+// Meta (es la única que INICIA el negocio, sin importar si el cliente
+// escribió antes) — todas las demás son texto libre dentro de una
+// conversación ya abierta (whatsapp.service.js#enviarRespuesta manda
+// type:'text', nunca type:'template') y NO deben registrarse, para no
+// duplicar plantillas en la cuenta de Meta. Por eso categoria_meta por
+// default es 'TEXTO_LIBRE' y crear() ya no manda nada a Meta a menos que
+// se le pida explícitamente una categoría real — el flujo de registro en
+// sí se conserva completo (nunca se borra) para cuando se dé de alta una
+// plantilla real de Marketing/Utility/Authentication en el futuro.
 describe('plantillas_whatsapp.service.crear — registro en Meta (aprobado_meta)', () => {
   const originalFetch = global.fetch;
 
@@ -283,10 +304,21 @@ describe('plantillas_whatsapp.service.crear — registro en Meta (aprobado_meta)
     global.fetch = originalFetch;
   });
 
-  it('al crear una plantilla nueva, la manda a registrar a Meta con el name derivado del slug', async () => {
+  it('por default (categoria_meta texto libre) NUNCA manda nada a Meta al crear', async () => {
     await crear({
       intencion: 'Confirmar Cita',
       texto_respuesta: 'Tu cita fue confirmada.',
+      usuarioId: 1,
+    });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('si se crea con una categoría real de Meta, sí la registra con el name derivado del slug', async () => {
+    await crear({
+      intencion: 'Confirmar Cita',
+      texto_respuesta: 'Tu cita fue confirmada.',
+      categoria_meta: 'UTILITY',
       usuarioId: 1,
     });
 
@@ -303,33 +335,48 @@ describe('plantillas_whatsapp.service.crear — registro en Meta (aprobado_meta)
     });
   });
 
-  it('si WhatsApp no está configurado, no intenta registrar nada en Meta', async () => {
+  it('con una categoría real, si WhatsApp no está configurado, no intenta registrar nada en Meta', async () => {
     whatsappConfig.isWhatsappConfigured.mockReturnValue(false);
 
-    await crear({ intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 1 });
+    await crear({
+      intencion: 'Confirmar cita',
+      texto_respuesta: 'algo',
+      categoria_meta: 'UTILITY',
+      usuarioId: 1,
+    });
 
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('si Meta rechaza el registro, la plantilla igual se crea (nunca lanza)', async () => {
+  it('con una categoría real, si Meta rechaza el registro, la plantilla igual se crea (nunca lanza)', async () => {
     global.fetch = jest
       .fn()
       .mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: {} }) });
 
-    const id = await crear({ intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 1 });
+    const id = await crear({
+      intencion: 'Confirmar cita',
+      texto_respuesta: 'algo',
+      categoria_meta: 'UTILITY',
+      usuarioId: 1,
+    });
 
     expect(id).toBe(99);
   });
 
-  it('si el fetch a Meta truena (red caída), la plantilla igual se crea', async () => {
+  it('con una categoría real, si el fetch a Meta truena (red caída), la plantilla igual se crea', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
 
-    const id = await crear({ intencion: 'Confirmar cita', texto_respuesta: 'algo', usuarioId: 1 });
+    const id = await crear({
+      intencion: 'Confirmar cita',
+      texto_respuesta: 'algo',
+      categoria_meta: 'UTILITY',
+      usuarioId: 1,
+    });
 
     expect(id).toBe(99);
   });
 
-  it('al reactivar una plantilla dada de baja, registra en Meta con el texto YA GUARDADO, no el del formulario', async () => {
+  it('al reactivar una plantilla de texto libre dada de baja, NO la registra en Meta', async () => {
     repository.findAllExcept.mockResolvedValue([
       {
         id: 7,
@@ -337,6 +384,29 @@ describe('plantillas_whatsapp.service.crear — registro en Meta (aprobado_meta)
         activo: false,
         slug: 'confirmar-cita',
         texto_respuesta: 'Texto viejo guardado.',
+        categoria_meta: 'TEXTO_LIBRE',
+      },
+    ]);
+
+    await crear({
+      intencion: 'Confirmar cita',
+      texto_respuesta: 'Texto nuevo del formulario, no debería usarse',
+      usuarioId: 1,
+    });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('al reactivar una plantilla con categoría real dada de baja, registra en Meta con el texto Y LA CATEGORÍA ya guardados, no el texto del formulario', async () => {
+    repository.findAllExcept.mockResolvedValue([
+      {
+        id: 7,
+        intencion: 'Confirmar cita',
+        activo: false,
+        slug: 'confirmar-cita',
+        texto_respuesta: 'Texto viejo guardado.',
+        categoria_meta: 'UTILITY',
       },
     ]);
 
@@ -347,6 +417,7 @@ describe('plantillas_whatsapp.service.crear — registro en Meta (aprobado_meta)
     });
 
     const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body.category).toBe('UTILITY');
     expect(body.components[0].text).toBe('Texto viejo guardado.');
     expect(repository.create).not.toHaveBeenCalled();
   });

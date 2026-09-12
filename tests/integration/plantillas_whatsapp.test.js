@@ -110,6 +110,11 @@ afterAll(async () => {
 
 describe('GET /plantillas.html', () => {
   beforeAll(async () => {
+    // categoria_meta: 'UTILITY' explícito en las 3 — el default real de la
+    // columna ahora es 'TEXTO_LIBRE' (migración 20260912000002), y estas
+    // filas existen justo para probar el camino de Aprobado/En
+    // revisión/N/A (una plantilla con categoría REAL de Meta) — el camino
+    // de "No Requerido" (texto libre) tiene su propio test aparte.
     await db('plantillas_whatsapp').insert({
       intencion: `Confirmar cita ${SUFFIX}`,
       slug: `confirmar-cita-${SUFFIX.toLowerCase()}`,
@@ -117,6 +122,7 @@ describe('GET /plantillas.html', () => {
       activo: true,
       veces_usada: 12,
       aprobado_meta: true,
+      categoria_meta: 'UTILITY',
       creado_en: db.fn.now(),
     });
     await db('plantillas_whatsapp').insert({
@@ -125,6 +131,7 @@ describe('GET /plantillas.html', () => {
       texto_respuesta: 'Te recordamos la vacuna de tu mascota.',
       activo: true,
       veces_usada: 3,
+      categoria_meta: 'UTILITY',
       creado_en: db.fn.now(),
     });
     await db('plantillas_whatsapp').insert({
@@ -133,6 +140,19 @@ describe('GET /plantillas.html', () => {
       texto_respuesta: 'Texto de una plantilla dada de baja.',
       activo: false,
       veces_usada: 0,
+      categoria_meta: 'UTILITY',
+      creado_en: db.fn.now(),
+    });
+    // categoria_meta sin especificar a propósito — usa el default real de
+    // la columna ('TEXTO_LIBRE', migración 20260912000002), igual que
+    // cualquier plantilla creada hoy por el formulario normal.
+    await db('plantillas_whatsapp').insert({
+      intencion: `Texto libre ${SUFFIX}`,
+      slug: `texto-libre-${SUFFIX.toLowerCase()}`,
+      texto_respuesta: 'Respuesta automática dentro de una conversación ya abierta.',
+      activo: true,
+      veces_usada: 0,
+      aprobado_meta: true, // basura de un registro manual viejo, a propósito — no debe importar
       creado_en: db.fn.now(),
     });
   });
@@ -162,6 +182,23 @@ describe('GET /plantillas.html', () => {
 
     expect(filaRetirada).toContain('N/A');
     expect(filaRetirada).not.toContain('En revisión');
+  });
+
+  // Pedido explícito del usuario (2026-09-12): "No Requerido" (azul) tiene
+  // prioridad sobre cualquier otro estado para una plantilla de texto
+  // libre, incluso si aprobado_meta trae basura de un registro manual
+  // viejo (ver el fixture de arriba, aprobado_meta:true a propósito).
+  it('AC: una plantilla de texto libre siempre muestra "No Requerido" en Estado en Meta, nunca Aprobado/En revisión', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/plantillas.html');
+    const inicioFila = res.text.indexOf(`<td>Texto libre ${SUFFIX}</td>`);
+    const filaTextoLibre = res.text.slice(inicioFila).split('</tr>')[0];
+
+    expect(filaTextoLibre).toContain('No Requerido');
+    expect(filaTextoLibre).not.toContain('Aprobado');
+    expect(filaTextoLibre).not.toContain('En revisión');
+    expect(filaTextoLibre).toContain('status-badge is-info');
   });
 
   it('un GET con query string a mano se ignora por completo (privacidad: nunca se lee ni se refleja)', async () => {
@@ -197,6 +234,18 @@ describe('GET /plantillas.html', () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await filtrarPlantillas(agent, { q: 'recordatorio-vacuna' });
+
+    expect(res.text).toContain(`Recordatorio vacuna ${SUFFIX}`);
+    expect(res.text).not.toContain(`Confirmar cita ${SUFFIX}`);
+  });
+
+  // Pedido explícito del usuario (2026-09-12): buscar también por el
+  // texto de respuesta, no solo por intención/slug — útil cuando se
+  // recuerda una frase del mensaje pero no la intención/slug exactos.
+  it('POST con q="vacuna de tu mascota" (frase del texto de respuesta) también encuentra la plantilla', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarPlantillas(agent, { q: 'vacuna de tu mascota' });
 
     expect(res.text).toContain(`Recordatorio vacuna ${SUFFIX}`);
     expect(res.text).not.toContain(`Confirmar cita ${SUFFIX}`);
@@ -352,6 +401,11 @@ describe('GET /plantillas/nuevo, /:id/editar y /:id/ver (US-613 — formulario, 
     await createTestUser(SOLO_CREAR_USER, ['plantillas.ver', 'plantillas.crear']);
     await createTestUser(SOLO_EDITAR_USER, ['plantillas.ver', 'plantillas.editar']);
 
+    // categoria_meta: 'UTILITY' explícito — el default real ahora es
+    // 'TEXTO_LIBRE' (migración 20260912000002); esta fila existe para
+    // probar el detalle con una categoría REAL de Meta (Aprobado/En
+    // revisión, pill "Utility"), el camino de texto libre tiene su propio
+    // test aparte.
     const [plantilla] = await db('plantillas_whatsapp')
       .insert({
         intencion: `Formulario ${SUFFIX}`,
@@ -359,6 +413,7 @@ describe('GET /plantillas/nuevo, /:id/editar y /:id/ver (US-613 — formulario, 
         texto_respuesta: 'Texto original de la plantilla.',
         activo: true,
         veces_usada: 0,
+        categoria_meta: 'UTILITY',
         creado_en: db.fn.now(),
       })
       .returning('id');
@@ -411,6 +466,8 @@ describe('GET /plantillas/nuevo, /:id/editar y /:id/ver (US-613 — formulario, 
     expect(res.text).not.toContain('id="plantillaEmojiSelect"');
     expect(res.text).toContain('id="plantillaTextoEditor" contenteditable="true"');
     expect(res.text).toContain('id="plantillaEditorError" hidden');
+    expect(res.text).toContain('id="plantillaEditorCounter"');
+    expect(res.text).toContain('550 caracteres disponibles');
     expect(res.text).toContain('id="plantillaTextoRespuesta"');
     expect(res.text).not.toContain('id="plantillaTextoRespuesta" hidden required');
   });
@@ -448,16 +505,72 @@ describe('GET /plantillas/nuevo, /:id/editar y /:id/ver (US-613 — formulario, 
     expect(res.text).toContain('value="En revisión"'); // aprobado_meta=false por default
   });
 
-  // Migración 20260912000001: categoria_meta default 'UTILITY' para toda
-  // fila ya existente — coincide con lo que de verdad se manda hoy a Meta
-  // (category: 'UTILITY' hardcodeado en plantillas_whatsapp.service.js).
+  // Esta fila se creó con categoria_meta:'UTILITY' explícito (ver
+  // beforeAll de arriba) — el default real de la columna hoy es
+  // 'TEXTO_LIBRE' (migración 20260912000002), UTILITY se pone a propósito
+  // aquí para probar el camino de una categoría REAL de Meta.
   it('AC: el detalle trae "Categoría Meta" con la etiqueta legible de la categoría real', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await agent.get(`/plantillas/${plantillaId}/ver`);
 
     expect(res.text).toContain('Categoría Meta');
-    expect(res.text).toContain('value="Utility"');
+    expect(res.text).toContain('class="badge meta-category-badge is-utility">Utility</span>');
+    expect(res.text).not.toContain('value="Utility"');
+  });
+
+  it('muestra Marketing en naranja y las demás categorías en rojo', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    try {
+      await db('plantillas_whatsapp')
+        .where({ id: plantillaId })
+        .update({ categoria_meta: 'MARKETING' });
+      const marketing = await agent.get(`/plantillas/${plantillaId}/ver`);
+      expect(marketing.text).toContain(
+        'class="badge meta-category-badge is-marketing">Marketing</span>',
+      );
+
+      await db('plantillas_whatsapp')
+        .where({ id: plantillaId })
+        .update({ categoria_meta: 'AUTHENTICATION' });
+      const otra = await agent.get(`/plantillas/${plantillaId}/ver`);
+      expect(otra.text).toContain(
+        'class="badge meta-category-badge is-other">Authentication</span>',
+      );
+    } finally {
+      await db('plantillas_whatsapp')
+        .where({ id: plantillaId })
+        .update({ categoria_meta: 'UTILITY' });
+    }
+  });
+
+  // Pedido explícito del usuario (2026-09-12): pill azul "Texto Libre" en
+  // vez de Marketing/Utility/Authentication, y "No Requerido" (no
+  // Aprobado/En revisión) en Estado en Meta — el caso normal para casi
+  // todo el catálogo (solo la plantilla de resultados de laboratorio de
+  // verdad se registra en Meta).
+  it('AC: una plantilla de texto libre muestra la pill "Texto Libre" y "No Requerido" en Estado en Meta', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    try {
+      await db('plantillas_whatsapp')
+        .where({ id: plantillaId })
+        .update({ categoria_meta: 'TEXTO_LIBRE', aprobado_meta: true });
+
+      const res = await agent.get(`/plantillas/${plantillaId}/ver`);
+
+      expect(res.text).toContain(
+        'class="badge meta-category-badge is-texto-libre">Texto Libre</span>',
+      );
+      expect(res.text).toContain('value="No Requerido"');
+      expect(res.text).not.toContain('value="Aprobado"');
+      expect(res.text).not.toContain('value="En revisión"');
+    } finally {
+      await db('plantillas_whatsapp')
+        .where({ id: plantillaId })
+        .update({ categoria_meta: 'UTILITY', aprobado_meta: false });
+    }
   });
 
   it('un usuario con solo plantillas.ver SÍ puede abrir el detalle (a diferencia de editar, que exige plantillas.editar)', async () => {
@@ -528,6 +641,11 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     expect(row.veces_usada).toBe(0);
     expect(row.creado_por).not.toBeNull();
     expect(row.slug).toBeTruthy(); // generado automáticamente a partir de la intención
+    // Pedido explícito del usuario (2026-09-12): toda plantilla nueva es
+    // texto libre por default — no hay campo en el formulario todavía
+    // para elegir otra cosa (se agregaría el día que se dé de alta algo
+    // real de Marketing/Utility/Authentication).
+    expect(row.categoria_meta).toBe('TEXTO_LIBRE');
   });
 
   it('AC: el slug se genera a partir de la intención, sin acentos y en minúsculas', async () => {
@@ -566,6 +684,23 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     expect(res.text).toContain('Texto de respuesta es obligatorio');
 
     const row = await db('plantillas_whatsapp').where('intencion', `SinTexto ${SUFFIX}`).first();
+    expect(row).toBeUndefined();
+  });
+
+  it('rechaza en el servidor un texto de respuesta de más de 550 caracteres', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getPlantillasCsrfToken(agent);
+    const intencion = `Texto Largo ${SUFFIX}`;
+
+    const res = await agent
+      .post('/plantillas')
+      .type('form')
+      .set('x-csrf-token', csrfToken)
+      .send({ intencion, texto_respuesta: 'a'.repeat(551) });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Texto de respuesta no puede tener más de 550 caracteres');
+    const row = await db('plantillas_whatsapp').where({ intencion }).first();
     expect(row).toBeUndefined();
   });
 

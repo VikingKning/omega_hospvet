@@ -38,33 +38,52 @@
     </label>
   </div>
   <div class="profile-form-row">
+    <%
+      const esTextoLibre = plantilla.categoria_meta === 'TEXTO_LIBRE';
+      // Pedido explícito del usuario (2026-09-12): "No Requerido" tiene
+      // prioridad sobre cualquier otro estado para una plantilla de texto
+      // libre — nunca se manda a Meta, sin importar activo/inactivo o lo
+      // que aprobado_meta traiga guardado de un registro manual viejo.
+      // Para las demás, igual que en la tabla: inactiva no se manda a
+      // Meta, así que "Aprobado"/"En revisión" no aplica.
+      const estadoMeta = esTextoLibre
+        ? 'No Requerido'
+        : !plantilla.activo
+          ? 'N/A'
+          : plantilla.aprobado_meta
+            ? 'Aprobado'
+            : 'En revisión';
+    %>
     <label>
       Estado en Meta
-      <%
-        // Igual que en la tabla: inactiva no se manda a Meta, así que
-        // "Aprobado"/"En revisión" no aplica — mismas etiquetas que
-        // plantillas-panel.ejs (coinciden con el texto que usa Meta en su
-        // propio panel).
-        const estadoMeta = !plantilla.activo ? 'N/A' : plantilla.aprobado_meta ? 'Aprobado' : 'En revisión';
-      %>
       <input type="text" value="<%= estadoMeta %>" readonly disabled>
     </label>
-    <label>
-      Categoría Meta
+    <div class="plantilla-detalle-field">
+      <span class="plantilla-detalle-label">Categoría Meta</span>
       <%
         // Las 3 categorías reales que existen en la API de Meta para
-        // plantillas de WhatsApp — hoy todo el catálogo se registra como
-        // UTILITY (ver comentario de la migración que agregó esta
-        // columna), este mapa es solo para mostrar la etiqueta legible.
+        // plantillas de WhatsApp, más 'TEXTO_LIBRE' (propia de este
+        // sistema, pedido explícito del usuario: la mayoría del catálogo
+        // son respuestas de texto libre que nunca se registran en Meta —
+        // ver plantillas_whatsapp.service.js#registrarEnMeta).
         const CATEGORIA_META_LABEL = {
           MARKETING: 'Marketing',
           UTILITY: 'Utility',
           AUTHENTICATION: 'Authentication',
+          TEXTO_LIBRE: 'Texto Libre',
         };
-        const categoriaMetaLabel = CATEGORIA_META_LABEL[plantilla.categoria_meta] || plantilla.categoria_meta;
+        const categoriaMeta = String(plantilla.categoria_meta || '').toUpperCase();
+        const categoriaMetaLabel = CATEGORIA_META_LABEL[categoriaMeta] || plantilla.categoria_meta || 'Sin categoría';
+        const categoriaMetaClase = categoriaMeta === 'TEXTO_LIBRE'
+          ? 'is-texto-libre'
+          : categoriaMeta === 'UTILITY'
+            ? 'is-utility'
+            : categoriaMeta === 'MARKETING'
+              ? 'is-marketing'
+              : 'is-other';
       %>
-      <input type="text" value="<%= categoriaMetaLabel %>" readonly disabled>
-    </label>
+      <span class="badge meta-category-badge <%= categoriaMetaClase %>"><%= categoriaMetaLabel %></span>
+    </div>
   </div>
   <div class="plantilla-texto-field">
     <span class="plantilla-detalle-label">Texto de respuesta</span>

@@ -44,7 +44,7 @@ function sortVals(column) {
       <div class="lab-toolbar-filters">
         <div class="lab-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" id="plantillas-search" name="q" value="<%= q %>" placeholder="Buscar por intención o slug...">
+          <input type="text" id="plantillas-search" name="q" value="<%= q %>" placeholder="Buscar por intención, slug o texto...">
           <span class="lab-search-spinner htmx-indicator" aria-hidden="true"></span>
         </div>
         <div class="toggle-group">
@@ -101,15 +101,22 @@ function sortVals(column) {
               <td><span class="area-tag-empty"><%= plantilla.slug %></span></td>
               <td>
                 <%
-                  // Una plantilla inactiva no se manda a Meta (ni se
+                  // Pedido explícito del usuario (2026-09-12): una
+                  // plantilla de texto libre nunca se manda a Meta —
+                  // "No Requerido" (azul) tiene prioridad sobre cualquier
+                  // otro estado, sin importar si está activa/inactiva o si
+                  // aprobado_meta trae basura de un registro manual viejo.
+                  // Para las demás: una inactiva no se manda a Meta (ni se
                   // debió mandar, ni se va a mandar mientras siga así) —
                   // "Aprobado"/"En revisión" solo aplica a las activas —
                   // "En revisión" (no "Pendiente") para que coincida
                   // exactamente con la etiqueta que usa el propio panel de
                   // Meta (Administrador de WhatsApp > Plantillas de
-                  // mensajes), pedido explícito del usuario.
+                  // mensajes).
                 %>
-                <% if (!plantilla.activo) { %>
+                <% if (plantilla.categoria_meta === 'TEXTO_LIBRE') { %>
+                  <span class="status-badge is-info" data-tooltip="Se manda como mensaje de texto normal, nunca como plantilla de Meta">No Requerido</span>
+                <% } else if (!plantilla.activo) { %>
                   <span class="status-badge">N/A</span>
                 <% } else { %>
                   <span class="status-badge<%= plantilla.aprobado_meta ? ' is-active' : ' is-warning' %>"><%= plantilla.aprobado_meta ? 'Aprobado' : 'En revisión' %></span>
