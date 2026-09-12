@@ -143,6 +143,48 @@ describe('laboratorio.archivos.procesarArchivos', () => {
     ).rejects.toThrow(/no se puede combinar/);
   });
 
+  it('un solo .docx se guarda tal cual (no se convierte a PDF)', async () => {
+    const docxBuffer = Buffer.from('contenido-de-word-falso');
+    const resultado = await procesarArchivos({
+      registroId: 7,
+      files: [
+        archivo(
+          'resultados.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          docxBuffer,
+        ),
+      ],
+    });
+
+    expect(resultado.consolidado).toBe(false);
+    expect(resultado.nombreOriginal).toBe('resultados.docx');
+  });
+
+  it('un solo .doc (formato viejo de Word) también se acepta', async () => {
+    const resultado = await procesarArchivos({
+      registroId: 7,
+      files: [archivo('resultados.doc', 'application/msword', Buffer.from('x'))],
+    });
+
+    expect(resultado.consolidado).toBe(false);
+  });
+
+  it('rechaza combinar un .docx con otro archivo (pdf-lib no interpreta Word)', async () => {
+    await expect(
+      procesarArchivos({
+        registroId: 7,
+        files: [
+          archivo(
+            'resultados.docx',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            Buffer.from('x'),
+          ),
+          archivo('foto.jpg', 'image/jpeg', JPG_1PX),
+        ],
+      }),
+    ).rejects.toThrow(/no se puede combinar/);
+  });
+
   it('crea la carpeta del registro antes de escribir', async () => {
     await procesarArchivos({ registroId: 42, files: [archivo('a.jpg', 'image/jpeg', JPG_1PX)] });
     expect(fs.mkdir).toHaveBeenCalledWith(expect.stringContaining(`${require('path').sep}42`), {

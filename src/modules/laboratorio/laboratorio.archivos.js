@@ -16,24 +16,28 @@ const config = require('../../config/env');
 // apuntar a cualquier carpeta del sistema, dentro o fuera del repo.
 const STORAGE_ROOT = config.labsResultFileStorage;
 
-// video/foto/PDF (pedido explícito del usuario) — mp4/mov/webm cubren los
-// formatos de video reales que entrega un teléfono o una cámara de
-// consultorio; jpeg/png/webp los de foto.
+// video/foto/PDF/Word (pedido explícito del usuario) — mp4/mov/webm cubren
+// los formatos de video reales que entrega un teléfono o una cámara de
+// consultorio; jpeg/png/webp los de foto; doc/docx los resultados que el
+// laboratorio manda como documento de Word en vez de PDF/imagen.
 const TIPOS_PERMITIDOS = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
   'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'video/mp4',
   'video/quicktime',
   'video/webm',
 ]);
 
 // pdf-lib solo puede EMBEBER jpeg/png de verdad (webp no tiene soporte
-// nativo en la librería, y un video no se puede convertir a página de
-// PDF) — un webp o un video siguen siendo válidos como archivo ÚNICO
-// (se guardan tal cual, sin fusionar), pero no pueden combinarse con
-// otros archivos en el mismo lote.
+// nativo en la librería, un video no se puede convertir a página de PDF, y
+// un .doc/.docx tampoco — pdf-lib no interpreta el formato de Word) — esos
+// tipos siguen siendo válidos como archivo ÚNICO (se guardan tal cual, sin
+// fusionar), pero no pueden combinarse con otros archivos en el mismo
+// lote.
 const TIPOS_FUSIONABLES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
 
 // archivos_laboratorio no guarda el mimetype (nunca hizo falta: la
@@ -49,6 +53,8 @@ const MIME_POR_EXTENSION = {
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.mp4': 'video/mp4',
   '.mov': 'video/quicktime',
   '.webm': 'video/webm',

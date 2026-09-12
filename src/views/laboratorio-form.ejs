@@ -553,11 +553,12 @@
     const SOLO_LECTURA = DATOS.soloLectura;
     const PUEDE_CARGAR_ARCHIVOS = DATOS.puedeCargarArchivos;
     // Tipos permitidos para resultados (pedido explícito del usuario: video,
-    // foto o PDF) — mismo whitelist que laboratorio.archivos.js del lado
-    // servidor, aquí solo restringe qué aparece en el selector de archivos
-    // del sistema operativo (la validación real es la del servidor).
+    // foto, PDF o Word) — mismo whitelist que laboratorio.archivos.js del
+    // lado servidor, aquí solo restringe qué aparece en el selector de
+    // archivos del sistema operativo (la validación real es la del
+    // servidor).
     const ACCEPT_ARCHIVOS =
-      'image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/quicktime,video/webm';
+      'image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,video/mp4,video/quicktime,video/webm';
     // Regla explícita del usuario: en EDICIÓN (no alta) tutor/paciente/fecha
     // quedan bloqueados — mismo criterio que tutorPacienteDisabledAttr del
     // lado servidor, para el código que solo corre en cliente (JS de
