@@ -795,6 +795,21 @@
       document.getElementById('plantillaEmojiToggle')?.setAttribute('aria-expanded', 'false');
     }
 
+    // Pedido explícito del usuario: componente "Sí/No" (mismo .toggle-group
+    // ya usado en los filtros Activos/Todos) para "Respuesta a Emergencia"
+    // — sincroniza la clase .active del botón clickeado con el input
+    // oculto #plantillaEmergenciaInput, que es lo que de verdad viaja en
+    // el submit.
+    const botonEmergencia = event.target.closest('#plantillaEmergenciaToggle .toggle-btn');
+    if (botonEmergencia) {
+      const grupo = document.getElementById('plantillaEmergenciaToggle');
+      grupo.querySelectorAll('.toggle-btn').forEach((boton) => {
+        boton.classList.toggle('active', boton === botonEmergencia);
+      });
+      document.getElementById('plantillaEmergenciaInput').value = botonEmergencia.dataset.value;
+      return;
+    }
+
   });
 
   plantillaFormModalBackdrop.addEventListener('click', (event) => {

@@ -2116,6 +2116,20 @@ body:has(.app)::after {
   color: var(--primary);
 }
 
+/* Pedido explícito del usuario: píldora "Tipo de Respuesta" en el detalle
+   de la plantilla (plantilla-detalle.ejs), mismo componente que
+   .meta-category-badge — rojo (mismo tono que .badge-pendiente) para
+   emergencia, azul (mismo tono que .is-texto-libre) para informativa. */
+.meta-category-badge.is-emergencia {
+  background: rgba(240, 15, 53, 0.15);
+  color: var(--danger);
+}
+
+.meta-category-badge.is-informativa {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
 .plantilla-formato-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2882,6 +2896,19 @@ body:has(.app)::after {
 .toggle-btn.active {
   background: var(--primary);
   color: #fff;
+}
+
+/* Bug real reportado por el usuario: dentro de un campo de formulario
+   (.modal-form label, ver plantilla-form.ejs "Respuesta a Emergencia") el
+   toggle-group se estiraba a todo el ancho del modal — su `<label>` padre
+   es un flex column con align-items:stretch (regla por defecto de
+   .modal-form label), y ningún hijo de un flex container respeta su
+   `display:inline-flex` propio para el ANCHO que el padre le asigna, eso
+   solo gobierna cómo se acomodan SUS PROPIOS hijos (los .toggle-btn). En
+   los usos de toolbar (Activos/Todos) esto no pasa porque ahí el padre es
+   .filter-group (inline-flex), no una columna que estira. */
+.modal-form label > .toggle-group {
+  align-self: center;
 }
 
 /* US-155: Tutores/Pacientes tiene DOS filtros de estado independientes en

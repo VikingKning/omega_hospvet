@@ -258,6 +258,7 @@ async function crear({
   intencion: rawIntencion,
   texto_respuesta: rawTexto,
   categoria_meta: rawCategoriaMeta,
+  es_emergencia: rawEsEmergencia,
   usuarioId,
 }) {
   const intencion = validateTexto(rawIntencion, 'Intención', INTENCION_MAX_LENGTH);
@@ -267,6 +268,7 @@ async function crear({
     TEXTO_RESPUESTA_MAX_LENGTH,
   );
   const categoria_meta = rawCategoriaMeta || CATEGORIA_TEXTO_LIBRE;
+  const esEmergencia = parseActivo(rawEsEmergencia);
 
   const existing = await findDuplicado(intencion);
   if (existing) {
@@ -296,6 +298,7 @@ async function crear({
     slug,
     texto_respuesta,
     categoriaMeta: categoria_meta,
+    esEmergencia,
     usuarioId,
   });
   await registrarEnMeta({ id, slug, texto_respuesta, categoria_meta });
@@ -334,6 +337,7 @@ async function editar({
   id,
   texto_respuesta: rawTexto,
   activo: rawActivo,
+  es_emergencia: rawEsEmergencia,
   esPredeterminada,
   usuarioId,
 }) {
@@ -343,8 +347,9 @@ async function editar({
     TEXTO_RESPUESTA_MAX_LENGTH,
   );
   const activo = esPredeterminada ? true : parseActivo(rawActivo);
+  const esEmergencia = parseActivo(rawEsEmergencia);
 
-  await repository.update(id, { texto_respuesta, activo, usuarioId });
+  await repository.update(id, { texto_respuesta, activo, esEmergencia, usuarioId });
 }
 
 module.exports = {

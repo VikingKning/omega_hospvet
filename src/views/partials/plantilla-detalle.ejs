@@ -11,9 +11,20 @@
 // 6 campos apilados (.profile-form-row, mismo patrón ya usado en
 // perfil-form.ejs) — el modal es más ancho a propósito
 // (#plantillaFormModalBody trae .modal-card-wide, ver plantillas.ejs).
+//
+// Pedido explícito del usuario (ajuste posterior): píldora de "Tipo de
+// Respuesta" A LADO DEL TÍTULO "Detalle de la plantilla" (no junto a
+// Categoría Meta, donde había quedado en un primer intento) — mismo
+// componente .meta-category-badge que ya usa esa otra píldora.
+const esRespuestaEmergencia = Boolean(plantilla.es_emergencia);
 %>
 <div class="modal-header">
-  <h2>Detalle de la plantilla</h2>
+  <h2 style="display:flex; align-items:center; gap:10px;">
+    Detalle de la plantilla
+    <span class="badge meta-category-badge <%= esRespuestaEmergencia ? 'is-emergencia' : 'is-informativa' %>">
+      <%= esRespuestaEmergencia ? 'Respuesta a Emergencia' : 'Respuesta Informativa' %>
+    </span>
+  </h2>
   <button class="modal-close-btn" type="button" id="plantillaFormClose" aria-label="Cerrar">&times;</button>
 </div>
 <form class="modal-form">

@@ -111,13 +111,21 @@ async function existsBySlug(slug) {
 // decide el service (por ahora siempre 'TEXTO_LIBRE' — ver
 // plantillas_whatsapp.service.js#crear), esta función no le pone un
 // default propio para no duplicar esa decisión en 2 lugares.
-async function create({ intencion, slug, texto_respuesta, categoriaMeta, usuarioId }) {
+async function create({
+  intencion,
+  slug,
+  texto_respuesta,
+  categoriaMeta,
+  esEmergencia,
+  usuarioId,
+}) {
   const [row] = await db('plantillas_whatsapp')
     .insert({
       intencion,
       slug,
       texto_respuesta,
       categoria_meta: categoriaMeta,
+      es_emergencia: esEmergencia,
       activo: true,
       veces_usada: 0,
       creado_por: usuarioId,
@@ -140,12 +148,13 @@ async function create({ intencion, slug, texto_respuesta, categoriaMeta, usuario
 // formulario cargó al abrirse), fijando/limpiando
 // desactivado_por/desactivado_en exactamente igual que
 // doctores.repository.js#editar.
-async function update(id, { texto_respuesta, activo, usuarioId }) {
+async function update(id, { texto_respuesta, activo, esEmergencia, usuarioId }) {
   await db.transaction(async (trx) => {
     const actual = await trx('plantillas_whatsapp').where({ id }).first('activo');
 
     const cambios = {
       texto_respuesta,
+      es_emergencia: esEmergencia,
       actualizado_por: usuarioId,
       actualizado_en: trx.fn.now(),
     };

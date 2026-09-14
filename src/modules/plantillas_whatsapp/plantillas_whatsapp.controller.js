@@ -81,6 +81,7 @@ async function nuevoForm(req, res, next) {
       plantilla: null,
       intencion: '',
       texto_respuesta: '',
+      es_emergencia: false,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -119,6 +120,7 @@ async function editarForm(req, res, next) {
       slug: plantilla.slug,
       texto_respuesta: plantilla.texto_respuesta,
       activo: plantilla.activo,
+      es_emergencia: plantilla.es_emergencia,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -151,6 +153,7 @@ async function crear(req, res, next) {
     await service.crear({
       intencion: req.body.intencion,
       texto_respuesta: req.body.texto_respuesta,
+      es_emergencia: req.body.es_emergencia,
       usuarioId: req.session.user.id,
     });
   } catch (err) {
@@ -159,6 +162,7 @@ async function crear(req, res, next) {
         plantilla: null,
         intencion: req.body.intencion ?? '',
         texto_respuesta: req.body.texto_respuesta ?? '',
+        es_emergencia: req.body.es_emergencia === 'true',
         error: err.message,
         csrfToken,
         user: req.session.user,
@@ -189,6 +193,7 @@ async function editar(req, res, next) {
         id: req.params.id,
         texto_respuesta: req.body.texto_respuesta,
         activo: req.body.activo,
+        es_emergencia: req.body.es_emergencia,
         esPredeterminada: existing.es_predeterminada,
         usuarioId: req.session.user.id,
       });
@@ -200,6 +205,7 @@ async function editar(req, res, next) {
           slug: existing.slug,
           texto_respuesta: req.body.texto_respuesta ?? '',
           activo: req.body.activo === 'true',
+          es_emergencia: req.body.es_emergencia === 'true',
           error: err.message,
           csrfToken,
           user: req.session.user,
