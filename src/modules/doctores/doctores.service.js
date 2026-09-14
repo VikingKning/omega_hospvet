@@ -10,6 +10,20 @@ class DoctorValidationError extends Error {
   }
 }
 
+// Pedido explícito del usuario: Consultas siempre debe tener un doctor
+// "Consultas Omega Genérico" — a diferencia de areas.es_predeterminada
+// (que sí permite activar/desactivar), aquí el bloqueo es total: ni
+// renombrar ni dar de baja, porque este doctor es el fallback real que usa
+// la sincronización de reservas externas de Google Calendar (ver
+// agenda.repository.js#obtenerOCrearDoctorConsultasPredeterminado) — debe
+// seguir existiendo, activo y ligado a Consultas siempre.
+class DoctorPredeterminadoError extends Error {
+  constructor() {
+    super('Este es el doctor predeterminado de Consultas y no se puede editar ni dar de baja.');
+    this.status = 400;
+  }
+}
+
 const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['doctor', 'areas', 'estado'];
 const TEXTO_MAX_LENGTH = 100;
@@ -75,6 +89,11 @@ async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
 async function desactivar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
+  const doctor = await repository.findById(id);
+  if (!doctor) return;
+  if (doctor.es_predeterminado) {
+    throw new DoctorPredeterminadoError();
+  }
   await repository.desactivar(id, usuarioId);
 }
 
@@ -167,6 +186,14 @@ async function editar({
   areaIds: rawAreaIds,
   usuarioId,
 }) {
+  const parsedId = parseId(id);
+  if (parsedId !== null) {
+    const actual = await repository.findById(parsedId);
+    if (actual?.es_predeterminado) {
+      throw new DoctorPredeterminadoError();
+    }
+  }
+
   const nombre = validateTexto(rawNombre, 'Nombre(s)');
   const apellidos = validateTexto(rawApellidos, 'Apellidos');
   const activo = parseActivo(rawActivo);
@@ -183,4 +210,5 @@ module.exports = {
   crear,
   editar,
   DoctorValidationError,
+  DoctorPredeterminadoError,
 };

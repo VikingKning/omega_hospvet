@@ -94,7 +94,7 @@ function initials(nombre, apellidos) {
                 <div class="person-cell">
                   <span class="avatar-circle"><%= initials(doctor.nombre, doctor.apellidos) %></span>
                   <div>
-                    <div class="person-cell-name"><%= doctor.nombre %> <%= doctor.apellidos %></div>
+                    <div class="person-cell-name"><%= doctor.nombre %> <%= doctor.apellidos %><% if (doctor.es_predeterminado) { %> <span class="status-badge" data-tooltip="Doctor predeterminado del sistema (fallback de Consultas) — no se puede editar ni dar de baja">Predeterminado</span><% } %></div>
                   </div>
                 </div>
               </td>
@@ -120,7 +120,7 @@ function initials(nombre, apellidos) {
               </td>
               <td class="text-right">
                 <div class="row-actions">
-                  <% if (has('doctores.editar')) { %>
+                  <% if (has('doctores.editar') && !doctor.es_predeterminado) { %>
                     <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar"
                             aria-label="Editar doctor <%= doctor.nombre %> <%= doctor.apellidos %>"
                             hx-get="doctores/<%= doctor.id %>/editar" hx-target="#doctorFormModalBody" hx-swap="innerHTML">
@@ -129,7 +129,7 @@ function initials(nombre, apellidos) {
                       </svg>
                     </button>
                   <% } %>
-                  <% if (has('doctores.eliminar') && doctor.activo) { %>
+                  <% if (has('doctores.eliminar') && doctor.activo && !doctor.es_predeterminado) { %>
                     <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
                             aria-label="Dar de baja a <%= doctor.nombre %> <%= doctor.apellidos %>"
                             hx-delete="doctores/<%= doctor.id %>" hx-include="#doctores-filters"

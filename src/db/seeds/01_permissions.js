@@ -71,6 +71,7 @@ const permissions = [
 // usado en todos los demás módulos.
 const AGENDA_CATEGORIAS = [
   ['agenda_consultas', 'consultas', 'Consultas'],
+  ['agenda_estetica', 'estetica', 'Estética'],
   ['agenda_cirugias', 'cirugias', 'Cirugías'],
   ['agenda_grooming', 'grooming', 'Grooming'],
   ['agenda_cardiologia', 'cardiologia', 'Cardiología'],

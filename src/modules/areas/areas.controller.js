@@ -49,6 +49,22 @@ async function desactivar(req, res, next) {
   }
 }
 
+// Pedido explícito del usuario: contraparte de desactivar() — reactiva un
+// área (sobre todo pensado para Consultas/Estética, que no son editables y
+// por lo tanto solo pueden volver a activo por aquí, nunca dando de alta
+// de nuevo). Mismo patrón que desactivar(): PUT, arrastra el filtro/orden/
+// página actual vía hx-include.
+async function activar(req, res, next) {
+  try {
+    await service.activar(req.params.id, req.session.user.id);
+    const data = await service.list({ ...req.query, ...req.body });
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/areas-panel', { ...data, user: req.session.user, csrfToken });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // US-610: fragmento HTMX con el formulario vacío ("Nueva área"), swapeado
 // dentro del modal.
 async function nuevoForm(req, res, next) {
@@ -59,6 +75,7 @@ async function nuevoForm(req, res, next) {
       nombre: '',
       color: null, // "Sin color" preseleccionado por defecto en el alta
       colores: GOOGLE_CALENDAR_COLORS,
+      soloLectura: false,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -82,6 +99,34 @@ async function editarForm(req, res, next) {
       nombre: area.nombre,
       color: area.color_google_calendar,
       colores: GOOGLE_CALENDAR_COLORS,
+      soloLectura: false,
+      error: null,
+      csrfToken,
+      user: req.session.user,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Pedido explícito del usuario: fragmento HTMX de solo-lectura para las
+// áreas predeterminadas del sistema (Consultas/Estética) — mismo modal que
+// alta/edición, pero area-form.ejs oculta el submit y deshabilita los
+// campos cuando soloLectura=true (nunca se confía solo en el servidor NO
+// exponer el ícono de editar para estas filas — ver areas.service.js#editar).
+async function verForm(req, res, next) {
+  try {
+    const area = await service.obtener(req.params.id);
+    if (!area) {
+      return res.status(404).send('Área no encontrada');
+    }
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/area-form', {
+      area,
+      nombre: area.nombre,
+      color: area.color_google_calendar,
+      colores: GOOGLE_CALENDAR_COLORS,
+      soloLectura: true,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -123,6 +168,7 @@ async function crear(req, res, next) {
         nombre: req.body.nombre ?? '',
         color: req.body.color ?? '',
         colores: GOOGLE_CALENDAR_COLORS,
+        soloLectura: false,
         error: err.message,
         csrfToken,
         user: req.session.user,
@@ -158,6 +204,7 @@ async function editar(req, res, next) {
           nombre: req.body.nombre ?? '',
           color: req.body.color ?? '',
           colores: GOOGLE_CALENDAR_COLORS,
+          soloLectura: false,
           error: err.message,
           csrfToken,
           user: req.session.user,
@@ -172,4 +219,14 @@ async function editar(req, res, next) {
   }
 }
 
-module.exports = { list, filter, desactivar, nuevoForm, editarForm, crear, editar };
+module.exports = {
+  list,
+  filter,
+  desactivar,
+  activar,
+  nuevoForm,
+  editarForm,
+  verForm,
+  crear,
+  editar,
+};

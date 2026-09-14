@@ -1,5 +1,6 @@
 const whatsapp = require('../../config/whatsapp');
 const service = require('./whatsapp.service');
+const outbox = require('./whatsapp.outbox');
 
 // Handshake de Meta al registrar el webhook (GET, una sola vez) — repite
 // `hub.challenge` tal cual si `hub.verify_token` coincide con el valor que
@@ -15,64 +16,242 @@ function verificar(req, res) {
   return res.sendStatus(403);
 }
 
-// Claude solo clasifica TEXTO, nunca ve la imagen en sí — de un mensaje de
-// foto (ej. para la plantilla "revision_herida_foto") se usa el `caption`
-// (el texto que el tutor escribe junto a la foto) como si fuera el
-// mensaje. Una foto sin caption no tiene texto que clasificar, se ignora
-// igual que cualquier tipo de mensaje que no sea texto/imagen (audio,
-// ubicación, etc.) y que cualquier entrada sin `value.messages` (recibos
-// de entrega/lectura, que Meta manda al mismo endpoint).
-function extraerTextoDelMensaje(mensaje) {
-  if (mensaje.type === 'text') return mensaje.text?.body;
-  if (mensaje.type === 'image') return mensaje.image?.caption;
-  return undefined;
+// US WA 001 (AC7/AC8): ya no solo texto/imagen — CUALQUIER mensaje
+// soportado se persiste, conservando su tipo original y lo mínimo
+// necesario para procesarlo después. `contenido` es lo que eventualmente
+// se manda a clasificar (Claude nunca ve una imagen/audio/video en sí,
+// solo texto): el body de un texto, el caption de una foto, o el id de la
+// opción elegida en una respuesta interactiva. Los tipos sin contenido de
+// texto (imagen sin caption, audio, video, documento, sticker, ubicación,
+// contacto, o cualquier otro no reconocido) se persisten con `contenido:
+// null` — se guardan para una futura agrupación por conversación, pero
+// nunca se mandan a Claude (ver whatsapp.repository.js#findPendientesParaProcesar).
+function extraerEventoDeMensaje(mensaje, phoneNumberId) {
+  const base = {
+    whatsappMessageId: mensaje.id,
+    from: mensaje.from,
+    timestamp: mensaje.timestamp,
+    phoneNumberId,
+  };
+
+  if (mensaje.type === 'text') {
+    return { ...base, tipoMensaje: 'text', contenido: mensaje.text?.body ?? null, mediaId: null };
+  }
+  if (mensaje.type === 'image') {
+    return {
+      ...base,
+      tipoMensaje: 'image',
+      contenido: mensaje.image?.caption ?? null,
+      mediaId: mensaje.image?.id ?? null,
+      mimeType: mensaje.image?.mime_type ?? null,
+    };
+  }
+  // US WA 014 (AC2): un documento con caption usa el caption como texto
+  // procesable, igual que una imagen — antes caía en la rama genérica de
+  // abajo con contenido:null sin importar el caption.
+  if (mensaje.type === 'document') {
+    return {
+      ...base,
+      tipoMensaje: 'document',
+      contenido: mensaje.document?.caption ?? null,
+      mediaId: mensaje.document?.id ?? null,
+      mimeType: mensaje.document?.mime_type ?? null,
+    };
+  }
+  if (mensaje.type === 'interactive') {
+    const interactivo = mensaje.interactive ?? {};
+    // US WA 005 (consideración técnica): se extrae también el `title` —
+    // nunca se decide la ruta con él (solo el id interno), pero queda
+    // disponible para diagnóstico (ej. el log de una selección inválida).
+    if (interactivo.type === 'list_reply') {
+      return {
+        ...base,
+        tipoMensaje: 'interactive_list_reply',
+        contenido: interactivo.list_reply?.id ?? null,
+        mediaId: null,
+        tituloInteractivo: interactivo.list_reply?.title ?? null,
+      };
+    }
+    if (interactivo.type === 'button_reply') {
+      return {
+        ...base,
+        tipoMensaje: 'interactive_button_reply',
+        contenido: interactivo.button_reply?.id ?? null,
+        mediaId: null,
+        tituloInteractivo: interactivo.button_reply?.title ?? null,
+      };
+    }
+    return { ...base, tipoMensaje: 'unknown', contenido: null, mediaId: null };
+  }
+  // US WA 014 (consideración técnica: conservar mime_type) — audio/video/
+  // sticker nunca tienen caption en el schema de Meta (a diferencia de
+  // imagen/documento), así que siempre contenido:null.
+  if (['audio', 'video', 'sticker'].includes(mensaje.type)) {
+    return {
+      ...base,
+      tipoMensaje: mensaje.type,
+      contenido: null,
+      mediaId: mensaje[mensaje.type]?.id ?? null,
+      mimeType: mensaje[mensaje.type]?.mime_type ?? null,
+    };
+  }
+  // location, contacts, o cualquier tipo que Meta agregue a futuro.
+  return { ...base, tipoMensaje: mensaje.type ?? 'unknown', contenido: null, mediaId: null };
 }
 
-function extraerMensajesDeTexto(body) {
+// `value.statuses` (recibos de entrega/lectura) nunca trae `messages` —
+// AC6: un payload así no genera ningún evento, así que no se persiste
+// nada ni se toca ninguna conversación.
+function extraerEventosEntrantes(body) {
   const entradas = body?.entry ?? [];
-  const mensajes = [];
+  const eventos = [];
   for (const entrada of entradas) {
     for (const cambio of entrada.changes ?? []) {
+      // AC1/AC2: phone_number_id del número oficial de Omega que recibió
+      // el mensaje — Meta siempre lo manda junto con value.messages.
+      const phoneNumberId = cambio.value?.metadata?.phone_number_id ?? null;
       for (const mensaje of cambio.value?.messages ?? []) {
-        const texto = extraerTextoDelMensaje(mensaje);
-        if (texto) {
-          mensajes.push({ from: mensaje.from, timestamp: mensaje.timestamp, texto });
-        }
+        eventos.push(extraerEventoDeMensaje(mensaje, phoneNumberId));
       }
     }
   }
-  return mensajes;
+  return eventos;
+}
+
+// US WA 015 (AC3): `value.statuses[]` es un arreglo separado de
+// `value.messages[]` — Meta nunca los mezcla en el mismo payload. Cada
+// estado se relaciona por wamid contra outbox_whatsapp, nunca contra
+// mensajes_whatsapp/conversaciones_whatsapp (esto no es un mensaje del
+// tutor ni debe activar el flujo conversacional).
+function extraerEstadosEntrantes(body) {
+  const entradas = body?.entry ?? [];
+  const estados = [];
+  for (const entrada of entradas) {
+    for (const cambio of entrada.changes ?? []) {
+      for (const status of cambio.value?.statuses ?? []) {
+        estados.push({ wamid: status.id, estadoMeta: status.status });
+      }
+    }
+  }
+  return estados;
 }
 
 // Recepción real de mensajes (POST). Verifica la firma ANTES que nada —
-// 401 si no coincide (nunca 200 para una petición sin firmar por Meta de
-// verdad). Con firma válida, procesa y SIEMPRE responde 200 al final. El
-// try/catch va DENTRO del for, por mensaje — no envolviendo todo el bucle:
-// desde que enviarRespuesta() empezó a lanzar en un rechazo de Meta (ver
-// whatsapp.service.js#enviarRespuesta), un solo mensaje fallido dentro de
-// un mismo lote de Meta ya no debe cortar el procesamiento de los demás
-// mensajes de ese lote. Cualquier error queda logueado para revisar a
-// mano, nunca provoca que Meta reintente agresivamente el mismo mensaje.
+// 401 si no coincide (AC12: nunca se persiste ni se procesa nada sin
+// firma real de Meta). Con firma válida, PERSISTE cada evento y responde
+// 200 en cuanto termina — nunca clasifica ni envía nada desde aquí (US WA
+// 003 AC4/AC9: la clasificación solo ocurre DESPUÉS de que venza la
+// ventana de agrupación de la conversación y whatsappAgrupacionJob.js
+// forme el grupo; antes de esta historia, un disparo fire-and-forget
+// clasificaba/respondía casi al instante, lo que le ganaba en tiempo a
+// cualquier ventana de agrupación — se quitó a propósito).
+//
+// Cada evento se persiste con su propio INSERT, nunca dentro de una
+// transacción que envuelva todo el lote (AC3: "cada uno se registra de
+// manera independiente"): si el evento N de un lote de varios falla por un
+// error real de BD, los anteriores ya quedaron committeados, y el
+// reintento de Meta del lote completo vuelve a intentar solo el que faltó
+// (los demás son no-ops gracias al ON CONFLICT). Un error real de BD (no
+// un conflicto de duplicado, eso no es un error) responde con un código
+// distinto de 200 para que Meta reintregue el evento (AC11).
 async function recibir(req, res) {
   const firmaValida = whatsapp.verificarFirma(req.rawBody, req.get('X-Hub-Signature-256'));
   if (!firmaValida) {
     return res.sendStatus(401);
   }
 
-  const mensajes = extraerMensajesDeTexto(req.body);
-  for (const mensaje of mensajes) {
-    try {
-      await service.procesarMensajeEntrante({
-        telefono: mensaje.from,
-        texto: mensaje.texto,
-        recibidoEn: new Date(Number(mensaje.timestamp) * 1000),
-      });
-    } catch (err) {
-      req.log.error({ err }, 'No se pudo procesar un mensaje entrante de WhatsApp.');
+  const eventos = extraerEventosEntrantes(req.body);
+  const estados = extraerEstadosEntrantes(req.body);
+
+  try {
+    for (const evento of eventos) {
+      const resultado = await service.registrarEventoEntrante(evento);
+      // US WA 004 (AC2): un comando de menú sobre una conversación YA
+      // existente cancela su flujo/estado de inmediato (WA002, sin
+      // cambios) — pero "mostrar el menú" implica llamar a Meta, lo cual
+      // nunca se hace dentro del ciclo síncrono del webhook; se dispara
+      // fire-and-forget, sin bloquear la respuesta 200.
+      // US WA 013 (AC2/AC3/AC5): el tutor respondió a una pregunta de
+      // seguimiento pendiente. 'volver_menu' se trata igual que un comando
+      // de menú explícito (mismo destino, enviarMenuPrincipal). 'continuar'
+      // solo tiene contenido real que reenviar si el paso pendiente era el
+      // menú (esperando_menu) — para flujo_activo no existe hoy ningún paso
+      // real que reconstruir (ningún flujo lo popula todavía), así que no
+      // hay nada que reenviar. 'invalido' repite la misma pregunta.
+      if (resultado?.disparaMenuInmediato || resultado?.seguimientoAccion === 'volver_menu') {
+        service
+          .enviarMenuPrincipal({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            claveBase: `mensaje:${resultado.id}`,
+          })
+          .catch((err) =>
+            req.log.error({ err }, 'Falló el envío inmediato del menú tras un comando de menú.'),
+          );
+      } else if (
+        resultado?.seguimientoAccion === 'continuar' &&
+        resultado.estadoResultante === 'esperando_menu'
+      ) {
+        service
+          .enviarMenuPrincipal({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            claveBase: `mensaje:${resultado.id}`,
+          })
+          .catch((err) =>
+            req.log.error({ err }, 'Falló el reenvío del menú tras "Continuar" (US WA 013 AC2).'),
+          );
+      } else if (resultado?.seguimientoAccion === 'invalido') {
+        service
+          .reenviarSeguimiento({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            mensajeId: resultado.id,
+          })
+          .catch((err) =>
+            req.log.error(
+              { err },
+              'Falló el reenvío de la pregunta de seguimiento (US WA 013 AC5).',
+            ),
+          );
+      } else if (resultado?.seleccionInvalida) {
+        // US WA 005 (AC9): id de menú desconocido, manipulado o vencido.
+        service
+          .enviarSeleccionInvalida({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            mensajeId: resultado.id,
+          })
+          .catch((err) =>
+            req.log.error({ err }, 'Falló el aviso de selección de menú inválida (US WA 005 AC9).'),
+          );
+      } else if (resultado?.labAccion) {
+        // US WA 007: cualquier paso del flujo de consulta de laboratorio.
+        service
+          .enviarPasoLaboratorio({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            mensajeId: resultado.id,
+            labAccion: resultado.labAccion,
+            labDatos: resultado.labDatos,
+          })
+          .catch((err) =>
+            req.log.error(
+              { err },
+              'Falló el envío de un paso de consulta de laboratorio (US WA 007).',
+            ),
+          );
+      }
     }
+    for (const estadoEvento of estados) {
+      await outbox.registrarEstadoMeta(estadoEvento);
+    }
+  } catch (err) {
+    req.log.error({ err }, 'Error de BD al persistir mensajes entrantes de WhatsApp.');
+    return res.sendStatus(503);
   }
 
   return res.sendStatus(200);
 }
 
-module.exports = { verificar, recibir };
+module.exports = { verificar, recibir, extraerEventosEntrantes, extraerEstadosEntrantes };

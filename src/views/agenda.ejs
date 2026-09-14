@@ -9,6 +9,12 @@ const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 const puedeCrear = has(`agenda.${area.slug}.crear`);
 const puedeEditar = has(`agenda.${area.slug}.editar`);
+// Pedido explícito del usuario: en Estética los profesionales que atienden
+// no son doctores — mismo criterio/etiqueta que cita-form.ejs. Plural
+// explícito ("doctor"+"s" daría "doctors", no "doctores") en vez de
+// concatenar una "s" a ciegas.
+const etiquetaDoctor = area.slug === 'estetica' ? 'Estilista' : 'Doctor';
+const etiquetaDoctorPlural = area.slug === 'estetica' ? 'estilistas' : 'doctores';
 %>
 <!DOCTYPE html>
 <html lang="es">
@@ -126,7 +132,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
                 el resto del sistema.
               %>
               <div class="combobox agenda-doctor-filter" id="agendaDoctorFilterCombobox">
-                <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly placeholder="Todos los doctores" aria-label="Filtrar por doctor">
+                <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly placeholder="Todos los <%= etiquetaDoctorPlural %>" aria-label="Filtrar por <%= etiquetaDoctor.toLowerCase() %>">
                 <ul class="combobox-list" id="agendaDoctorFilterList" hidden></ul>
               </div>
               <%#
@@ -799,7 +805,7 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
 
   function abrirDoctorFilterList() {
     const items = [
-      '<li class="combobox-item" data-id="" data-label="Todos los doctores">Todos los doctores</li>',
+      '<li class="combobox-item" data-id="" data-label="Todos los <%= etiquetaDoctorPlural %>">Todos los <%= etiquetaDoctorPlural %></li>',
       ...doctoresCatalogo().map(
         (d) =>
           `<li class="combobox-item" data-id="${d.id}" data-label="${d.nombre} ${d.apellidos}">${d.nombre} ${d.apellidos}</li>`,

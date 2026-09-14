@@ -64,7 +64,7 @@ async function findPage({ q, activoOnly, sort, dir, limit, offset }) {
   )
     .limit(limit)
     .offset(offset)
-    .select('d.id', 'd.nombre', 'd.apellidos', 'd.activo')
+    .select('d.id', 'd.nombre', 'd.apellidos', 'd.activo', 'd.es_predeterminado')
     .select(db.raw("string_agg(a.nombre, ', ' order by a.nombre) as areas"));
 
   return rows;

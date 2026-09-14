@@ -25,6 +25,7 @@ const {
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
   enviarResultados,
+  reenviarResultadosPorWhatsapp,
 } = require('../../src/modules/laboratorio/laboratorio.service');
 
 const MASCOTA = { id: 11, nombre: 'Cachis', propietario_id: 6 };
@@ -970,5 +971,84 @@ describe('laboratorio.service.enviarResultados', () => {
 
     expect(repository.findArchivoById).toHaveBeenCalledTimes(1);
     expect(repository.findArchivoById).toHaveBeenCalledWith(10);
+  });
+});
+
+// US WA 007 (ampliación, pedido explícito del usuario): reenvío de
+// resultados disparado por el propio bot de WhatsApp — mismo armado de
+// archivos que enviarResultados, pero SIN pasar por registrarEnvio (exige
+// un usuario de staff que aquí no existe) ni cambiar ningún estado.
+describe('laboratorio.service.reenviarResultadosPorWhatsapp', () => {
+  const REGISTRO = {
+    id: 42,
+    mascota_nombre: 'Firulais',
+    propietario_nombre: 'Ana',
+    propietario_apellidos: 'Ruiz',
+    estudios: [
+      { id: 1, archivo_id: 10 },
+      { id: 2, archivo_id: 10 },
+    ],
+  };
+  const ARCHIVO = { id: 10, nombre_original: 'resultados.pdf', ruta_almacenamiento: '42/x.pdf' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findById.mockResolvedValue(REGISTRO);
+    repository.findArchivoById.mockResolvedValue(ARCHIVO);
+    archivos.rutaAbsolutaDeArchivo.mockReturnValue('/storage/laboratorio/42/x.pdf');
+    archivos.mimetypeDeArchivo.mockReturnValue('application/pdf');
+    envios.enviarPorWhatsapp.mockResolvedValue({ ok: true });
+  });
+
+  it('con un id inválido, regresa ok:false sin llegar a envios.enviarPorWhatsapp', async () => {
+    const resultado = await reenviarResultadosPorWhatsapp('no-es-numero', {
+      telefono: '5512345678',
+    });
+    expect(resultado).toEqual({ ok: false, error: 'Folio inválido.' });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('si el registro no existe, regresa ok:false', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    const resultado = await reenviarResultadosPorWhatsapp('999', { telefono: '5512345678' });
+    expect(resultado).toEqual({ ok: false, error: 'Registro no encontrado.' });
+  });
+
+  it('si algún estudio no tiene archivo todavía, regresa ok:false sin enviar nada', async () => {
+    repository.findById.mockResolvedValue({ ...REGISTRO, estudios: [{ id: 1, archivo_id: null }] });
+    const resultado = await reenviarResultadosPorWhatsapp('42', { telefono: '5512345678' });
+    expect(resultado).toEqual({ ok: false, error: 'No hay archivos cargados para esta orden.' });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('con un registro sin ningún estudio, regresa ok:false (no "éxito" enviando 0 adjuntos)', async () => {
+    repository.findById.mockResolvedValue({ ...REGISTRO, estudios: [] });
+    const resultado = await reenviarResultadosPorWhatsapp('42', { telefono: '5512345678' });
+    expect(resultado).toEqual({ ok: false, error: 'No hay archivos cargados para esta orden.' });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('arma los archivos igual que enviarResultados y llama a envios.enviarPorWhatsapp con el teléfono y el prefijo recibidos', async () => {
+    const resultado = await reenviarResultadosPorWhatsapp('42', {
+      telefono: '5512345678',
+      claveIdempotenciaPrefijo: 'mensaje:99:lab:exito',
+    });
+
+    expect(resultado).toEqual({ ok: true });
+    expect(envios.enviarPorWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        telefono: '5512345678',
+        nombreTutor: 'Ana Ruiz',
+        nombreMascota: 'Firulais',
+        folioId: 42,
+        claveIdempotenciaPrefijo: 'mensaje:99:lab:exito',
+        archivos: [expect.objectContaining({ id: 10, nombreOriginal: 'resultados.pdf' })],
+      }),
+    );
+  });
+
+  it('nunca llama a repository.registrarEnvio (no hay usuario de staff que auditar)', async () => {
+    await reenviarResultadosPorWhatsapp('42', { telefono: '5512345678' });
+    expect(repository.registrarEnvio).not.toHaveBeenCalled();
   });
 });

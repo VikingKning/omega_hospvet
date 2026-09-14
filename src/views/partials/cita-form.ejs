@@ -28,6 +28,13 @@ const esConfirmable = esEdicion && cita.estado === 'registrada';
 const esSoloLectura = Boolean(soloLectura);
 const disabledAttr = esSoloLectura ? 'disabled' : '';
 
+// Pedido explícito del usuario: en Estética los profesionales que atienden
+// no son doctores — la etiqueta visible cambia a "Estilista" solo para esa
+// área (el catálogo real sigue siendo `doctores`/`doctor_area`, sin
+// schema nuevo: es únicamente una cuestión de copy, condicionada por
+// `area.slug`, igual criterio que los permisos `agenda.<slug>.*` de arriba).
+const etiquetaDoctor = area.slug === 'estetica' ? 'Estilista' : 'Doctor';
+
 const DURACIONES = [15, 30, 45, 60, 90];
 const doctorIdSel = String(doctorIdSeleccionado ?? '');
 const doctorSeleccionado = doctores.find((d) => String(d.id) === doctorIdSel);
@@ -112,10 +119,10 @@ const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
     </label>
 
     <label>
-      Doctor
+      <%= etiquetaDoctor %>
       <div class="combobox" id="citaDoctorCombobox">
         <input type="text" id="citaDoctorInput" autocomplete="off" required <%= disabledAttr %>
-               placeholder="Buscar doctor..." value="<%= doctorLabel %>">
+               placeholder="Buscar <%= etiquetaDoctor.toLowerCase() %>..." value="<%= doctorLabel %>">
         <ul class="combobox-list" id="citaDoctorList" hidden></ul>
       </div>
       <input type="hidden" name="doctorId" id="citaDoctorId" value="<%= doctorIdSel %>">

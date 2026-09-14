@@ -14,6 +14,7 @@
 const whatsapp = require('../../config/whatsapp');
 const logger = require('../../config/logger');
 const repository = require('./whatsapp.repository');
+const outbox = require('./whatsapp.outbox');
 
 // v2 (2026-09-11): rediseño del texto del mensaje — nombre nuevo a
 // propósito, ver scripts/registrar-plantilla-resultados-laboratorio.js y
@@ -21,6 +22,11 @@ const repository = require('./whatsapp.repository');
 // listos_v2.js (una plantilla ya aprobada por Meta es inmutable).
 const TEMPLATE_NAME = 'resultados_laboratorio_listos_v2';
 const TEMPLATE_LANGUAGE = 'es_MX';
+// US WA 015 (AC7): categoría de facturación de Meta ya registrada para
+// esta plantilla — literal, igual criterio que TEMPLATE_NAME/
+// TEMPLATE_LANGUAGE de arriba (fija para esta única plantilla hardcodeada,
+// no amerita una consulta nueva a plantillas_whatsapp.categoria_meta).
+const TEMPLATE_CATEGORIA_META = 'UTILITY';
 
 // `propietarios.telefono` se guarda como 10 dígitos puros, SIN código de
 // país (ver tutores.service.js#stripTelefono) — a propósito no se reusa
@@ -67,7 +73,9 @@ async function subirMedia(buffer, mimetype, nombreArchivo) {
 // body de la plantilla, no parte de la variable. `saludo` es "día"/
 // "tarde"/"noche" según la hora de envío en America/Mexico_City (ver
 // saludoPorHora() en laboratorio.envios.js) — se calcula en cada envío,
-// nunca se guarda.
+// nunca se guarda. `claveIdempotencia` (US WA 015 AC6): la arma el
+// llamador (laboratorio.envios.js) para que un reintento del mismo envío
+// nunca lo duplique en Meta.
 async function enviarPlantillaResultados({
   telefono,
   nombreTutor,
@@ -78,44 +86,48 @@ async function enviarPlantillaResultados({
   saludo,
   mediaId,
   nombreArchivo,
+  claveIdempotencia,
 }) {
   const destinatarioTelefono = formatearNumeroMexicano(telefono);
-  let res;
-  let data;
-  try {
-    res = await fetch(whatsapp.messagesUrl(), {
-      method: 'POST',
-      headers: whatsapp.authHeaders(),
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: destinatarioTelefono,
-        type: 'template',
-        template: {
-          name: TEMPLATE_NAME,
-          language: { code: TEMPLATE_LANGUAGE },
-          components: [
-            {
-              type: 'header',
-              parameters: [
-                { type: 'document', document: { id: mediaId, filename: nombreArchivo } },
-              ],
-            },
-            {
-              type: 'body',
-              parameters: [
-                { type: 'text', text: nombreTutor },
-                { type: 'text', text: nombreMascota },
-                { type: 'text', text: folio },
-                { type: 'text', text: calendarUrl },
-                { type: 'text', text: mapsUrl },
-                { type: 'text', text: saludo },
-              ],
-            },
+  const payloadFuncional = {
+    tipo: 'template',
+    destinatarioTelefono,
+    plantilla: {
+      name: TEMPLATE_NAME,
+      language: { code: TEMPLATE_LANGUAGE },
+      components: [
+        {
+          type: 'header',
+          parameters: [{ type: 'document', document: { id: mediaId, filename: nombreArchivo } }],
+        },
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombreTutor },
+            { type: 'text', text: nombreMascota },
+            { type: 'text', text: folio },
+            { type: 'text', text: calendarUrl },
+            { type: 'text', text: mapsUrl },
+            { type: 'text', text: saludo },
           ],
         },
-      }),
-    });
-    data = await res.json();
+      ],
+    },
+  };
+
+  const { intent } = await outbox.registrarIntento({
+    claveIdempotencia,
+    tipoEnvio: 'laboratorio',
+    origenFuncional: 'laboratorio',
+    destinatarioTelefono,
+    payloadFuncional,
+    usaPlantilla: true,
+    categoriaFacturacionMeta: TEMPLATE_CATEGORIA_META,
+  });
+
+  let resultado;
+  try {
+    resultado = await outbox.ejecutarIntento(intent.clave_idempotencia);
   } catch (err) {
     await auditarEnvio({
       plantilla: TEMPLATE_NAME,
@@ -126,13 +138,13 @@ async function enviarPlantillaResultados({
     });
     throw err;
   }
-  if (!res.ok) {
-    const error = new Error(data.error?.message || `Meta rechazó el envío (HTTP ${res.status}).`);
+  if (!resultado.enviado) {
+    const error = new Error(resultado.error || 'Meta rechazó el envío.');
     await auditarEnvio({
       plantilla: TEMPLATE_NAME,
       destinatarioTelefono,
       exitoso: false,
-      errorCodigo: data.error?.code ? String(data.error.code) : null,
+      errorCodigo: resultado.errorCodigo ?? null,
       errorMensaje: error.message,
       origen: 'laboratorio',
     });

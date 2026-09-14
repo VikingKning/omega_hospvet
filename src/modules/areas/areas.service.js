@@ -18,6 +18,19 @@ class DuplicateNombreError extends Error {
   }
 }
 
+// Pedido explícito del usuario: Consultas y Estética son áreas
+// predeterminadas del sistema — no editables (nombre/color/slug fijos),
+// aunque sí se pueden activar/desactivar libremente. El ícono de editar ni
+// siquiera se muestra para estas filas (ver areas-panel.ejs), así que esto
+// solo se dispara vía una petición manual — mismo criterio que
+// PlantillaPredeterminadaError en plantillas_whatsapp.service.js.
+class AreaPredeterminadaError extends Error {
+  constructor() {
+    super('Esta es un área predeterminada del sistema y no se puede editar.');
+    this.status = 400;
+  }
+}
+
 const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['nombre', 'slug', 'estado'];
 const NOMBRE_MAX_LENGTH = 100;
@@ -91,6 +104,15 @@ async function desactivar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
   await repository.desactivar(id, usuarioId);
+}
+
+// Contraparte de desactivar() — ver el comentario de
+// areas.repository.js#activar. Un id inválido/inexistente no truena, mismo
+// criterio permisivo que desactivar().
+async function activar(rawId, usuarioId) {
+  const id = parseId(rawId);
+  if (id === null) return;
+  await repository.activar(id, usuarioId);
 }
 
 // US-610: para precargar el formulario de edición.
@@ -203,6 +225,14 @@ async function crear({ nombre: rawNombre, color: rawColor, usuarioId }) {
 // "reactivar" al editar: sería fusionar la identidad de dos registros
 // distintos, algo que el AC nunca pidió).
 async function editar({ id, nombre: rawNombre, color: rawColor, usuarioId }) {
+  const parsedId = parseId(id);
+  if (parsedId !== null) {
+    const actual = await repository.findById(parsedId);
+    if (actual?.es_predeterminada) {
+      throw new AreaPredeterminadaError();
+    }
+  }
+
   const nombre = validateNombre(rawNombre);
   const color = validateColor(rawColor);
   const existing = await findDuplicado(nombre, id);
@@ -215,9 +245,11 @@ async function editar({ id, nombre: rawNombre, color: rawColor, usuarioId }) {
 module.exports = {
   list,
   desactivar,
+  activar,
   obtener,
   crear,
   editar,
   AreaValidationError,
   DuplicateNombreError,
+  AreaPredeterminadaError,
 };

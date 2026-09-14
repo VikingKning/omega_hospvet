@@ -316,8 +316,14 @@ async function findByGoogleEventId(googleEventId) {
 // de este cambio), lo reusa tal cual, igual que su vínculo con Consultas
 // vía doctor_area.
 async function obtenerOCrearDoctorConsultasPredeterminado() {
+  // Nombre exacto + flag de protección (20260914000002_agregar_doctor_
+  // predeterminado_consultas.js lo garantiza en todo entorno real) — el
+  // flag solo no basta como único criterio: si en el futuro existiera un
+  // doctor predeterminado de OTRA área, un WHERE solo por el flag podría
+  // agarrar el equivocado (sin ORDER BY). doctores.service.js ya bloquea
+  // renombrarlo, así que el nombre exacto sigue siendo estable.
   let doctor = await db('doctores')
-    .where({ nombre: 'Consultas Omega', apellidos: 'Generico' })
+    .where({ nombre: 'Consultas Omega', apellidos: 'Generico', es_predeterminado: true })
     .first();
 
   if (!doctor) {
@@ -326,6 +332,7 @@ async function obtenerOCrearDoctorConsultasPredeterminado() {
         nombre: 'Consultas Omega',
         apellidos: 'Generico',
         activo: true,
+        es_predeterminado: true,
         creado_en: db.fn.now(),
       })
       .returning('id');

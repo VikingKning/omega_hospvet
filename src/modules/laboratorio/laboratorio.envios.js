@@ -103,6 +103,15 @@ async function enviarPorWhatsapp({
   archivos,
   googleCalendarMeetingUrl,
   googleMapsUrl,
+  // US WA 007 (ampliación, pedido explícito del usuario): el flujo del bot
+  // de WhatsApp reenvía este mismo archivo cada vez que el tutor consulta
+  // su folio — un prefijo fijo `laboratorio:${folioId}` haría que el
+  // SEGUNDO reenvío (de cualquier origen: bot o panel de staff) reutilice
+  // la MISMA clave de idempotencia que el primero y outbox.ejecutarIntento
+  // lo trate como "ya enviado" sin volver a llamar a Meta. El llamador del
+  // panel de staff (laboratorio.service.js#enviarResultados) no pasa este
+  // parámetro y conserva el prefijo de siempre (un solo envío por folio).
+  claveIdempotenciaPrefijo = `laboratorio:${folioId}`,
 }) {
   try {
     const folio = folioNumero(folioId);
@@ -124,6 +133,9 @@ async function enviarPorWhatsapp({
         saludo,
         mediaId,
         nombreArchivo: archivo.nombreOriginal,
+        // US WA 015 (AC6): estable entre reintentos del MISMO envío (mismo
+        // registro + mismo archivo) — nunca lo duplica en Meta.
+        claveIdempotencia: `${claveIdempotenciaPrefijo}:${archivo.id}`,
       });
     }
     return { ok: true };

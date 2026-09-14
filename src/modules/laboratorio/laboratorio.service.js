@@ -662,6 +662,54 @@ async function enviarResultados(rawRegistroId, usuarioId) {
   };
 }
 
+// US WA 007 (ampliación, pedido explícito del usuario): además del texto de
+// estado, el bot de WhatsApp adjunta los archivos de resultados ya
+// cargados, reusando el mismo mensaje/plantilla de "resultados de
+// laboratorio listos" (v2) que ya usa el envío proactivo desde el panel de
+// staff — mismo texto, mismos archivos, mismo mecanismo de envío
+// (envios.enviarPorWhatsapp). A propósito NO llama a registrarEnvio() ni
+// cambia registros_laboratorio.estado/archivos_laboratorio.estado: esa
+// auditoría (envios_laboratorio.enviado_por) exige un usuario de staff
+// (NOT NULL, FK a usuarios) y este envío lo dispara el propio tutor desde
+// el bot, no una persona del staff — el panel seguirá mostrando la orden
+// como "Cargado" hasta que alguien la envíe manualmente desde ahí.
+async function reenviarResultadosPorWhatsapp(
+  rawRegistroId,
+  { telefono, claveIdempotenciaPrefijo },
+) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) return { ok: false, error: 'Folio inválido.' };
+  const registro = await repository.findById(registroId);
+  if (!registro) return { ok: false, error: 'Registro no encontrado.' };
+
+  // El `.some()` de faltaArchivo es vacuously false sobre un arreglo vacío
+  // — una orden sin ningún estudio (no debería existir en producción, pero
+  // no cuesta nada cubrirlo) nunca debe "tener éxito" enviando 0 adjuntos.
+  const faltaArchivo =
+    registro.estudios.length === 0 || registro.estudios.some((estudio) => !estudio.archivo_id);
+  if (faltaArchivo) return { ok: false, error: 'No hay archivos cargados para esta orden.' };
+
+  const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))];
+  const filas = await Promise.all(archivoIds.map((id) => repository.findArchivoById(id)));
+  const archivosParaEnviar = filas.map((archivo) => ({
+    id: archivo.id,
+    nombreOriginal: archivo.nombre_original,
+    rutaAbsoluta: archivos.rutaAbsolutaDeArchivo(archivo.ruta_almacenamiento),
+    mimetype: archivos.mimetypeDeArchivo(archivo.nombre_original),
+  }));
+
+  return envios.enviarPorWhatsapp({
+    telefono,
+    nombreTutor: `${registro.propietario_nombre} ${registro.propietario_apellidos}`,
+    nombreMascota: registro.mascota_nombre,
+    folioId: registro.id,
+    archivos: archivosParaEnviar,
+    googleCalendarMeetingUrl: env.enlaces.calendarioCitas,
+    googleMapsUrl: env.enlaces.ubicacionMaps,
+    claveIdempotenciaPrefijo,
+  });
+}
+
 async function eliminar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
@@ -684,5 +732,6 @@ module.exports = {
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
   enviarResultados,
+  reenviarResultadosPorWhatsapp,
   eliminar,
 };

@@ -9,6 +9,7 @@ const {
   crear,
   editar,
   DoctorValidationError,
+  DoctorPredeterminadoError,
 } = require('../../src/modules/doctores/doctores.service');
 const db = require('../../src/config/database');
 
@@ -95,6 +96,7 @@ describe('doctores.service.list', () => {
 describe('doctores.service.desactivar (US-608)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    repository.findById.mockResolvedValue({ id: 7, es_predeterminado: false });
   });
 
   it('delega en el repository con el id ya parseado y el usuario que ejecuta la baja', async () => {
@@ -104,6 +106,20 @@ describe('doctores.service.desactivar (US-608)', () => {
 
   it('un id inválido no truena y no llega al repository', async () => {
     await desactivar('no-es-un-numero', 42);
+    expect(repository.desactivar).not.toHaveBeenCalled();
+  });
+
+  it('un id que no corresponde a ningún doctor no truena y no llega al repository', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    await desactivar('999', 42);
+    expect(repository.desactivar).not.toHaveBeenCalled();
+  });
+
+  // Pedido explícito del usuario: el doctor predeterminado de Consultas no
+  // se puede dar de baja.
+  it('rechaza dar de baja al doctor predeterminado del sistema', async () => {
+    repository.findById.mockResolvedValue({ id: 7, es_predeterminado: true });
+    await expect(desactivar('7', 42)).rejects.toThrow(DoctorPredeterminadoError);
     expect(repository.desactivar).not.toHaveBeenCalled();
   });
 });
@@ -276,5 +292,29 @@ describe('doctores.service.editar (US-607)', () => {
       editar({ id: '5', nombre: 'Ana', apellidos: '', activo: 'true', areaIds: [], usuarioId: 2 }),
     ).rejects.toThrow(DoctorValidationError);
     expect(repository.editar).not.toHaveBeenCalled();
+  });
+
+  // Pedido explícito del usuario: el doctor predeterminado de Consultas no
+  // se puede editar (ni renombrar, ni desligarlo del área vía la tabla de
+  // especialidades del formulario).
+  it('rechaza editar al doctor predeterminado del sistema, incluso antes de validar los campos', async () => {
+    repository.findById.mockResolvedValue({ id: 5, es_predeterminado: true });
+    await expect(
+      editar({ id: '5', nombre: '', apellidos: '', activo: 'true', areaIds: [], usuarioId: 2 }),
+    ).rejects.toThrow(DoctorPredeterminadoError);
+    expect(repository.editar).not.toHaveBeenCalled();
+  });
+
+  it('un doctor normal (es_predeterminado:false) se puede editar sin problema', async () => {
+    repository.findById.mockResolvedValue({ id: 5, es_predeterminado: false });
+    await editar({
+      id: '5',
+      nombre: 'Ana',
+      apellidos: 'Gómez',
+      activo: 'true',
+      areaIds: [],
+      usuarioId: 2,
+    });
+    expect(repository.editar).toHaveBeenCalled();
   });
 });

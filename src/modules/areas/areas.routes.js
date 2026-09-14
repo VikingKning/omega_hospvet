@@ -38,6 +38,20 @@ router.delete(
   controller.desactivar,
 );
 
+// Pedido explícito del usuario: contraparte de la baja de arriba, para las
+// áreas predeterminadas del sistema (Consultas/Estética) que no son
+// editables y por lo tanto solo pueden volver a activo por aquí. Mismo
+// permiso que la baja (areas.eliminar: "puede cambiar el estado activo de
+// un área", el mismo vocabulario ya usado por ese código).
+router.put(
+  '/areas/:id/activar',
+  requireAuth,
+  requirePermission('areas.eliminar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.activar,
+);
+
 // US-610: alta y edición, mismo formulario en un modal. Los GET solo arman
 // el fragmento del formulario (vacío o precargado); los POST/PUT hacen el
 // alta/edición real.
@@ -48,6 +62,10 @@ router.get(
   requirePermission('areas.editar'),
   controller.editarForm,
 );
+// Pedido explícito del usuario: fragmento de solo-lectura para las áreas
+// predeterminadas del sistema — mismo permiso que el listado (areas.ver),
+// no areas.editar (nunca van a poder editar desde aquí).
+router.get('/areas/:id/ver', requireAuth, requirePermission('areas.ver'), controller.verForm);
 router.post(
   '/areas',
   requireAuth,

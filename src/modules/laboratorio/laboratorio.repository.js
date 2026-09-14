@@ -661,6 +661,28 @@ async function eliminar(id, usuarioId) {
   });
 }
 
+// US WA 007 (AC7): valida que el folio pertenezca a una orden activa
+// (eliminado=false) y que ESE registro le pertenezca a una mascota cuyo
+// tutor tenga exactamente ese teléfono (comparación exacta, no ILIKE — a
+// diferencia de baseQuery(), que es una búsqueda difusa para el panel
+// interno, aquí es un control de acceso: solo debe calificar UNA
+// combinación folio+teléfono, nunca una coincidencia parcial). `trx`
+// opcional (default `db`) para poder resolverse dentro de la MISMA
+// transacción que registra el intento (US WA 007 AC10/AC11), igual patrón
+// que crearArchivo(..., trx = db) más arriba en este archivo. No filtra
+// por mascotas.activo/propietarios.activo — el AC7 no lo pide y agregar esa
+// restricción bloquearía, sin que nadie lo pidiera, a un tutor legítimo
+// cuyo registro haya quedado inactivo por otra razón administrativa.
+async function findByFolioYTelefono(folioId, telefonoDigits, trx = db) {
+  return trx('registros_laboratorio as r')
+    .join('mascotas as m', 'm.id', 'r.mascota_id')
+    .join('propietarios as p', 'p.id', 'm.propietario_id')
+    .where('r.id', folioId)
+    .andWhere('r.eliminado', false)
+    .andWhere('p.telefono', telefonoDigits)
+    .first('r.id', 'r.estado');
+}
+
 module.exports = {
   findCatalogo,
   findZonasAnatomicas,
@@ -685,4 +707,9 @@ module.exports = {
   desasignarArchivoDeEstudio,
   revertirCargadoSiIncompleto,
   registrarEnvio,
+  // US WA 007 (consideración técnica): reutilizadas por
+  // whatsapp.laboratorioConsulta.js — se exportan tal cual, en vez de
+  // duplicar la extracción de folio en el módulo de whatsapp.
+  extraerIdBuscado,
+  findByFolioYTelefono,
 };

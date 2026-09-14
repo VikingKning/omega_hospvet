@@ -193,6 +193,39 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
     expect(resultado).toEqual({ ok: false, error: 'Meta rechazó el envío.' });
   });
 
+  // US WA 007 (ampliación): el bot de WhatsApp reenvía el mismo folio cada
+  // vez que el tutor lo consulta — sin un prefijo de clave DISTINTO por
+  // cada consulta, el 2° reenvío reusaría la clave del 1° y
+  // outbox.ejecutarIntento lo trataría como "ya enviado" sin llamar a Meta.
+  it('sin claveIdempotenciaPrefijo, usa el prefijo por defecto "laboratorio:<folioId>" (envío del panel de staff)', async () => {
+    await enviarPorWhatsapp({
+      telefono: '5512345678',
+      nombreTutor: 'Ana Ruiz',
+      nombreMascota: 'Firulais',
+      folioId: 5,
+      archivos: [ARCHIVO],
+    });
+
+    expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledWith(
+      expect.objectContaining({ claveIdempotencia: 'laboratorio:5:10' }),
+    );
+  });
+
+  it('con claveIdempotenciaPrefijo explícito, lo usa en vez del default (reenvío desde el bot)', async () => {
+    await enviarPorWhatsapp({
+      telefono: '5512345678',
+      nombreTutor: 'Ana Ruiz',
+      nombreMascota: 'Firulais',
+      folioId: 5,
+      archivos: [ARCHIVO],
+      claveIdempotenciaPrefijo: 'mensaje:99:lab:exito',
+    });
+
+    expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledWith(
+      expect.objectContaining({ claveIdempotencia: 'mensaje:99:lab:exito:10' }),
+    );
+  });
+
   it('con 2 archivos, si el segundo falla, no sigue intentando más (corta ahí)', async () => {
     const otro = { ...ARCHIVO, id: 11, nombreOriginal: 'otro.jpg' };
     const tercero = { ...ARCHIVO, id: 12, nombreOriginal: 'tercero.jpg' };

@@ -95,14 +95,22 @@ function sortVals(column) {
                       style="<%= area.color.hex ? `--swatch-color: ${area.color.hex};` : '' %>"
                       data-tooltip="<%= area.color.nombre %>" aria-label="Color: <%= area.color.nombre %>"></span>
               </td>
-              <td><%= area.nombre %></td>
+              <td><%= area.nombre %><% if (area.es_predeterminada) { %> <span class="status-badge" data-tooltip="Área del sistema, siempre disponible — no se puede editar ni eliminar">Predeterminada</span><% } %></td>
               <td><span class="area-tag-empty"><%= area.slug %></span></td>
               <td>
                 <span class="status-badge<%= area.activo ? ' is-active' : '' %>"><%= area.activo ? 'Activo' : 'Inactivo' %></span>
               </td>
               <td class="text-right">
                 <div class="row-actions">
-                  <% if (has('areas.editar') && area.activo) { %>
+                  <% if (has('areas.ver') && area.es_predeterminada) { %>
+                    <button class="row-action-btn" type="button" data-tooltip="Ver" aria-label="Ver área <%= area.nombre %>"
+                            hx-get="areas/<%= area.id %>/ver" hx-target="#areaFormModalBody" hx-swap="innerHTML">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                  <% if (has('areas.editar') && area.activo && !area.es_predeterminada) { %>
                     <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar" aria-label="Editar área <%= area.nombre %>"
                             hx-get="areas/<%= area.id %>/editar" hx-target="#areaFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -118,6 +126,16 @@ function sortVals(column) {
                             hx-confirm="¿Dar de baja el área <%= area.nombre %>? Las citas históricas asociadas se conservan, solo deja de aparecer como área activa.">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                  <% if (has('areas.eliminar') && !area.activo && area.es_predeterminada) { %>
+                    <button class="row-action-btn" type="button" data-tooltip="Activar"
+                            aria-label="Activar área <%= area.nombre %>"
+                            hx-put="areas/<%= area.id %>/activar" hx-include="#areas-filters"
+                            hx-target="#areas-panel" hx-swap="innerHTML">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
                       </svg>
                     </button>
                   <% } %>

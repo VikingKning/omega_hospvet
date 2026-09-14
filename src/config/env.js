@@ -75,6 +75,42 @@ module.exports = {
     // espaciado que el de Google Calendar (GOOGLE_SYNC_INTERVAL_MINUTES).
     templatesSyncIntervalMinutes:
       Number(process.env.WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES) || 60,
+    // US WA 001: poller de recuperación de mensajes 'pendiente'/'procesando'
+    // huérfanos (whatsappMensajesPendientesJob.js) — en SEGUNDOS, no
+    // minutos como templatesSyncIntervalMinutes de arriba: esto es chat
+    // casi en tiempo real, no una sincronización de catálogo.
+    workerPollIntervalSeconds: Number(process.env.WHATSAPP_WORKER_POLL_INTERVAL_SECONDS) || 30,
+    // A partir de cuántos minutos una fila 'procesando' se considera
+    // huérfana (el proceso se cayó después de reclamarla pero antes de
+    // terminarla) y se vuelve a reclamar.
+    workerStaleMinutes: Number(process.env.WHATSAPP_WORKER_STALE_MINUTES) || 5,
+    // US WA 003: duración de la ventana de agrupación de mensajes
+    // (AC1/AC2/AC3) — pedido explícito de la consideración técnica.
+    agrupacionSegundos: Number(process.env.WHATSAPP_AGRUPACION_SEGUNDOS) || 10,
+    // Cada cuántos segundos whatsappAgrupacionJob.js revisa conversaciones
+    // vencidas — corto a propósito (el objetivo es cerrar la ventana de
+    // 10s casi en tiempo real, no cada 30s como el poller retirado de
+    // mensajes individuales).
+    agrupacionPollIntervalSeconds:
+      Number(process.env.WHATSAPP_AGRUPACION_POLL_INTERVAL_SEGUNDOS) || 3,
+    // A partir de cuántos minutos una conversación 'procesando' se
+    // considera abandonada por un worker interrumpido (AC13) — distinto
+    // de workerStaleMinutes de arriba (ese es de mensajes, no de
+    // conversaciones). Formar un grupo debería tardar milisegundos, así
+    // que unos minutos ya es señal clara de crash.
+    agrupacionReclamoHuerfanoMinutos:
+      Number(process.env.WHATSAPP_AGRUPACION_RECLAMO_HUERFANO_MINUTOS) || 2,
+    // US WA 013: minutos sin interacción del tutor (estado esperando_menu o
+    // flujo_activo) antes de enviar la pregunta de seguimiento (AC1), y
+    // minutos adicionales tras ese seguimiento antes de cerrar la
+    // conversación (AC6) — 10 y 20 respectivamente, valores fijados por la
+    // consideración técnica.
+    flujoRecordatorioMinutos: Number(process.env.WHATSAPP_FLUJO_RECORDATORIO_MINUTOS) || 10,
+    flujoCierreAdicionalMinutos: Number(process.env.WHATSAPP_FLUJO_CIERRE_ADICIONAL_MINUTOS) || 20,
+    // US WA 007 (AC10, consideración técnica: "valor aprobado antes del
+    // despliegue") — el default de 3 es una ASUNCIÓN provisional, sujeta a
+    // confirmación de negocio antes de producción.
+    labMaxIntentos: Number(process.env.WHATSAPP_LAB_MAX_INTENTOS) || 3,
   },
   // Clasificador de intención de WhatsApp (Bitácora de Decisiones Técnicas
   // v4: "claude-haiku-4-5 vía Claude API, Commercial Terms — solo

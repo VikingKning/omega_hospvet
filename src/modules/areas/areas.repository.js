@@ -39,7 +39,14 @@ async function findPage({ q, activoOnly, sort, dir, limit, offset }) {
   return applySort(baseQuery({ q, activoOnly }), { sort, dir })
     .limit(limit)
     .offset(offset)
-    .select('a.id', 'a.nombre', 'a.slug', 'a.activo', 'a.color_google_calendar');
+    .select(
+      'a.id',
+      'a.nombre',
+      'a.slug',
+      'a.activo',
+      'a.color_google_calendar',
+      'a.es_predeterminada',
+    );
 }
 
 // Independiente de filtros: distingue "el catálogo nunca ha tenido un área"
@@ -188,11 +195,36 @@ async function reactivar(id, nombre, color, usuarioId) {
   });
 }
 
+// Pedido explícito del usuario: las áreas predeterminadas del sistema
+// (Consultas/Estética) no son editables, así que su única forma de volver
+// a activo es esta acción explícita del listado — a diferencia de
+// reactivar() (efecto secundario de un alta con nombre repetido, que
+// también reescribe nombre/color), esta es la contraparte simétrica y
+// literal de desactivar(): solo activo=true + limpia
+// desactivado_por/desactivado_en. Re-asegura los permisos de agenda por si
+// el área los hubiera perdido/nunca los hubiera tenido (idempotente, mismo
+// criterio que reactivar()).
+async function activar(id, usuarioId) {
+  await db.transaction(async (trx) => {
+    const area = await trx('areas').where({ id }).first('slug', 'nombre');
+    if (!area) return;
+    await trx('areas').where({ id }).update({
+      activo: true,
+      desactivado_por: null,
+      desactivado_en: null,
+      actualizado_por: usuarioId,
+      actualizado_en: trx.fn.now(),
+    });
+    await asegurarPermisosAgenda(trx, area.slug, area.nombre);
+  });
+}
+
 module.exports = {
   count,
   findPage,
   existsAny,
   desactivar,
+  activar,
   findById,
   findBySlug,
   findAllExcept,

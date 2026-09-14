@@ -43,6 +43,18 @@ async function filter(req, res, next) {
 async function desactivar(req, res, next) {
   try {
     await service.desactivar(req.params.id, req.session.user.id);
+  } catch (err) {
+    // El doctor predeterminado de Consultas: el ícono de eliminar ni
+    // siquiera se muestra para esa fila (ver doctores-panel.ejs), así que
+    // esto solo se dispara vía una petición manual — mismo criterio que
+    // plantillas_whatsapp.controller.js#desactivar.
+    if (err.status) {
+      return res.status(err.status).send(err.message);
+    }
+    return next(err);
+  }
+
+  try {
     const data = await service.list({ ...req.query, ...req.body });
     const csrfToken = generateCsrfToken(req, res);
     res.render('partials/doctores-panel', { ...data, user: req.session.user, csrfToken });
