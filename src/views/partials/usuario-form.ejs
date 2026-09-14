@@ -10,6 +10,14 @@
 // aparece ni puede modificarse desde aquí, el reseteo es la US-605), y el
 // de Estatus solo existe en edición (AC: alta siempre crea activo=true).
 const esEdicion = Boolean(usuario);
+// Pedido explícito del usuario: mismo criterio "Ver" ya usado en
+// plantillas_whatsapp/areas/doctores — reusa este mismo formulario en modo
+// solo-lectura (ver usuarios.controller.js#verForm). Todos los controles se
+// deshabilitan con `disabled`; un control deshabilitado no dispara
+// click/change/input, así que el JS delegado de usuarios.ejs (combobox de
+// Estatus, checkboxes de permisos, regla "Ver implica las demás") no
+// necesita ningún guard nuevo.
+const esSoloLectura = Boolean(soloLectura);
 const ESTATUS_LABELS = {
   activo: 'Activo',
   bloqueo_temp: 'Bloqueo temporal',
@@ -74,7 +82,7 @@ function estaMarcado(permiso) {
 }
 %>
 <div class="modal-header">
-  <h2><%= esEdicion ? 'Editar usuario' : 'Nuevo usuario' %></h2>
+  <h2><%= esSoloLectura ? 'Usuario' : (esEdicion ? 'Editar usuario' : 'Nuevo usuario') %></h2>
   <button class="modal-close-btn" type="button" id="usuarioFormClose" aria-label="Cerrar">&times;</button>
 </div>
 
@@ -86,9 +94,11 @@ function estaMarcado(permiso) {
 <% } %>
 
 <form class="modal-form<%= puedeGestionarPermisos ? ' modal-form-columns' : '' %>"
+      <% if (!esSoloLectura) { %>
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `usuarios/${usuario.id}` : 'usuarios' %>"
       hx-target="#usuarioFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+      <% } %>
       data-es-edicion="<%= esEdicion ? '1' : '' %>">
   <div class="modal-col<%= puedeGestionarPermisos ? ' modal-col-datos' : '' %>">
     <% if (puedeGestionarPermisos) { %><h3 class="modal-col-title">Datos generales</h3><% } %>
@@ -116,26 +126,28 @@ function estaMarcado(permiso) {
     </label>
     <label>
       Nombre(s)
-      <input type="text" name="nombre" id="nombreInput" value="<%= nombre %>" required maxlength="100" autofocus>
+      <input type="text" name="nombre" id="nombreInput" value="<%= nombre %>" required maxlength="100"
+             <%= esSoloLectura ? 'readonly disabled' : 'autofocus' %>>
     </label>
     <label>
       Apellidos
-      <input type="text" name="apellidos" id="apellidosInput" value="<%= apellidos %>" required maxlength="100">
+      <input type="text" name="apellidos" id="apellidosInput" value="<%= apellidos %>" required maxlength="100" <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <label>
       Correo
-      <input type="email" name="correo" value="<%= correo %>" required maxlength="150">
+      <input type="email" name="correo" value="<%= correo %>" required maxlength="150" <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <label>
       Teléfono
       <input type="text" name="telefono" id="telefonoInput" value="<%= telefono %>"
              placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off"
              pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12"
-             title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)">
+             title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)"
+             <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <label>
       Username
-      <input type="text" name="username" id="usernameInput" value="<%= username %>" required maxlength="50" autocomplete="off">
+      <input type="text" name="username" id="usernameInput" value="<%= username %>" required maxlength="50" autocomplete="off" <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <% if (!esEdicion) { %>
       <label>
@@ -177,7 +189,7 @@ function estaMarcado(permiso) {
         // `estatus`.
         %>
         <div class="combobox" id="estatusCombobox">
-          <input type="text" id="estatusTrigger" class="select-trigger-input" value="<%= ESTATUS_LABELS[estatus] %>" readonly autocomplete="off">
+          <input type="text" id="estatusTrigger" class="select-trigger-input" value="<%= ESTATUS_LABELS[estatus] %>" readonly autocomplete="off" <%= esSoloLectura ? 'disabled' : '' %>>
           <input type="hidden" name="estatus" id="estatusInput" value="<%= estatus %>">
           <ul class="combobox-list" id="estatusList" hidden>
             <% ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo'].forEach((valor) => { %>
@@ -280,7 +292,7 @@ function estaMarcado(permiso) {
                         <input type="checkbox" class="permiso-todos-checkbox"
                                aria-label="Otorgar todos los permisos de <%= fila.nombre ?? etiqueta(MODULO_LABELS, fila.modulo) %>"
                                title="Marca o desmarca todas las acciones de esta fila"
-                               <%= filaCompleta ? 'checked' : '' %>>
+                               <%= filaCompleta ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
                       </td>
                       <% fila.celdas.forEach((permiso, celdaIndex) => { %>
                         <td class="permiso-cell">
@@ -296,7 +308,7 @@ function estaMarcado(permiso) {
                             <input type="checkbox" name="permisos" value="<%= permiso.id %>"
                                    title="<%= permiso.descripcion ?? '' %>"
                                    data-accion="<%= tab.acciones[celdaIndex] %>"
-                                   <%= estaMarcado(permiso) ? 'checked' : '' %>>
+                                   <%= estaMarcado(permiso) ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
                           <% } %>
                         </td>
                       <% }) %>
@@ -312,8 +324,12 @@ function estaMarcado(permiso) {
   <% } %>
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" id="usuarioFormCancel">Cancelar</button>
-    <button type="submit" class="btn-primary">Guardar</button>
+    <% if (esSoloLectura) { %>
+      <button type="button" class="btn-secondary" id="usuarioFormCancel">Cerrar</button>
+    <% } else { %>
+      <button type="button" class="btn-secondary" id="usuarioFormCancel">Cancelar</button>
+      <button type="submit" class="btn-primary">Guardar</button>
+    <% } %>
   </div>
 </form>
 

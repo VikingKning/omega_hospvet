@@ -482,6 +482,40 @@ describe('GET /usuarios/nuevo y GET /usuarios/:id/editar (US-602 — formulario)
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
   });
+
+  // Pedido explícito del usuario: "Ver" (mismo criterio ya usado en
+  // plantillas_whatsapp/areas/doctores) — quien puede entrar a la tabla
+  // (usuarios.ver) puede ver el detalle, sin importar si también tiene
+  // usuarios.editar.
+  it('AC: "Ver" trae los mismos datos que "Editar" pero en modo solo-lectura, sin botón Guardar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/usuarios/${usuarioId}/ver`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('value="Formulario"');
+    expect(res.text).toContain(`value="Precarga ${SUFFIX}"`);
+    expect(res.text).not.toContain('name="password"'); // sigue sin contraseña, como editar
+    expect(res.text).toContain('readonly');
+    expect(res.text).not.toContain('>Guardar<');
+  });
+
+  it('un usuario con SOLO usuarios.ver (sin editar) sí puede abrir "Ver"', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.get(`/usuarios/${usuarioId}/ver`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('un usuario sin usuarios.ver no puede abrir "Ver"', async () => {
+    const agent = await loginAs(SIN_PERMISOS_USER);
+
+    const res = await agent.get(`/usuarios/${usuarioId}/ver`);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
 });
 
 describe('POST /usuarios y PUT /usuarios/:id (US-602 — alta y edición)', () => {

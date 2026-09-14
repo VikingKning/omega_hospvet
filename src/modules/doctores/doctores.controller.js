@@ -76,6 +76,7 @@ async function nuevoForm(req, res, next) {
       activo: true,
       areasDisponibles,
       areasSeleccionadas: [],
+      soloLectura: false,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -102,6 +103,36 @@ async function editarForm(req, res, next) {
       activo: doctor.activo,
       areasDisponibles,
       areasSeleccionadas: doctor.areas,
+      soloLectura: false,
+      error: null,
+      csrfToken,
+      user: req.session.user,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Pedido explícito del usuario: fragmento HTMX de solo-lectura, mismo
+// criterio ya usado en plantillas_whatsapp/areas — cualquier usuario con
+// permiso de ver el catálogo (doctores.ver) puede abrir esto, sin importar
+// si también tiene doctores.editar.
+async function verForm(req, res, next) {
+  try {
+    const doctor = await service.obtener(req.params.id);
+    if (!doctor) {
+      return res.status(404).send('Doctor no encontrado');
+    }
+    const areasDisponibles = await service.listAreasDisponibles();
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/doctor-form', {
+      doctor,
+      nombre: doctor.nombre,
+      apellidos: doctor.apellidos,
+      activo: doctor.activo,
+      areasDisponibles,
+      areasSeleccionadas: doctor.areas,
+      soloLectura: true,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -152,6 +183,7 @@ async function crear(req, res, next) {
         activo: req.body.activo === 'true',
         areasDisponibles,
         areasSeleccionadas,
+        soloLectura: false,
         error: err.message,
         csrfToken,
         user: req.session.user,
@@ -196,6 +228,7 @@ async function editar(req, res, next) {
           activo: req.body.activo === 'true',
           areasDisponibles,
           areasSeleccionadas,
+          soloLectura: false,
           error: err.message,
           csrfToken,
           user: req.session.user,
@@ -210,4 +243,4 @@ async function editar(req, res, next) {
   }
 }
 
-module.exports = { list, filter, desactivar, nuevoForm, editarForm, crear, editar };
+module.exports = { list, filter, desactivar, nuevoForm, editarForm, verForm, crear, editar };

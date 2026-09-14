@@ -206,6 +206,15 @@ const bannerError = typeof error === 'undefined' ? null : error;
               </td>
               <td class="text-right">
                 <div class="row-actions">
+                  <% if (has('usuarios.ver')) { %>
+                    <button class="row-action-btn" type="button" data-tooltip="Ver"
+                            aria-label="Ver usuario <%= usuario.username %>"
+                            hx-get="usuarios/<%= usuario.id %>/ver" hx-target="#usuarioFormModalBody" hx-swap="innerHTML">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </button>
+                  <% } %>
                   <% if (has('usuarios.editar')) { %>
                     <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar"
                             aria-label="Editar usuario <%= usuario.username %>"

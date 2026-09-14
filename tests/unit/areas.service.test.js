@@ -8,7 +8,6 @@ const {
   editar,
   AreaValidationError,
   DuplicateNombreError,
-  AreaPredeterminadaError,
 } = require('../../src/modules/areas/areas.service');
 const db = require('../../src/config/database');
 
@@ -266,14 +265,29 @@ describe('areas.service.editar (US-610)', () => {
     await expect(editar({ id: 5, nombre: '', usuarioId: 2 })).rejects.toThrow(AreaValidationError);
   });
 
-  // Pedido explícito del usuario: Consultas/Estética son áreas
-  // predeterminadas del sistema — no editables.
-  it('rechaza editar un área predeterminada del sistema, incluso antes de validar el nombre', async () => {
-    repository.findById.mockResolvedValue({ id: 5, es_predeterminada: true });
-    await expect(editar({ id: 5, nombre: '', usuarioId: 2 })).rejects.toThrow(
-      AreaPredeterminadaError,
-    );
-    expect(repository.updateNombre).not.toHaveBeenCalled();
+  // Pedido explícito del usuario: en un área predeterminada del sistema
+  // (Consultas/Estética) lo ÚNICO editable es el color — el nombre que
+  // llegue en el body se ignora (se guarda el que ya tenía), sin rechazar
+  // la petición.
+  it('en un área predeterminada, ignora el nombre recibido y conserva el que ya tenía — solo guarda el color', async () => {
+    repository.findById.mockResolvedValue({
+      id: 5,
+      nombre: 'Consultas',
+      es_predeterminada: true,
+    });
+    await editar({ id: 5, nombre: 'Nombre Que No Debe Guardarse', color: '4', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Consultas', '4', 2);
+    expect(repository.findAllExcept).not.toHaveBeenCalled(); // ni siquiera se chequea duplicado de nombre
+  });
+
+  it('en un área predeterminada, un nombre vacío/inválido en el body no truena (se ignora igual)', async () => {
+    repository.findById.mockResolvedValue({
+      id: 5,
+      nombre: 'Estética',
+      es_predeterminada: true,
+    });
+    await editar({ id: 5, nombre: '', color: '4', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Estética', '4', 2);
   });
 
   it('un área normal (es_predeterminada:false) se puede editar sin problema', async () => {

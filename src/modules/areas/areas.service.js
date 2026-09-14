@@ -18,19 +18,6 @@ class DuplicateNombreError extends Error {
   }
 }
 
-// Pedido explícito del usuario: Consultas y Estética son áreas
-// predeterminadas del sistema — no editables (nombre/color/slug fijos),
-// aunque sí se pueden activar/desactivar libremente. El ícono de editar ni
-// siquiera se muestra para estas filas (ver areas-panel.ejs), así que esto
-// solo se dispara vía una petición manual — mismo criterio que
-// PlantillaPredeterminadaError en plantillas_whatsapp.service.js.
-class AreaPredeterminadaError extends Error {
-  constructor() {
-    super('Esta es un área predeterminada del sistema y no se puede editar.');
-    this.status = 400;
-  }
-}
-
 const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['nombre', 'slug', 'estado'];
 const NOMBRE_MAX_LENGTH = 100;
@@ -224,17 +211,25 @@ async function crear({ nombre: rawNombre, color: rawColor, usuarioId }) {
 // no — el `UNIQUE` de la base de datos lo exige de todos modos (no hay
 // "reactivar" al editar: sería fusionar la identidad de dos registros
 // distintos, algo que el AC nunca pidió).
+//
+// Pedido explícito del usuario: para un área predeterminada del sistema
+// (Consultas/Estética) lo ÚNICO editable es el color de Google Calendar —
+// el nombre que llegue en el body se IGNORA por completo (se guarda el que
+// ya tenía), en vez de rechazar la petición: el formulario ya manda el
+// nombre actual sin cambios (ver area-form.ejs, nombre queda readonly para
+// estas filas), así que esto nunca debería divergir en la práctica; ignorar
+// es solo la defensa server-side de ese mismo candado.
 async function editar({ id, nombre: rawNombre, color: rawColor, usuarioId }) {
   const parsedId = parseId(id);
-  if (parsedId !== null) {
-    const actual = await repository.findById(parsedId);
-    if (actual?.es_predeterminada) {
-      throw new AreaPredeterminadaError();
-    }
+  const actual = parsedId !== null ? await repository.findById(parsedId) : null;
+  const color = validateColor(rawColor);
+
+  if (actual?.es_predeterminada) {
+    await repository.updateNombre(id, actual.nombre, color, usuarioId);
+    return;
   }
 
   const nombre = validateNombre(rawNombre);
-  const color = validateColor(rawColor);
   const existing = await findDuplicado(nombre, id);
   if (existing) {
     throw new DuplicateNombreError();
@@ -251,5 +246,4 @@ module.exports = {
   editar,
   AreaValidationError,
   DuplicateNombreError,
-  AreaPredeterminadaError,
 };

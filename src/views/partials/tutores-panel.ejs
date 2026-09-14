@@ -116,7 +116,6 @@ const bannerError = typeof error === 'undefined' ? null : error;
                   <div>
                     <div class="person-cell-name"><%= nombreCompletoTutor %></div>
                     <div class="person-cell-subtitle"><%= tutor.telefono %></div>
-                    <span class="status-badge person-cell-status-mobile<%= tutor.activo ? ' is-active' : '' %>"><%= tutor.activo ? 'Activo' : 'Inactivo' %></span>
                   </div>
                 </div>
               </td>
@@ -149,6 +148,14 @@ const bannerError = typeof error === 'undefined' ? null : error;
               </td>
               <td class="text-right">
                 <div class="row-actions">
+                  <% if (has('tutores.ver')) { %>
+                    <a class="row-action-btn" data-tooltip="Ver"
+                       aria-label="Ver tutor <%= nombreCompletoTutor %>" href="tutores/<%= tutor.id %>/ver">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </a>
+                  <% } %>
                   <% if (has('tutores.editar')) { %>
                     <a class="row-action-btn row-action-edit" data-tooltip="Editar"
                        aria-label="Editar tutor <%= nombreCompletoTutor %>" href="tutores/<%= tutor.id %>/editar">

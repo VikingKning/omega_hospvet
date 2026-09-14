@@ -102,7 +102,7 @@ function sortVals(column) {
               </td>
               <td class="text-right">
                 <div class="row-actions">
-                  <% if (has('areas.ver') && area.es_predeterminada) { %>
+                  <% if (has('areas.ver')) { %>
                     <button class="row-action-btn" type="button" data-tooltip="Ver" aria-label="Ver área <%= area.nombre %>"
                             hx-get="areas/<%= area.id %>/ver" hx-target="#areaFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -110,7 +110,7 @@ function sortVals(column) {
                       </svg>
                     </button>
                   <% } %>
-                  <% if (has('areas.editar') && area.activo && !area.es_predeterminada) { %>
+                  <% if (has('areas.editar') && area.activo) { %>
                     <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar" aria-label="Editar área <%= area.nombre %>"
                             hx-get="areas/<%= area.id %>/editar" hx-target="#areaFormModalBody" hx-swap="innerHTML">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -99,6 +99,9 @@ router.get(
   requirePermission('usuarios.editar'),
   controller.editarForm,
 );
+// Pedido explícito del usuario: fragmento de solo-lectura — mismo permiso
+// que el listado (usuarios.ver), no usuarios.editar.
+router.get('/usuarios/:id/ver', requireAuth, requirePermission('usuarios.ver'), controller.verForm);
 // US-604 (quinta iteración): sugerencia de username en vivo mientras se
 // escribe Nombre(s)/Apellidos en el alta — body, no query string, mismo
 // criterio de privacidad que el resto de las rutas HTMX de este módulo (un

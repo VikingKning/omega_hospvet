@@ -130,6 +130,11 @@
   // reinicia en cada apertura/reintento del formulario, leyendo esa isla
   // de datos.
   let doctorFormAreas = { disponibles: [], seleccionadas: [] };
+  // Pedido explícito del usuario: modo "Ver" (soloLectura) — el botón
+  // "Quitar" de cada especialidad se omite en vez de deshabilitarse porque
+  // se arma en el cliente (renderDoctorAreas), a diferencia del resto de
+  // los controles del formulario (esos sí llevan `disabled` server-side).
+  let doctorFormSoloLectura = false;
   let refrescarAreaPickerClear = () => {};
 
   function renderAreaPicker() {
@@ -169,7 +174,11 @@
         (area) => `
           <tr>
             <td>${escapeHtml(area.nombre)}<input type="hidden" name="areaIds" value="${area.id}"></td>
-            <td><button type="button" class="mini-remove" data-id="${area.id}" aria-label="Quitar ${escapeHtml(area.nombre)}">&times;</button></td>
+            <td>${
+              doctorFormSoloLectura
+                ? ''
+                : `<button type="button" class="mini-remove" data-id="${area.id}" aria-label="Quitar ${escapeHtml(area.nombre)}">&times;</button>`
+            }</td>
           </tr>
         `,
       )
@@ -188,6 +197,7 @@
     const datosEl = document.getElementById('doctorFormAreasData');
     const datos = datosEl ? JSON.parse(datosEl.textContent) : { disponibles: [], seleccionadas: [] };
     doctorFormAreas = { disponibles: datos.disponibles, seleccionadas: datos.seleccionadas.slice() };
+    doctorFormSoloLectura = Boolean(datos.soloLectura);
     attachComboboxKeyboardNav(
       doctorFormModalBody.querySelector('#areaPickerTrigger'),
       doctorFormModalBody.querySelector('#areaPickerList'),

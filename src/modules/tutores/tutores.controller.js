@@ -41,6 +41,7 @@ function nuevoForm(req, res) {
   res.render('tutor-form', {
     propietario: null,
     pacientes: [],
+    soloLectura: false,
     user: req.session.user,
     csrfToken,
   });
@@ -64,6 +65,34 @@ async function editarForm(req, res, next) {
     res.render('tutor-form', {
       propietario,
       pacientes: propietario.pacientes,
+      soloLectura: false,
+      user: req.session.user,
+      csrfToken,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Pedido explícito del usuario: página de solo-lectura, mismo criterio ya
+// usado en plantillas_whatsapp/areas/doctores/usuarios — cualquier usuario
+// con permiso de ver el catálogo (tutores.ver) puede abrirla, sin importar
+// si también tiene tutores.editar. Mismos datos que editarForm, la única
+// diferencia es soloLectura:true (tutor-form.ejs deshabilita todos los
+// campos/botones con eso).
+async function verForm(req, res, next) {
+  try {
+    const propietario = await service.obtenerParaEditar(req.params.id);
+    if (!propietario) {
+      return res.redirect(
+        `/tutores.html?error=no-encontrado&id=${encodeURIComponent(req.params.id)}`,
+      );
+    }
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('tutor-form', {
+      propietario,
+      pacientes: propietario.pacientes,
+      soloLectura: true,
       user: req.session.user,
       csrfToken,
     });
@@ -213,6 +242,7 @@ module.exports = {
   filter,
   nuevoForm,
   editarForm,
+  verForm,
   crear,
   editar,
   buscarTelefono,

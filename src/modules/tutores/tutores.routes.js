@@ -52,6 +52,15 @@ router.get(
   attachSidebarAreas,
   controller.editarForm,
 );
+// Pedido explícito del usuario: página de solo-lectura — mismo permiso que
+// el listado (tutores.ver), no tutores.editar.
+router.get(
+  '/tutores/:id/ver',
+  requireAuth,
+  requirePermission('tutores.ver'),
+  attachSidebarAreas,
+  controller.verForm,
+);
 
 // US-156 (pedido del usuario): búsqueda en vivo del teléfono mientras se
 // captura el alta — para poder pasar a editar un propietario existente en

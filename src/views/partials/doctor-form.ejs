@@ -8,9 +8,19 @@
 // error son lo que el usuario acababa de escribir, no necesariamente lo
 // que ya está guardado.
 const esEdicion = Boolean(doctor);
+// Pedido explícito del usuario: mismo criterio "Ver" ya usado en
+// plantillas_whatsapp/areas — reusa este mismo formulario en modo
+// totalmente solo-lectura (ver doctores.controller.js#verForm) en vez de
+// una vista de detalle aparte. Los pickers/switch se vuelven inertes
+// agregando `disabled` (un control deshabilitado no dispara click/change,
+// así que el JS delegado de doctores.ejs no necesita ningún guard nuevo
+// para el switch/nombre/apellidos — solo el picker de especialidades, que
+// se arma en el cliente, necesita conocer el flag: ver doctorFormAreasData
+// más abajo).
+const esSoloLectura = Boolean(soloLectura);
 %>
 <div class="modal-header">
-  <h2><%= esEdicion ? 'Editar doctor' : 'Nuevo doctor' %></h2>
+  <h2><%= esSoloLectura ? 'Doctor' : (esEdicion ? 'Editar doctor' : 'Nuevo doctor') %></h2>
   <button class="modal-close-btn" type="button" id="doctorFormClose" aria-label="Cerrar">&times;</button>
 </div>
 
@@ -22,16 +32,19 @@ const esEdicion = Boolean(doctor);
 <% } %>
 
 <form class="modal-form"
+      <% if (!esSoloLectura) { %>
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `doctores/${doctor.id}` : 'doctores' %>"
       hx-target="#doctorFormModalBody" hx-swap="innerHTML"
-      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+      <% } %>>
   <label>
     Nombre(s)
-    <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100" autofocus>
+    <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100"
+           <%= esSoloLectura ? 'readonly disabled' : 'autofocus' %>>
   </label>
   <label>
     Apellidos
-    <input type="text" name="apellidos" value="<%= apellidos %>" required maxlength="100">
+    <input type="text" name="apellidos" value="<%= apellidos %>" required maxlength="100" <%= esSoloLectura ? 'readonly disabled' : '' %>>
   </label>
   <%
   // Pedido de estilo: mismo switch ya usado en plantilla-form.ejs (US-613)
@@ -43,7 +56,7 @@ const esEdicion = Boolean(doctor);
   %>
   <label class="switch-field">
     <span class="switch">
-      <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %>>
+      <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
       <span class="switch-track"></span>
     </span>
     <span class="switch-state-on">Activo</span>
@@ -64,18 +77,18 @@ const esEdicion = Boolean(doctor);
     %>
     <div class="area-picker-row">
       <div class="combobox" id="areaPickerCombobox">
-        <input type="text" id="areaPickerTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Selecciona un área...">
+        <input type="text" id="areaPickerTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Selecciona un área..." <%= esSoloLectura ? 'disabled' : '' %>>
         <input type="hidden" id="areaPickerValue">
         <ul class="combobox-list" id="areaPickerList" hidden></ul>
       </div>
-      <button type="button" class="btn-secondary" id="areaPickerAdd">Agregar</button>
+      <button type="button" class="btn-secondary" id="areaPickerAdd" <%= esSoloLectura ? 'disabled' : '' %>>Agregar</button>
     </div>
   </label>
 
   <div class="mini-table-wrap">
     <table class="mini-table">
       <thead>
-        <tr><th>Área</th><th>Quitar</th></tr>
+        <tr><th>Área</th><th><%= esSoloLectura ? '' : 'Quitar' %></th></tr>
       </thead>
       <tbody id="doctorAreasBody"></tbody>
     </table>
@@ -83,8 +96,12 @@ const esEdicion = Boolean(doctor);
   </div>
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" id="doctorFormCancel">Cancelar</button>
-    <button type="submit" class="btn-primary">Guardar</button>
+    <% if (esSoloLectura) { %>
+      <button type="button" class="btn-secondary" id="doctorFormCancel">Cerrar</button>
+    <% } else { %>
+      <button type="button" class="btn-secondary" id="doctorFormCancel">Cancelar</button>
+      <button type="submit" class="btn-primary">Guardar</button>
+    <% } %>
   </div>
 </form>
 
@@ -105,4 +122,5 @@ const esEdicion = Boolean(doctor);
 <div id="doctorFormAreasData" hidden><%- JSON.stringify({
   disponibles: areasDisponibles,
   seleccionadas: areasSeleccionadas,
+  soloLectura: esSoloLectura,
 }).replace(/</g, String.fromCharCode(92,117,48,48,51,99)) %></div>

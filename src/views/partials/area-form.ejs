@@ -8,12 +8,17 @@
 // escribir, no necesariamente lo que ya está guardado.
 const esEdicion = Boolean(area);
 // Pedido explícito del usuario: Consultas/Estética (áreas predeterminadas
-// del sistema) no son editables — este mismo modal se reusa en modo
-// solo-lectura (ver areas.controller.js#verForm) en vez de crear una vista
-// de detalle aparte. La defensa real vive en el servidor
-// (areas.service.js#editar rechaza la edición igual); esto es solo para no
-// ofrecer un formulario que de todos modos se rechazaría.
+// del sistema) SOLO permiten editar el color de Google Calendar — el
+// nombre queda bloqueado (readonly) para estas filas, en vez de ocultar el
+// formulario de edición por completo. La defensa real vive en el servidor
+// (areas.service.js#editar ignora el nombre que llegue para estas filas);
+// esto es solo para no ofrecer un campo que de todos modos se ignoraría.
+const esPredeterminada = Boolean(area?.es_predeterminada);
+// "Ver" (ícono siempre disponible, mismo criterio que plantillas_whatsapp)
+// reusa este mismo formulario en modo totalmente solo-lectura — ver
+// areas.controller.js#verForm.
 const esSoloLectura = Boolean(soloLectura);
+const nombreBloqueado = esSoloLectura || esPredeterminada;
 
 // El picker no distingue null/undefined/'' — las tres formas en que "sin
 // color todavía" puede llegar aquí (alta nueva, área existente sin color,
@@ -30,6 +35,10 @@ const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
 <% if (esSoloLectura) { %>
   <div class="form-info-banner">
     <span>Esta es un área predeterminada del sistema — no se puede editar ni eliminar, solo activar o desactivar.</span>
+  </div>
+<% } else if (esPredeterminada) { %>
+  <div class="form-info-banner">
+    <span>Esta es un área predeterminada del sistema — solo puedes cambiar su color en Google Calendar.</span>
   </div>
 <% } %>
 
@@ -49,7 +58,8 @@ const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
   <label>
     Nombre
     <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100"
-           <%= esSoloLectura ? 'readonly disabled' : 'autofocus' %>>
+           <%= nombreBloqueado ? 'readonly' : '' %> <%= esSoloLectura ? 'disabled' : '' %>
+           <%= nombreBloqueado ? '' : 'autofocus' %>>
   </label>
   <% if (esEdicion) { %>
     <label>

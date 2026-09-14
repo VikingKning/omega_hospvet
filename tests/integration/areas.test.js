@@ -792,14 +792,16 @@ describe('US: áreas predeterminadas del sistema (Consultas/Estética)', () => {
     expect(estetica.activo).toBe(true);
   });
 
-  it('el listado marca la fila con el badge "Predeterminada" y NO muestra el ícono de editar', async () => {
+  it('el listado marca la fila con el badge "Predeterminada" y muestra los íconos Ver + Editar', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await filtrarAreas(agent, { estado: 'todos', q: 'Estética' });
 
     expect(res.text).toContain('Predeterminada');
-    // El ícono "Ver" (hx-get .../ver) reemplaza al de "Editar" para esta fila.
+    // "Ver" (mismo criterio que plantillas_whatsapp: siempre disponible) +
+    // "Editar" (esta fila SÍ es editable, aunque restringido al color).
     expect(res.text).toMatch(/hx-get="areas\/\d+\/ver"/);
+    expect(res.text).toMatch(/hx-get="areas\/\d+\/editar"/);
   });
 
   describe('protección de edición/baja (sobre un área predeterminada propia de prueba)', () => {
@@ -818,7 +820,7 @@ describe('US: áreas predeterminadas del sistema (Consultas/Estética)', () => {
       areaId = area.id;
     });
 
-    it('PUT /areas/:id la rechaza (no editable), sin tocar el nombre', async () => {
+    it('PUT /areas/:id ignora el nombre recibido (sigue igual) pero SÍ guarda el color', async () => {
       const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
       const csrfToken = await getAreasCsrfToken(agent);
 
@@ -826,12 +828,13 @@ describe('US: áreas predeterminadas del sistema (Consultas/Estética)', () => {
         .put(`/areas/${areaId}`)
         .type('form')
         .set('x-csrf-token', csrfToken)
-        .send({ nombre: 'Nombre Que No Debe Guardarse' });
+        .send({ nombre: 'Nombre Que No Debe Guardarse', color: '7' });
 
-      expect(res.text).toContain('no se puede editar');
+      expect(res.status).toBe(200);
 
-      const sinCambios = await db('areas').where({ id: areaId }).first();
-      expect(sinCambios.nombre).toBe(`Predeterminada ${SUFFIX}`);
+      const actualizada = await db('areas').where({ id: areaId }).first();
+      expect(actualizada.nombre).toBe(`Predeterminada ${SUFFIX}`); // ignorado
+      expect(actualizada.color_google_calendar).toBe('7'); // sí se guardó
     });
 
     it('GET /areas/:id/ver abre el modal en modo solo-lectura, sin botón Guardar', async () => {

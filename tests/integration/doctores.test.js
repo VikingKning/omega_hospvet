@@ -485,6 +485,40 @@ describe('GET /doctores/nuevo y GET /doctores/:id/editar (US-607 — formulario)
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
   });
+
+  // Pedido explícito del usuario: "Ver" (mismo criterio ya usado en
+  // plantillas_whatsapp/areas) — cualquiera con doctores.ver puede abrirlo,
+  // sin importar si también tiene doctores.editar.
+  it('AC: el "Ver" trae los mismos datos que "Editar" pero en modo solo-lectura, sin botón Guardar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/doctores/${doctorId}/ver`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('value="Formulario"');
+    expect(res.text).toContain(`value="Precarga ${SUFFIX}"`);
+    expect(res.text).toContain(`Dermatología Form ${SUFFIX}`);
+    expect(res.text).toContain('readonly');
+    expect(res.text).not.toContain('>Guardar<');
+    expect(res.text).not.toContain('>Quitar<'); // columna de "Quitar" vacía en solo-lectura
+  });
+
+  it('un usuario con SOLO doctores.ver (sin editar) sí puede abrir "Ver"', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.get(`/doctores/${doctorId}/ver`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('un usuario sin doctores.ver no puede abrir "Ver"', async () => {
+    const agent = await loginAs(SIN_PERMISOS_USER);
+
+    const res = await agent.get(`/doctores/${doctorId}/ver`);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
 });
 
 describe('POST /doctores y PUT /doctores/:id (US-607 — alta y edición)', () => {

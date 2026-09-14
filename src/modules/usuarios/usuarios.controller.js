@@ -120,6 +120,7 @@ async function nuevoForm(req, res, next) {
       doctoresDisponibles,
       matrizPermisos: service.construirMatrizPermisos(catalogoPermisos, areasParaPermisos),
       permisosAsignadosIds: [],
+      soloLectura: false,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -161,6 +162,47 @@ async function editarForm(req, res, next) {
       doctoresDisponibles: [],
       matrizPermisos: service.construirMatrizPermisos(catalogoPermisos, areasParaPermisos),
       permisosAsignadosIds,
+      soloLectura: false,
+      error: null,
+      csrfToken,
+      user: req.session.user,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Pedido explícito del usuario: fragmento HTMX de solo-lectura, mismo
+// criterio ya usado en plantillas_whatsapp/areas/doctores — cualquier
+// usuario con permiso de ver el listado (usuarios.ver) puede abrirlo, sin
+// importar si también tiene usuarios.editar/usuarios.permisos (si no tiene
+// este último, el apartado de Permisos ni siquiera se muestra — mismo
+// criterio que editarForm).
+async function verForm(req, res, next) {
+  try {
+    const usuario = await service.obtener(req.params.id);
+    if (!usuario) {
+      return res.status(404).send('Usuario no encontrado');
+    }
+    const [catalogoPermisos, permisosAsignadosIds, areasParaPermisos] = await Promise.all([
+      service.obtenerCatalogoPermisos(),
+      service.permisosAsignadosDe(usuario.id),
+      service.listAreasParaPermisos(),
+    ]);
+    const csrfToken = generateCsrfToken(req, res);
+    res.render('partials/usuario-form', {
+      usuario,
+      nombre: usuario.nombre,
+      apellidos: usuario.apellidos,
+      correo: usuario.correo,
+      telefono: usuario.telefono ?? '',
+      username: usuario.username,
+      estatus: usuario.estatus,
+      doctorSeleccionado: usuario.doctor ?? null,
+      doctoresDisponibles: [],
+      matrizPermisos: service.construirMatrizPermisos(catalogoPermisos, areasParaPermisos),
+      permisosAsignadosIds,
+      soloLectura: true,
       error: null,
       csrfToken,
       user: req.session.user,
@@ -240,6 +282,7 @@ async function crear(req, res, next) {
         doctoresDisponibles,
         matrizPermisos: service.construirMatrizPermisos(catalogoPermisos, areasParaPermisos),
         permisosAsignadosIds: service.parsePermissionIds(req.body.permisos),
+        soloLectura: false,
         error: err.message,
         csrfToken,
         user: req.session.user,
@@ -308,6 +351,7 @@ async function editar(req, res, next) {
           permisosAsignadosIds: permisosProvistos
             ? service.parsePermissionIds(req.body.permisos)
             : permisosActuales,
+          soloLectura: false,
           error: err.message,
           csrfToken,
           user: req.session.user,
@@ -329,6 +373,7 @@ module.exports = {
   resetearPassword,
   nuevoForm,
   editarForm,
+  verForm,
   sugerirUsername,
   crear,
   editar,

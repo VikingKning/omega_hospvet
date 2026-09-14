@@ -58,6 +58,10 @@ router.get(
   requirePermission('doctores.editar'),
   controller.editarForm,
 );
+// Pedido explícito del usuario: fragmento de solo-lectura — mismo permiso
+// que el listado (doctores.ver), no doctores.editar (quien solo puede ver
+// la tabla también puede abrir el detalle de una fila).
+router.get('/doctores/:id/ver', requireAuth, requirePermission('doctores.ver'), controller.verForm);
 router.post(
   '/doctores',
   requireAuth,
