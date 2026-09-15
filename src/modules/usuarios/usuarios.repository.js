@@ -298,6 +298,8 @@ async function create({
   username,
   passwordHash,
   doctorId,
+  tipoUsuario,
+  notificacionesAlertas,
   permissionIds,
   usuarioId,
 }) {
@@ -311,6 +313,8 @@ async function create({
         username,
         password_hash: passwordHash,
         doctor_id: doctorId,
+        tipo_usuario: doctorId ? 'doctor' : tipoUsuario,
+        notificaciones_alertas: notificacionesAlertas,
         estatus: 'activo',
         intentos_fallidos: 0,
         bloqueado_en: null,
@@ -362,10 +366,32 @@ async function create({
 // criterio que `password_hash`, que tampoco es parámetro de esta función).
 async function update(
   id,
-  { nombre, apellidos, correo, telefono, username, estatus, permissionIds, usuarioId },
+  {
+    nombre,
+    apellidos,
+    correo,
+    telefono,
+    username,
+    estatus,
+    tipoUsuario,
+    notificacionesAlertas,
+    permissionIds,
+    usuarioId,
+  },
 ) {
   await db.transaction(async (trx) => {
-    const actual = await trx('usuarios').where({ id }).first('estatus');
+    const actual = await trx('usuarios')
+      .where({ id })
+      .first('estatus', 'doctor_id', 'tipo_usuario');
+
+    // Pedido explícito del usuario: tipo_usuario='admin' nunca se puede
+    // modificar desde esta pantalla — se bloquea aquí, en el mismo lugar
+    // (y con el mismo criterio de "releer el valor actual dentro de la
+    // transacción") que ya fuerza 'doctor' cuando hay vínculo. Gana sobre
+    // esa regla: una cuenta admin conserva su tipo aunque se le vincule un
+    // doctor.
+    const tipoUsuarioFinal =
+      actual.tipo_usuario === 'admin' ? 'admin' : actual.doctor_id ? 'doctor' : tipoUsuario;
 
     const cambios = {
       nombre,
@@ -374,6 +400,8 @@ async function update(
       telefono,
       username,
       estatus,
+      tipo_usuario: tipoUsuarioFinal,
+      notificaciones_alertas: notificacionesAlertas,
       actualizado_por: usuarioId,
       actualizado_en: trx.fn.now(),
     };

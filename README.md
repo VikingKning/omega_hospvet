@@ -30,6 +30,7 @@
   - [Agenda](#agenda)
   - [Laboratorio y métricas](#laboratorio-y-métricas)
   - [Webhook de WhatsApp](#webhook-de-whatsapp)
+  - [Flujo de WhatsApp implementado](#flujo-de-whatsapp-implementado)
 - [Configuración de integraciones](#configuración-de-integraciones)
   - [Google Calendar](#google-calendar)
     - [Configuración inicial en Google Cloud](#configuración-inicial-en-google-cloud)
@@ -42,6 +43,7 @@
     - [Qué hacer con el token de Meta](#qué-hacer-con-el-token-de-meta)
     - [Configurar y probar el webhook en localhost](#configurar-y-probar-el-webhook-en-localhost)
     - [Registrar plantillas de texto](#registrar-plantillas-de-texto)
+    - [Registrar plantillas internas de alertas](#registrar-plantillas-internas-de-alertas)
     - [Registrar la plantilla de resultados con documento](#registrar-la-plantilla-de-resultados-con-documento)
     - [Checklist para pasar de pruebas a producción](#checklist-para-pasar-de-pruebas-a-producción)
   - [Claude API](#claude-api)
@@ -59,12 +61,13 @@ El sistema incluye:
 
 - Autenticación real, permisos granulares por usuario y sesiones persistidas en PostgreSQL.
 - Bloqueo escalonado por intentos fallidos, cambio obligatorio de contraseña y expiración de sesión por inactividad o duración máxima.
-- Catálogos de usuarios, doctores, áreas, tutores, pacientes y plantillas de WhatsApp.
+- Catálogos de usuarios, doctores, áreas, tutores, pacientes y plantillas de WhatsApp; los usuarios pueden configurarse como Doctor, Estilista, Recepción o Usuario y habilitar alertas internas. El tipo Admin queda reservado para cuentas administrativas existentes.
 - Agenda genérica por área con FullCalendar, altas, edición, confirmación y cancelación de citas.
 - Importación periódica de reservas externas desde Google Calendar.
 - Órdenes de laboratorio multiestudio, carga protegida de resultados y envío por correo o WhatsApp.
 - Métricas de laboratorio con filtros de fecha y gráficas.
-- Recepción de mensajes de WhatsApp y clasificación de intención mediante Claude API, limitada a etiquetas y respuestas predefinidas.
+- Flujo robusto de WhatsApp con persistencia idempotente, agrupación por inactividad, menú interactivo, atención prioritaria de emergencias, transferencia temporal a personal y alertas internas auditables.
+- Clasificación cerrada mediante Claude únicamente cuando las rutas deterministas no resuelven el mensaje; el modelo selecciona una etiqueta permitida y nunca redacta la respuesta clínica.
 
 ## Stack tecnológico
 
@@ -85,8 +88,8 @@ El sistema incluye:
 | Multer y pdf-lib                           | Carga y procesamiento de resultados de laboratorio      |
 | googleapis                                 | Sincronización con Google Calendar                      |
 | Nodemailer                                 | Envío de resultados por correo SMTP                     |
-| WhatsApp Cloud API                         | Webhook, respuestas y envío de resultados               |
-| Claude API                                 | Clasificación cerrada de mensajes entrantes de WhatsApp |
+| WhatsApp Cloud API                         | Webhook, menú, respuestas, alertas y resultados         |
+| Claude API                                 | Selección cerrada de etiquetas solo cuando es necesaria |
 | Pino y pino-http                           | Logging estructurado                                    |
 | Jest y Supertest                           | Pruebas unitarias y de integración                      |
 | PM2                                        | Administración del proceso en producción                |
@@ -163,7 +166,7 @@ pnpm run migrate:localhost
 pnpm run seed:localhost
 ```
 
-Actualmente las migraciones crean 21 tablas y agregan las plantillas predeterminadas del sistema. Los seeds registran 81 permisos, 8 áreas iniciales, los catálogos de laboratorio y el usuario administrador.
+Las migraciones construyen el esquema completo, incluidas conversaciones, grupos, outbox, atención humana y auditoría de alertas de WhatsApp. Los seeds registran permisos, áreas iniciales, catálogos de laboratorio y el usuario administrador.
 
 ### 5. Levantar el servidor
 
@@ -218,11 +221,27 @@ WHATSAPP_WEBHOOK_VERIFY_TOKEN=
 WHATSAPP_APP_SECRET=
 WHATSAPP_APP_ID=
 WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES=60
+WHATSAPP_AGRUPACION_SEGUNDOS=10
+WHATSAPP_AGRUPACION_EMERGENCIA_SEGUNDOS=10
+WHATSAPP_AGRUPACION_POLL_INTERVAL_SEGUNDOS=3
+WHATSAPP_AGRUPACION_RECLAMO_HUERFANO_MINUTOS=2
+WHATSAPP_FLUJO_RECORDATORIO_MINUTOS=10
+WHATSAPP_FLUJO_CIERRE_ADICIONAL_MINUTOS=20
+WHATSAPP_LAB_MAX_INTENTOS=3
+WHATSAPP_ATENCION_HUMANA_HORAS=5
+WHATSAPP_ATENCION_HUMANA_POLL_INTERVAL_SEGUNDOS=5
+WHATSAPP_WORKER_RECLAMO_HUERFANO_SEGUNDOS=120
+WHATSAPP_ATENCION_HUMANA_REINTENTO_SEGUNDOS=30
 
 ANTHROPIC_API_KEY=
+ANTHROPIC_TIMEOUT_MS=10000
 ```
 
-Las variables de WhatsApp habilitan el webhook, las respuestas y el envío de resultados. `WHATSAPP_APP_ID` solo es necesario para registrar la plantilla de resultados con documento adjunto. `ANTHROPIC_API_KEY` habilita el clasificador de mensajes entrantes; Claude solo devuelve una etiqueta permitida y nunca genera contenido médico libre.
+Las variables de WhatsApp habilitan el webhook, las respuestas, las alertas internas y el envío de resultados. `WHATSAPP_APP_ID` solo es necesario para registrar la plantilla de resultados con documento adjunto. Los intervalos controlan la agrupación, recuperación de workers interrumpidos, recordatorios y las cinco horas de atención humana; los valores mostrados son los predeterminados.
+
+`ANTHROPIC_API_KEY` habilita el clasificador de mensajes entrantes. `ANTHROPIC_TIMEOUT_MS` limita cada llamada; si falta la clave, vence el tiempo o la respuesta no pertenece al catálogo cerrado, el grupo utiliza `sin-coincidencia-default` y no vuelve a clasificarse. Claude no se usa para comandos de menú, opciones interactivas, enlaces de agenda, consulta guiada de resultados, transferencias ni alertas, y nunca genera contenido médico libre.
+
+Los destinatarios de alertas internas se obtienen exclusivamente de `usuarios`: deben estar activos, tener `notificaciones_alertas=true` y el tipo correspondiente. No se deben configurar listas de teléfonos del personal en variables de entorno.
 
 ### Correo — opcionales
 
@@ -237,14 +256,20 @@ SMTP_FROM=Omega Hospital Veterinario <no-reply@example.com>
 
 Usa `SMTP_SECURE=true` para TLS implícito, normalmente en el puerto 465. Sin una configuración SMTP completa, el canal de correo se omite y el resto de la aplicación continúa disponible.
 
-### Links públicos de resultados de laboratorio — opcionales
+### Links públicos de agenda y resultados de laboratorio — opcionales
 
 ```dotenv
 GOOGLE_CALENDAR_MEETING_URL=
+GOOGLE_CALENDAR_GROOMING=
 GOOGLE_MAPS_URL=
 ```
 
-Se mandan tal cual al cliente en el correo y el WhatsApp de resultados de laboratorio: `GOOGLE_CALENDAR_MEETING_URL` es el link de agendar cita (botón del correo y variable del mensaje de WhatsApp) y `GOOGLE_MAPS_URL` es el link de ubicación de la sucursal (link "Google Maps" en el pie del correo y variable del mensaje de WhatsApp). Cambiar el calendario o la sucursal es solo cambiar estas variables, sin tocar código ni volver a registrar la plantilla en Meta.
+`GOOGLE_CALENDAR_MEETING_URL` es el enlace público HTTPS de Consulta y
+`GOOGLE_CALENDAR_GROOMING` el de Estética. Las opciones correspondientes del
+menú de WhatsApp los envían sin llamar a Claude; si falta el enlace o no es
+HTTPS, el flujo avisa y transfiere la conversación a Recepción. El enlace de
+Consulta también se usa en el correo y WhatsApp de resultados de laboratorio.
+`GOOGLE_MAPS_URL` es el enlace de ubicación de la sucursal.
 
 ## Arquitectura
 
@@ -277,7 +302,7 @@ OmegaVet_AdminSite/
 │   ├── db/
 │   │   ├── migrations/
 │   │   └── seeds/
-│   ├── jobs/                      # Sincronizaciones periódicas
+│   ├── jobs/                      # Sincronizaciones y workers periódicos
 │   ├── middlewares/
 │   ├── modules/
 │   │   ├── agenda/
@@ -303,22 +328,23 @@ OmegaVet_AdminSite/
 
 ## Módulos y rutas principales
 
-| Ruta                         | Permiso                     | Función                                           |
-| ---------------------------- | --------------------------- | ------------------------------------------------- |
-| `/` y `/index.html`          | Pública                     | Inicio de sesión                                  |
-| `/main.html`                 | Sesión                      | Dashboard principal                               |
-| `/cambiar-password`          | Sesión                      | Cambio obligatorio de contraseña                  |
-| `/mi-perfil.html`            | Sesión                      | Perfil y cambio voluntario de contraseña          |
-| `/agenda/:slug.html`         | `agenda.<slug>.ver`         | Calendario por área                               |
-| `/tutores.html`              | `tutores.ver`               | Tutores y pacientes                               |
-| `/laboratorio.html`          | `laboratorio.ver`           | Órdenes y resultados de laboratorio               |
-| `/metricas/laboratorio.html` | `metricas.laboratorios.ver` | Métricas de laboratorio                           |
-| `/doctores.html`             | `doctores.ver`              | Catálogo de doctores y especialidades             |
-| `/areas.html`                | `areas.ver`                 | Catálogo de áreas                                 |
-| `/plantillas.html`           | `plantillas.ver`            | Plantillas de respuestas de WhatsApp              |
-| `/usuarios.html`             | `usuarios.ver`              | Usuarios, estatus, permisos y reset de contraseña |
-| `/webhooks/whatsapp`         | Firma/token de Meta         | Handshake y recepción del webhook                 |
-| `/health`                    | Pública                     | Estado del servidor                               |
+| Ruta                         | Permiso                     | Función                                          |
+| ---------------------------- | --------------------------- | ------------------------------------------------ |
+| `/` y `/index.html`          | Pública                     | Inicio de sesión                                 |
+| `/main.html`                 | Sesión                      | Dashboard principal                              |
+| `/cambiar-password`          | Sesión                      | Cambio obligatorio de contraseña                 |
+| `/mi-perfil.html`            | Sesión                      | Perfil y cambio voluntario de contraseña         |
+| `/agenda/:slug.html`         | `agenda.<slug>.ver`         | Calendario por área                              |
+| `/tutores.html`              | `tutores.ver`               | Tutores y pacientes                              |
+| `/laboratorio.html`          | `laboratorio.ver`           | Órdenes y resultados de laboratorio              |
+| `/metricas/laboratorio.html` | `metricas.laboratorios.ver` | Métricas de laboratorio                          |
+| `/doctores.html`             | `doctores.ver`              | Catálogo de doctores y especialidades            |
+| `/areas.html`                | `areas.ver`                 | Catálogo de áreas                                |
+| `/plantillas.html`           | `plantillas.ver`            | Plantillas de respuestas de WhatsApp             |
+| `/usuarios.html`             | `usuarios.ver`              | Usuarios, tipo, alertas, permisos y credenciales |
+| `/webhooks/whatsapp`         | Firma/token de Meta         | Handshake y recepción del webhook                |
+| `/api/whatsapp/alertas`      | Sesión + elegibilidad       | Alertas internas pendientes del usuario          |
+| `/health`                    | Pública                     | Estado del servidor                              |
 
 Las operaciones de creación, edición, cancelación, carga, envío y baja exigen sus permisos específicos. Las bajas de los catálogos son lógicas para conservar auditoría y relaciones históricas.
 
@@ -367,6 +393,8 @@ Endpoints adicionales de usuarios:
 - `POST /usuarios/username-sugerido`: propone un username disponible durante el alta.
 - `POST /usuarios/:id/resetear-password`: genera la contraseña temporal, cambia el estatus a `cambio_pwd` e invalida las sesiones activas del usuario afectado.
 - Si el formulario incluye una matriz de permisos, crear o editar exige también `usuarios.permisos`.
+
+El tipo de usuario puede ser Doctor, Estilista, Recepción o Usuario; Admin se conserva para la administración y como respaldo de alertas. Un usuario vinculado con un doctor queda forzosamente como Doctor, mientras que un usuario sin vínculo también puede seleccionarse manualmente como Doctor. `notificaciones_alertas` controla la elegibilidad para las alertas internas y tiene valor predeterminado `false`.
 
 ### Tutores y pacientes
 
@@ -429,7 +457,62 @@ Las cargas aceptan PDF, JPG, PNG, WebP, MP4, MOV y WebM. Multer limita cada arch
 | `GET`  | `/webhooks/whatsapp` | `WHATSAPP_WEBHOOK_VERIFY_TOKEN`      | Handshake que registra el callback en Meta |
 | `POST` | `/webhooks/whatsapp` | Firma HMAC con `WHATSAPP_APP_SECRET` | Recibe mensajes, clasifica y responde      |
 
-El webhook responde `200` a Meta después de validar la firma aunque el procesamiento interno falle, para evitar reintentos repetidos del mismo mensaje. El fallo queda registrado con Pino.
+El webhook persiste cada evento antes de ejecutar reglas posteriores. `whatsapp_message_id` y las claves funcionales del outbox hacen idempotentes las reentregas. Después de validar la firma responde `200` a Meta aunque falle una tarea posterior, para evitar reintentos agresivos; el fallo queda registrado con Pino y los workers retoman lo pendiente.
+
+Endpoints autenticados de alertas internas:
+
+| Método | Ruta                                  | Función                                                        |
+| ------ | ------------------------------------- | -------------------------------------------------------------- |
+| `GET`  | `/api/whatsapp/alertas`               | Lista las alertas pendientes que el usuario puede atender      |
+| `GET`  | `/api/whatsapp/alertas/eventos`       | Canal SSE que solicita actualizar la bandeja global            |
+| `POST` | `/api/whatsapp/alertas/:id/navegador` | Audita el resultado de la notificación del navegador           |
+| `POST` | `/api/whatsapp/alertas/:id/atender`   | Toma transaccionalmente la alerta; solo un usuario puede ganar |
+
+Los `POST` requieren sesión, CSRF y rate limiting. La autorización se vuelve a evaluar contra el estado, tipo y configuración actuales del usuario; haber sido destinatario histórico no garantiza acceso si dejó de ser elegible.
+
+### Flujo de WhatsApp implementado
+
+El flujo separa recepción, persistencia, agrupación, decisión, envío y atención humana. Las rutas deterministas se resuelven sin Claude; solo el texto consolidado que necesita clasificación llega al modelo.
+
+```text
+Webhook firmado
+  → evento idempotente + conversación
+  → comando/selección determinista o agrupación por inactividad
+  → menú, flujo guiado o una clasificación cerrada
+  → outbox idempotente
+  → cierre, seguimiento o atención humana
+  → alerta interna central para Emergencia/Recepción
+```
+
+| US     | Implementación disponible                                                                 |
+| ------ | ----------------------------------------------------------------------------------------- |
+| WA 001 | Persistencia idempotente del webhook antes de procesar o responder                        |
+| WA 002 | Conversaciones con estados explícitos y una sola conversación abierta por contexto        |
+| WA 003 | Agrupación de fragmentos por ventana de inactividad y recuperación de reclamos huérfanos  |
+| WA 004 | Menú interactivo inicial; el comando `menu`/`menú` lo muestra sin esperar agrupación      |
+| WA 005 | Resolución determinista y validación de las opciones del menú                             |
+| WA 006 | Enlaces HTTPS de Consulta y Estética; si faltan, transfiere a Recepción                   |
+| WA 007 | Consulta guiada y segura de resultados de laboratorio                                     |
+| WA 009 | Confirmación prioritaria de emergencias a partir de la plantilla resuelta históricamente  |
+| WA 010 | Transferencia temporal a Recepción desde `MENU_RECEPCION`                                 |
+| WA 011 | Router determinista previo a Claude, timeout, fallback persistido y auditoría por grupo   |
+| WA 013 | Seguimiento, recordatorio y expiración de flujos automáticos                              |
+| WA 014 | Agrupación de archivos y guía para medios que el sistema no interpreta                    |
+| WA 015 | Outbox saliente idempotente, estados de Meta y respeto de la ventana de servicio          |
+| WA 016 | Solicitud crítica `emergencia_whatsapp` a partir de `emergencias_confirmadas`             |
+| WA 017 | Mecanismo unificado de atención humana durante cinco horas                                |
+| WA 018 | Alertas persistentes, destinatarios, canales, auditoría y acción transaccional Atender    |
+| WA 019 | Solicitud idempotente `menu_recepcion` y entrega diferida al mecanismo central de alertas |
+
+Las US WA 008 y WA 012 no se marcan como terminadas en esta matriz: requieren su revisión e implementación específica antes de considerarlas cerradas.
+
+Los mensajes libres se consolidan durante `WHATSAPP_AGRUPACION_SEGUNDOS`. La descripción escrita después de elegir Emergencia usa `WHATSAPP_AGRUPACION_EMERGENCIA_SEGUNDOS`, de modo que el tutor pueda completar varios fragmentos. Una agrupación produce una sola respuesta definitiva; un texto de respaldo no se envía en paralelo con la respuesta resuelta.
+
+El outbox conserva el payload decidido antes de llamar a Meta y recupera intentos interrumpidos sin reconstruir el mensaje. Los mensajes conversacionales respetan la ventana de servicio; resultados y alertas internas usan plantillas aprobadas cuando pueden enviarse fuera de ella.
+
+La atención humana comienza únicamente cuando Meta confirma el aviso de transferencia. Durante las cinco horas configuradas el bot permanece en silencio y los mensajes posteriores del tutor no producen alertas duplicadas. El vencimiento reactiva el bot, pero no atiende ni elimina una alerta interna pendiente.
+
+Las alertas de emergencia se dirigen a doctores elegibles y las solicitudes de Recepción a usuarios de tipo Recepción. Solo cuando no existe ningún destinatario principal se usan administradores como respaldo. La selección inicial queda fotografiada para auditoría; portal, navegador y WhatsApp registran sus intentos de manera independiente. El portal usa SSE, sondeo de recuperación y `BroadcastChannel` para mantener sincronizadas sus pestañas.
 
 ## Configuración de integraciones
 
@@ -546,7 +629,7 @@ La integración usa llamadas `fetch` directas a WhatsApp Cloud API, sin SDK. La 
 5. Inventa una cadena larga y aleatoria para `WHATSAPP_WEBHOOK_VERIFY_TOKEN`. No la genera Meta; solo debe coincidir entre Meta y el servidor.
 6. Agrega y verifica en el panel los teléfonos destinatarios que usarás durante las pruebas. El número de prueba solo puede enviar a los destinatarios permitidos por esa configuración.
 
-Variables locales completas:
+Credenciales locales necesarias para Meta:
 
 ```dotenv
 WHATSAPP_TOKEN=
@@ -629,6 +712,23 @@ Después de ejecutarlo:
 
 Importante: el job periódico solo consulta aprobaciones; no reintenta un registro que falló. Editar el texto local de una plantilla ya registrada tampoco actualiza automáticamente la versión de Meta.
 
+#### Registrar plantillas internas de alertas
+
+Las alertas al personal usan dos plantillas `UTILITY` independientes, con contenido mínimo y sin diagnósticos ni texto clínico:
+
+- `alerta_emergencia_personal_v1`: conversación que requiere atención médica urgente.
+- `alerta_recepcion_personal_v1`: conversación que requiere atención de Recepción.
+
+Los destinatarios no proceden de este script ni de variables de entorno. Al crear cada alerta, el sistema consulta usuarios activos con `notificaciones_alertas=true`: Doctor para emergencia, Recepción para solicitudes del menú y Admin únicamente como respaldo si no hay usuarios principales.
+
+Con `WHATSAPP_TOKEN` y `WHATSAPP_BUSINESS_ACCOUNT_ID` configurados, registra ambas plantillas:
+
+```bash
+pnpm run whatsapp:registrar-plantillas-alertas
+```
+
+El comando imprime la respuesta de Meta. Deben quedar aprobadas antes de probar el canal WhatsApp de las alertas; mientras tanto, la alerta permanece disponible en el portal y el fallo de ese canal queda auditado sin afectar los demás.
+
 #### Registrar la plantilla de resultados con documento
 
 La notificación de resultados puede iniciar una conversación fuera de la ventana de atención y adjunta un archivo. Por ello necesita la plantilla `resultados_laboratorio_listos_v2`, categoría `UTILITY`, idioma `es_MX`, con encabezado `DOCUMENT`. El texto del cuerpo trae 6 variables (tutor, mascota, folio, link de agendar cita, link de ubicación y saludo según la hora) e incluye como texto plano los links de `GOOGLE_CALENDAR_MEETING_URL` y `GOOGLE_MAPS_URL` — configúralos antes de registrar o de enviar un resultado real.
@@ -668,18 +768,17 @@ Una plantilla ya `APPROVED` es inmutable en Meta (no se puede editar su texto): 
 - Configura el webhook con una URL HTTPS estable y vuelve a suscribir el campo `messages`.
 - Conserva el mismo `WHATSAPP_WEBHOOK_VERIFY_TOKEN` en Meta y el servidor, y actualiza `WHATSAPP_APP_SECRET` si cambia la app.
 - Confirma que `resultados_laboratorio_listos_v2` esté `APPROVED` para la cuenta productiva; la aprobación de la cuenta de prueba no se transfiere automáticamente a otra WABA.
+- Confirma que `alerta_emergencia_personal_v1` y `alerta_recepcion_personal_v1` estén aprobadas para la cuenta productiva.
+- Crea o revisa usuarios Doctor y Recepción activos con `notificaciones_alertas` habilitado; Admin solo funciona como respaldo cuando no hay destinatarios principales.
 - Reinicia con `pm2 restart omega-vet-adminsite --update-env` y realiza una prueba controlada de recepción y otra de envío de resultados.
 
 ### Claude API
 
-Configura `ANTHROPIC_API_KEY` para procesar mensajes entrantes. El cliente usa `fetch` nativo con el modelo fijo `claude-haiku-4-5-20251001` y no necesita el SDK de Anthropic.
+Configura `ANTHROPIC_API_KEY` para clasificar únicamente los grupos de texto que no fueron resueltos por una ruta determinista. El cliente usa `fetch` nativo con el modelo fijo `claude-haiku-4-5-20251001` y no necesita el SDK de Anthropic.
 
-Claude realiza dos niveles de clasificación cerrada:
+Claude recibe en una sola llamada los slugs de las plantillas activas y las opciones genéricas del sistema. Solo puede devolver exactamente uno de esos slugs o indicar que no existe coincidencia; el backend vuelve a consultar la plantilla persistida y toma de ella `es_emergencia` y la respuesta definitiva. El modelo no decide destinatarios, no redacta recomendaciones médicas y no participa en menús, agenda, laboratorio guiado, atención humana ni alertas internas.
 
-1. Categoría: `emergencia`, `duda_medica`, `agendar_cita` o `resultados_laboratorio`.
-2. Para `duda_medica`, intención contra las plantillas activas del catálogo.
-
-La salida se acepta únicamente si coincide exactamente con una etiqueta permitida. Las respuestas al tutor siempre proceden de `plantillas_whatsapp`; el modelo no redacta recomendaciones médicas.
+La ruta, categoría, intención, plantilla, copia de `es_emergencia`, respuesta definitiva y tokens se guardan una sola vez por grupo antes del envío. Las rutas deterministas registran cero tokens. Un reintento reutiliza esa decisión histórica y el payload del outbox sin volver a llamar a Claude ni releer `es_emergencia`. Si llega otro fragmento mientras se clasifica, el grupo se reprograma para considerar el texto completo antes de enviar una respuesta.
 
 Después de agregar o rotar `ANTHROPIC_API_KEY`, reinicia el proceso. Para una prueba completa se necesitan también el webhook de Meta, `WHATSAPP_TOKEN`, un destinatario permitido y plantillas activas en la base. Si Claude o el envío falla, el webhook responde `200` para evitar reintentos agresivos de Meta y registra el error para revisión.
 
@@ -700,6 +799,7 @@ Después de agregar o rotar `ANTHROPIC_API_KEY`, reinicia el proceso. Para una p
 | `pnpm run seed:test`                               | Ejecuta seeds con `.env.test`                               |
 | `pnpm run google:renovar-token`                    | Renueva el refresh token de Google Calendar                 |
 | `pnpm run whatsapp:registrar-plantillas`           | Registra en Meta las plantillas activas de texto            |
+| `pnpm run whatsapp:registrar-plantillas-alertas`   | Registra las plantillas internas de Emergencia y Recepción  |
 | `pnpm run whatsapp:estado-plantillas`              | Consulta el estado de aprobación en Meta                    |
 | `pnpm run whatsapp:registrar-plantilla-resultados` | Registra la plantilla de resultados con PDF                 |
 | `pnpm run lint`                                    | Ejecuta ESLint                                              |
@@ -723,6 +823,8 @@ Después de agregar o rotar `ANTHROPIC_API_KEY`, reinicia el proceso. Para una p
 - Sanitización recursiva de cuerpos para reducir XSS almacenado.
 - Descarga autenticada de resultados de laboratorio.
 - Verificación HMAC de los webhooks entrantes de Meta.
+- Persistencia idempotente de eventos y envíos de WhatsApp para evitar respuestas duplicadas.
+- Alertas internas con elegibilidad reevaluada, toma transaccional y contenido mínimo sin datos clínicos innecesarios.
 - Errores y 404 centralizados; Pino registra respuestas fallidas de forma estructurada.
 
 ## Calidad y CI

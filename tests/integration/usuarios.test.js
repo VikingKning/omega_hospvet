@@ -431,6 +431,13 @@ describe('GET /usuarios/nuevo y GET /usuarios/:id/editar (US-602 — formulario)
     expect(res.text).not.toContain('Editar usuario');
     expect(res.text).toContain('name="password"');
     expect(res.text).not.toContain('name="estatus"');
+    expect(res.text).toContain('id="tipoUsuarioInput" value="usuario"');
+    expect(res.text).toContain('data-tipo-usuario="doctor"');
+    expect(res.text).toContain('data-tipo-usuario="estilista"');
+    expect(res.text).toContain('data-tipo-usuario="recepcion"');
+    expect(res.text).toContain('data-tipo-usuario="usuario"');
+    expect(res.text).toContain('name="notificacionesAlertas" value="true"');
+    expect(res.text.indexOf('Tipo de usuario')).toBeLessThan(res.text.indexOf('>Permisos<'));
     // Ojo de mostrar/ocultar contraseña (mismo patrón que el login).
     expect(res.text).toContain('id="passwordToggle"');
   });
@@ -463,6 +470,8 @@ describe('GET /usuarios/nuevo y GET /usuarios/:id/editar (US-602 — formulario)
     expect(res.text).toContain('value="Sin vínculo" readonly');
     expect(res.text).not.toContain('name="doctorId"');
     expect(res.text).not.toContain('id="doctorSearch"');
+    expect(res.text).toContain('id="tipoUsuarioInput" value="usuario"');
+    expect(res.text).toContain('Notificación de alertas');
   });
 
   it('un usuario sin usuarios.crear no puede abrir el formulario de alta', async () => {
@@ -585,6 +594,41 @@ describe('POST /usuarios y PUT /usuarios/:id (US-602 — alta y edición)', () =
     expect(row.password_hash).not.toBe('ContraseñaSegura1');
     expect(row.password_hash).not.toContain('ContraseñaSegura1');
     expect(await bcrypt.compare('ContraseñaSegura1', row.password_hash)).toBe(true);
+  });
+
+  it('guarda el tipo de usuario y la preferencia de notificaciones de alertas', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const username = `tipo.alertas.${lower}`;
+
+    const res = await crearUsuario(agent, {
+      apellidos: `TipoAlertas ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+      tipoUsuario: 'estilista',
+      notificacionesAlertas: 'true',
+    });
+
+    expect(res.status).toBe(200);
+    const row = await db('usuarios').where({ username }).first();
+    expect(row.tipo_usuario).toBe('estilista');
+    expect(row.notificaciones_alertas).toBe(true);
+  });
+
+  it('permite asignar el tipo Doctor a una cuenta sin doctor vinculado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const username = `doctor.sin.vinculo.${lower}`;
+
+    const res = await crearUsuario(agent, {
+      apellidos: `DoctorSinVinculo ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+      tipoUsuario: 'doctor',
+    });
+
+    expect(res.status).toBe(200);
+    const row = await db('usuarios').where({ username }).first();
+    expect(row.doctor_id).toBeNull();
+    expect(row.tipo_usuario).toBe('doctor');
   });
 
   it('un nombre vacío muestra el error y no crea el registro', async () => {
@@ -722,6 +766,80 @@ describe('POST /usuarios y PUT /usuarios/:id (US-602 — alta y edición)', () =
 
     expect(res.status).toBe(200);
     expect(res.headers['hx-trigger']).toBe('closeUsuarioModal');
+  });
+
+  it('permite cambiar tipo y notificaciones en una cuenta sin doctor', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const username = `editar.tipo.${lower}`;
+    await crearUsuario(agent, {
+      apellidos: `EditarTipo ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+    });
+    const usuario = await db('usuarios').where({ username }).first();
+
+    const res = await editarUsuario(agent, usuario.id, {
+      nombre: 'EditarTipo',
+      apellidos: `EditarTipo ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+      tipoUsuario: 'recepcion',
+      notificacionesAlertas: 'true',
+    });
+
+    expect(res.status).toBe(200);
+    const actualizado = await db('usuarios').where({ id: usuario.id }).first();
+    expect(actualizado.tipo_usuario).toBe('recepcion');
+    expect(actualizado.notificaciones_alertas).toBe(true);
+  });
+
+  it('Pedido explícito del usuario: tipo_usuario=admin nunca se modifica desde el formulario, aunque el body traiga otro valor', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const username = `editar.admin.${lower}`;
+    await crearUsuario(agent, {
+      apellidos: `EditarAdmin ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+    });
+    const usuario = await db('usuarios').where({ username }).first();
+    // Simula lo que hoy solo se puede hacer directo en BD (migración
+    // 20260915000007: 'admin' no es un valor asignable desde la interfaz).
+    await db('usuarios').where({ id: usuario.id }).update({ tipo_usuario: 'admin' });
+
+    const res = await editarUsuario(agent, usuario.id, {
+      nombre: 'EditarAdmin',
+      apellidos: `EditarAdmin ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+      tipoUsuario: 'usuario', // intento de "degradarlo" — se ignora.
+      notificacionesAlertas: 'true',
+    });
+
+    expect(res.status).toBe(200);
+    const actualizado = await db('usuarios').where({ id: usuario.id }).first();
+    expect(actualizado.tipo_usuario).toBe('admin');
+    // El resto de los campos sí se guarda con normalidad — solo tipo_usuario
+    // queda bloqueado.
+    expect(actualizado.notificaciones_alertas).toBe(true);
+  });
+
+  it('Pedido explícito del usuario: el formulario de edición muestra la píldora "Administrador" en vez del toggle para tipo_usuario=admin', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const username = `ver.admin.${lower}`;
+    await crearUsuario(agent, {
+      apellidos: `VerAdmin ${SUFFIX}`,
+      correo: `${username}@omegavet.test`,
+      username,
+    });
+    const usuario = await db('usuarios').where({ username }).first();
+    await db('usuarios').where({ id: usuario.id }).update({ tipo_usuario: 'admin' });
+
+    const res = await agent.get(`/usuarios/${usuario.id}/editar`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('badge-admin');
+    expect(res.text).toContain('Administrador');
+    expect(res.text).not.toContain('id="tipoUsuarioToggle"');
   });
 
   it('AC (octava iteración): un doctorId forjado en el body de una edición se ignora — el vínculo nunca cambia', async () => {

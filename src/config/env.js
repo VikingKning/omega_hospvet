@@ -137,6 +137,9 @@ module.exports = {
   // config/claude.js).
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY,
+    // US WA 011: una llamada detenida no puede conservar indefinidamente
+    // el lease del grupo. El fallback determinista se persiste al vencer.
+    timeoutMs: Number(process.env.ANTHROPIC_TIMEOUT_MS) || 10000,
   },
   // Envío de resultados de laboratorio por correo (config/email.js) —
   // opcional, mismo criterio que `google`/`whatsapp` arriba: sin ellas la
@@ -160,6 +163,7 @@ module.exports = {
   // este es un link público de agendar cita que ve el cliente).
   enlaces: {
     calendarioCitas: process.env.GOOGLE_CALENDAR_MEETING_URL,
+    calendarioEstetica: process.env.GOOGLE_CALENDAR_GROOMING,
     ubicacionMaps: process.env.GOOGLE_MAPS_URL,
   },
 };

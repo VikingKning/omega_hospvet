@@ -224,6 +224,119 @@ body:has(.app)::after {
   padding-left: 9px;
 }
 
+/* US WA 018: alertas persistentes visibles sobre cualquier pantalla. */
+.whatsapp-alertas {
+  position: fixed;
+  top: 78px;
+  right: 18px;
+  z-index: 950;
+  width: min(390px, calc(100vw - 28px));
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+  border: 1px solid rgba(17, 24, 39, 0.15);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.22);
+}
+
+.whatsapp-alertas-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  color: #fff;
+  background: var(--primary-active);
+}
+
+.whatsapp-alertas-header span {
+  margin-left: 4px;
+  opacity: 0.85;
+}
+
+.whatsapp-alertas-permiso {
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 7px;
+  padding: 6px 8px;
+  color: #fff;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.whatsapp-alertas-error {
+  padding: 9px 12px;
+  color: #8a1c1c;
+  background: #fff0f0;
+  font-size: 13px;
+}
+
+.whatsapp-alertas-lista {
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.whatsapp-alerta {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border-left: 5px solid #b7791f;
+  border-radius: 9px;
+  background: #fffaf0;
+}
+
+.whatsapp-alerta-emergencia {
+  border-left-color: #c53030;
+  background: #fff5f5;
+}
+
+.whatsapp-alerta-encabezado {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.whatsapp-alerta-encabezado time,
+.whatsapp-alerta small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.whatsapp-alerta p {
+  margin: 0;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.whatsapp-alerta-atender {
+  justify-self: end;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 14px;
+  color: #fff;
+  background: var(--primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.whatsapp-alerta-atender:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+@media (max-width: 600px) {
+  .whatsapp-alertas {
+    top: 72px;
+    right: 14px;
+  }
+}
+
 .topbar {
   position: relative;
   flex: 1;
@@ -1313,6 +1426,23 @@ body:has(.app)::after {
   color: var(--warning-text);
 }
 
+/* Pedido explícito del usuario: "un color que sobresalga mucho" para el
+   tipo de usuario Administrador — a diferencia de los badges de arriba
+   (fondo pastel + texto de color), este es relleno sólido + texto blanco,
+   con un halo sutil, para que destaque incluso más que --danger. Violeta
+   porque ningún otro estado del sistema lo usa (rojo=pendiente/emergencia,
+   verde=enviado/éxito, ámbar=cargado/warning) — sin ambigüedad de
+   significado. Usado en usuario-form.ejs en vez del toggle Doctor/
+   Estilista/Recepción/Usuario cuando tipo_usuario='admin'. */
+.badge-admin {
+  background: #6d28d9;
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow:
+    0 0 0 1px rgba(109, 40, 217, 0.35),
+    0 2px 8px rgba(109, 40, 217, 0.45);
+}
+
 .modal-backdrop {
   display: none;
   position: fixed;
@@ -1349,6 +1479,12 @@ body:has(.app)::after {
    sigue usando .modal-card-wide sin necesitar tanto espacio. */
 .modal-card-xwide {
   max-width: 1040px;
+}
+
+/* El formulario de usuarios aprovecha un poco más del alto de la ventana
+   para mostrar más permisos sin forzar scroll en el modal completo. */
+#usuarioFormModalBody.modal-card-xwide {
+  max-height: 98vh;
 }
 
 .modal-header {
@@ -2645,6 +2781,72 @@ body:has(.app)::after {
   flex: 2 1 480px;
 }
 
+/* Configuración operativa de la cuenta: ambos controles viven en una sola
+   fila, antes de Permisos. El bloque aumenta de forma natural la altura del
+   modal sin fijarla, por lo que sigue cabiendo en pantallas pequeñas. */
+.usuario-config-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.usuario-config-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.usuario-config-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.usuario-config-help {
+  max-width: 360px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.usuario-alertas-field {
+  flex: 1 1 0;
+  align-items: center;
+}
+
+.usuario-config-row .switch-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.tipo-usuario-toggle {
+  border-radius: 10px;
+}
+
+.tipo-usuario-toggle .toggle-btn {
+  padding: 9px 12px;
+}
+
+.tipo-usuario-toggle .toggle-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.tipo-usuario-toggle .toggle-btn.active:disabled {
+  opacity: 1;
+}
+
+.usuario-config-row .switch-field:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .modal-col-title {
   font-size: 14px;
   font-weight: 700;
@@ -2653,6 +2855,32 @@ body:has(.app)::after {
 
 .modal-form-columns .modal-actions {
   flex-basis: 100%;
+}
+
+@media (max-width: 768px) {
+  .usuario-form.modal-form-columns {
+    flex-direction: column;
+  }
+
+  .usuario-form .modal-col {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .usuario-config-row {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .usuario-alertas-field {
+    flex: 0 0 auto;
+    align-items: flex-start;
+  }
+
+  .tipo-usuario-toggle {
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }
 
 .mini-table-wrap {
@@ -2734,6 +2962,10 @@ body:has(.app)::after {
   border-radius: 8px;
   overflow: auto;
   max-height: 420px;
+}
+
+.usuario-form .permisos-matrix-wrap {
+  max-height: 460px;
 }
 
 .permisos-matrix {

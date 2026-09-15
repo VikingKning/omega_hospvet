@@ -2,6 +2,7 @@ const whatsapp = require('../../config/whatsapp');
 const service = require('./whatsapp.service');
 const outbox = require('./whatsapp.outbox');
 const atencionHumanaService = require('./whatsapp.atencionHumana.service');
+const alertasService = require('./whatsapp.alertas.service');
 
 // Handshake de Meta al registrar el webhook (GET, una sola vez) — repite
 // `hub.challenge` tal cual si `hub.verify_token` coincide con el valor que
@@ -33,6 +34,7 @@ function extraerEventoDeMensaje(mensaje, phoneNumberId) {
     from: mensaje.from,
     timestamp: mensaje.timestamp,
     phoneNumberId,
+    ...(mensaje.context?.id ? { contextWamid: mensaje.context.id } : {}),
   };
 
   if (mensaje.type === 'text') {
@@ -210,6 +212,15 @@ async function recibir(req, res) {
 
   try {
     for (const evento of eventos) {
+      // WA018 AC36: una respuesta explícita a una plantilla interna para el
+      // personal se reconoce por context.id -> outbox.wamid y se excluye
+      // por completo del router conversacional del tutor.
+      if (
+        evento.contextWamid &&
+        (await alertasService.esRespuestaAAlertaInterna(evento.contextWamid))
+      ) {
+        continue;
+      }
       const resultado = await service.registrarEventoEntrante(evento);
       // US WA 004 (AC2): un comando de menú sobre una conversación YA
       // existente cancela su flujo/estado de inmediato (WA002, sin
@@ -284,6 +295,23 @@ async function recibir(req, res) {
           })
           .catch((err) =>
             req.log.error({ err }, 'Falló el aviso de selección de menú inválida (US WA 005 AC9).'),
+          );
+      } else if (
+        resultado?.rutaResuelta === 'agendar_consulta' ||
+        resultado?.rutaResuelta === 'agendar_estetica'
+      ) {
+        // US WA 006: respuesta determinista con el enlace público correcto
+        // o transferencia a Recepción si su variable no es una URL HTTPS.
+        // Nunca pasa por el clasificador de Claude.
+        service
+          .enviarEnlaceAgenda({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            claveBase: `mensaje:${resultado.id}`,
+            ruta: resultado.rutaResuelta,
+          })
+          .catch((err) =>
+            req.log.error({ err }, 'Falló el procesamiento de una ruta de agenda (US WA 006).'),
           );
       } else if (resultado?.labAccion) {
         // US WA 007: cualquier paso del flujo de consulta de laboratorio.

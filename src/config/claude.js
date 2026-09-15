@@ -163,20 +163,33 @@ async function clasificar(mensaje, systemPrompt, etiquetasValidas) {
     throw new Error('El clasificador de Claude no está configurado (falta ANTHROPIC_API_KEY).');
   }
 
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'x-api-key': env.anthropic.apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 20,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: mensaje }],
-    }),
-  });
+  let res;
+  try {
+    res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'x-api-key': env.anthropic.apiKey,
+        'anthropic-version': ANTHROPIC_VERSION,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 20,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: mensaje }],
+      }),
+      signal: AbortSignal.timeout(env.anthropic.timeoutMs),
+    });
+  } catch (err) {
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      const timeoutError = new Error(
+        `Claude API excedió el tiempo límite de ${env.anthropic.timeoutMs} ms.`,
+      );
+      timeoutError.code = 'CLAUDE_TIMEOUT';
+      throw timeoutError;
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const detalle = await res.text();

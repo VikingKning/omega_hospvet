@@ -45,14 +45,17 @@ const { randomUUID } = require('node:crypto');
 const db = require('../../config/database');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
+const whatsappAgenda = require('../../config/whatsappAgenda');
 const { normalizarFormatoWhatsapp } = require('../../../public/js/whatsapp-format');
 const plantillasRepository = require('../plantillas_whatsapp/plantillas_whatsapp.repository');
 const repository = require('./whatsapp.repository');
 const outbox = require('./whatsapp.outbox');
 const menu = require('./whatsapp.menu');
+const { RUTAS_ENRUTAMIENTO, seleccionarRutaGrupo } = require('./whatsapp.router');
 const laboratorioConsulta = require('./whatsapp.laboratorioConsulta');
 const laboratorioService = require('../laboratorio/laboratorio.service');
 const atencionHumanaService = require('./whatsapp.atencionHumana.service');
+const emergenciasAlertasService = require('./whatsapp.emergenciasAlertas.service');
 
 const TELEFONO_CLINICA = '7711634578';
 
@@ -80,6 +83,9 @@ const SLUG_POR_CATEGORIA_GENERICA = {
   resultados_laboratorio: SLUG_RESULTADOS_LABORATORIO,
   duda_medica: SLUG_SIN_COINCIDENCIA,
 };
+const CATEGORIA_POR_SLUG_GENERICO = Object.fromEntries(
+  Object.entries(SLUG_POR_CATEGORIA_GENERICA).map(([categoria, slug]) => [slug, categoria]),
+);
 
 // Último recurso si una plantilla predeterminada no existiera o estuviera
 // inactiva — no debería pasar nunca (plantillas_whatsapp.service.js las
@@ -137,9 +143,11 @@ async function registrarEventoEntrante(evento) {
       conversacionId: resultado.conversacionId,
       origen: 'recepcion',
       prioridad: 'normal',
+      origenAlerta: 'menu_recepcion',
       claveIdempotencia: `recepcion:mensaje:${evento.whatsappMessageId}`,
       referenciasFuncionales: {
         groupId: resultado.groupId ?? null,
+        mensajeOrigenId: resultado.id,
         whatsappMessageId: evento.whatsappMessageId,
       },
       destinatarioTelefono: telefonoNormalizado,
@@ -163,6 +171,110 @@ async function intentarEnvioMenu(datosIntento) {
   }
 }
 
+// US WA 011 AC27: para una ruta determinista basada en un grupo, la
+// auditoría y la intención de envío nacen en una sola transacción ANTES
+// de llamar a Meta. Un reintento obtiene el mismo intent por su clave.
+async function registrarDecisionDeterministaEIntento({
+  groupId,
+  rutaEnrutamiento,
+  intencionResuelta,
+  resultadoDecision,
+  respuestaDefinitiva,
+  datosIntento,
+}) {
+  return db.transaction(async (trx) => {
+    await repository.persistirDecisionDeterministaGrupo(trx, groupId, {
+      rutaEnrutamiento,
+      intencionResuelta,
+      resultadoDecision,
+      respuestaDefinitiva,
+    });
+    const { intent } = await outbox.registrarIntento(datosIntento, trx);
+    await repository.vincularIntentoEnvioGrupo(trx, groupId, intent.intent_id);
+    return intent;
+  });
+}
+
+async function ejecutarIntentoSinPropagar(claveIdempotencia) {
+  try {
+    return await outbox.ejecutarIntento(claveIdempotencia);
+  } catch (err) {
+    return { enviado: false, error: err.message, errorCodigo: null };
+  }
+}
+
+// US WA 006: las rutas de Consulta y Estética son completamente
+// deterministas. Nunca pasan por Claude. Con una URL HTTPS válida se
+// registra/ejecuta un único intento de outbox y la conversación solo se
+// cierra después de la confirmación de Meta. Sin URL válida se reutiliza
+// WA017 para avisar y transferir a Recepción en el orden correcto.
+async function enviarEnlaceAgenda({ conversacionId, telefono, claveBase, ruta }) {
+  const configuracion = whatsappAgenda.obtenerConfiguracionRuta(ruta);
+  if (!configuracion) {
+    throw new Error(`Ruta de agenda no soportada: "${ruta}".`);
+  }
+
+  if (!configuracion.url) {
+    const tipoAviso =
+      ruta === 'agendar_consulta' ? 'agenda_consulta_sin_enlace' : 'agenda_estetica_sin_enlace';
+    await atencionHumanaService.solicitarAtencionHumana({
+      conversacionId,
+      origen: 'recepcion',
+      prioridad: 'normal',
+      claveIdempotencia: `${claveBase}:${ruta}:recepcion`,
+      referenciasFuncionales: {
+        ruta,
+        motivo: `configuracion_${configuracion.estado}`,
+      },
+      destinatarioTelefono: telefono,
+      tipoAviso,
+    });
+    return { enviado: false, transferidaARecepcion: true };
+  }
+
+  const resultado = await intentarEnvioMenu({
+    claveIdempotencia: `${claveBase}:${ruta}:enlace`,
+    tipoEnvio: 'conversacional',
+    origenFuncional: 'respuesta_automatica',
+    conversacionId,
+    destinatarioTelefono: telefono,
+    payloadFuncional: {
+      tipo: 'text',
+      destinatarioTelefono: telefono,
+      texto: whatsappAgenda.construirTextoEnlace(configuracion.tipoCita, configuracion.url),
+    },
+    usaPlantilla: false,
+  });
+
+  if (!resultado.enviado) {
+    // El intento permanece en outbox_whatsapp como fallido, pendiente o
+    // expirado según WA015. Nunca se cierra la conversación en este caso.
+    logger.error(
+      {
+        conversacionId,
+        ruta,
+        errorCodigo: resultado.errorCodigo,
+        error: resultado.error,
+        motivo: resultado.motivo,
+      },
+      'No se pudo enviar el enlace de agenda; la conversación permanece abierta.',
+    );
+    return { ...resultado, transferidaARecepcion: false, conversacionCerrada: false };
+  }
+
+  const conversacionCerrada = await repository.confirmarEnlaceAgendaEnviado(
+    conversacionId,
+    new Date(),
+  );
+  if (!conversacionCerrada) {
+    logger.warn(
+      { conversacionId, ruta },
+      'Meta confirmó el enlace, pero el estado actual no permite cerrar la conversación.',
+    );
+  }
+  return { ...resultado, transferidaARecepcion: false, conversacionCerrada };
+}
+
 // US WA 004 (AC1/AC2/AC5/AC6/AC7): envía el menú interactivo (consideración
 // técnica: type interactive, subtype list) y, si Meta lo rechaza, como
 // máximo UN respaldo de texto plano — solo confirma la transición a
@@ -171,8 +283,14 @@ async function intentarEnvioMenu(datosIntento) {
 // para que la idempotencia del outbox nunca colisione entre ambos
 // disparadores (ver comentario de cabecera de este módulo sobre los 2
 // puntos de disparo).
-async function enviarMenuPrincipal({ conversacionId, telefono, claveBase, groupId = null }) {
-  const resultadoMenu = await intentarEnvioMenu({
+async function enviarMenuPrincipal({
+  conversacionId,
+  telefono,
+  claveBase,
+  groupId = null,
+  rutaEnrutamiento = RUTAS_ENRUTAMIENTO.COMANDO_MENU,
+}) {
+  const datosMenu = {
     claveIdempotencia: `${claveBase}:menu`,
     tipoEnvio: 'conversacional',
     origenFuncional: 'respuesta_automatica',
@@ -184,7 +302,21 @@ async function enviarMenuPrincipal({ conversacionId, telefono, claveBase, groupI
       interactive: menu.interactivePayload(),
     },
     usaPlantilla: false,
-  });
+  };
+  let resultadoMenu;
+  if (groupId) {
+    const intent = await registrarDecisionDeterministaEIntento({
+      groupId,
+      rutaEnrutamiento,
+      intencionResuelta: 'mostrar_menu_principal',
+      resultadoDecision: 'menu_principal',
+      respuestaDefinitiva: menu.textoRespaldo(),
+      datosIntento: datosMenu,
+    });
+    resultadoMenu = await ejecutarIntentoSinPropagar(intent.clave_idempotencia);
+  } else {
+    resultadoMenu = await intentarEnvioMenu(datosMenu);
+  }
 
   let enviado = resultadoMenu.enviado;
 
@@ -423,7 +555,13 @@ async function enviarSolicitudEmergencia({ conversacionId, telefono, claveBase }
 // cual, sin volver a llamar a Claude ni a crear otra solicitud de
 // atención humana (AC27, junto con los ON CONFLICT DO NOTHING de la capa
 // de datos).
-async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsolidado, telefono }) {
+async function clasificarYResponderGrupo({
+  conversacionId,
+  groupId,
+  textoConsolidado,
+  telefono,
+  rutaEnrutamiento = RUTAS_ENRUTAMIENTO.CONSULTA_LIBRE,
+}) {
   const claveEnvio = `grupo:${groupId}:respuesta`;
   let grupo = await repository.obtenerClasificacionGrupo(groupId);
 
@@ -438,39 +576,46 @@ async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsoli
         // AC11/AC18: resuelve el slug ANTES de decidir nada — Claude nunca ve
         // ni determina es_emergencia (consideración técnica).
         const plantillasActivas = await plantillasRepository.findActivasParaClasificar();
-        const {
-          etiqueta: slug,
-          tokensEntrada,
-          tokensSalida,
-        } = await claude.clasificarMensaje(
-          textoConsolidado,
-          plantillasActivas,
-          SLUG_POR_CATEGORIA_GENERICA,
-        );
-
-        const plantilla = await resolverPlantillaPorSlug(slug);
-        let plantillaId = null;
-        let slugResuelto = slug;
-        let esEmergencia = false;
-        let respuestaDefinitiva;
-
-        if (plantilla) {
-          plantillaId = plantilla.id;
-          slugResuelto = plantilla.slug;
-          esEmergencia = Boolean(plantilla.es_emergencia);
-          // AC20: contenido no recuperable — conserva la confirmación de
-          // emergencia (si aplica) y usa el respaldo con el medio oficial de
-          // contacto; AC18 usa el respaldo genérico cuando NO hay emergencia.
-          respuestaDefinitiva =
-            plantilla.texto_respuesta ||
-            (esEmergencia
-              ? menu.textoRespaldoEmergencia(TELEFONO_CLINICA)
-              : TEXTO_RESPALDO_ABSOLUTO);
-        } else {
-          // AC18: slug inexistente, inactivo, o Claude no encajó ninguna
-          // opción — respuesta general de respaldo, es_emergencia=false.
-          respuestaDefinitiva = TEXTO_RESPALDO_ABSOLUTO;
+        let slug = null;
+        let tokensEntrada = 0;
+        let tokensSalida = 0;
+        let errorClasificador = null;
+        try {
+          const clasificacion = await claude.clasificarMensaje(
+            textoConsolidado,
+            plantillasActivas,
+            SLUG_POR_CATEGORIA_GENERICA,
+          );
+          slug = clasificacion.etiqueta;
+          tokensEntrada = clasificacion.tokensEntrada ?? 0;
+          tokensSalida = clasificacion.tokensSalida ?? 0;
+        } catch (err) {
+          // US WA 011 AC19: un timeout, clave ausente o error de Claude se
+          // convierte en una decisión persistida de respaldo. No se libera
+          // el lease para reclasificar y no se registra el texto clínico.
+          errorClasificador = err;
+          logger.warn(
+            { conversacionId, groupId, codigo: err.code ?? null, tipo: err.name },
+            'El clasificador no resolvió el grupo; se usará la plantilla de respaldo.',
+          );
         }
+
+        let plantilla = await resolverPlantillaPorSlug(slug);
+        const usoRespaldo = Boolean(errorClasificador) || !plantilla;
+        if (!plantilla) {
+          plantilla = await resolverPlantillaPorSlug(SLUG_SIN_COINCIDENCIA);
+        }
+
+        const plantillaId = plantilla?.id ?? null;
+        const slugResuelto = plantilla?.slug ?? SLUG_SIN_COINCIDENCIA;
+        const esEmergencia = Boolean(plantilla?.es_emergencia);
+        const categoriaResuelta = usoRespaldo
+          ? 'sin_coincidencia'
+          : (CATEGORIA_POR_SLUG_GENERICO[slugResuelto] ?? 'duda_medica');
+        const intencionResuelta = plantilla?.intencion ?? 'sin_coincidencia_default';
+        let respuestaDefinitiva =
+          plantilla?.texto_respuesta ||
+          (esEmergencia ? menu.textoRespaldoEmergencia(TELEFONO_CLINICA) : TEXTO_RESPALDO_ABSOLUTO);
         respuestaDefinitiva = normalizarFormatoWhatsapp(respuestaDefinitiva);
 
         let intentoEnvioId;
@@ -498,6 +643,11 @@ async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsoli
             tokensEntrada,
             tokensSalida,
             reclamoId,
+            rutaEnrutamiento,
+            categoriaResuelta,
+            intencionResuelta,
+            resultadoDecision: usoRespaldo ? 'plantilla_respaldo' : 'plantilla',
+            etiquetaModelo: slug,
           });
           if (!persistida) {
             throw new Error(`Se perdió el lease de clasificación del grupo ${groupId}.`);
@@ -541,6 +691,14 @@ async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsoli
               respuestaDefinitiva,
               intentoEnvioId,
             });
+            // WA016 consume exclusivamente la señal persistida (incluida su
+            // copia histórica de es_emergencia) y delega la distribución a
+            // WA018. No relee la plantilla ni vuelve a clasificar.
+            await emergenciasAlertasService.registrarDesdeEmergenciaConfirmada({
+              emergenciaConfirmada,
+              telefonoExterno: telefono,
+              trx,
+            });
             await atencionHumanaService.solicitarAtencionHumana({
               conversacionId,
               origen: 'emergencia',
@@ -556,6 +714,7 @@ async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsoli
               envioPrevioId: intentoEnvioId,
               destinatarioTelefono: telefono,
               ahora: new Date(),
+              registrarAlerta: false,
               trx,
             });
           }
@@ -569,6 +728,12 @@ async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsoli
           es_emergencia_resuelta: esEmergencia,
           respuesta_definitiva: respuestaDefinitiva,
           intento_envio_id: intentoEnvioId,
+          ruta_enrutamiento: rutaEnrutamiento,
+          categoria_resuelta: categoriaResuelta,
+          intencion_resuelta: intencionResuelta,
+          resultado_decision: usoRespaldo ? 'plantilla_respaldo' : 'plantilla',
+          tokens_entrada: tokensEntrada,
+          tokens_salida: tokensSalida,
         };
       } catch (err) {
         await repository.liberarClasificacionGrupo(groupId, reclamoId);
@@ -615,7 +780,8 @@ async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsoli
 // la transición a flujo_activo es repository.confirmarGuiaMedioEnviada,
 // solo si el envío tuvo éxito.
 async function enviarGuiaMedioNoInterpretable({ conversacionId, telefono, groupId }) {
-  const { intent } = await outbox.registrarIntento({
+  const texto = menu.textoMedioNoInterpretable();
+  const datosIntento = {
     claveIdempotencia: `grupo:${groupId}:guia_medio`,
     tipoEnvio: 'conversacional',
     origenFuncional: 'respuesta_automatica',
@@ -624,9 +790,17 @@ async function enviarGuiaMedioNoInterpretable({ conversacionId, telefono, groupI
     payloadFuncional: {
       tipo: 'text',
       destinatarioTelefono: telefono,
-      texto: menu.textoMedioNoInterpretable(),
+      texto,
     },
     usaPlantilla: false,
+  };
+  const intent = await registrarDecisionDeterministaEIntento({
+    groupId,
+    rutaEnrutamiento: RUTAS_ENRUTAMIENTO.MEDIO_SIN_TEXTO,
+    intencionResuelta: 'solicitar_descripcion_medio',
+    resultadoDecision: 'solicitud_descripcion_medio',
+    respuestaDefinitiva: texto,
+    datosIntento,
   });
 
   let resultado;
@@ -650,6 +824,104 @@ async function enviarGuiaMedioNoInterpretable({ conversacionId, telefono, groupI
   }
 
   return repository.confirmarGuiaMedioEnviada(conversacionId, groupId);
+}
+
+// US WA 011: secuencia explícita y única para cualquier grupo consolidado.
+// Las respuestas interactivas y la atención humana normalmente ya fueron
+// consumidas en el webhook, pero seleccionarRutaGrupo conserva su lugar en
+// la precedencia y evita que una anomalía termine por accidente en Claude.
+async function enrutarGrupo({ conversacionId, grupo, contexto }) {
+  const ruta = seleccionarRutaGrupo({ contexto, grupo });
+
+  if (ruta === RUTAS_ENRUTAMIENTO.ATENCION_HUMANA) {
+    await db.transaction(async (trx) => {
+      await repository.persistirDecisionDeterministaGrupo(trx, grupo.groupId, {
+        rutaEnrutamiento: ruta,
+        intencionResuelta: 'mantener_silencio_atencion_humana',
+        resultadoDecision: 'silencio_atencion_humana',
+        respuestaDefinitiva: null,
+      });
+      await repository.marcarGrupoProcesado(grupo.groupId, trx);
+    });
+    return 'silencio_atencion_humana';
+  }
+
+  if (ruta === RUTAS_ENRUTAMIENTO.RESPUESTA_INTERACTIVA) {
+    // Una respuesta interactiva nueva se procesa transaccionalmente antes
+    // de agrupar. Llegar aquí implica datos heredados/inconsistentes: nunca
+    // se manda el id interno a Claude ni se decide usando el título visible.
+    logger.error(
+      { conversacionId, groupId: grupo.groupId },
+      'Una respuesta interactiva alcanzó indebidamente el router de grupos.',
+    );
+    return 'respuesta_interactiva_pendiente_revision';
+  }
+
+  if (ruta === RUTAS_ENRUTAMIENTO.COMANDO_MENU || ruta === RUTAS_ENRUTAMIENTO.SALUDO_PURO) {
+    const enviado = await enviarMenuPrincipal({
+      conversacionId,
+      telefono: contexto?.telefonoNormalizado,
+      claveBase: `grupo:${grupo.groupId}`,
+      groupId: grupo.groupId,
+      rutaEnrutamiento: ruta,
+    });
+    return enviado ? 'menu_enviado' : 'menu_fallido';
+  }
+
+  if (ruta === RUTAS_ENRUTAMIENTO.MEDIO_SIN_TEXTO) {
+    const enviado = await enviarGuiaMedioNoInterpretable({
+      conversacionId,
+      telefono: contexto?.telefonoNormalizado,
+      groupId: grupo.groupId,
+    });
+    return enviado ? 'guia_enviada' : 'guia_fallida';
+  }
+
+  if (ruta === RUTAS_ENRUTAMIENTO.FLUJO_ACTIVO) {
+    if (
+      contexto?.flujoActual === 'explicacion_medio' &&
+      contexto?.pasoActual === 'esperando_descripcion'
+    ) {
+      await repository.finalizarExplicacionMedio(
+        conversacionId,
+        grupo.groupId,
+        contexto.grupoMedioPendienteId,
+      );
+    } else if (
+      contexto?.flujoActual !== 'emergencia' ||
+      contexto?.pasoActual !== 'esperando_descripcion'
+    ) {
+      // Los pasos de Laboratorio se resuelven al persistir el webhook. Un
+      // flujo distinto no tiene autorización para usar el clasificador
+      // general hasta que su historia propietaria lo declare expresamente.
+      logger.error(
+        {
+          conversacionId,
+          groupId: grupo.groupId,
+          flujo: contexto?.flujoActual,
+          paso: contexto?.pasoActual,
+        },
+        'Flujo activo sin contrato de clasificación para el router de grupos.',
+      );
+      return 'flujo_activo_pendiente_revision';
+    }
+
+    return clasificarYResponderGrupo({
+      conversacionId,
+      groupId: grupo.groupId,
+      textoConsolidado: grupo.texto_consolidado,
+      telefono: contexto?.telefonoNormalizado,
+      rutaEnrutamiento: ruta,
+    });
+  }
+
+  return clasificarYResponderGrupo({
+    conversacionId,
+    groupId: grupo.groupId,
+    textoConsolidado: grupo.texto_consolidado,
+    telefono: contexto?.telefonoNormalizado,
+    rutaEnrutamiento: RUTAS_ENRUTAMIENTO.CONSULTA_LIBRE,
+  });
 }
 
 // US WA 003: coordina el reclamo (transacción 1) + la formación del grupo
@@ -677,75 +949,7 @@ async function procesarSiguienteConversacionVencida() {
 
   const grupo = await repository.formarGrupoParaConversacion(conversacionId);
   if (!grupo) return null; // AC14 (WA003): cerrada sin grupo, nada que evaluar.
-
-  const resolviendoExplicacion =
-    contexto?.flujoActual === 'explicacion_medio' &&
-    contexto?.pasoActual === 'esperando_descripcion';
-
-  if (resolviendoExplicacion && grupo.tieneTextoProcesable) {
-    // AC6: el tutor por fin escribió su explicación — relaciona el grupo
-    // de texto con el de medios original, finaliza el paso y entrega el
-    // texto consolidado al enrutamiento normal (hoy, el mismo destino
-    // terminal que 'no_resuelto': no existe todavía un consumidor real).
-    await repository.finalizarExplicacionMedio(
-      conversacionId,
-      grupo.groupId,
-      contexto.grupoMedioPendienteId,
-    );
-    const resultado = await clasificarYResponderGrupo({
-      conversacionId,
-      groupId: grupo.groupId,
-      textoConsolidado: grupo.texto_consolidado,
-      telefono: contexto?.telefonoNormalizado,
-    });
-    return { ...grupo, resultado };
-  }
-
-  if (!grupo.tieneTextoProcesable) {
-    // AC4 (grupo nuevo, solo medios) o AC1 (más medios sin texto mientras
-    // ya se esperaba una explicación — confirmarGuiaMedioEnviada mueve el
-    // puntero grupo_medio_pendiente_id hacia este grupo más reciente).
-    const enviado = await enviarGuiaMedioNoInterpretable({
-      conversacionId,
-      telefono: contexto?.telefonoNormalizado,
-      groupId: grupo.groupId,
-    });
-    return { ...grupo, resultado: enviado ? 'guia_enviada' : 'guia_fallida' };
-  }
-
-  // US WA 009 (AC6): la descripción pedida tras MENU_EMERGENCIA se
-  // clasifica SIEMPRE, sin el filtro de saludo/comando de abajo — un
-  // tutor cuya emergencia completa fuera literalmente "hola" no debe ver
-  // el menú en vez de una respuesta (AC6 no prevé ninguna excepción).
-  const resolviendoEmergencia =
-    contexto?.flujoActual === 'emergencia' && contexto?.pasoActual === 'esperando_descripcion';
-
-  // US WA 004 (AC1-AC4): reclamarConversacionVencida solo reclama
-  // conversaciones 'acumulando'/'procesando'/'flujo_activo' — una en
-  // atencion_humana nunca llega aquí, así que la condición "no está en
-  // atención humana" de AC2 ya está garantizada estructuralmente.
-  if (
-    !resolviendoEmergencia &&
-    (menu.esSaludoPuro(grupo.texto_consolidado) || menu.esComandoMenu(grupo.texto_consolidado))
-  ) {
-    const enviado = await enviarMenuPrincipal({
-      conversacionId,
-      telefono: contexto?.telefonoNormalizado,
-      claveBase: `grupo:${grupo.groupId}`,
-      groupId: grupo.groupId,
-    });
-    return { ...grupo, resultado: enviado ? 'menu_enviado' : 'menu_fallido' };
-  }
-
-  // US WA 009 (AC6/AC10/AC17): cualquier otro grupo con texto procesable
-  // — libre o descripción de emergencia (ambas con 10s por defecto) — se clasifica con
-  // Claude y se responde con la plantilla resuelta.
-  const resultado = await clasificarYResponderGrupo({
-    conversacionId,
-    groupId: grupo.groupId,
-    textoConsolidado: grupo.texto_consolidado,
-    telefono: contexto?.telefonoNormalizado,
-  });
+  const resultado = await enrutarGrupo({ conversacionId, grupo, contexto });
   return { ...grupo, resultado };
 }
 
@@ -844,10 +1048,12 @@ module.exports = {
   procesarSiguienteSeguimientoPendiente,
   cerrarSiguienteConversacionInactiva,
   enviarMenuPrincipal,
+  enviarEnlaceAgenda,
   reenviarSeguimiento,
   reanudarFlujoPendiente,
   enviarSeleccionInvalida,
   enviarPasoLaboratorio,
   enviarSolicitudEmergencia,
   clasificarYResponderGrupo,
+  enrutarGrupo,
 };

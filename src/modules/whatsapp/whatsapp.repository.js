@@ -163,8 +163,8 @@ async function aplicarReglasDeInteraccion(trx, conversacion, { ahora, contenido,
       rutaResuelta = ruta; // AC2-AC7
       // US WA 007 (AC1): MENU_RESULTADOS_LAB no solo devuelve el id de
       // ruta — también ES la historia responsable de esa ruta (a
-      // diferencia de agendar_consulta/agendar_estetica/emergencia/
-      // recepcion, que WA005 deja para historias futuras), así que arranca
+      // diferencia de agendar_consulta/agendar_estetica y de las rutas
+      // delegadas a WA009/WA010), así que arranca
       // el flujo de validación en el mismo mensaje que resuelve la ruta.
       if (
         ruta === 'resultados_laboratorio' &&
@@ -537,11 +537,25 @@ async function procesarMensajeSobreConversacion(trx, { conversacion, esNueva, ev
     },
     trx,
   );
-  // AC8 (US WA 005): una reentrega del mismo whatsapp_message_id (Meta
-  // reenvía una selección ya procesada) sale aquí mismo, sin volver a
-  // llamar a aplicarReglasDeInteraccion — la idempotencia de US WA 001
-  // ya evita reejecutar el flujo, sin código adicional.
-  if (!esNuevo) return { id, esNuevo };
+  // AC8 (US WA 005)/AC9-AC10 (US WA 010): una reentrega no vuelve a
+  // ejecutar las reglas de interacción. Sin embargo, si dos transacciones
+  // concurrentes alcanzaron el INSERT antes de que una pudiera observar la
+  // fila existente, ON CONFLICT hace que la perdedora llegue aquí con id
+  // nulo. Releer la correlación ya confirmada permite que MENU_RECEPCION
+  // vuelva a delegar idempotentemente a WA017 y repare incluso una caída
+  // ocurrida entre el commit del mensaje y la creación de la solicitud.
+  if (!esNuevo) {
+    const mensajeExistente = await trx('mensajes_whatsapp')
+      .where({ whatsapp_message_id: evento.whatsappMessageId })
+      .first('id', 'conversacion_id', 'categoria_clasificacion', 'group_id');
+    return {
+      id: mensajeExistente?.id ?? id,
+      esNuevo: false,
+      conversacionId: mensajeExistente?.conversacion_id ?? conversacion.id,
+      rutaResuelta: mensajeExistente?.categoria_clasificacion ?? null,
+      groupId: mensajeExistente?.group_id ?? null,
+    };
+  }
 
   const { contenido, tituloInteractivo, tipoMensaje, recibidoEn } = evento;
   // US WA 004 (AC2)/US WA 013 (AC2/AC3/AC5)/US WA 005 (AC2-AC9): señales
@@ -705,6 +719,29 @@ async function cerrarConversacion(conversacionId, ahora) {
     );
   }
   return filasAfectadas > 0;
+}
+
+// US WA 006: confirma el efecto local del enlace después de que Meta ya
+// aceptó el envío. Es idempotente porque una reentrega puede encontrar el
+// mismo intento ya enviado: en ese caso una conversación ya cerrada cuenta
+// como confirmada y no genera un error técnico falso.
+async function confirmarEnlaceAgendaEnviado(conversacionId, ahora) {
+  return db.transaction(async (trx) => {
+    const conversacion = await trx('conversaciones_whatsapp')
+      .where({ id: conversacionId })
+      .forUpdate()
+      .first('estado');
+    if (!conversacion) return false;
+    if (conversacion.estado === 'cerrada') return true;
+    if (!ESTADOS_QUE_PERMITEN_CIERRE.includes(conversacion.estado)) return false;
+
+    await trx('conversaciones_whatsapp').where({ id: conversacionId }).update({
+      estado: 'cerrada',
+      cerrado_en: ahora,
+      updated_at: ahora,
+    });
+    return true;
+  });
 }
 
 // Final de un grupo ya enviado: si entró otro fragmento mientras el worker
@@ -887,12 +924,19 @@ async function obtenerClasificacionGrupo(groupId) {
   return db('grupos_whatsapp')
     .where({ group_id: groupId })
     .first(
+      'ruta_enrutamiento',
+      'categoria_resuelta',
+      'intencion_resuelta',
+      'resultado_decision',
+      'etiqueta_modelo',
       'plantilla_id',
       'slug_resuelto',
       'es_emergencia_resuelta',
       'respuesta_definitiva',
       'clasificado_en',
       'intento_envio_id',
+      'tokens_entrada',
+      'tokens_salida',
       'clasificacion_reclamo_id',
     );
 }
@@ -946,6 +990,11 @@ async function persistirClasificacionGrupo(
     tokensEntrada,
     tokensSalida,
     reclamoId,
+    rutaEnrutamiento,
+    categoriaResuelta,
+    intencionResuelta,
+    resultadoDecision,
+    etiquetaModelo,
   },
 ) {
   const [actualizado] = await trx('grupos_whatsapp')
@@ -960,11 +1009,47 @@ async function persistirClasificacionGrupo(
       clasificado_en: trx.fn.now(),
       tokens_entrada: tokensEntrada ?? 0,
       tokens_salida: tokensSalida ?? 0,
+      ruta_enrutamiento: rutaEnrutamiento,
+      categoria_resuelta: categoriaResuelta,
+      intencion_resuelta: intencionResuelta,
+      resultado_decision: resultadoDecision,
+      etiqueta_modelo: etiquetaModelo,
+      enrutado_en: trx.fn.now(),
       clasificacion_reclamo_id: null,
       clasificacion_reclamada_en: null,
     })
     .returning('*');
   return actualizado ?? null;
+}
+
+// US WA 011: las rutas que no usan Claude también dejan una decisión
+// completa a nivel de grupo, con consumo cero. Se ejecuta en la misma
+// transacción que registra el outbox para persistir antes de llamar a Meta.
+async function persistirDecisionDeterministaGrupo(
+  trx,
+  groupId,
+  { rutaEnrutamiento, intencionResuelta, resultadoDecision, respuestaDefinitiva },
+) {
+  const [actualizado] = await trx('grupos_whatsapp')
+    .where({ group_id: groupId })
+    .whereNull('enrutado_en')
+    .update({
+      ruta_enrutamiento: rutaEnrutamiento,
+      categoria_resuelta: null,
+      intencion_resuelta: intencionResuelta,
+      resultado_decision: resultadoDecision,
+      etiqueta_modelo: null,
+      plantilla_id: null,
+      slug_resuelto: null,
+      es_emergencia_resuelta: false,
+      respuesta_definitiva: respuestaDefinitiva ?? null,
+      tokens_entrada: 0,
+      tokens_salida: 0,
+      enrutado_en: trx.fn.now(),
+    })
+    .returning('*');
+  if (actualizado) return actualizado;
+  return trx('grupos_whatsapp').where({ group_id: groupId }).first();
 }
 
 // US WA 009: liga el grupo con "la referencia a la intención de envío"
@@ -1054,9 +1139,16 @@ async function finalizarExplicacionMedio(conversacionId, grupoTextoId, grupoMedi
 async function obtenerContextoDeConversacion(conversacionId) {
   const fila = await db('conversaciones_whatsapp')
     .where({ id: conversacionId })
-    .first('telefono_normalizado', 'flujo_actual', 'paso_actual', 'grupo_medio_pendiente_id');
+    .first(
+      'estado',
+      'telefono_normalizado',
+      'flujo_actual',
+      'paso_actual',
+      'grupo_medio_pendiente_id',
+    );
   if (!fila) return null;
   return {
+    estado: fila.estado,
     telefonoNormalizado: fila.telefono_normalizado,
     flujoActual: fila.flujo_actual,
     pasoActual: fila.paso_actual,
@@ -1264,11 +1356,16 @@ async function formarGrupoParaConversacion(conversacionId) {
     .where({ conversacion_id: conversacionId, estado: 'pendiente_enrutamiento' })
     .first();
   if (existente) {
+    const respuestaInteractiva = await db('mensajes_whatsapp')
+      .where({ group_id: existente.group_id })
+      .whereIn('tipo_mensaje', ['interactive_list_reply', 'interactive_button_reply'])
+      .first('id');
     return {
       groupId: existente.group_id,
       reutilizado: true,
       texto_consolidado: existente.texto_consolidado,
       tieneTextoProcesable: existente.texto_consolidado.length > 0,
+      tieneRespuestaInteractiva: Boolean(respuestaInteractiva),
     };
   }
 
@@ -1337,6 +1434,9 @@ async function formarGrupoParaConversacion(conversacionId) {
       reutilizado: !creado,
       texto_consolidado: grupo.texto_consolidado,
       tieneTextoProcesable: grupo.texto_consolidado.length > 0,
+      tieneRespuestaInteractiva: pendientes.some((mensaje) =>
+        ['interactive_list_reply', 'interactive_button_reply'].includes(mensaje.tipo_mensaje),
+      ),
     };
   });
 }
@@ -1621,6 +1721,7 @@ async function estaVentanaServicioVencida(conversacionId) {
 module.exports = {
   registrarMensajeYConversacion,
   cerrarConversacion,
+  confirmarEnlaceAgendaEnviado,
   finalizarConversacionTrasGrupo,
   confirmarMenuEnviado,
   confirmarGuiaMedioEnviada,
@@ -1629,6 +1730,7 @@ module.exports = {
   reclamarClasificacionGrupo,
   liberarClasificacionGrupo,
   persistirClasificacionGrupo,
+  persistirDecisionDeterministaGrupo,
   vincularIntentoEnvioGrupo,
   marcarGrupoProcesado,
   insertarEmergenciaConfirmada,

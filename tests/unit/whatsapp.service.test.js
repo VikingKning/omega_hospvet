@@ -2,20 +2,24 @@ jest.mock('../../src/modules/plantillas_whatsapp/plantillas_whatsapp.repository'
 jest.mock('../../src/modules/whatsapp/whatsapp.repository');
 jest.mock('../../src/modules/whatsapp/whatsapp.outbox');
 jest.mock('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
+jest.mock('../../src/modules/whatsapp/whatsapp.emergenciasAlertas.service');
 jest.mock('../../src/modules/laboratorio/laboratorio.service');
 jest.mock('../../src/config/database');
 
 const claude = require('../../src/config/claude');
 const db = require('../../src/config/database');
+const env = require('../../src/config/env');
 const plantillasRepository = require('../../src/modules/plantillas_whatsapp/plantillas_whatsapp.repository');
 const repository = require('../../src/modules/whatsapp/whatsapp.repository');
 const outbox = require('../../src/modules/whatsapp/whatsapp.outbox');
 const atencionHumanaService = require('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
+const emergenciasAlertasService = require('../../src/modules/whatsapp/whatsapp.emergenciasAlertas.service');
 const laboratorioService = require('../../src/modules/laboratorio/laboratorio.service');
 const {
   registrarEventoEntrante,
   procesarSiguienteConversacionVencida,
   enviarMenuPrincipal,
+  enviarEnlaceAgenda,
   procesarSiguienteSeguimientoPendiente,
   cerrarSiguienteConversacionInactiva,
   reenviarSeguimiento,
@@ -63,6 +67,45 @@ describe('whatsapp.service.registrarEventoEntrante — solo persiste y asocia, n
     expect(resultado).toEqual(
       expect.objectContaining({ id: 7, esNuevo: true, telefonoNormalizado: '525500000000' }),
     );
+    expect(atencionHumanaService.solicitarAtencionHumana).not.toHaveBeenCalled();
+  });
+
+  it('US WA 010: la ruta recepcion delega a WA017 con origen, prioridad y correlación controlados', async () => {
+    const spyClasificar = jest.spyOn(claude, 'clasificarMensaje');
+    repository.registrarMensajeYConversacion.mockResolvedValue({
+      id: 8,
+      esNuevo: true,
+      conversacionId: 55,
+      rutaResuelta: 'recepcion',
+      groupId: 77,
+    });
+    atencionHumanaService.solicitarAtencionHumana.mockResolvedValue({ id: 99 });
+
+    await registrarEventoEntrante({
+      whatsappMessageId: 'wamid.recepcion-1',
+      from: '5215500000000',
+      phoneNumberId: 'phone-1',
+      timestamp: '1700000000',
+      tipoMensaje: 'interactive_list_reply',
+      contenido: 'MENU_RECEPCION',
+      mediaId: null,
+    });
+
+    expect(atencionHumanaService.solicitarAtencionHumana).toHaveBeenCalledWith({
+      conversacionId: 55,
+      origen: 'recepcion',
+      prioridad: 'normal',
+      origenAlerta: 'menu_recepcion',
+      claveIdempotencia: 'recepcion:mensaje:wamid.recepcion-1',
+      referenciasFuncionales: {
+        groupId: 77,
+        mensajeOrigenId: 8,
+        whatsappMessageId: 'wamid.recepcion-1',
+      },
+      destinatarioTelefono: '525500000000',
+    });
+    expect(spyClasificar).not.toHaveBeenCalled();
+    spyClasificar.mockRestore();
   });
 
   it('normaliza un celular mexicano (521...) quitando el "1" extra', async () => {
@@ -106,6 +149,14 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
     es_emergencia: true,
     texto_respuesta: 'Texto de emergencia predeterminado.',
   };
+  const PLANTILLA_SIN_COINCIDENCIA = {
+    id: 101,
+    slug: 'sin-coincidencia-default',
+    intencion: 'sin_coincidencia_default',
+    activo: true,
+    es_emergencia: false,
+    texto_respuesta: 'Respuesta general controlada.',
+  };
 
   function mockClasificarMensaje(etiqueta, { tokensEntrada = 12, tokensSalida = 3 } = {}) {
     claude.clasificarMensaje = jest
@@ -124,6 +175,10 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
     );
     outbox.ejecutarIntento.mockResolvedValue({ enviado: true, wamid: 'wamid.x' });
     repository.insertarEmergenciaConfirmada.mockResolvedValue({ id: 55 });
+    emergenciasAlertasService.registrarDesdeEmergenciaConfirmada.mockResolvedValue({
+      alerta: { id: 88 },
+      esNueva: true,
+    });
     atencionHumanaService.solicitarAtencionHumana.mockResolvedValue({ id: 1 });
   });
 
@@ -172,15 +227,24 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
         respuestaDefinitiva: 'Respuesta de dosis_olvidada.',
         tokensEntrada: 15,
         tokensSalida: 3,
+        rutaEnrutamiento: 'consulta_libre',
+        categoriaResuelta: 'duda_medica',
+        intencionResuelta: 'dosis_olvidada',
+        resultadoDecision: 'plantilla',
+        etiquetaModelo: 'dosis-olvidada',
       }),
     );
     expect(outbox.ejecutarIntento).toHaveBeenCalledWith(`grupo:${GROUP_ID}:respuesta`);
+    expect(repository.persistirClasificacionGrupo.mock.invocationCallOrder[0]).toBeLessThan(
+      outbox.ejecutarIntento.mock.invocationCallOrder[0],
+    );
     expect(repository.marcarGrupoProcesado).toHaveBeenCalledWith(GROUP_ID);
     expect(repository.finalizarConversacionTrasGrupo).toHaveBeenCalledWith(
       CONVERSACION_ID,
       expect.any(Date),
     );
     expect(repository.insertarEmergenciaConfirmada).not.toHaveBeenCalled();
+    expect(emergenciasAlertasService.registrarDesdeEmergenciaConfirmada).not.toHaveBeenCalled();
     expect(atencionHumanaService.solicitarAtencionHumana).not.toHaveBeenCalled();
     expect(resultado).toBe('clasificado_normal');
   });
@@ -205,6 +269,11 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
         slug: 'emergencia-medica',
       }),
     );
+    expect(emergenciasAlertasService.registrarDesdeEmergenciaConfirmada).toHaveBeenCalledWith({
+      emergenciaConfirmada: { id: 55 },
+      telefonoExterno: TELEFONO,
+      trx: 'trx-fake',
+    });
     expect(atencionHumanaService.solicitarAtencionHumana).toHaveBeenCalledWith(
       expect.objectContaining({
         conversacionId: CONVERSACION_ID,
@@ -213,6 +282,7 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
         claveIdempotencia: `emergencia:grupo:${GROUP_ID}`,
         envioPrevioId: 900,
         destinatarioTelefono: TELEFONO,
+        registrarAlerta: false,
         trx: 'trx-fake',
         referenciasFuncionales: expect.objectContaining({
           groupId: GROUP_ID,
@@ -228,7 +298,9 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
 
   it('AC18: slug sin plantilla activa/utilizable — respaldo general, es_emergencia=false, sin atención humana', async () => {
     mockClasificarMensaje('slug-inexistente');
-    plantillasRepository.findBySlug.mockResolvedValue(undefined);
+    plantillasRepository.findBySlug
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(PLANTILLA_SIN_COINCIDENCIA);
 
     await clasificarYResponderGrupo({
       conversacionId: CONVERSACION_ID,
@@ -241,16 +313,20 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
       'trx-fake',
       GROUP_ID,
       expect.objectContaining({
-        plantillaId: null,
+        plantillaId: 101,
+        slugResuelto: 'sin-coincidencia-default',
         esEmergencia: false,
-        respuestaDefinitiva: expect.stringContaining('7711634578'),
+        respuestaDefinitiva: 'Respuesta general controlada.',
+        resultadoDecision: 'plantilla_respaldo',
       }),
     );
     expect(atencionHumanaService.solicitarAtencionHumana).not.toHaveBeenCalled();
+    expect(emergenciasAlertasService.registrarDesdeEmergenciaConfirmada).not.toHaveBeenCalled();
   });
 
   it('AC18: Claude no encajó ninguna etiqueta (slug null) — mismo respaldo general', async () => {
     mockClasificarMensaje(null);
+    plantillasRepository.findBySlug.mockResolvedValue(PLANTILLA_SIN_COINCIDENCIA);
 
     await clasificarYResponderGrupo({
       conversacionId: CONVERSACION_ID,
@@ -259,12 +335,76 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
       telefono: TELEFONO,
     });
 
-    expect(plantillasRepository.findBySlug).not.toHaveBeenCalled();
+    expect(plantillasRepository.findBySlug).toHaveBeenCalledTimes(1);
+    expect(plantillasRepository.findBySlug).toHaveBeenCalledWith('sin-coincidencia-default');
     expect(repository.persistirClasificacionGrupo).toHaveBeenCalledWith(
       'trx-fake',
       GROUP_ID,
-      expect.objectContaining({ plantillaId: null, esEmergencia: false }),
+      expect.objectContaining({
+        plantillaId: 101,
+        slugResuelto: 'sin-coincidencia-default',
+        categoriaResuelta: 'sin_coincidencia',
+        intencionResuelta: 'sin_coincidencia_default',
+        resultadoDecision: 'plantilla_respaldo',
+        etiquetaModelo: null,
+        esEmergencia: false,
+      }),
     );
+  });
+
+  it('WA011 AC19: un fallo de Claude persiste sin_coincidencia_default y no libera el lease para reclasificar', async () => {
+    claude.clasificarMensaje = jest.fn().mockRejectedValue(
+      Object.assign(new Error('timeout controlado'), {
+        code: 'CLAUDE_TIMEOUT',
+      }),
+    );
+    plantillasRepository.findBySlug.mockResolvedValue(PLANTILLA_SIN_COINCIDENCIA);
+
+    const resultado = await clasificarYResponderGrupo({
+      conversacionId: CONVERSACION_ID,
+      groupId: GROUP_ID,
+      textoConsolidado: 'consulta que no debe aparecer en logs',
+      telefono: TELEFONO,
+    });
+
+    expect(resultado).toBe('clasificado_normal');
+    expect(repository.liberarClasificacionGrupo).not.toHaveBeenCalled();
+    expect(repository.persistirClasificacionGrupo).toHaveBeenCalledWith(
+      'trx-fake',
+      GROUP_ID,
+      expect.objectContaining({
+        slugResuelto: 'sin-coincidencia-default',
+        tokensEntrada: 0,
+        tokensSalida: 0,
+        resultadoDecision: 'plantilla_respaldo',
+      }),
+    );
+  });
+
+  it('WA011 AC19: Claude no configurado usa el mismo fallback sin reintentar fragmentos', async () => {
+    claude.clasificarMensaje = jest
+      .fn()
+      .mockRejectedValue(new Error('El clasificador de Claude no está configurado.'));
+    plantillasRepository.findBySlug.mockResolvedValue(PLANTILLA_SIN_COINCIDENCIA);
+
+    await clasificarYResponderGrupo({
+      conversacionId: CONVERSACION_ID,
+      groupId: GROUP_ID,
+      textoConsolidado: 'consulta libre',
+      telefono: TELEFONO,
+    });
+
+    expect(claude.clasificarMensaje).toHaveBeenCalledTimes(1);
+    expect(repository.persistirClasificacionGrupo).toHaveBeenCalledWith(
+      'trx-fake',
+      GROUP_ID,
+      expect.objectContaining({
+        slugResuelto: 'sin-coincidencia-default',
+        tokensEntrada: 0,
+        tokensSalida: 0,
+      }),
+    );
+    expect(repository.liberarClasificacionGrupo).not.toHaveBeenCalled();
   });
 
   it('si llega otro fragmento durante Claude, reprograma el grupo y no envía el respaldo parcial', async () => {
@@ -329,6 +469,7 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
     expect(claude.clasificarMensaje).not.toHaveBeenCalled();
     expect(repository.persistirClasificacionGrupo).not.toHaveBeenCalled();
     expect(atencionHumanaService.solicitarAtencionHumana).not.toHaveBeenCalled();
+    expect(emergenciasAlertasService.registrarDesdeEmergenciaConfirmada).not.toHaveBeenCalled();
     expect(outbox.ejecutarIntento).toHaveBeenCalledWith(`grupo:${GROUP_ID}:respuesta`);
     expect(resultado).toBe('clasificado_emergencia');
   });
@@ -427,6 +568,118 @@ describe('whatsapp.service.enviarSolicitudEmergencia (US WA 009 AC1-AC3)', () =>
   });
 });
 
+describe('whatsapp.service.enviarEnlaceAgenda (US WA 006)', () => {
+  const consultaOriginal = env.enlaces.calendarioCitas;
+  const esteticaOriginal = env.enlaces.calendarioEstetica;
+
+  beforeEach(() => {
+    env.enlaces.calendarioCitas = 'https://calendar.example/consulta';
+    env.enlaces.calendarioEstetica = 'https://calendar.example/estetica';
+    outbox.registrarIntento.mockImplementation((datos) =>
+      Promise.resolve({ intent: { clave_idempotencia: datos.claveIdempotencia } }),
+    );
+  });
+
+  afterAll(() => {
+    env.enlaces.calendarioCitas = consultaOriginal;
+    env.enlaces.calendarioEstetica = esteticaOriginal;
+  });
+
+  it.each([
+    ['agendar_consulta', 'Consulta', 'https://calendar.example/consulta'],
+    ['agendar_estetica', 'Estética', 'https://calendar.example/estetica'],
+  ])(
+    'envía el enlace HTTPS de %s y cierra solo tras confirmación de Meta',
+    async (ruta, tipo, url) => {
+      const spyClaude = jest.spyOn(claude, 'clasificarMensaje');
+      outbox.ejecutarIntento.mockResolvedValue({ enviado: true, wamid: 'wamid.agenda' });
+      repository.confirmarEnlaceAgendaEnviado.mockResolvedValue(true);
+
+      const resultado = await enviarEnlaceAgenda({
+        conversacionId: CONVERSACION_ID,
+        telefono: '525500000000',
+        claveBase: 'mensaje:123',
+        ruta,
+      });
+
+      expect(outbox.registrarIntento).toHaveBeenCalledWith(
+        expect.objectContaining({
+          claveIdempotencia: `mensaje:123:${ruta}:enlace`,
+          tipoEnvio: 'conversacional',
+          origenFuncional: 'respuesta_automatica',
+          payloadFuncional: {
+            tipo: 'text',
+            destinatarioTelefono: '525500000000',
+            texto: `Agenda tu cita de ${tipo} en el calendario de Omega:\n${url}`,
+          },
+        }),
+      );
+      expect(repository.confirmarEnlaceAgendaEnviado).toHaveBeenCalledWith(
+        CONVERSACION_ID,
+        expect.any(Date),
+      );
+      expect(resultado).toEqual(
+        expect.objectContaining({ enviado: true, conversacionCerrada: true }),
+      );
+      expect(spyClaude).not.toHaveBeenCalled();
+      spyClaude.mockRestore();
+    },
+  );
+
+  it.each([
+    ['agendar_consulta', undefined, 'agenda_consulta_sin_enlace', 'configuracion_ausente'],
+    [
+      'agendar_estetica',
+      'http://calendar.example/estetica',
+      'agenda_estetica_sin_enlace',
+      'configuracion_invalida',
+    ],
+  ])(
+    'sin URL HTTPS válida para %s transfiere a Recepción sin enviar el enlace',
+    async (ruta, valor, tipoAviso, motivo) => {
+      if (ruta === 'agendar_consulta') env.enlaces.calendarioCitas = valor;
+      else env.enlaces.calendarioEstetica = valor;
+
+      const resultado = await enviarEnlaceAgenda({
+        conversacionId: CONVERSACION_ID,
+        telefono: '525500000000',
+        claveBase: 'mensaje:124',
+        ruta,
+      });
+
+      expect(atencionHumanaService.solicitarAtencionHumana).toHaveBeenCalledWith({
+        conversacionId: CONVERSACION_ID,
+        origen: 'recepcion',
+        prioridad: 'normal',
+        claveIdempotencia: `mensaje:124:${ruta}:recepcion`,
+        referenciasFuncionales: { ruta, motivo },
+        destinatarioTelefono: '525500000000',
+        tipoAviso,
+      });
+      expect(outbox.registrarIntento).not.toHaveBeenCalled();
+      expect(repository.confirmarEnlaceAgendaEnviado).not.toHaveBeenCalled();
+      expect(resultado).toEqual({ enviado: false, transferidaARecepcion: true });
+    },
+  );
+
+  it('si falla el envío conserva el intento y no cierra la conversación', async () => {
+    outbox.ejecutarIntento.mockResolvedValue({ enviado: false, error: 'Meta rechazó' });
+
+    const resultado = await enviarEnlaceAgenda({
+      conversacionId: CONVERSACION_ID,
+      telefono: '525500000000',
+      claveBase: 'mensaje:125',
+      ruta: 'agendar_consulta',
+    });
+
+    expect(outbox.registrarIntento).toHaveBeenCalledTimes(1);
+    expect(repository.confirmarEnlaceAgendaEnviado).not.toHaveBeenCalled();
+    expect(resultado).toEqual(
+      expect.objectContaining({ enviado: false, conversacionCerrada: false }),
+    );
+  });
+});
+
 // US WA 004 — menú interactivo inicial. whatsapp.repository y
 // whatsapp.outbox se mockean wholesale: aquí se prueba la LÓGICA de
 // decisión (saludo/comando -> menú, éxito/fallo -> transición), no la
@@ -463,6 +716,19 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
 
     expect(outbox.ejecutarIntento).toHaveBeenCalledTimes(1);
     expect(outbox.ejecutarIntento).toHaveBeenCalledWith(`grupo:${GROUP_ID}:menu`);
+    expect(repository.persistirDecisionDeterministaGrupo).toHaveBeenCalledWith(
+      'trx-fake',
+      GROUP_ID,
+      {
+        rutaEnrutamiento: 'saludo_puro',
+        intencionResuelta: 'mostrar_menu_principal',
+        resultadoDecision: 'menu_principal',
+        respuestaDefinitiva: expect.any(String),
+      },
+    );
+    expect(repository.persistirDecisionDeterministaGrupo.mock.invocationCallOrder[0]).toBeLessThan(
+      outbox.ejecutarIntento.mock.invocationCallOrder[0],
+    );
     expect(repository.confirmarMenuEnviado).toHaveBeenCalledWith(CONVERSACION_ID, GROUP_ID);
     expect(resultado).toEqual(
       expect.objectContaining({ groupId: GROUP_ID, resultado: 'menu_enviado' }),

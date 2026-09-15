@@ -1,5 +1,6 @@
 const env = require('./config/env');
 const logger = require('./config/logger');
+const whatsappAgenda = require('./config/whatsappAgenda');
 const db = require('./config/database');
 const { store: sessionStore } = require('./config/session');
 const app = require('./app');
@@ -16,6 +17,9 @@ const plantillasWhatsappMetaSyncJob = require('./jobs/plantillasWhatsappMetaSync
 const whatsappAgrupacionJob = require('./jobs/whatsappAgrupacionJob');
 const whatsappSeguimientoJob = require('./jobs/whatsappSeguimientoJob');
 const whatsappAtencionHumanaJob = require('./jobs/whatsappAtencionHumanaJob');
+const whatsappAlertasJob = require('./jobs/whatsappAlertasJob');
+
+whatsappAgenda.validarConfiguracionAlArrancar(logger);
 
 const server = app.listen(env.port, () => {
   logger.info(`Omega Vet AdminSite escuchando en el puerto ${env.port} (${env.nodeEnv})`);
@@ -26,6 +30,7 @@ const plantillasMetaSyncInterval = plantillasWhatsappMetaSyncJob.start();
 const whatsappAgrupacionInterval = whatsappAgrupacionJob.start();
 const whatsappSeguimientoInterval = whatsappSeguimientoJob.start();
 const whatsappAtencionHumanaInterval = whatsappAtencionHumanaJob.start();
+const whatsappAlertasInterval = whatsappAlertasJob.start();
 
 // Doble Ctrl+C (o SIGINT y SIGTERM llegando casi juntos, ej. de una
 // terminal/supervisor que manda ambos al cerrar) disparaba shutdown() dos
@@ -45,6 +50,7 @@ async function shutdown(signal) {
   if (whatsappAgrupacionInterval) clearInterval(whatsappAgrupacionInterval);
   if (whatsappSeguimientoInterval) clearInterval(whatsappSeguimientoInterval);
   if (whatsappAtencionHumanaInterval) clearInterval(whatsappAtencionHumanaInterval);
+  if (whatsappAlertasInterval) clearInterval(whatsappAlertasInterval);
   server.close(async () => {
     await Promise.all([db.destroy(), sessionStore.close()]);
     logger.info('Servidor y conexiones a base de datos cerrados.');

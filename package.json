@@ -25,6 +25,7 @@
     "whatsapp:registrar-plantillas": "dotenv -e .env.localhost -o --no-expand -- node scripts/registrar-plantillas-whatsapp.js",
     "whatsapp:estado-plantillas": "dotenv -e .env.localhost -o --no-expand -- node scripts/estado-plantillas-whatsapp.js",
     "whatsapp:registrar-plantilla-resultados": "dotenv -e .env.localhost -o --no-expand -- node scripts/registrar-plantilla-resultados-laboratorio.js",
+    "whatsapp:registrar-plantillas-alertas": "dotenv -e .env.localhost -o --no-expand -- node scripts/registrar-plantillas-alertas-whatsapp.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

@@ -66,6 +66,16 @@ afterAll(async () => {
   const conversacionIds = await db('conversaciones_whatsapp')
     .where('phone_number_id', PHONE_NUMBER_ID)
     .pluck('id');
+  const alertaIds = await db('alertas_atencion_whatsapp')
+    .whereIn('conversacion_id', conversacionIds)
+    .pluck('id');
+  const outboxAlertasIds = await db('intentos_alerta_whatsapp')
+    .whereIn('alerta_id', alertaIds)
+    .whereNotNull('outbox_id')
+    .pluck('outbox_id');
+  await db('intentos_alerta_whatsapp').whereIn('alerta_id', alertaIds).del();
+  await db('destinatarios_alerta_whatsapp').whereIn('alerta_id', alertaIds).del();
+  await db('alertas_atencion_whatsapp').whereIn('id', alertaIds).del();
   // mensajes_whatsapp referencia grupos_whatsapp Y conversaciones_whatsapp
   // (sin CASCADE) — hay que borrar mensajes primero, luego grupos, luego
   // conversaciones, o las FK truenan.
@@ -79,6 +89,7 @@ afterAll(async () => {
     .update({ intento_envio_id: null });
   await db('emergencias_confirmadas').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
+  await db('outbox_whatsapp').whereIn('intent_id', outboxAlertasIds).del();
   await db('mensajes_whatsapp').where('whatsapp_message_id', 'like', `${WAMID_PREFIX}%`).del();
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('conversaciones_whatsapp').where('phone_number_id', PHONE_NUMBER_ID).del();
@@ -166,6 +177,12 @@ describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (
     expect(grupos[0].estado).toBe('procesado');
     const mensajes = await db('mensajes_whatsapp').where({ group_id: grupos[0].group_id });
     expect(mensajes).toHaveLength(5);
+    expect(claude.clasificarMensaje).toHaveBeenCalledTimes(1);
+    expect(claude.clasificarMensaje).toHaveBeenCalledWith(
+      'uno\ndos\ntres\ncuatro\ncinco',
+      expect.any(Array),
+      expect.any(Object),
+    );
   });
 
   it('conserva el orden cronológico y separa los fragmentos sin unir palabras (AC8)', async () => {
@@ -535,6 +552,16 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
     const outboxRows = await db('outbox_whatsapp').where({ conversacion_id: conversacion.id });
     expect(outboxRows).toHaveLength(1);
     expect(outboxRows[0].wamid).toBe('wamid.menu-saludo');
+    const grupo = await db('grupos_whatsapp').where({ group_id: resultado.groupId }).first();
+    expect(grupo).toMatchObject({
+      ruta_enrutamiento: 'saludo_puro',
+      intencion_resuelta: 'mostrar_menu_principal',
+      resultado_decision: 'menu_principal',
+      tokens_entrada: 0,
+      tokens_salida: 0,
+      intento_envio_id: outboxRows[0].intent_id,
+    });
+    expect(grupo.enrutado_en).not.toBeNull();
 
     spyClasificar.mockRestore();
   });
@@ -572,6 +599,53 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
     // cerraba antes) — libera al tutor para empezar una conversación nueva.
     const [actualizada] = await db('conversaciones_whatsapp').where({ id: conversacion.id });
     expect(actualizada.estado).toBe('cerrada');
+    const grupo = await db('grupos_whatsapp').where({ group_id: resultado.groupId }).first();
+    expect(grupo).toMatchObject({
+      ruta_enrutamiento: 'consulta_libre',
+      categoria_resuelta: 'sin_coincidencia',
+      intencion_resuelta: 'sin_coincidencia_default',
+      resultado_decision: 'plantilla_respaldo',
+      slug_resuelto: 'sin-coincidencia-default',
+      tokens_entrada: 0,
+      tokens_salida: 0,
+    });
+  });
+
+  it('WA011: un fallo de Claude persiste el respaldo y un reintento no vuelve a clasificar', async () => {
+    claude.clasificarMensaje.mockRejectedValueOnce(
+      Object.assign(new Error('timeout simulado'), { code: 'CLAUDE_TIMEOUT' }),
+    );
+    const telefono = '5215500002199';
+    await postMensaje(
+      `${WAMID_PREFIX}claude-falla-controlada`,
+      telefono,
+      'necesito orientación',
+      ahoraEpoch(),
+    );
+    const [conversacion] = await buscarConversacion('525500002199');
+    await vencerConversacion(conversacion.id);
+
+    const primero = await service.procesarSiguienteConversacionVencida();
+    expect(primero.resultado).toBe('clasificado_normal');
+
+    const grupo = await db('grupos_whatsapp').where({ group_id: primero.groupId }).first();
+    expect(grupo).toMatchObject({
+      ruta_enrutamiento: 'consulta_libre',
+      categoria_resuelta: 'sin_coincidencia',
+      resultado_decision: 'plantilla_respaldo',
+      slug_resuelto: 'sin-coincidencia-default',
+      tokens_entrada: 0,
+      tokens_salida: 0,
+    });
+    expect(grupo.clasificado_en).not.toBeNull();
+
+    await service.clasificarYResponderGrupo({
+      conversacionId: conversacion.id,
+      groupId: primero.groupId,
+      textoConsolidado: primero.texto_consolidado,
+      telefono: '525500002199',
+    });
+    expect(claude.clasificarMensaje).toHaveBeenCalledTimes(1);
   });
 
   it('un comando de menú como primer mensaje dispara el menú inmediatamente (AC2)', async () => {

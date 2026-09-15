@@ -60,8 +60,19 @@ afterAll(async () => {
   const conversacionIds = await db('conversaciones_whatsapp')
     .where('phone_number_id', PHONE_NUMBER_ID)
     .pluck('id');
+  const alertaIds = await db('alertas_atencion_whatsapp')
+    .whereIn('conversacion_id', conversacionIds)
+    .pluck('id');
+  const outboxAlertasIds = await db('intentos_alerta_whatsapp')
+    .whereIn('alerta_id', alertaIds)
+    .whereNotNull('outbox_id')
+    .pluck('outbox_id');
+  await db('intentos_alerta_whatsapp').whereIn('alerta_id', alertaIds).del();
+  await db('destinatarios_alerta_whatsapp').whereIn('alerta_id', alertaIds).del();
+  await db('alertas_atencion_whatsapp').whereIn('id', alertaIds).del();
   await db('solicitudes_atencion_humana').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
+  await db('outbox_whatsapp').whereIn('intent_id', outboxAlertasIds).del();
   await db('mensajes_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('conversaciones_whatsapp').where('phone_number_id', PHONE_NUMBER_ID).del();
   await db.destroy();
@@ -275,8 +286,9 @@ describe('US WA 017 — fallo y reintento del envío (AC19)', () => {
     const conversacion = await crearConversacion(telefono);
     await atencionHumanaService.solicitarAtencionHumana({
       conversacionId: conversacion.id,
-      origen: 'emergencia',
-      claveIdempotencia: claveIdempotencia('emergencia'),
+      origen: 'recepcion',
+      origenAlerta: 'menu_recepcion',
+      claveIdempotencia: claveIdempotencia('recepcion'),
       destinatarioTelefono: telefono,
     });
 
@@ -297,6 +309,14 @@ describe('US WA 017 — fallo y reintento del envío (AC19)', () => {
     expect(actualizada.estado).not.toBe('atencion_humana');
     expect(actualizada.atencion_humana_desde).toBeNull();
     expect(actualizada.atencion_humana_hasta).toBeNull();
+    await expect(
+      db('alertas_atencion_whatsapp').where({ conversacion_id: conversacion.id }).first(),
+    ).resolves.toMatchObject({
+      tipo_alerta: 'recepcion',
+      origen: 'menu_recepcion',
+      estado: 'pendiente',
+      resolucion_destinatarios: 'pendiente',
+    });
 
     // El backoff evita que el drain loop reclame la misma fila en caliente.
     await expect(atencionHumanaService.procesarSiguienteSolicitudPendiente()).resolves.toBeNull();
@@ -768,6 +788,9 @@ describe('US WA 017 — mensaje manual de Omega (smb_message_echoes, AC25-AC31/A
     expect(conversacion.estado).toBe('atencion_humana');
     expect(conversacion.origen_atencion_humana).toBe('iniciada_por_omega');
     expect(conversacion.atencion_humana_desde).not.toBeNull();
+    await expect(
+      db('alertas_atencion_whatsapp').where({ conversacion_id: conversacion.id }),
+    ).resolves.toHaveLength(0);
   });
 
   it('AC27/AC28: con una conversación automatizada abierta, la transiciona conservando su historial y calcula el vencimiento con la fecha del echo', async () => {

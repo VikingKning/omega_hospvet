@@ -39,6 +39,25 @@ const ESTATUS_LABELS = {
 const permissions = user?.permissions ?? [];
 const puedeGestionarPermisos = permissions.includes('usuarios.permisos');
 const permisosAsignadosSet = new Set(permisosAsignadosIds);
+const estaVinculadoADoctor = Boolean(doctorSeleccionado);
+// Pedido explícito del usuario: una cuenta admin (tipo_usuario='admin',
+// asignable HOY solo directo en BD, nunca desde este formulario — ver
+// migración 20260915000007) nunca muestra el toggle Doctor/Estilista/
+// Recepción/Usuario ni lo deja tocar: en su lugar, una píldora fija
+// "Administrador". Gana sobre el vínculo con doctor (mismo criterio de
+// bloqueo que usuarios.repository.js#update aplica al guardar).
+const esAdmin = tipoUsuario === 'admin';
+const tipoUsuarioEfectivo = esAdmin
+  ? 'admin'
+  : estaVinculadoADoctor
+    ? 'doctor'
+    : tipoUsuario || 'usuario';
+const TIPOS_USUARIO = [
+  { valor: 'doctor', etiqueta: 'Doctor' },
+  { valor: 'estilista', etiqueta: 'Estilista' },
+  { valor: 'recepcion', etiqueta: 'Recepción' },
+  { valor: 'usuario', etiqueta: 'Usuario' },
+];
 
 const MODULO_LABELS = {
   tutores: 'Tutores y pacientes',
@@ -93,15 +112,15 @@ function estaMarcado(permiso) {
   </div>
 <% } %>
 
-<form class="modal-form<%= puedeGestionarPermisos ? ' modal-form-columns' : '' %>"
+<form class="modal-form modal-form-columns usuario-form"
       <% if (!esSoloLectura) { %>
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `usuarios/${usuario.id}` : 'usuarios' %>"
       hx-target="#usuarioFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
       <% } %>
       data-es-edicion="<%= esEdicion ? '1' : '' %>">
-  <div class="modal-col<%= puedeGestionarPermisos ? ' modal-col-datos' : '' %>">
-    <% if (puedeGestionarPermisos) { %><h3 class="modal-col-title">Datos generales</h3><% } %>
+  <div class="modal-col modal-col-datos">
+    <h3 class="modal-col-title">Datos generales</h3>
     <label>
       Doctor vinculado
       <% if (esEdicion) { %>
@@ -201,8 +220,46 @@ function estaMarcado(permiso) {
     <% } %>
   </div>
 
-  <% if (puedeGestionarPermisos) { %>
-    <div class="modal-col modal-col-permisos">
+  <div class="modal-col modal-col-permisos">
+    <div class="usuario-config-row">
+      <div class="usuario-config-field">
+        <span class="usuario-config-label">Tipo de usuario</span>
+        <input type="hidden" name="tipoUsuario" id="tipoUsuarioInput" value="<%= tipoUsuarioEfectivo %>">
+        <% if (esAdmin) { %>
+          <span class="badge badge-admin">Administrador</span>
+        <% } else { %>
+          <div class="toggle-group tipo-usuario-toggle" id="tipoUsuarioToggle" role="group"
+               aria-label="Tipo de usuario" data-solo-lectura="<%= esSoloLectura ? '1' : '0' %>">
+            <% TIPOS_USUARIO.forEach((tipo) => { %>
+              <% const deshabilitado = esSoloLectura || estaVinculadoADoctor; %>
+              <button type="button"
+                      class="toggle-btn<%= tipoUsuarioEfectivo === tipo.valor ? ' active' : '' %>"
+                      data-tipo-usuario="<%= tipo.valor %>"
+                      aria-pressed="<%= tipoUsuarioEfectivo === tipo.valor ? 'true' : 'false' %>"
+                      <%= deshabilitado ? 'disabled' : '' %>><%= tipo.etiqueta %></button>
+            <% }) %>
+          </div>
+          <% if (estaVinculadoADoctor) { %>
+            <small class="usuario-config-help">Se asigna automáticamente por el vínculo con el doctor.</small>
+          <% } %>
+        <% } %>
+      </div>
+
+      <div class="usuario-config-field usuario-alertas-field">
+        <span class="usuario-config-label">Notificación de alertas</span>
+        <label class="switch-field">
+          <span class="switch">
+            <input type="checkbox" name="notificacionesAlertas" value="true"
+                   <%= notificacionesAlertas ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
+            <span class="switch-track"></span>
+          </span>
+          <span class="switch-state-on">Activo</span>
+          <span class="switch-state-off">Inactivo</span>
+        </label>
+      </div>
+    </div>
+
+    <% if (puedeGestionarPermisos) { %>
       <h3 class="modal-col-title">Permisos</h3>
       <%
       // Marcador de presencia: distingue "el apartado se mostró y se
@@ -320,8 +377,8 @@ function estaMarcado(permiso) {
           </div>
         </div>
       <% }) %>
-    </div>
-  <% } %>
+    <% } %>
+  </div>
 
   <div class="modal-actions">
     <% if (esSoloLectura) { %>

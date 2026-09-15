@@ -63,6 +63,16 @@ afterAll(async () => {
   const conversacionIds = await db('conversaciones_whatsapp')
     .where('phone_number_id', PHONE_NUMBER_ID)
     .pluck('id');
+  const alertaIds = await db('alertas_atencion_whatsapp')
+    .whereIn('conversacion_id', conversacionIds)
+    .pluck('id');
+  const outboxAlertasIds = await db('intentos_alerta_whatsapp')
+    .whereIn('alerta_id', alertaIds)
+    .whereNotNull('outbox_id')
+    .pluck('outbox_id');
+  await db('intentos_alerta_whatsapp').whereIn('alerta_id', alertaIds).del();
+  await db('destinatarios_alerta_whatsapp').whereIn('alerta_id', alertaIds).del();
+  await db('alertas_atencion_whatsapp').whereIn('id', alertaIds).del();
   await db('conversaciones_whatsapp')
     .whereIn('id', conversacionIds)
     .update({ grupo_medio_pendiente_id: null });
@@ -75,6 +85,7 @@ afterAll(async () => {
   await db('emergencias_confirmadas').whereIn('conversacion_id', conversacionIds).del();
   await db('solicitudes_atencion_humana').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
+  await db('outbox_whatsapp').whereIn('intent_id', outboxAlertasIds).del();
   await db('mensajes_whatsapp').where('whatsapp_message_id', 'like', `${WAMID_PREFIX}%`).del();
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('conversaciones_whatsapp').where('phone_number_id', PHONE_NUMBER_ID).del();
@@ -187,7 +198,9 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
       const actualizada = await recargarConversacion(conversacion.id);
       expect(actualizada.estado).toBe('esperando_menu'); // AC13: conserva la conversación abierta.
       expect(spyClasificar).not.toHaveBeenCalled(); // AC2
-      expect(global.fetch).not.toHaveBeenCalled(); // ninguna ruta se ejecuta desde esta historia.
+      // WA010 puede registrar solicitud+outbox, pero jamás envía directo a
+      // Meta desde el webhook; ese envío pertenece al worker de WA017.
+      expect(global.fetch).not.toHaveBeenCalled();
     },
   );
 
@@ -315,8 +328,13 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
     const conversacion = await crearConversacionEsperandoMenu(telefono);
     const wamid = `${WAMID_PREFIX}recepcion-wa010-${telefono}`;
 
-    await postMensaje(wamid, `521${telefono.slice(2)}`, listReplyMsg(menu.MENU_RECEPCION));
-    await postMensaje(wamid, `521${telefono.slice(2)}`, listReplyMsg(menu.MENU_RECEPCION));
+    const [primeraEntrega, segundaEntrega] = await Promise.all([
+      postMensaje(wamid, `521${telefono.slice(2)}`, listReplyMsg(menu.MENU_RECEPCION)),
+      postMensaje(wamid, `521${telefono.slice(2)}`, listReplyMsg(menu.MENU_RECEPCION)),
+    ]);
+
+    expect(primeraEntrega.status).toBe(200);
+    expect(segundaEntrega.status).toBe(200);
 
     const solicitudes = await db('solicitudes_atencion_humana').where({
       conversacion_id: conversacion.id,
@@ -324,6 +342,7 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
     });
     expect(solicitudes).toHaveLength(1);
     expect(solicitudes[0].prioridad).toBe('normal');
+    expect(solicitudes[0].estado).toBe('pendiente');
     expect(solicitudes[0].clave_idempotencia).toBe(`recepcion:mensaje:${wamid}`);
     expect(solicitudes[0].referencias_funcionales).toEqual(
       expect.objectContaining({
@@ -335,6 +354,71 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
     expect(mensaje.group_id).toBe(solicitudes[0].referencias_funcionales.groupId);
     expect(mensaje.tokens_entrada).toBe(0);
     expect(mensaje.tokens_salida).toBe(0);
+    const alertas = await db('alertas_atencion_whatsapp').where({
+      conversacion_id: conversacion.id,
+      tipo_alerta: 'recepcion',
+    });
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toMatchObject({
+      clave_idempotencia: `atencion_humana:recepcion:mensaje:${wamid}`,
+      grupo_id: solicitudes[0].referencias_funcionales.groupId,
+      mensaje_origen_id: mensaje.id,
+      whatsapp_message_id_origen: wamid,
+      telefono_externo: telefono,
+      origen: 'menu_recepcion',
+      estado: 'pendiente',
+      resolucion_destinatarios: 'pendiente',
+    });
+    expect(alertas[0].creado_en).toBeInstanceOf(Date);
+    const actualizada = await recargarConversacion(conversacion.id);
+    expect(actualizada.estado).toBe('esperando_menu');
+    expect(actualizada.atencion_humana_desde).toBeNull();
+    expect(actualizada.atencion_humana_hasta).toBeNull();
+    const intentos = await db('outbox_whatsapp').where({ conversacion_id: conversacion.id });
+    expect(intentos).toHaveLength(1);
+  });
+
+  it('una reentrega repara la delegación si el mensaje se confirmó antes de crear la solicitud', async () => {
+    const telefono = generarTelefono();
+    const conversacion = await crearConversacionEsperandoMenu(telefono);
+    const wamid = `${WAMID_PREFIX}recepcion-reparacion-${telefono}`;
+    const evento = {
+      whatsappMessageId: wamid,
+      telefonoOrigen: `521${telefono.slice(2)}`,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado: telefono,
+      tipoMensaje: 'interactive_list_reply',
+      contenido: menu.MENU_RECEPCION,
+      mediaId: null,
+      mimeType: null,
+      tituloInteractivo: 'Recepción',
+      recibidoEn: new Date(),
+    };
+
+    const persistido = await repository.registrarMensajeYConversacion(evento);
+    expect(persistido.rutaResuelta).toBe('recepcion');
+    const conteoAntes = await db('solicitudes_atencion_humana')
+      .where({ conversacion_id: conversacion.id })
+      .count('id as total')
+      .first();
+    expect(Number(conteoAntes.total)).toBe(0);
+
+    const reentrega = await postMensaje(
+      wamid,
+      `521${telefono.slice(2)}`,
+      listReplyMsg(menu.MENU_RECEPCION),
+    );
+    expect(reentrega.status).toBe(200);
+    const solicitudes = await db('solicitudes_atencion_humana').where({
+      conversacion_id: conversacion.id,
+      origen: 'recepcion',
+    });
+    expect(solicitudes).toHaveLength(1);
+    expect(solicitudes[0].referencias_funcionales).toEqual({
+      groupId: persistido.groupId,
+      mensajeOrigenId: persistido.id,
+      whatsappMessageId: wamid,
+    });
   });
 });
 
@@ -354,6 +438,13 @@ describe('US WA 005 — selección inválida (AC9)', () => {
     expect(mensaje.categoria_clasificacion).toBeNull();
     const actualizada = await recargarConversacion(conversacion.id);
     expect(actualizada.estado).toBe('esperando_menu');
+    const solicitudes = await db('solicitudes_atencion_humana').where({
+      conversacion_id: conversacion.id,
+    });
+    expect(solicitudes).toHaveLength(0);
+    await expect(
+      db('alertas_atencion_whatsapp').where({ conversacion_id: conversacion.id }),
+    ).resolves.toHaveLength(0);
   });
 
   it('un id de menú válido pero de un menú ya vencido también avisa y muestra un menú nuevo (prueba mínima)', async () => {
@@ -377,10 +468,10 @@ describe('US WA 005 — selección inválida (AC9)', () => {
       phoneNumberId: PHONE_NUMBER_ID,
       telefonoNormalizado: telefono,
       tipoMensaje: 'interactive_list_reply',
-      contenido: menu.MENU_EMERGENCIA,
+      contenido: menu.MENU_RECEPCION,
       mediaId: null,
       mimeType: null,
-      tituloInteractivo: 'Emergencia',
+      tituloInteractivo: 'Recepción',
       recibidoEn: new Date(),
     });
 
@@ -396,11 +487,20 @@ describe('US WA 005 — selección inválida (AC9)', () => {
     expect(global.fetch).toHaveBeenCalled();
     const actualizada = await recargarConversacion(conversacion.id);
     expect(actualizada.estado).toBe('esperando_menu'); // confirmarMenuEnviado la recupera.
+    const solicitudes = await db('solicitudes_atencion_humana').where({
+      conversacion_id: conversacion.id,
+    });
+    expect(solicitudes).toHaveLength(0);
   });
 
-  it('un medio no interpretable durante atención humana nunca se evalúa como selección de menú', async () => {
+  it('MENU_RECEPCION durante atención humana no crea otra solicitud ni extiende el vencimiento', async () => {
     const telefono = generarTelefono();
-    await crearConversacionEsperandoMenu(telefono, { estado: 'atencion_humana' });
+    const hastaOriginal = new Date(Date.now() + 5 * 60 * 60 * 1000);
+    const conversacion = await crearConversacionEsperandoMenu(telefono, {
+      estado: 'atencion_humana',
+      atencion_humana_desde: new Date(),
+      atencion_humana_hasta: hastaOriginal,
+    });
 
     const wamid = `${WAMID_PREFIX}humana-${telefono}`;
     const resultado = await repository.registrarMensajeYConversacion({
@@ -409,16 +509,22 @@ describe('US WA 005 — selección inválida (AC9)', () => {
       phoneNumberId: PHONE_NUMBER_ID,
       telefonoNormalizado: telefono,
       tipoMensaje: 'interactive_list_reply',
-      contenido: menu.MENU_EMERGENCIA,
+      contenido: menu.MENU_RECEPCION,
       mediaId: null,
       mimeType: null,
-      tituloInteractivo: 'Emergencia',
+      tituloInteractivo: 'Recepción',
       recibidoEn: new Date(),
     });
 
     expect(resultado.seleccionInvalida).toBe(false);
     expect(resultado.rutaResuelta).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
+    const solicitudes = await db('solicitudes_atencion_humana').where({
+      conversacion_id: conversacion.id,
+    });
+    expect(solicitudes).toHaveLength(0);
+    const actualizada = await recargarConversacion(conversacion.id);
+    expect(new Date(actualizada.atencion_humana_hasta).getTime()).toBe(hastaOriginal.getTime());
   });
 });
 
@@ -452,6 +558,9 @@ describe('US WA 005 — texto libre después del menú (AC10)', () => {
     expect(actualizada.estado).toBe('esperando_menu');
     expect(actualizada.procesar_despues_de).not.toBeNull();
     expect(global.fetch).not.toHaveBeenCalled(); // nunca se avisa de "opción inválida" por texto libre.
+    await expect(
+      db('alertas_atencion_whatsapp').where({ conversacion_id: conversacion.id }),
+    ).resolves.toHaveLength(0);
 
     await db('conversaciones_whatsapp')
       .where({ id: conversacion.id })

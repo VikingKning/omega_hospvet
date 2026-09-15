@@ -9,10 +9,12 @@ jest.mock('../../src/config/whatsapp');
 jest.mock('../../src/modules/whatsapp/whatsapp.service');
 jest.mock('../../src/modules/whatsapp/whatsapp.outbox');
 jest.mock('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
+jest.mock('../../src/modules/whatsapp/whatsapp.alertas.service');
 const whatsappConfig = require('../../src/config/whatsapp');
 const service = require('../../src/modules/whatsapp/whatsapp.service');
 const outbox = require('../../src/modules/whatsapp/whatsapp.outbox');
 const atencionHumanaService = require('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
+const alertasService = require('../../src/modules/whatsapp/whatsapp.alertas.service');
 const controller = require('../../src/modules/whatsapp/whatsapp.controller');
 
 function makeReq(body) {
@@ -70,8 +72,10 @@ beforeEach(() => {
   service.reenviarSeguimiento.mockResolvedValue({ enviado: true });
   service.reanudarFlujoPendiente.mockResolvedValue({ enviado: true });
   service.enviarSeleccionInvalida.mockResolvedValue(true);
+  service.enviarEnlaceAgenda.mockResolvedValue({ enviado: true });
   outbox.registrarEstadoMeta.mockResolvedValue();
   atencionHumanaService.registrarEchoManual.mockResolvedValue({ id: 1 });
+  alertasService.esRespuestaAAlertaInterna.mockResolvedValue(false);
 });
 
 describe('whatsapp.controller.extraerEventosEntrantes — qué se extrae de cada tipo de mensaje', () => {
@@ -97,6 +101,21 @@ describe('whatsapp.controller.extraerEventosEntrantes — qué se extrae de cada
         mediaId: null,
       },
     ]);
+  });
+
+  it('conserva context.id para excluir respuestas a alertas internas (US WA 018 AC36)', () => {
+    const [evento] = controller.extraerEventosEntrantes(
+      payloadConMensaje({
+        id: 'wamid.respuesta-empleado',
+        from: '5215500000000',
+        timestamp: '1700000000',
+        type: 'text',
+        text: { body: 'Yo la atiendo' },
+        context: { id: 'wamid.alerta-interna' },
+      }),
+    );
+
+    expect(evento.contextWamid).toBe('wamid.alerta-interna');
   });
 
   it('una imagen con caption extrae el caption como contenido y guarda el media id', () => {
@@ -529,6 +548,27 @@ describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en se
     expect(service.reenviarSeguimiento).not.toHaveBeenCalled();
   });
 
+  it('una respuesta a un wamid de alerta interna no entra al router conversacional (US WA 018 AC36)', async () => {
+    alertasService.esRespuestaAAlertaInterna.mockResolvedValue(true);
+    const req = makeReq(
+      payloadConMensaje({
+        id: 'wamid.respuesta-empleado',
+        from: '5215500000000',
+        timestamp: '1700000000',
+        type: 'text',
+        text: { body: 'Yo la atiendo' },
+        context: { id: 'wamid.alerta-interna' },
+      }),
+    );
+    const res = makeRes();
+
+    await controller.recibir(req, res);
+
+    expect(alertasService.esRespuestaAAlertaInterna).toHaveBeenCalledWith('wamid.alerta-interna');
+    expect(service.registrarEventoEntrante).not.toHaveBeenCalled();
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
+  });
+
   it('"volver_menu" dispara enviarMenuPrincipal, igual que un comando de menú explícito (US WA 013 AC3)', async () => {
     service.registrarEventoEntrante.mockResolvedValue({
       id: 6,
@@ -689,6 +729,39 @@ describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en se
     expect(service.enviarMenuPrincipal).not.toHaveBeenCalled();
     expect(service.reenviarSeguimiento).not.toHaveBeenCalled();
   });
+
+  it.each(['agendar_consulta', 'agendar_estetica'])(
+    'la ruta %s dispara su respuesta determinista de agenda (US WA 006)',
+    async (rutaResuelta) => {
+      service.registrarEventoEntrante.mockResolvedValue({
+        id: 11,
+        esNuevo: true,
+        conversacionId: 99,
+        rutaResuelta,
+        telefonoNormalizado: '525500000000',
+      });
+      const req = makeReq(
+        payloadConMensaje({
+          id: 'wamid.agenda',
+          from: '5215500000000',
+          timestamp: '1700000000',
+          type: 'interactive',
+          interactive: { type: 'list_reply', list_reply: { id: 'MENU_AGENDA' } },
+        }),
+      );
+      const res = makeRes();
+
+      await controller.recibir(req, res);
+
+      expect(service.enviarEnlaceAgenda).toHaveBeenCalledWith({
+        conversacionId: 99,
+        telefono: '525500000000',
+        claveBase: 'mensaje:11',
+        ruta: rutaResuelta,
+      });
+      expect(res.sendStatus).toHaveBeenCalledWith(200);
+    },
+  );
 
   it('un webhook de estado se registra vía outbox.registrarEstadoMeta, sin tocar mensajes entrantes (US WA 015 AC3)', async () => {
     const req = makeReq({

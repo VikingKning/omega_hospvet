@@ -94,6 +94,11 @@ const SORT_COLUMNS = ['nombre', 'username', 'correo', 'estatus'];
 // parseEstatusEdicion() para saneamiento de PUT /usuarios/:id.
 const ESTATUS_VALUES_EDITABLES = ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo'];
 
+// Sin vínculo, cualquiera de los cuatro tipos es válido. Cuando sí existe
+// doctor_id, el tipo se fuerza a `doctor` en esta capa y nuevamente en el
+// repository/constraint de base de datos.
+const TIPOS_USUARIO = ['doctor', 'estilista', 'recepcion', 'usuario'];
+
 // US-605: 'cambio_pwd' SÍ es un estatus real que puede tener un usuario
 // (tras un restablecimiento de contraseña), y por consistencia con el
 // resto del listado se puede filtrar por él — pero NUNCA se elige a mano
@@ -334,6 +339,15 @@ function parseDoctorId(rawDoctorId) {
   if (rawDoctorId === undefined || rawDoctorId === null || rawDoctorId === '') return null;
   const id = Number.parseInt(rawDoctorId, 10);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function parseTipoUsuario(rawTipoUsuario, doctorId) {
+  if (doctorId) return 'doctor';
+  return TIPOS_USUARIO.includes(rawTipoUsuario) ? rawTipoUsuario : 'usuario';
+}
+
+function parseBooleanCheckbox(rawValor) {
+  return rawValor === true || rawValor === 'true' || rawValor === 'on' || rawValor === '1';
 }
 
 // Distinto de parseEstatus() de arriba (que también acepta "todos", para
@@ -670,6 +684,8 @@ async function crear({
   username: rawUsername,
   password: rawPassword,
   doctorId: rawDoctorId,
+  tipoUsuario: rawTipoUsuario,
+  notificacionesAlertas: rawNotificacionesAlertas,
   permisos: rawPermisos,
   usuarioId,
 }) {
@@ -704,6 +720,9 @@ async function crear({
     throw new DoctorYaVinculadoError();
   }
 
+  const tipoUsuario = parseTipoUsuario(rawTipoUsuario, doctorId);
+  const notificacionesAlertas = parseBooleanCheckbox(rawNotificacionesAlertas);
+
   const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
   const permissionIds = await aplicarReglaEditarUsuariosIncluyePermisos(
     await aplicarReglaVerImplicaAcciones(parsePermissionIds(rawPermisos)),
@@ -717,6 +736,8 @@ async function crear({
     username,
     passwordHash,
     doctorId,
+    tipoUsuario,
+    notificacionesAlertas,
     permissionIds,
     usuarioId,
   });
@@ -744,6 +765,8 @@ async function editar({
   telefono: rawTelefono,
   username: rawUsername,
   estatus: rawEstatus,
+  tipoUsuario: rawTipoUsuario,
+  notificacionesAlertas: rawNotificacionesAlertas,
   permisos: rawPermisos,
   permisosProvistos,
   usuarioId,
@@ -754,6 +777,8 @@ async function editar({
   const username = validateTexto(rawUsername, 'Username', 50);
   const telefono = parseTelefono(rawTelefono);
   const estatus = parseEstatusEdicion(rawEstatus);
+  const tipoUsuario = parseTipoUsuario(rawTipoUsuario, null);
+  const notificacionesAlertas = parseBooleanCheckbox(rawNotificacionesAlertas);
 
   if (await repository.findByUsername(username, id)) {
     throw new DuplicateUsernameError(await siguienteUsernameDisponible(username, id));
@@ -777,6 +802,8 @@ async function editar({
     telefono,
     username,
     estatus,
+    tipoUsuario,
+    notificacionesAlertas,
     permissionIds,
     usuarioId,
   });
@@ -857,6 +884,8 @@ module.exports = {
   listAreasParaPermisos,
   construirMatrizPermisos,
   parsePermissionIds,
+  parseTipoUsuario,
+  parseBooleanCheckbox,
   crear,
   editar,
   darDeBaja,

@@ -271,6 +271,28 @@
   let usuarioFormDoctores = [];
   let refrescarDoctorClear = () => {};
 
+  // El tipo Doctor depende exclusivamente del vínculo. En alta se activa
+  // al elegir un doctor y vuelve a Usuario al limpiar la selección; en
+  // edición el doctor ya es inmutable, por lo que el control permanece
+  // bloqueado. Esta sincronización es visual: el repository vuelve a
+  // imponer la regla al guardar como defensa ante peticiones manipuladas.
+  function sincronizarTipoUsuarioConDoctor(tieneDoctor) {
+    const input = usuarioFormModalBody.querySelector('#tipoUsuarioInput');
+    const grupo = usuarioFormModalBody.querySelector('#tipoUsuarioToggle');
+    if (!input || !grupo) return;
+
+    if (tieneDoctor) input.value = 'doctor';
+
+    const soloLectura = grupo.dataset.soloLectura === '1';
+    grupo.querySelectorAll('[data-tipo-usuario]').forEach((boton) => {
+      const valor = boton.dataset.tipoUsuario;
+      const activo = valor === input.value;
+      boton.classList.toggle('active', activo);
+      boton.setAttribute('aria-pressed', activo ? 'true' : 'false');
+      boton.disabled = soloLectura || tieneDoctor;
+    });
+  }
+
   function hideDoctorList() {
     const list = document.getElementById('doctorList');
     if (list) list.hidden = true;
@@ -352,6 +374,7 @@
     document.getElementById('doctorIdInput').value = id;
     hideDoctorList();
     refrescarDoctorClear();
+    sincronizarTipoUsuarioConDoctor(Boolean(id));
 
     const nombreInput = document.getElementById('usuarioFormModalBody').querySelector('input[name="nombre"]');
     const apellidosInput = document.getElementById('usuarioFormModalBody').querySelector('input[name="apellidos"]');
@@ -499,6 +522,12 @@
       attachComboboxKeyboardNav(estatusTriggerEl, estatusListEl);
     }
 
+    const doctorIdInicial = usuarioFormModalBody.querySelector('#doctorIdInput')?.value;
+    const doctorVinculadoEnEdicion =
+      !usuarioFormModalBody.querySelector('#doctorIdInput') &&
+      usuarioFormModalBody.querySelector('#tipoUsuarioInput')?.value === 'doctor';
+    sincronizarTipoUsuarioConDoctor(Boolean(doctorIdInicial || doctorVinculadoEnEdicion));
+
     // US-604: el modal solo necesita ser ancho cuando trae la matriz de
     // permisos (usuarios sin usuarios.permisos ven un formulario de una
     // sola columna) — se decide mirando el contenido recién swapeado, no
@@ -507,7 +536,7 @@
     // cualquier otro formulario del sistema hasta ahora.
     usuarioFormModalBody.classList.toggle(
       'modal-card-xwide',
-      Boolean(usuarioFormModalBody.querySelector('.permisos-matrix')),
+      Boolean(usuarioFormModalBody.querySelector('.usuario-config-row')),
     );
 
     openUsuarioFormModal();
@@ -516,9 +545,8 @@
   usuarioFormModalBody.addEventListener('input', (event) => {
     if (event.target.id === 'doctorSearch') {
       renderDoctorList(event.target.value);
-      if (!event.target.value.trim()) {
-        document.getElementById('doctorIdInput').value = '';
-      }
+      document.getElementById('doctorIdInput').value = '';
+      sincronizarTipoUsuarioConDoctor(false);
       return;
     }
 
@@ -609,6 +637,13 @@
   });
 
   usuarioFormModalBody.addEventListener('click', (event) => {
+    const tipoUsuarioBoton = event.target.closest('[data-tipo-usuario]');
+    if (tipoUsuarioBoton && !tipoUsuarioBoton.disabled) {
+      const tipoUsuarioInput = usuarioFormModalBody.querySelector('#tipoUsuarioInput');
+      tipoUsuarioInput.value = tipoUsuarioBoton.dataset.tipoUsuario;
+      sincronizarTipoUsuarioConDoctor(false);
+      return;
+    }
     if (event.target.closest('#usuarioFormClose, #usuarioFormCancel')) {
       closeUsuarioFormModal();
     }

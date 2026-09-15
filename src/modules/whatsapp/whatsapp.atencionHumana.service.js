@@ -1,6 +1,6 @@
 // US WA 017: mecanismo ÚNICO de transferencia temporal de una conversación
 // al personal de Omega — cualquier flujo autorizado (US WA 009 para
-// Emergencia, una historia futura para Recepción) llama a
+// Emergencia y US WA 010 para Recepción) llama a
 // solicitarAtencionHumana() en vez de implementar su propio ciclo de
 // estados/mensajes/vencimiento (AC23/consideración técnica). Esta historia
 // NO decide cuándo llamar a esa función (eso lo decide cada origen, fuera
@@ -9,6 +9,7 @@ const db = require('../../config/database');
 const logger = require('../../config/logger');
 const repository = require('./whatsapp.atencionHumana.repository');
 const outbox = require('./whatsapp.outbox');
+const alertasService = require('./whatsapp.alertas.service');
 
 // AC3/AC4: texto EXACTO dado por la historia (no es una asunción de
 // contenido, a diferencia del resto de textos de este módulo) — nunca
@@ -17,7 +18,21 @@ const outbox = require('./whatsapp.outbox');
 // (consideración técnica).
 const TEXTO_TRANSFERENCIA =
   'Tu conversación ha sido canalizada al personal de Omega para que continúe con la atención. ' +
-  'A partir de este momento, el asistente dejará de responder temporalmente.';
+  'A partir de este momento, el asistente automático dejará de responder temporalmente.';
+
+// WA006 reutiliza el mismo ciclo de transferencia, pero debe explicar por
+// qué no entregó el enlace y nombrar explícitamente a Recepción. El
+// llamador elige una clave cerrada; nunca puede inyectar texto libre en el
+// outbox de atención humana.
+const TEXTO_TRANSFERENCIA_POR_TIPO = {
+  generico: TEXTO_TRANSFERENCIA,
+  agenda_consulta_sin_enlace:
+    'En este momento no podemos mostrar el enlace de reservación para Consulta. ' +
+    'Recepción continuará con tu atención.',
+  agenda_estetica_sin_enlace:
+    'En este momento no podemos mostrar el enlace de reservación para Estética. ' +
+    'Recepción continuará con tu atención.',
+};
 
 // Consideración técnica: "Permitir inicialmente los orígenes controlados
 // emergencia y recepcion, sin utilizar texto libre para decidir el
@@ -58,6 +73,9 @@ async function solicitarAtencionHumana({
   referenciasFuncionales,
   envioPrevioId,
   destinatarioTelefono,
+  tipoAviso = 'generico',
+  origenAlerta = origen,
+  registrarAlerta = true,
   ahora = new Date(),
   trx,
 }) {
@@ -71,12 +89,17 @@ async function solicitarAtencionHumana({
       'conversacionId, claveIdempotencia y destinatarioTelefono son obligatorios.',
     );
   }
+  if (!Object.hasOwn(TEXTO_TRANSFERENCIA_POR_TIPO, tipoAviso)) {
+    throw new AtencionHumanaValidationError(
+      `Tipo de aviso de atención humana no controlado: "${tipoAviso}".`,
+    );
+  }
 
   // Solicitud + intención de outbox forman una sola unidad. Así un reinicio
   // nunca puede dejar una solicitud existente sin el mensaje que debe
   // ejecutar, y una reentrega puede reutilizar ambos registros.
   if (!trx) {
-    return db.transaction((transaccion) =>
+    const resultado = await db.transaction((transaccion) =>
       solicitarAtencionHumana({
         conversacionId,
         origen,
@@ -85,10 +108,14 @@ async function solicitarAtencionHumana({
         referenciasFuncionales,
         envioPrevioId,
         destinatarioTelefono,
+        tipoAviso,
+        origenAlerta,
+        registrarAlerta,
         ahora,
         trx: transaccion,
       }),
     );
+    return resultado;
   }
 
   const { solicitud, esNueva } = await repository.solicitarAtencionHumana({
@@ -118,13 +145,34 @@ async function solicitarAtencionHumana({
       payloadFuncional: {
         tipo: 'text',
         destinatarioTelefono,
-        texto: TEXTO_TRANSFERENCIA,
+        texto: TEXTO_TRANSFERENCIA_POR_TIPO[tipoAviso],
       },
       usaPlantilla: false,
     },
     trx,
   );
   await repository.marcarSolicitudOutbox(solicitud.id, intent.intent_id, trx);
+
+  // WA018/WA019: toda transferencia autorizada persiste la solicitud de
+  // alerta central dentro de la misma unidad transaccional. Destinatarios y
+  // canales se resuelven después en el worker WA018, de modo que un fallo
+  // temporal de esa fase no pierde la solicitud ya aceptada.
+  if (registrarAlerta) {
+    await alertasService.registrarSolicitudAlerta({
+      claveIdempotencia: `atencion_humana:${claveIdempotencia}`,
+      tipoAlerta: origen,
+      conversacionId,
+      grupoId: referenciasFuncionales?.groupId ?? null,
+      mensajeOrigenId: referenciasFuncionales?.mensajeOrigenId ?? null,
+      whatsappMessageIdOrigen: referenciasFuncionales?.whatsappMessageId ?? null,
+      telefonoExterno: destinatarioTelefono,
+      origen: origenAlerta,
+      solicitadaEn: ahora,
+      tokensEntrada: 0,
+      tokensSalida: 0,
+      trx,
+    });
+  }
 
   return { ...solicitud, outbox_id: intent.intent_id };
 }
@@ -228,4 +276,5 @@ module.exports = {
   registrarEchoManual,
   AtencionHumanaValidationError,
   TEXTO_TRANSFERENCIA,
+  TEXTO_TRANSFERENCIA_POR_TIPO,
 };

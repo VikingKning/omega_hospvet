@@ -6,10 +6,12 @@
 // clave_idempotencia) vive en tests/integration/whatsapp.atencionHumana.test.js.
 jest.mock('../../src/modules/whatsapp/whatsapp.atencionHumana.repository');
 jest.mock('../../src/modules/whatsapp/whatsapp.outbox');
+jest.mock('../../src/modules/whatsapp/whatsapp.alertas.service');
 jest.mock('../../src/config/database');
 const db = require('../../src/config/database');
 const repository = require('../../src/modules/whatsapp/whatsapp.atencionHumana.repository');
 const outbox = require('../../src/modules/whatsapp/whatsapp.outbox');
+const alertasService = require('../../src/modules/whatsapp/whatsapp.alertas.service');
 const {
   solicitarAtencionHumana,
   procesarSiguienteSolicitudPendiente,
@@ -17,11 +19,16 @@ const {
   registrarEchoManual,
   AtencionHumanaValidationError,
   TEXTO_TRANSFERENCIA,
+  TEXTO_TRANSFERENCIA_POR_TIPO,
 } = require('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 
 beforeEach(() => {
   jest.clearAllMocks();
   db.transaction = jest.fn((cb) => cb('trx-fake'));
+  alertasService.registrarSolicitudAlerta.mockResolvedValue({
+    alerta: { id: 88 },
+    esNueva: true,
+  });
 });
 
 describe('whatsapp.atencionHumana.service.solicitarAtencionHumana', () => {
@@ -65,6 +72,27 @@ describe('whatsapp.atencionHumana.service.solicitarAtencionHumana', () => {
     );
   });
 
+  it('WA019 conserva menu_recepcion como origen de la alerta sin cambiar WA017', async () => {
+    repository.solicitarAtencionHumana.mockResolvedValue({
+      solicitud: { id: 5 },
+      esNueva: true,
+    });
+    outbox.registrarIntento.mockResolvedValue({ intent: { intent_id: 99 } });
+
+    await solicitarAtencionHumana({
+      ...paramsBase,
+      origen: 'recepcion',
+      origenAlerta: 'menu_recepcion',
+    });
+
+    expect(repository.solicitarAtencionHumana).toHaveBeenCalledWith(
+      expect.objectContaining({ origen: 'recepcion' }),
+    );
+    expect(alertasService.registrarSolicitudAlerta).toHaveBeenCalledWith(
+      expect.objectContaining({ tipoAlerta: 'recepcion', origen: 'menu_recepcion' }),
+    );
+  });
+
   it('una solicitud nueva registra de inmediato la intención de envío genérica (AC1/AC3)', async () => {
     repository.solicitarAtencionHumana.mockResolvedValue({
       solicitud: { id: 5, conversacion_id: 10 },
@@ -91,10 +119,55 @@ describe('whatsapp.atencionHumana.service.solicitarAtencionHumana', () => {
       'trx-fake',
     );
     expect(repository.marcarSolicitudOutbox).toHaveBeenCalledWith(5, 99, 'trx-fake');
+    expect(alertasService.registrarSolicitudAlerta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claveIdempotencia: 'atencion_humana:clave-1',
+        tipoAlerta: 'emergencia',
+        conversacionId: 10,
+        origen: 'emergencia',
+        solicitadaEn: expect.any(Date),
+        trx: 'trx-fake',
+      }),
+    );
     expect(resultado).toEqual(expect.objectContaining({ id: 5, outbox_id: 99 }));
   });
 
+  it('WA006 selecciona un aviso controlado de Recepción sin aceptar texto libre', async () => {
+    repository.solicitarAtencionHumana.mockResolvedValue({
+      solicitud: { id: 6, conversacion_id: 10 },
+      esNueva: true,
+    });
+    outbox.registrarIntento.mockResolvedValue({ intent: { intent_id: 100 } });
+
+    await solicitarAtencionHumana({
+      ...paramsBase,
+      origen: 'recepcion',
+      tipoAviso: 'agenda_estetica_sin_enlace',
+    });
+
+    expect(outbox.registrarIntento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payloadFuncional: expect.objectContaining({
+          texto: TEXTO_TRANSFERENCIA_POR_TIPO.agenda_estetica_sin_enlace,
+        }),
+      }),
+      'trx-fake',
+    );
+    expect(TEXTO_TRANSFERENCIA_POR_TIPO.agenda_estetica_sin_enlace).toContain('Recepción');
+  });
+
+  it('rechaza una clave de aviso no controlada', async () => {
+    await expect(
+      solicitarAtencionHumana({ ...paramsBase, tipoAviso: 'texto_inventado' }),
+    ).rejects.toThrow(AtencionHumanaValidationError);
+    expect(repository.solicitarAtencionHumana).not.toHaveBeenCalled();
+  });
+
   it('el texto genérico nunca menciona información clínica ni interna (AC3/AC4)', () => {
+    expect(TEXTO_TRANSFERENCIA).toBe(
+      'Tu conversación ha sido canalizada al personal de Omega para que continúe con la atención. ' +
+        'A partir de este momento, el asistente automático dejará de responder temporalmente.',
+    );
     const textoBajo = TEXTO_TRANSFERENCIA.toLowerCase();
     expect(textoBajo).not.toContain('emergencia');
     expect(textoBajo).not.toContain('recepcion');
@@ -116,6 +189,19 @@ describe('whatsapp.atencionHumana.service.solicitarAtencionHumana', () => {
     );
     expect(outbox.registrarIntento).toHaveBeenCalledWith(expect.any(Object), trxFake);
     expect(repository.marcarSolicitudOutbox).toHaveBeenCalledWith(5, 99, trxFake);
+  });
+
+  it('WA016 puede registrar la alerta desde su señal sin duplicarla en WA017', async () => {
+    repository.solicitarAtencionHumana.mockResolvedValue({
+      solicitud: { id: 5, conversacion_id: 10 },
+      esNueva: true,
+    });
+    outbox.registrarIntento.mockResolvedValue({ intent: { intent_id: 99 } });
+
+    await solicitarAtencionHumana({ ...paramsBase, registrarAlerta: false, trx: 'trx-fake' });
+
+    expect(alertasService.registrarSolicitudAlerta).not.toHaveBeenCalled();
+    expect(outbox.registrarIntento).toHaveBeenCalledTimes(1);
   });
 
   it('una solicitud duplicada (esNueva:false) reutiliza el registro sin volver a registrar el envío (AC2)', async () => {

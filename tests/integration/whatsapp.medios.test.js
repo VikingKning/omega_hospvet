@@ -340,6 +340,17 @@ describe('US WA 014 — grupo sin texto procesable: solicita explicación (AC4)'
     const body = JSON.parse(opciones.body);
     expect(body.type).toBe('text');
     expect(JSON.stringify(body)).not.toContain('media-img');
+    const grupo = await db('grupos_whatsapp')
+      .where({ conversacion_id: conversacion.id })
+      .orderBy('group_id', 'desc')
+      .first();
+    expect(grupo).toMatchObject({
+      ruta_enrutamiento: 'medio_sin_texto',
+      intencion_resuelta: 'solicitar_descripcion_medio',
+      resultado_decision: 'solicitud_descripcion_medio',
+      tokens_entrada: 0,
+      tokens_salida: 0,
+    });
   });
 });
 
