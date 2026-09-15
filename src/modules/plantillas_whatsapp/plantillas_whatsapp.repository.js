@@ -229,10 +229,11 @@ async function findBySlug(slug) {
 // Cada vez que una plantilla resuelve de verdad un mensaje entrante —
 // nunca se había incrementado hasta ahora, la columna existe desde el
 // alta original (US-613) sin ningún flujo real que la tocara.
-async function incrementarUso(id) {
-  await db('plantillas_whatsapp')
+async function incrementarUso(id, trx) {
+  const conexion = trx ?? db;
+  await conexion('plantillas_whatsapp')
     .where({ id })
-    .update({ veces_usada: db.raw('veces_usada + 1') });
+    .update({ veces_usada: conexion.raw('veces_usada + 1') });
 }
 
 // Sincronización con Meta: se consultan todas las plantillas locales que

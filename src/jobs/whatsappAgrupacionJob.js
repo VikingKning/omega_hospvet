@@ -9,6 +9,7 @@ const env = require('../config/env');
 const logger = require('../config/logger');
 const { isWhatsappConfigured } = require('../config/whatsapp');
 const service = require('../modules/whatsapp/whatsapp.service');
+let cicloEnCurso = false;
 
 // Drena TODAS las conversaciones vencidas del ciclo actual, no solo una —
 // si varias vencen casi juntas, procesar una por ciclo sería demasiado
@@ -34,10 +35,16 @@ function start() {
     `Agrupación de mensajes de WhatsApp por ventana de inactividad activa, cada ${env.whatsapp.agrupacionPollIntervalSeconds}s.`,
   );
 
-  return setInterval(() => {
-    revisarConversacionesVencidas().catch((err) => {
+  return setInterval(async () => {
+    if (cicloEnCurso) return;
+    cicloEnCurso = true;
+    try {
+      await revisarConversacionesVencidas();
+    } catch (err) {
       logger.error({ err }, 'Falló un ciclo de agrupación de conversaciones de WhatsApp vencidas.');
-    });
+    } finally {
+      cicloEnCurso = false;
+    }
   }, intervalMs);
 }
 

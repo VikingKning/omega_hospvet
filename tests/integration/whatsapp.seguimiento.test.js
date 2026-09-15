@@ -124,6 +124,24 @@ describe('US WA 013 — envío del seguimiento (AC1)', () => {
     expect(ganadores).toHaveLength(1);
   });
 
+  it('un fallo de Meta no confirma el recordatorio y aplica backoff antes de reintentar', async () => {
+    const conversacion = await crearConversacion('525500010099', {
+      recordatorio_programado_en: new Date(Date.now() - 1000),
+    });
+    global.fetch = jest.fn().mockRejectedValue(new Error('red caída'));
+
+    await service.procesarSiguienteSeguimientoPendiente();
+
+    const actualizada = await recargar(conversacion.id);
+    expect(actualizada.recordatorio_enviado_en).toBeNull();
+    expect(actualizada.recordatorio_reclamado_en).not.toBeNull();
+    expect(actualizada.flujo_expira_en).toBeNull();
+
+    // El drain loop no puede reclamar la misma fila otra vez en este ciclo.
+    await expect(service.procesarSiguienteSeguimientoPendiente()).resolves.toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('una conversación en estado distinto de esperando_menu/flujo_activo no recibe seguimiento (AC8)', async () => {
     await crearConversacion('525500010005', {
       estado: 'atencion_humana',
@@ -320,7 +338,7 @@ describe('US WA 013 — respuesta del tutor al seguimiento (AC2/AC3/AC4/AC5)', (
       },
     );
 
-    expect(resultado.seguimientoAccion).toBe('continuar');
+    expect(resultado.seguimientoAccion).toBe('continuar_texto');
     const actualizada = await recargar(conversacion.id);
     expect(actualizada.estado).toBe('esperando_menu');
     expect(actualizada.recordatorio_enviado_en).toBeNull();

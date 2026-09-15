@@ -8,9 +8,11 @@
 jest.mock('../../src/config/whatsapp');
 jest.mock('../../src/modules/whatsapp/whatsapp.service');
 jest.mock('../../src/modules/whatsapp/whatsapp.outbox');
+jest.mock('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 const whatsappConfig = require('../../src/config/whatsapp');
 const service = require('../../src/modules/whatsapp/whatsapp.service');
 const outbox = require('../../src/modules/whatsapp/whatsapp.outbox');
+const atencionHumanaService = require('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 const controller = require('../../src/modules/whatsapp/whatsapp.controller');
 
 function makeReq(body) {
@@ -18,7 +20,7 @@ function makeReq(body) {
     rawBody: Buffer.from(JSON.stringify(body)),
     body,
     get: () => 'sha256=firma-fake',
-    log: { error: jest.fn() },
+    log: { error: jest.fn(), warn: jest.fn() },
   };
 }
 
@@ -43,14 +45,33 @@ function payloadConMensaje(mensaje) {
   };
 }
 
+function payloadConEco(echo) {
+  return {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: '123',
+        changes: [
+          {
+            value: { metadata: { phone_number_id: 'phone-1' }, message_echoes: [echo] },
+            field: 'smb_message_echoes',
+          },
+        ],
+      },
+    ],
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   whatsappConfig.verificarFirma.mockReturnValue(true);
   service.registrarEventoEntrante.mockResolvedValue({ id: 1, esNuevo: true });
   service.enviarMenuPrincipal.mockResolvedValue(true);
   service.reenviarSeguimiento.mockResolvedValue({ enviado: true });
+  service.reanudarFlujoPendiente.mockResolvedValue({ enviado: true });
   service.enviarSeleccionInvalida.mockResolvedValue(true);
   outbox.registrarEstadoMeta.mockResolvedValue();
+  atencionHumanaService.registrarEchoManual.mockResolvedValue({ id: 1 });
 });
 
 describe('whatsapp.controller.extraerEventosEntrantes — qué se extrae de cada tipo de mensaje', () => {
@@ -295,6 +316,51 @@ describe('whatsapp.controller.extraerEstadosEntrantes — US WA 015 AC3', () => 
   });
 });
 
+describe('whatsapp.controller.extraerEventosEcoEntrantes — US WA 017 (AC25/AC35)', () => {
+  it('extrae whatsappMessageId/telefonoTutor/tipoMensaje/timestamp/phoneNumberId de un smb_message_echoes', () => {
+    const eventos = controller.extraerEventosEcoEntrantes({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: { phone_number_id: 'phone-1' },
+                smb_message_echoes: [
+                  { id: 'wamid.eco-1', to: '5215500000000', type: 'text', timestamp: '1700000000' },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(eventos).toEqual([
+      {
+        whatsappMessageId: 'wamid.eco-1',
+        telefonoTutor: '5215500000000',
+        tipoMensaje: 'text',
+        timestamp: '1700000000',
+        phoneNumberId: 'phone-1',
+      },
+    ]);
+  });
+
+  it('un payload sin smb_message_echoes no produce ningún evento de eco', () => {
+    const eventos = controller.extraerEventosEcoEntrantes(
+      payloadConMensaje({
+        id: 'wamid.1',
+        from: '5215500000000',
+        timestamp: '1700000000',
+        type: 'text',
+        text: { body: 'hola' },
+      }),
+    );
+
+    expect(eventos).toEqual([]);
+  });
+});
+
 describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en segundo plano (US WA 003 AC4/AC9)', () => {
   it('un mensaje nuevo con contenido se persiste sin disparar ningún procesamiento', async () => {
     const req = makeReq(
@@ -524,7 +590,7 @@ describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en se
     });
   });
 
-  it('"continuar" con estadoResultante flujo_activo no dispara ningún envío (nada real que reenviar todavía)', async () => {
+  it('"continuar" con estadoResultante flujo_activo reconstruye el paso pendiente sin Claude', async () => {
     service.registrarEventoEntrante.mockResolvedValue({
       id: 8,
       esNuevo: true,
@@ -532,6 +598,8 @@ describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en se
       disparaMenuInmediato: false,
       seguimientoAccion: 'continuar',
       estadoResultante: 'flujo_activo',
+      flujoActualResultante: 'emergencia',
+      pasoActualResultante: 'esperando_descripcion',
       telefonoNormalizado: '525500000000',
     });
     const req = makeReq(
@@ -549,6 +617,13 @@ describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en se
 
     expect(service.enviarMenuPrincipal).not.toHaveBeenCalled();
     expect(service.reenviarSeguimiento).not.toHaveBeenCalled();
+    expect(service.reanudarFlujoPendiente).toHaveBeenCalledWith({
+      conversacionId: 99,
+      telefono: '525500000000',
+      mensajeId: 8,
+      flujoActual: 'emergencia',
+      pasoActual: 'esperando_descripcion',
+    });
   });
 
   it('"invalido" reenvía la misma pregunta de seguimiento (US WA 013 AC5)', async () => {
@@ -636,6 +711,82 @@ describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en se
       estadoMeta: 'sent',
     });
     expect(service.registrarEventoEntrante).not.toHaveBeenCalled();
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
+  });
+});
+
+describe('whatsapp.controller.recibir — smb_message_echoes (US WA 017 AC25-AC31/AC34/AC35)', () => {
+  it('un eco válido se despacha a atencionHumanaService.registrarEchoManual con los campos extraídos', async () => {
+    const req = makeReq(
+      payloadConEco({
+        id: 'wamid.eco-1',
+        to: '5215500000000',
+        type: 'text',
+        timestamp: '1700000000',
+      }),
+    );
+    const res = makeRes();
+
+    await controller.recibir(req, res);
+
+    expect(atencionHumanaService.registrarEchoManual).toHaveBeenCalledWith({
+      whatsappMessageId: 'wamid.eco-1',
+      telefonoTutor: '5215500000000',
+      phoneNumberId: 'phone-1',
+      tipoMensaje: 'text',
+      recibidoEn: new Date(1700000000 * 1000),
+    });
+    expect(service.registrarEventoEntrante).not.toHaveBeenCalled();
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
+  });
+
+  it.each([
+    ['sin id', { to: '5215500000000', type: 'text', timestamp: '1700000000' }],
+    ['sin to', { id: 'wamid.eco-1', type: 'text', timestamp: '1700000000' }],
+    ['sin timestamp', { id: 'wamid.eco-1', to: '5215500000000', type: 'text' }],
+  ])(
+    'un eco incompleto (%s) se ignora con un warning, sin llamar a registrarEchoManual (AC34)',
+    async (_caso, echo) => {
+      const req = makeReq(payloadConEco(echo));
+      const res = makeRes();
+
+      await controller.recibir(req, res);
+
+      expect(req.log.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ echo: expect.any(Object) }),
+        expect.stringContaining('AC34'),
+      );
+      expect(atencionHumanaService.registrarEchoManual).not.toHaveBeenCalled();
+      expect(res.sendStatus).toHaveBeenCalledWith(200);
+    },
+  );
+
+  it('un eco sin phone_number_id (metadata ausente) se ignora con un warning (AC34)', async () => {
+    const req = makeReq({
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: '123',
+          changes: [
+            {
+              value: {
+                metadata: {},
+                smb_message_echoes: [
+                  { id: 'wamid.eco-1', to: '5215500000000', type: 'text', timestamp: '1700000000' },
+                ],
+              },
+              field: 'messages',
+            },
+          ],
+        },
+      ],
+    });
+    const res = makeRes();
+
+    await controller.recibir(req, res);
+
+    expect(req.log.warn).toHaveBeenCalled();
+    expect(atencionHumanaService.registrarEchoManual).not.toHaveBeenCalled();
     expect(res.sendStatus).toHaveBeenCalledWith(200);
   });
 });

@@ -41,6 +41,15 @@ beforeEach(() => {
     .spyOn(whatsappConfig, 'messagesUrl')
     .mockReturnValue('https://graph.facebook.com/fake/messages');
   jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
+  repository.reclamarIntentoEnvio.mockImplementation(async (clave) => {
+    const intent = await repository.buscarIntentoPorClave(clave);
+    const reclamado = Boolean(
+      intent &&
+      !intent.wamid &&
+      !['enviado', 'cancelado', 'ventana_servicio_expirada', 'enviando'].includes(intent.estado),
+    );
+    return { intent, reclamado };
+  });
 });
 
 afterEach(() => {
@@ -54,7 +63,10 @@ describe('whatsapp.outbox.registrarIntento', () => {
 
     const resultado = await registrarIntento({ claveIdempotencia: 'clave-1' });
 
-    expect(repository.registrarIntentoEnvio).toHaveBeenCalledWith({ claveIdempotencia: 'clave-1' });
+    expect(repository.registrarIntentoEnvio).toHaveBeenCalledWith(
+      { claveIdempotencia: 'clave-1' },
+      undefined,
+    );
     expect(resultado.esNuevo).toBe(true);
   });
 });

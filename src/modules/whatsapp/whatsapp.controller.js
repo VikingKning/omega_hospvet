@@ -1,6 +1,7 @@
 const whatsapp = require('../../config/whatsapp');
 const service = require('./whatsapp.service');
 const outbox = require('./whatsapp.outbox');
+const atencionHumanaService = require('./whatsapp.atencionHumana.service');
 
 // Handshake de Meta al registrar el webhook (GET, una sola vez) — repite
 // `hub.challenge` tal cual si `hub.verify_token` coincide con el valor que
@@ -136,6 +137,50 @@ function extraerEstadosEntrantes(body) {
   return estados;
 }
 
+// US WA 017 (AC25/AC35): `field=smb_message_echoes` con
+// `value.message_echoes[]` — un mensaje que una
+// PERSONA (no el bot) mandó desde la app o un dispositivo vinculado del
+// número oficial de WhatsApp Business de Omega. Meta lo entrega como un
+// arreglo propio dentro del mismo `value`, nunca mezclado con
+// `messages`/`statuses`. ASUNCIÓN DE CONTENIDO (no hay forma de
+// verificarlo sin un envío real desde la app): cada entrada tiene la misma
+// forma que un mensaje normal, pero el destinatario (el tutor) viaja en
+// `to`, no en `from` (`from` ahí es el propio número de Omega) — si Meta
+// resulta usar otro nombre de campo, esto necesitará un ajuste puntual una
+// vez confirmado en vivo.
+function extraerEventosEcoEntrantes(body) {
+  const entradas = body?.entry ?? [];
+  const eventos = [];
+  for (const entrada of entradas) {
+    for (const cambio of entrada.changes ?? []) {
+      const phoneNumberId = cambio.value?.metadata?.phone_number_id ?? null;
+      // Meta ha documentado/entregado esta suscripción con el nombre del
+      // campo en `changes[].field` y los elementos dentro de
+      // `value.message_echoes`; se conserva además la forma anterior para
+      // tolerar fixtures y versiones ya observadas.
+      const ecosCandidatos = [
+        ...(cambio.value?.message_echoes ?? []),
+        ...(cambio.value?.smb_message_echoes ?? []),
+      ];
+      const ecos = ecosCandidatos.filter(
+        (echo, indice) =>
+          !echo?.id ||
+          ecosCandidatos.findIndex((candidato) => candidato?.id === echo.id) === indice,
+      );
+      for (const echo of ecos) {
+        eventos.push({
+          whatsappMessageId: echo.id,
+          telefonoTutor: echo.to,
+          tipoMensaje: echo.type ?? 'unknown',
+          timestamp: echo.timestamp,
+          phoneNumberId,
+        });
+      }
+    }
+  }
+  return eventos;
+}
+
 // Recepción real de mensajes (POST). Verifica la firma ANTES que nada —
 // 401 si no coincide (AC12: nunca se persiste ni se procesa nada sin
 // firma real de Meta). Con firma válida, PERSISTE cada evento y responde
@@ -201,6 +246,21 @@ async function recibir(req, res) {
           .catch((err) =>
             req.log.error({ err }, 'Falló el reenvío del menú tras "Continuar" (US WA 013 AC2).'),
           );
+      } else if (
+        resultado?.seguimientoAccion === 'continuar' &&
+        resultado.estadoResultante === 'flujo_activo'
+      ) {
+        service
+          .reanudarFlujoPendiente({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            mensajeId: resultado.id,
+            flujoActual: resultado.flujoActualResultante,
+            pasoActual: resultado.pasoActualResultante,
+          })
+          .catch((err) =>
+            req.log.error({ err }, 'Falló la reanudación del flujo activo (US WA 013 AC2).'),
+          );
       } else if (resultado?.seguimientoAccion === 'invalido') {
         service
           .reenviarSeguimiento({
@@ -241,10 +301,53 @@ async function recibir(req, res) {
               'Falló el envío de un paso de consulta de laboratorio (US WA 007).',
             ),
           );
+      } else if (resultado?.disparaSolicitudEmergencia) {
+        // US WA 009 (AC1-AC3): MENU_EMERGENCIA disparó "Por favor,
+        // descríbenos cuál es tu emergencia." — el envío es fire-and-forget
+        // (nunca bloquea el 200 del webhook), mismo criterio que el resto
+        // de estas ramas.
+        service
+          .enviarSolicitudEmergencia({
+            conversacionId: resultado.conversacionId,
+            telefono: resultado.telefonoNormalizado,
+            claveBase: `mensaje:${resultado.id}`,
+          })
+          .catch((err) =>
+            req.log.error(
+              { err },
+              'Falló el envío de la solicitud de descripción de emergencia (US WA 009 AC1).',
+            ),
+          );
       }
     }
     for (const estadoEvento of estados) {
       await outbox.registrarEstadoMeta(estadoEvento);
+    }
+    // US WA 017 (AC25-AC31/AC34/AC35): mensaje manual del personal de Omega.
+    for (const echo of extraerEventosEcoEntrantes(req.body)) {
+      // AC34: un evento saliente que no se puede correlacionar (aquí, uno
+      // sin los campos mínimos para identificarlo como eco real) nunca se
+      // asume enviado por una persona — se registra la anomalía y se
+      // conserva el estado actual, sin tocar nada.
+      if (
+        !echo.whatsappMessageId ||
+        !echo.telefonoTutor ||
+        !echo.phoneNumberId ||
+        !echo.timestamp
+      ) {
+        req.log.warn(
+          { echo },
+          'smb_message_echoes con campos incompletos; se ignora (US WA 017 AC34).',
+        );
+        continue;
+      }
+      await atencionHumanaService.registrarEchoManual({
+        whatsappMessageId: echo.whatsappMessageId,
+        telefonoTutor: echo.telefonoTutor,
+        phoneNumberId: echo.phoneNumberId,
+        tipoMensaje: echo.tipoMensaje,
+        recibidoEn: new Date(Number(echo.timestamp) * 1000),
+      });
     }
   } catch (err) {
     req.log.error({ err }, 'Error de BD al persistir mensajes entrantes de WhatsApp.');
@@ -254,4 +357,10 @@ async function recibir(req, res) {
   return res.sendStatus(200);
 }
 
-module.exports = { verificar, recibir, extraerEventosEntrantes, extraerEstadosEntrantes };
+module.exports = {
+  verificar,
+  recibir,
+  extraerEventosEntrantes,
+  extraerEstadosEntrantes,
+  extraerEventosEcoEntrantes,
+};

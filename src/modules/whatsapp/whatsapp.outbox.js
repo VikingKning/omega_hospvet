@@ -51,9 +51,12 @@ async function enviarAMeta(payload) {
   return { res, data };
 }
 
-// AC1: registra la intención ANTES de que se intente enviar.
-async function registrarIntento(datos) {
-  return repository.registrarIntentoEnvio(datos);
+// AC1: registra la intención ANTES de que se intente enviar. `trx`
+// opcional (US WA 009): permite componer este registro dentro de la
+// transacción atómica de un llamador (AC23) — omitido, se comporta
+// exactamente igual que antes (una escritura suelta contra `db`).
+async function registrarIntento(datos, trx) {
+  return repository.registrarIntentoEnvio(datos, trx);
 }
 
 // AC2/AC3/AC4/AC5: ejecuta (o reutiliza) UN intento ya registrado. Siempre
@@ -61,7 +64,7 @@ async function registrarIntento(datos) {
 // memoria, para no arrastrar un estado potencialmente obsoleto entre
 // reintentos.
 async function ejecutarIntento(claveIdempotencia) {
-  const intent = await repository.buscarIntentoPorClave(claveIdempotencia);
+  const { intent, reclamado } = await repository.reclamarIntentoEnvio(claveIdempotencia);
   if (!intent) {
     throw new Error(`No existe una intención de envío con clave "${claveIdempotencia}".`);
   }
@@ -70,12 +73,24 @@ async function ejecutarIntento(claveIdempotencia) {
     return { enviado: true, yaEnviado: true, wamid: intent.wamid };
   }
 
+  if (intent.estado === 'cancelado') {
+    return { enviado: false, motivo: 'cancelado' };
+  }
+
+  if (intent.estado === 'ventana_servicio_expirada') {
+    return { enviado: false, motivo: 'ventana_servicio_expirada' };
+  }
+
   // AC2: Meta ya aceptó el mensaje en un intento anterior y el proceso se
   // cayó antes de terminar la operación local — se finaliza SIN volver a
   // llamar a Meta.
   if (intent.wamid) {
     await repository.marcarResultadoEnvio(intent.intent_id, { estado: 'enviado' });
     return { enviado: true, yaEnviado: true, wamid: intent.wamid };
+  }
+
+  if (!reclamado) {
+    return { enviado: false, motivo: 'envio_en_progreso' };
   }
 
   // AC5: solo los envíos conversacionales están sujetos a la ventana de
@@ -90,8 +105,6 @@ async function ejecutarIntento(claveIdempotencia) {
       return { enviado: false, motivo: 'ventana_servicio_expirada' };
     }
   }
-
-  await repository.incrementarIntento(intent.intent_id);
 
   let res;
   let data;
@@ -125,8 +138,8 @@ async function ejecutarIntento(claveIdempotencia) {
 }
 
 // AC3: aplicado por whatsapp.controller.js#recibir para cada webhook de
-// estado — nunca truena el webhook completo si el wamid no corresponde a
-// ningún intento local (solo se advierte).
+// estado. Si el POST aun no guarda el wamid, el repositorio conserva el
+// evento temporalmente y lo enlaza al finalizar ese POST.
 async function registrarEstadoMeta({ wamid, estadoMeta }) {
   const encontrado = await repository.aplicarEstadoMeta(wamid, estadoMeta);
   if (!encontrado) {

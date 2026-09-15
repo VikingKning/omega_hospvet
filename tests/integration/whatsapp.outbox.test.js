@@ -39,6 +39,9 @@ afterAll(async () => {
   const conversacionIds = await db('conversaciones_whatsapp')
     .where('phone_number_id', PHONE_NUMBER_ID)
     .pluck('id');
+  await db('estados_meta_whatsapp_pendientes')
+    .where('wamid', 'like', `wamid.${CLAVE_PREFIX}%`)
+    .del();
   await db('outbox_whatsapp').where('clave_idempotencia', 'like', `${CLAVE_PREFIX}%`).del();
   await db('conversaciones_whatsapp').whereIn('id', conversacionIds).del();
   await db.destroy();
@@ -130,6 +133,28 @@ describe('outbox_whatsapp — estados de Meta vía webhook (US WA 015 AC3)', () 
     expect(filas).toHaveLength(1);
     expect(filas[0].estado_meta).toBe('delivered');
   });
+
+  it('conserva y enlaza un estado que llega antes de persistir el wamid', async () => {
+    const wamid = `wamid.${CLAVE_PREFIX}estado-temprano`;
+    const clave = `${CLAVE_PREFIX}estado-temprano`;
+
+    const res = await postEstado(wamid, 'delivered');
+
+    expect(res.status).toBe(200);
+    await expect(
+      db('estados_meta_whatsapp_pendientes').where({ wamid }).first(),
+    ).resolves.toMatchObject({ estado_meta: 'delivered' });
+
+    const intent = await crearIntentoDirecto(clave);
+    await repository.marcarWamid(intent.intent_id, wamid);
+
+    await expect(db('outbox_whatsapp').where({ wamid }).first()).resolves.toMatchObject({
+      estado_meta: 'delivered',
+    });
+    await expect(
+      db('estados_meta_whatsapp_pendientes').where({ wamid }).first(),
+    ).resolves.toBeUndefined();
+  });
 });
 
 describe('outbox_whatsapp — ventana de servicio de 24h (US WA 015 AC5)', () => {
@@ -215,5 +240,78 @@ describe('outbox_whatsapp — idempotencia de wamid (índice único real)', () =
     const filas = await db('outbox_whatsapp').where('wamid', 'wamid.compartido');
     expect(filas).toHaveLength(1);
     expect(filas[0].intent_id).toBe(intentA.intent_id);
+  });
+});
+
+describe('outbox_whatsapp — reclamo concurrente recuperable (US WA 015 AC2)', () => {
+  it('dos ejecutores simultáneos producen una sola llamada a Meta', async () => {
+    const clave = `${CLAVE_PREFIX}concurrencia`;
+    await crearIntentoDirecto(clave);
+    let liberarFetch;
+    global.fetch = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          liberarFetch = () =>
+            resolve({
+              ok: true,
+              json: () => Promise.resolve({ messages: [{ id: 'wamid.concurrente' }] }),
+            });
+        }),
+    );
+    jest
+      .spyOn(whatsappConfig, 'messagesUrl')
+      .mockReturnValue('https://graph.facebook.com/fake/messages');
+    jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
+
+    const primero = outbox.ejecutarIntento(clave);
+    while (global.fetch.mock.calls.length === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const segundo = await outbox.ejecutarIntento(clave);
+    expect(segundo).toEqual({ enviado: false, motivo: 'envio_en_progreso' });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    liberarFetch();
+    await expect(primero).resolves.toEqual({ enviado: true, wamid: 'wamid.concurrente' });
+  });
+
+  it('un intento cancelado por atención humana nunca llama a Meta', async () => {
+    const clave = `${CLAVE_PREFIX}cancelado`;
+    const intent = await crearIntentoDirecto(clave);
+    await db('outbox_whatsapp')
+      .where({ intent_id: intent.intent_id })
+      .update({ estado: 'cancelado' });
+    global.fetch = jest.fn();
+
+    await expect(outbox.ejecutarIntento(clave)).resolves.toEqual({
+      enviado: false,
+      motivo: 'cancelado',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('un lease enviando abandonado se recupera después del umbral', async () => {
+    const clave = `${CLAVE_PREFIX}lease-abandonado`;
+    const intent = await crearIntentoDirecto(clave);
+    await db('outbox_whatsapp')
+      .where({ intent_id: intent.intent_id })
+      .update({
+        estado: 'enviando',
+        actualizado_en: new Date(Date.now() - 10 * 60 * 1000),
+      });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [{ id: 'wamid.lease-recuperado' }] }),
+    });
+    jest
+      .spyOn(whatsappConfig, 'messagesUrl')
+      .mockReturnValue('https://graph.facebook.com/fake/messages');
+    jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
+
+    await expect(outbox.ejecutarIntento(clave)).resolves.toEqual({
+      enviado: true,
+      wamid: 'wamid.lease-recuperado',
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

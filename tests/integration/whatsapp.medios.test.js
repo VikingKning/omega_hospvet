@@ -44,6 +44,14 @@ beforeEach(() => {
     .spyOn(whatsappConfig, 'messagesUrl')
     .mockReturnValue('https://graph.facebook.com/fake/messages');
   jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
+  // US WA 009: un grupo con texto procesable ahora se clasifica de verdad
+  // — este archivo prueba la mecánica de agrupación de medios (US WA 014),
+  // no la clasificación en sí (eso vive en tests/unit/whatsapp.service.test.js
+  // y en whatsapp.agrupacion.test.js) — se mockea sin coincidencia para no
+  // pegarle a la API real de Claude.
+  jest
+    .spyOn(claude, 'clasificarMensaje')
+    .mockResolvedValue({ etiqueta: null, tokensEntrada: 0, tokensSalida: 0 });
 });
 
 afterEach(() => {
@@ -62,6 +70,13 @@ afterAll(async () => {
   await db('conversaciones_whatsapp')
     .whereIn('id', conversacionIds)
     .update({ grupo_medio_pendiente_id: null });
+  // US WA 009: grupos_whatsapp.intento_envio_id ahora referencia
+  // outbox_whatsapp — hay que soltar esa referencia ANTES de borrar
+  // outbox_whatsapp, o la FK truena.
+  await db('grupos_whatsapp')
+    .whereIn('conversacion_id', conversacionIds)
+    .update({ intento_envio_id: null });
+  await db('emergencias_confirmadas').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('mensajes_whatsapp').where('whatsapp_message_id', 'like', `${WAMID_PREFIX}%`).del();
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
@@ -164,7 +179,11 @@ describe('US WA 014 — grupo con texto procesable (medio + explicación en la m
     // interpretarse aunque el grupo, como conjunto, sí tenga texto (el de
     // otro mensaje).
     expect(imagen.estado_procesamiento).toBe('no_interpretable_bot');
-    expect(global.fetch).not.toHaveBeenCalled(); // no es saludo/comando -> no_resuelto, sin enviar nada.
+    // US WA 009: el texto procesable ya no queda sin resolver — se
+    // clasifica (mockeado a sin_coincidencia arriba) y se envía la
+    // respuesta de respaldo.
+    expect(resultado.resultado).toBe('clasificado_normal');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('imagen con caption: el caption es el texto procesable, no se marca no_interpretable_bot (AC2, prueba mínima)', async () => {
@@ -182,7 +201,7 @@ describe('US WA 014 — grupo con texto procesable (medio + explicación en la m
     expect(resultado.tieneTextoProcesable).toBe(true);
     expect(resultado.texto_consolidado).toBe('aquí la herida de mi perro');
     const [mensaje] = await db('mensajes_whatsapp').where({ group_id: resultado.groupId });
-    expect(mensaje.estado_procesamiento).toBe('pendiente');
+    expect(mensaje.estado_procesamiento).toBe('procesado');
     expect(mensaje.media_id).toBe('media-img'); // AC2: media_id se conserva para auditoría/atención humana.
   });
 
@@ -254,8 +273,12 @@ describe('US WA 014 — grupo sin texto procesable: solicita explicación (AC4)'
 
     const resultado = await service.procesarSiguienteConversacionVencida();
 
-    expect(resultado.resultado).toBe('no_resuelto');
-    expect(global.fetch).not.toHaveBeenCalled();
+    // US WA 009: el texto procesable ya no queda sin resolver — se
+    // clasifica (mockeado a sin_coincidencia arriba) y se envía la
+    // respuesta de respaldo, en vez de solicitar una explicación (AC4 de
+    // US WA 014 solo aplica cuando el grupo NO tiene texto procesable).
+    expect(resultado.resultado).toBe('clasificado_normal');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('varias notas de voz sin texto: un solo mensaje de orientación (AC8, prueba mínima)', async () => {
@@ -320,25 +343,37 @@ describe('US WA 014 — grupo sin texto procesable: solicita explicación (AC4)'
   });
 });
 
-describe('US WA 014 — medio durante atención humana (AC9)', () => {
-  it('un medio recibido durante atención humana queda disponible para el personal; el bot permanece en silencio (prueba mínima)', async () => {
+// US WA 017 (AC7-AC9) SUSTITUYE el comportamiento que esta prueba
+// verificaba antes de que esa historia existiera: un medio recibido
+// durante atención humana YA NO conserva media_id "disponible para el
+// personal" — AC8 es explícito ("sin guardar texto, caption, media_id ni
+// contenido clínico"), solo metadatos técnicos. El resto de la prueba
+// original (el bot no agrupa, no reclama, no llama a Meta) sigue siendo
+// cierto y se conserva tal cual.
+describe('US WA 014/017 — medio durante atención humana', () => {
+  it('un medio recibido durante atención humana NO conserva media_id (US WA 017 AC8); el bot permanece en silencio', async () => {
     const telefono = '5215500020009';
     await postMensaje(`${WAMID_PREFIX}humana-1`, telefono, textoMsg('hola'));
     const [conversacion] = await buscarConversacion('525500020009');
     await db('conversaciones_whatsapp')
       .where({ id: conversacion.id })
-      .update({ estado: 'atencion_humana' });
+      .update({
+        estado: 'atencion_humana',
+        atencion_humana_hasta: db.raw("now() + interval '5 hours'"),
+      });
 
     await postMensaje(`${WAMID_PREFIX}humana-2`, telefono, imagenMsg());
 
     const mensajeMedio = await db('mensajes_whatsapp')
       .where({ whatsapp_message_id: `${WAMID_PREFIX}humana-2` })
       .first();
-    expect(mensajeMedio.media_id).toBe('media-img'); // disponible para el personal.
+    expect(mensajeMedio.media_id).toBeNull(); // US WA 017 AC8: solo metadatos.
+    expect(mensajeMedio.mensaje_recibido).toBeNull();
+    expect(mensajeMedio.estado_procesamiento).toBe('ignorado_atencion_humana');
     expect(mensajeMedio.group_id).toBeNull(); // el bot nunca la agrupa/procesa.
 
     const resultado = await service.procesarSiguienteConversacionVencida();
-    expect(resultado).toBeNull(); // atencion_humana nunca se reclama.
+    expect(resultado).toBeNull(); // atencion_humana nunca se reclama por este worker.
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
@@ -366,7 +401,7 @@ describe('US WA 014 — resolución de la explicación (AC5/AC6/AC7)', () => {
 
     const resultado = await service.procesarSiguienteConversacionVencida();
 
-    expect(resultado.resultado).toBe('explicacion_recibida');
+    expect(resultado.resultado).toBe('clasificado_normal');
     expect(resultado.texto_consolidado).toBe('era una radiografía de mi perro');
     const grupoTexto = await db('grupos_whatsapp').where({ group_id: resultado.groupId }).first();
     expect(grupoTexto.grupo_origen_id).toBe(grupoMedios.groupId);
@@ -375,8 +410,9 @@ describe('US WA 014 — resolución de la explicación (AC5/AC6/AC7)', () => {
     expect(actualizada.flujo_actual).toBeNull();
     expect(actualizada.paso_actual).toBeNull();
     expect(actualizada.grupo_medio_pendiente_id).toBeNull();
-    // AC6: no se reenvían los archivos a Claude ni se repite la solicitud.
-    expect(global.fetch).toHaveBeenCalledTimes(1); // solo la guía original, nada más.
+    // AC6: no se reenvían los archivos a Claude ni se repite la solicitud;
+    // sí sale la respuesta definitiva producida por el enrutamiento normal.
+    expect(global.fetch).toHaveBeenCalledTimes(2);
 
     // AC7: un mensaje tras el cierre crea una conversación nueva.
     await postMensaje(`${WAMID_PREFIX}explica-3`, telefono, textoMsg('otra consulta'));

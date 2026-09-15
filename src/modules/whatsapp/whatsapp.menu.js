@@ -198,6 +198,26 @@ function textoOpcionInvalida() {
   return 'Esa opción ya no está disponible. Te compartimos el menú nuevamente:';
 }
 
+// US WA 009 (AC1): texto EXACTO dado por la historia — a diferencia del
+// resto de textos de este módulo, este NO es una asunción de contenido.
+function textoSolicitudEmergencia() {
+  return 'Por favor, descríbenos cuál es tu emergencia.';
+}
+
+// US WA 009 (AC20, consideración técnica: "mantener el texto absoluto de
+// respaldo para emergencias en una configuración controlada... con el
+// medio oficial de contacto vigente") — se usa SOLO cuando la plantilla
+// resuelta ya es es_emergencia=true pero su contenido no se pudo
+// recuperar; a diferencia de TEXTO_RESPALDO_ABSOLUTO de whatsapp.service.js
+// (que se usa cuando NO hay emergencia, AC18), este conserva el tono de
+// urgencia — ASUNCIÓN DE CONTENIDO, sujeta a corrección en revisión.
+function textoRespaldoEmergencia(telefonoClinica) {
+  return (
+    'Recibimos tu mensaje y ya estamos canalizando tu emergencia con nuestro personal. ' +
+    `Si necesitas hablar de inmediato, llámanos ahora mismo al ${telefonoClinica}.`
+  );
+}
+
 module.exports = {
   normalizarTexto,
   esSaludoPuro,
@@ -206,6 +226,8 @@ module.exports = {
   textoRespaldo,
   textoMedioNoInterpretable,
   textoOpcionInvalida,
+  textoSolicitudEmergencia,
+  textoRespaldoEmergencia,
   RESPUESTA_CONTINUAR,
   RESPUESTA_VOLVER_MENU,
   seguimientoInteractivePayload,

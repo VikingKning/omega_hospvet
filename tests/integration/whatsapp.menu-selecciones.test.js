@@ -44,6 +44,12 @@ beforeEach(() => {
     .spyOn(whatsappConfig, 'messagesUrl')
     .mockReturnValue('https://graph.facebook.com/fake/messages');
   jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
+  // US WA 009: el texto libre tras el menú (AC10) ahora se clasifica de
+  // verdad al vencer su ventana — este archivo prueba la mecánica de
+  // selección de menú (US WA 005), no la clasificación en sí.
+  jest
+    .spyOn(claude, 'clasificarMensaje')
+    .mockResolvedValue({ etiqueta: null, tokensEntrada: 0, tokensSalida: 0 });
 });
 
 afterEach(() => {
@@ -60,6 +66,14 @@ afterAll(async () => {
   await db('conversaciones_whatsapp')
     .whereIn('id', conversacionIds)
     .update({ grupo_medio_pendiente_id: null });
+  // US WA 009: grupos_whatsapp.intento_envio_id ahora referencia
+  // outbox_whatsapp — hay que soltar esa referencia ANTES de borrar
+  // outbox_whatsapp, o la FK truena.
+  await db('grupos_whatsapp')
+    .whereIn('conversacion_id', conversacionIds)
+    .update({ intento_envio_id: null });
+  await db('emergencias_confirmadas').whereIn('conversacion_id', conversacionIds).del();
+  await db('solicitudes_atencion_humana').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('mensajes_whatsapp').where('whatsapp_message_id', 'like', `${WAMID_PREFIX}%`).del();
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
@@ -143,14 +157,14 @@ async function recargarConversacion(id) {
 }
 
 describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
-  // MENU_RESULTADOS_LAB queda fuera de este it.each a propósito: desde
-  // US WA 007 es la ÚNICA ruta que además arranca un flujo propio (la
-  // consulta de laboratorio) — tiene su propia prueba dedicada más abajo,
-  // en tests/integration/whatsapp.laboratorioConsulta.test.js.
+  // MENU_RESULTADOS_LAB y MENU_EMERGENCIA quedan fuera de este it.each a
+  // propósito: desde US WA 007/US WA 009 son las ÚNICAS rutas que además
+  // arrancan un flujo propio (consulta de laboratorio / solicitud de
+  // descripción de emergencia) — cada una tiene su propia prueba dedicada
+  // más abajo (la de laboratorio en whatsapp.laboratorioConsulta.test.js).
   it.each([
     [menu.MENU_AGENDAR_CONSULTA, 'agendar_consulta'],
     [menu.MENU_AGENDAR_ESTETICA, 'agendar_estetica'],
-    [menu.MENU_EMERGENCIA, 'emergencia'],
     [menu.MENU_RECEPCION, 'recepcion'],
   ])(
     '%s se resuelve a la ruta "%s", conserva la conversación abierta y no llama a Claude (prueba mínima: cada id válido)',
@@ -208,6 +222,53 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
     expect(spyClasificar).not.toHaveBeenCalled();
   });
 
+  it('MENU_EMERGENCIA envía de inmediato la solicitud de descripción y arranca el flujo de emergencia (US WA 009 AC1/AC2)', async () => {
+    const spyClasificar = jest.spyOn(claude, 'clasificarMensaje');
+    const telefono = generarTelefono();
+    const conversacion = await crearConversacionEsperandoMenu(telefono);
+
+    // Llamada directa al repository + service (no vía el webhook): el
+    // envío de la solicitud de emergencia es fire-and-forget en el
+    // controller — mismo criterio de determinismo ya usado por la prueba
+    // de MENU_RESULTADOS_LAB de arriba (whatsapp.seguimiento.test.js/
+    // whatsapp.medios.test.js).
+    const resultado = await repository.registrarMensajeYConversacion({
+      whatsappMessageId: `${WAMID_PREFIX}emergencia-arranque-${telefono}`,
+      telefonoOrigen: `521${telefono.slice(2)}`,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado: telefono,
+      tipoMensaje: 'interactive_list_reply',
+      contenido: menu.MENU_EMERGENCIA,
+      mediaId: null,
+      mimeType: null,
+      tituloInteractivo: 'Emergencia',
+      recibidoEn: new Date(),
+    });
+
+    expect(resultado.rutaResuelta).toBe('emergencia');
+    expect(resultado.disparaSolicitudEmergencia).toBe(true);
+    let actualizada = await recargarConversacion(conversacion.id);
+    expect(actualizada.estado).toBe('esperando_menu'); // AC2/AC3: no transiciona hasta confirmar el envío.
+
+    const enviado = await service.enviarSolicitudEmergencia({
+      conversacionId: conversacion.id,
+      telefono,
+      claveBase: `mensaje:${resultado.id}`,
+    });
+
+    expect(enviado).toBe(true);
+    actualizada = await recargarConversacion(conversacion.id);
+    expect(actualizada.estado).toBe('flujo_activo');
+    expect(actualizada.flujo_actual).toBe('emergencia');
+    expect(actualizada.paso_actual).toBe('esperando_descripcion');
+    expect(actualizada.procesar_despues_de).toBeNull(); // AC4: arranca con el primer fragmento, no aquí.
+    expect(spyClasificar).not.toHaveBeenCalled(); // AC1: sin llamar a Claude.
+    const [, opciones] = global.fetch.mock.calls[0];
+    expect(JSON.parse(opciones.body).text.body).toBe(
+      'Por favor, descríbenos cuál es tu emergencia.',
+    );
+  });
+
   it('list reply y button reply se procesan igual (prueba mínima)', async () => {
     const telA = generarTelefono();
     const telB = generarTelefono();
@@ -247,6 +308,33 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
     );
 
     expect(spyClasificar).not.toHaveBeenCalled();
+  });
+
+  it('MENU_RECEPCION crea una sola solicitud WA017 con origen/prioridad y clave estable (WA010)', async () => {
+    const telefono = generarTelefono();
+    const conversacion = await crearConversacionEsperandoMenu(telefono);
+    const wamid = `${WAMID_PREFIX}recepcion-wa010-${telefono}`;
+
+    await postMensaje(wamid, `521${telefono.slice(2)}`, listReplyMsg(menu.MENU_RECEPCION));
+    await postMensaje(wamid, `521${telefono.slice(2)}`, listReplyMsg(menu.MENU_RECEPCION));
+
+    const solicitudes = await db('solicitudes_atencion_humana').where({
+      conversacion_id: conversacion.id,
+      origen: 'recepcion',
+    });
+    expect(solicitudes).toHaveLength(1);
+    expect(solicitudes[0].prioridad).toBe('normal');
+    expect(solicitudes[0].clave_idempotencia).toBe(`recepcion:mensaje:${wamid}`);
+    expect(solicitudes[0].referencias_funcionales).toEqual(
+      expect.objectContaining({
+        whatsappMessageId: wamid,
+        groupId: expect.any(Number),
+      }),
+    );
+    const mensaje = await db('mensajes_whatsapp').where({ whatsapp_message_id: wamid }).first();
+    expect(mensaje.group_id).toBe(solicitudes[0].referencias_funcionales.groupId);
+    expect(mensaje.tokens_entrada).toBe(0);
+    expect(mensaje.tokens_salida).toBe(0);
   });
 });
 
@@ -371,7 +459,10 @@ describe('US WA 005 — texto libre después del menú (AC10)', () => {
     const grupo = await service.procesarSiguienteConversacionVencida();
 
     expect(grupo.texto_consolidado).toBe('quiero saber precios');
-    expect(grupo.resultado).toBe('no_resuelto'); // US WA 003: agrupación normal, sin enrutar desde esta historia.
+    // US WA 003: agrupación normal, sin enrutar desde ESTA historia — pero
+    // desde US WA 009 sí hay un consumidor real (mockeado a
+    // sin_coincidencia arriba) en vez de quedar 'no_resuelto'.
+    expect(grupo.resultado).toBe('clasificado_normal');
   });
 
   it('cinco fragmentos de texto después del menú se agrupan en un solo grupo (prueba mínima)', async () => {
@@ -414,16 +505,29 @@ describe('US WA 005 — paso cerrado: respuesta válida e inválida (AC11/AC12, 
       recordatorio_enviado_en: new Date(),
     });
 
-    await postMensaje(
-      `${WAMID_PREFIX}pasocerrado-valido-${telefono}`,
-      `521${telefono.slice(2)}`,
-      buttonReplyMsg(menu.RESPUESTA_CONTINUAR, 'Continuar'),
-    );
+    const resultado = await repository.registrarMensajeYConversacion({
+      whatsappMessageId: `${WAMID_PREFIX}pasocerrado-valido-${telefono}`,
+      telefonoOrigen: `521${telefono.slice(2)}`,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado: telefono,
+      tipoMensaje: 'interactive_button_reply',
+      contenido: menu.RESPUESTA_CONTINUAR,
+      tituloInteractivo: 'Continuar',
+      recibidoEn: new Date(),
+    });
 
     const actualizada = await recargarConversacion(conversacion.id);
     expect(actualizada.estado).toBe('flujo_activo');
     expect(actualizada.flujo_actual).toBe('explicacion_medio');
     expect(spyClasificar).not.toHaveBeenCalled();
+    await service.reanudarFlujoPendiente({
+      conversacionId: conversacion.id,
+      telefono,
+      mensajeId: resultado.id,
+      flujoActual: resultado.flujoActualResultante,
+      pasoActual: resultado.pasoActualResultante,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('una respuesta inválida en un paso cerrado no avanza el flujo y repite las opciones sin llamar a Claude (prueba mínima: repetición de opciones sin llamada a Claude)', async () => {
@@ -461,6 +565,7 @@ describe('US WA 005 — paso cerrado: respuesta válida e inválida (AC11/AC12, 
     expect(actualizada.flujo_actual).toBe('explicacion_medio');
     expect(spyClasificar).not.toHaveBeenCalled();
 
+    global.fetch.mockClear();
     const enviado = await service.reenviarSeguimiento({
       conversacionId: conversacion.id,
       telefono,

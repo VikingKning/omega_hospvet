@@ -1,9 +1,12 @@
 // US WA 003 — agrupación de mensajes por ventana de inactividad. Necesita
 // Postgres real: FOR UPDATE SKIP LOCKED, el reloj de la BD para
 // procesar_despues_de, y el índice único parcial de grupos_whatsapp — no
-// se puede mockear. No mockea Claude/WhatsApp: esta historia nunca los
-// toca (AC9/AC15), así que si algún test los llamara por error, tronaría
-// contra la red real en vez de pasar en silencio.
+// se puede mockear. Desde US WA 009, un grupo con texto procesable SÍ se
+// clasifica (antes terminaba en 'no_resuelto', sin tocar Claude/WhatsApp)
+// — claude.clasificarMensaje se mockea a sin_coincidencia (no es el
+// interés de este archivo, eso vive en whatsapp.service.test.js) y
+// global.fetch/whatsappConfig se mockean para la respuesta de respaldo que
+// sale por outbox, mismo criterio que whatsapp.medios.test.js.
 const crypto = require('crypto');
 const request = require('supertest');
 const app = require('../../src/app');
@@ -22,9 +25,39 @@ const VERIFY_TOKEN = 'verify-token-de-integracion-agrupacion';
 const WAMID_PREFIX = 'wamid.agrup-';
 const PHONE_NUMBER_ID = 'phone-integ-agrupacion-test';
 
+const originalFetch = global.fetch;
+let contadorWamidFake = 0;
+
 beforeAll(() => {
   env.whatsapp.appSecret = APP_SECRET;
   env.whatsapp.webhookVerifyToken = VERIFY_TOKEN;
+});
+
+beforeEach(() => {
+  // outbox_whatsapp.wamid tiene un índice único real (US WA 015) — un
+  // wamid fijo compartido entre pruebas chocaría en cuanto más de una
+  // prueba de este archivo de verdad completa un envío (mismo criterio
+  // que whatsapp.medios.test.js — el contador NUNCA se reinicia entre
+  // pruebas de este archivo).
+  global.fetch = jest.fn().mockImplementation(async () => {
+    contadorWamidFake += 1;
+    return {
+      ok: true,
+      json: () => Promise.resolve({ messages: [{ id: `wamid.agrup-fake-${contadorWamidFake}` }] }),
+    };
+  });
+  jest
+    .spyOn(whatsappConfig, 'messagesUrl')
+    .mockReturnValue('https://graph.facebook.com/fake/messages');
+  jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
+  jest
+    .spyOn(claude, 'clasificarMensaje')
+    .mockResolvedValue({ etiqueta: null, tokensEntrada: 0, tokensSalida: 0 });
+});
+
+afterEach(() => {
+  global.fetch = originalFetch;
+  jest.restoreAllMocks();
 });
 
 afterAll(async () => {
@@ -38,6 +71,13 @@ afterAll(async () => {
   // conversaciones, o las FK truenan.
   // US WA 004: outbox_whatsapp.conversacion_id tiene FK hacia
   // conversaciones_whatsapp — hay que borrar antes que las conversaciones.
+  // US WA 009: grupos_whatsapp.intento_envio_id ahora referencia
+  // outbox_whatsapp — hay que soltar esa referencia ANTES de borrar
+  // outbox_whatsapp, o la FK truena.
+  await db('grupos_whatsapp')
+    .whereIn('conversacion_id', conversacionIds)
+    .update({ intento_envio_id: null });
+  await db('emergencias_confirmadas').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('mensajes_whatsapp').where('whatsapp_message_id', 'like', `${WAMID_PREFIX}%`).del();
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
@@ -118,7 +158,12 @@ describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (
     expect(resultado).not.toBeNull();
     const grupos = await db('grupos_whatsapp').where({ conversacion_id: conversacion.id });
     expect(grupos).toHaveLength(1);
-    expect(grupos[0].estado).toBe('pendiente_enrutamiento');
+    // US WA 009: el texto se clasifica y se responde en la misma ronda
+    // (mockeado a sin_coincidencia), así que el grupo termina 'procesado'
+    // — lo que AC7/AC9 de esta historia garantiza (y lo que se sigue
+    // probando aquí) es que los 5 fragmentos formaron un ÚNICO grupo, no
+    // 5 grupos separados.
+    expect(grupos[0].estado).toBe('procesado');
     const mensajes = await db('mensajes_whatsapp').where({ group_id: grupos[0].group_id });
     expect(mensajes).toHaveLength(5);
   });
@@ -206,6 +251,137 @@ describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (
       .where({ whatsapp_message_id: `${WAMID_PREFIX}tardio-2` })
       .first();
     expect(segundoMensaje.group_id).toBeNull();
+    const actualizada = await db('conversaciones_whatsapp').where({ id: conversacion.id }).first();
+    expect(actualizada.procesar_despues_de).not.toBeNull();
+
+    await repository.marcarGrupoProcesado(resultado.groupId);
+    await repository.finalizarConversacionTrasGrupo(conversacion.id, new Date());
+    const rearmada = await db('conversaciones_whatsapp').where({ id: conversacion.id }).first();
+    expect(rearmada.estado).toBe('acumulando');
+    await vencerConversacion(conversacion.id);
+    const segundoGrupo = await service.procesarSiguienteConversacionVencida();
+    expect(segundoGrupo.groupId).not.toBe(resultado.groupId);
+    expect(segundoGrupo.texto_consolidado).toBe('segundo');
+  });
+
+  it('antes de persistir la clasificación incorpora al mismo grupo un fragmento llegado durante Claude', async () => {
+    const telefono = '5215500002098';
+    await postMensaje(`${WAMID_PREFIX}estabiliza-1`, telefono, 'tiene una bolita', ahoraEpoch());
+    const [conversacion] = await buscarConversacion('525500002098');
+    await vencerConversacion(conversacion.id);
+    await repository.reclamarConversacionVencida({ segundosRecuperacion: 120 });
+    const grupo = await repository.formarGrupoParaConversacion(conversacion.id);
+    const reclamoId = 'worker-estabiliza';
+    await repository.reclamarClasificacionGrupo(grupo.groupId, reclamoId);
+
+    await postMensaje(
+      `${WAMID_PREFIX}estabiliza-2`,
+      telefono,
+      'que le salió en el pecho',
+      ahoraEpoch(),
+    );
+
+    const incorporado = await db.transaction((trx) =>
+      repository.incorporarFragmentosTardiosAlGrupo(trx, {
+        conversacionId: conversacion.id,
+        groupId: grupo.groupId,
+        reclamoId,
+      }),
+    );
+
+    expect(incorporado).toBe(true);
+    const grupoActualizado = await db('grupos_whatsapp').where({ group_id: grupo.groupId }).first();
+    expect(grupoActualizado.texto_consolidado).toBe('tiene una bolita\nque le salió en el pecho');
+    expect(grupoActualizado.clasificacion_reclamo_id).toBeNull();
+    const segundo = await db('mensajes_whatsapp')
+      .where({ whatsapp_message_id: `${WAMID_PREFIX}estabiliza-2` })
+      .first();
+    expect(segundo.group_id).toBe(grupo.groupId);
+    const conversacionActualizada = await db('conversaciones_whatsapp')
+      .where({ id: conversacion.id })
+      .first();
+    expect(conversacionActualizada.estado).toBe('acumulando');
+  });
+
+  it('no envía el respaldo parcial si otro fragmento llega mientras Claude responde', async () => {
+    let resolverClaude;
+    claude.clasificarMensaje.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolverClaude = resolve;
+        }),
+    );
+    const telefono = '5215500002097';
+    await postMensaje(
+      `${WAMID_PREFIX}durante-claude-1`,
+      telefono,
+      'hola, tengo un problema con mi perro',
+      ahoraEpoch(),
+    );
+    const [conversacion] = await buscarConversacion('525500002097');
+    await db('conversaciones_whatsapp').where({ id: conversacion.id }).update({
+      estado: 'procesando',
+      procesamiento_iniciado_en: db.fn.now(),
+    });
+    const grupo = await repository.formarGrupoParaConversacion(conversacion.id);
+
+    const primeraClasificacion = service.clasificarYResponderGrupo({
+      conversacionId: conversacion.id,
+      groupId: grupo.groupId,
+      textoConsolidado: grupo.texto_consolidado,
+      telefono: '525500002097',
+    });
+    while (claude.clasificarMensaje.mock.calls.length === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    await postMensaje(
+      `${WAMID_PREFIX}durante-claude-2`,
+      telefono,
+      'tiene una bolita que le salió en el pecho',
+      ahoraEpoch(),
+    );
+    resolverClaude({ etiqueta: null, tokensEntrada: 5, tokensSalida: 1 });
+
+    await expect(primeraClasificacion).resolves.toBe('grupo_reprogramado');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(await db('outbox_whatsapp').where({ conversacion_id: conversacion.id })).toHaveLength(0);
+
+    const grupoAmpliado = await db('grupos_whatsapp').where({ group_id: grupo.groupId }).first();
+    expect(grupoAmpliado.texto_consolidado).toBe(
+      'hola, tengo un problema con mi perro\ntiene una bolita que le salió en el pecho',
+    );
+
+    await db('conversaciones_whatsapp').where({ id: conversacion.id }).update({
+      estado: 'procesando',
+      procesamiento_iniciado_en: db.fn.now(),
+    });
+    const reintentado = await service.clasificarYResponderGrupo({
+      conversacionId: conversacion.id,
+      groupId: grupo.groupId,
+      textoConsolidado: grupoAmpliado.texto_consolidado,
+      telefono: '525500002097',
+    });
+
+    expect(reintentado).toBe('clasificado_normal');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(await db('outbox_whatsapp').where({ conversacion_id: conversacion.id })).toHaveLength(1);
+  });
+
+  it('dos workers solo conceden un lease de clasificación para el mismo grupo (WA009 AC27)', async () => {
+    const telefono = '5215500002099';
+    await postMensaje(`${WAMID_PREFIX}lease-clasificacion`, telefono, 'consulta', ahoraEpoch());
+    const [conversacion] = await buscarConversacion('525500002099');
+    await vencerConversacion(conversacion.id);
+    await repository.reclamarConversacionVencida({ segundosRecuperacion: 120 });
+    const grupo = await repository.formarGrupoParaConversacion(conversacion.id);
+
+    const [a, b] = await Promise.all([
+      repository.reclamarClasificacionGrupo(grupo.groupId, 'worker-a'),
+      repository.reclamarClasificacionGrupo(grupo.groupId, 'worker-b'),
+    ]);
+
+    expect([a, b].filter(Boolean)).toHaveLength(1);
   });
 
   it('reinicio de PM2 tras cambiar a procesando: otro worker recupera la conversación abandonada (AC13)', async () => {
@@ -292,16 +468,16 @@ describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (
     expect(gruposPendientes).toHaveLength(0);
   });
 
-  it('esta historia no llama a Claude ni envía mensajes por WhatsApp (AC9/AC15)', async () => {
-    const spyClasificar = jest.spyOn(claude, 'clasificarMensaje');
-    const originalFetch = global.fetch;
-    global.fetch = jest.fn();
-
+  it('la FORMACIÓN del grupo en sí (esta historia, US WA 003) nunca llama a Claude ni a WhatsApp (AC9/AC15)', async () => {
+    // US WA 009 conectó el grupo consolidado con Claude — pero eso vive en
+    // whatsapp.service.js#clasificarYResponderGrupo, un paso SEPARADO que
+    // ocurre DESPUÉS de formarGrupoParaConversacion (esta función). Lo que
+    // AC9/AC15 de US WA 003 garantizan es que la formación del grupo en sí
+    // — el alcance real de esta historia — es 100% determinista y nunca
+    // toca la red; se prueba aquí llamando directo al repository, sin
+    // pasar por el pipeline completo de procesarSiguienteConversacionVencida
+    // (que si acepta el texto).
     const telefono = '5215500002012';
-    // US WA 004: 'hola' por sí solo ahora SÍ dispara el menú (AC1) — se usa
-    // un texto normal, no-saludo/no-comando, para conservar la intención
-    // original de esta prueba (un grupo cualquiera nunca llama a Claude ni
-    // a WhatsApp desde esta historia, US WA 003 AC9/AC15).
     await postMensaje(
       `${WAMID_PREFIX}sinclaude`,
       telefono,
@@ -310,15 +486,13 @@ describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (
     );
     const [conversacion] = await buscarConversacion('525500002012');
     await vencerConversacion(conversacion.id);
+    await repository.reclamarConversacionVencida({ segundosRecuperacion: 120 });
 
-    const resultado = await service.procesarSiguienteConversacionVencida();
+    const resultado = await repository.formarGrupoParaConversacion(conversacion.id);
 
-    expect(resultado.resultado).toBe('no_resuelto');
-    expect(spyClasificar).not.toHaveBeenCalled();
+    expect(resultado.tieneTextoProcesable).toBe(true);
+    expect(claude.clasificarMensaje).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
-
-    global.fetch = originalFetch;
-    spyClasificar.mockRestore();
   });
 });
 
@@ -365,8 +539,11 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
     spyClasificar.mockRestore();
   });
 
-  it('un saludo seguido de una consulta médica no dispara el menú y regresa no_resuelto (AC3/AC4, prueba mínima 4 y 5)', async () => {
-    global.fetch = jest.fn();
+  it('un saludo seguido de una consulta médica no dispara el menú — se clasifica normalmente (AC3/AC4, prueba mínima 4 y 5; antes "no_resuelto")', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [{ id: 'wamid.saludo-consulta' }] }),
+    });
 
     const telefono = '5215500002014';
     await postMensaje(
@@ -380,20 +557,24 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
 
     const resultado = await service.procesarSiguienteConversacionVencida();
 
-    expect(resultado.resultado).toBe('no_resuelto');
-    expect(global.fetch).not.toHaveBeenCalled();
-    // Corrección (encontrada probando en vivo): sin cerrar aquí,
-    // formarGrupoParaConversacion reutilizaría ESTE MISMO grupo para
-    // siempre en cualquier llamada futura sobre esta conversación,
-    // dejando huérfano cualquier mensaje posterior del tutor (nunca
-    // vuelve a mirarlos). Cerrar deja el grupo intacto para una futura
-    // historia de enrutamiento, pero libera al tutor para empezar una
-    // conversación nueva.
+    // AC3/AC4 de US WA 004: el prefijo "hola" no confunde la detección de
+    // saludo puro — nunca se dispara el menú. US WA 009 conectó lo que
+    // pasa después: en vez de quedar 'no_resuelto', el texto completo se
+    // clasifica con Claude (mockeado a sin_coincidencia) igual que
+    // cualquier otro texto libre.
+    expect(claude.clasificarMensaje).toHaveBeenCalledWith(
+      'hola mi perro está convulsionando',
+      expect.any(Array),
+      expect.any(Object),
+    );
+    expect(resultado.resultado).toBe('clasificado_normal');
+    // Cierra la conversación tras responder (mismo criterio que "no_resuelto"
+    // cerraba antes) — libera al tutor para empezar una conversación nueva.
     const [actualizada] = await db('conversaciones_whatsapp').where({ id: conversacion.id });
     expect(actualizada.estado).toBe('cerrada');
   });
 
-  it('un comando de menú como primer mensaje de una conversación nueva dispara el menú al vencer la ventana (AC2)', async () => {
+  it('un comando de menú como primer mensaje dispara el menú inmediatamente (AC2)', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ messages: [{ id: 'wamid.menu-comando' }] }),
@@ -402,16 +583,26 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
     const telefono = '5215500002015';
     await postMensaje(`${WAMID_PREFIX}comando-nuevo`, telefono, 'menu', ahoraEpoch());
     const [conversacion] = await buscarConversacion('525500002015');
-    // Una conversación NUEVA se queda 'acumulando' (aplicarReglasDeInteraccion
-    // solo corre para conversaciones ya existentes) hasta que venza la
-    // ventana — es el hook de grupo, no el disparo inmediato, quien la
-    // atiende aquí.
-    expect(conversacion.estado).toBe('acumulando');
-    await vencerConversacion(conversacion.id);
+    expect(conversacion.estado).toBe('esperando_menu');
+    expect(conversacion.procesar_despues_de).toBeNull();
 
-    const resultado = await service.procesarSiguienteConversacionVencida();
+    const mensaje = await db('mensajes_whatsapp')
+      .where({ whatsapp_message_id: `${WAMID_PREFIX}comando-nuevo` })
+      .first();
+    let intento;
+    for (let i = 0; i < 100 && intento?.estado !== 'enviado'; i += 1) {
+      intento = await db('outbox_whatsapp')
+        .where({ clave_idempotencia: `mensaje:${mensaje.id}:menu` })
+        .first();
+      if (intento?.estado !== 'enviado') {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
 
-    expect(resultado.resultado).toBe('menu_enviado');
+    expect(mensaje.estado_procesamiento).toBe('procesado');
+    expect(mensaje.group_id).toBeNull();
+    expect(intento?.estado).toBe('enviado');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(await db('grupos_whatsapp').where({ conversacion_id: conversacion.id })).toHaveLength(0);
   });
 });

@@ -49,6 +49,10 @@ beforeEach(() => {
     return { intent, esNuevo: true };
   });
   repository.buscarIntentoPorClave.mockImplementation(async (clave) => intents.get(clave));
+  repository.reclamarIntentoEnvio.mockImplementation(async (clave) => ({
+    intent: intents.get(clave),
+    reclamado: true,
+  }));
   repository.incrementarIntento.mockResolvedValue();
   repository.marcarWamid.mockImplementation(async (id, wamid) => {
     for (const intent of intents.values()) if (intent.intent_id === id) intent.wamid = wamid;

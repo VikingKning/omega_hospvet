@@ -1,19 +1,26 @@
-// Procesa un mensaje entrante de WhatsApp. US WA 001 (2026-09-13) dividió
-// el flujo en 2 funciones — registrarEventoEntrante() solo persiste
-// (INSERT idempotente, llamada por whatsapp.controller.js#recibir antes de
-// clasificar) y procesarMensajePendiente() clasifica+responde en segundo
-// plano (disparada sin `await` por el controller, y también por
-// whatsappMensajesPendientesJob.js como red de recuperación) — antes
-// ambos pasos vivían juntos en una sola función síncrona dentro del mismo
-// request del webhook. La clasificación en sí sigue en UNA SOLA llamada
-// (rediseño explícito del usuario, 2026-09-12; ver
-// src/config/claude.js#clasificarMensaje para el porqué completo): el
-// mensaje se compara, en el mismo prompt, contra TODAS las
-// `plantillas_whatsapp.intencion` reales y activas Y las 4 categorías
-// genéricas fijas (`categoria_clasificacion`) al mismo tiempo — nunca en
-// 2 pasos separados.
+// Procesa un mensaje entrante de WhatsApp. US WA 001 dividió el flujo en 2
+// pasos — registrarEventoEntrante() solo persiste (INSERT idempotente,
+// llamada por whatsapp.controller.js#recibir) y un segundo paso clasifica
+// + responde. Ese segundo paso, desde US WA 009, opera sobre el GRUPO
+// consolidado (grupos_whatsapp.texto_consolidado, US WA 003), nunca sobre
+// un mensaje individual — clasificarYResponderGrupo() es la única puerta
+// de entrada a claude.clasificarMensaje en todo el sistema (ver su propio
+// comentario). Antes de esa historia existía un camino paralelo por
+// MENSAJE individual (procesarMensajePendiente) que nunca llegó a
+// conectarse con la agrupación introducida por US WA 003 — se retiró por
+// completo (junto con whatsappMensajesPendientesJob.js) en vez de
+// mantener 2 esquemas de clasificación divergentes.
 //
-// Motivo del rediseño (2 intentos previos, ambos insuficientes):
+// La clasificación en sí sigue en UNA SOLA llamada (rediseño explícito del
+// usuario, 2026-09-12; ver src/config/claude.js#clasificarMensaje para el
+// porqué completo): el mensaje se compara, en el mismo prompt, contra
+// TODOS los slugs de plantillas_whatsapp reales y activas Y los 4 slugs
+// predeterminados del sistema (uno por categoría genérica) al mismo
+// tiempo — nunca en 2 pasos separados, y Claude nunca decide ni ve
+// es_emergencia (US WA 009, consideración técnica).
+//
+// Motivo del rediseño a una sola llamada (2 intentos previos, ambos
+// insuficientes):
 // 1. El diseño original (Bitácora v4/sección 1.3) decidía 1 de las 4
 //    categorías fijas ANTES de mirar el catálogo real, y solo dentro de
 //    'duda_medica' comparaba contra las plantillas reales — una plantilla
@@ -33,21 +40,9 @@
 // interviniendo en el prompt"). Una sola llamada con ambos conjuntos de
 // etiquetas presentes a la vez, más una regla explícita de desempate
 // ("específica gana solo si de verdad aplica"), resuelve la causa de raíz.
-//
-// `categoria_clasificacion` se sigue guardando con el mismo significado
-// de siempre para reportes/métricas: 'duda_medica' para CUALQUIER
-// plantilla real matcheada del catálogo, o la categoría fija real
-// (incluyendo 'duda_medica'/'sin_coincidencia' sin plantilla predeterminada
-// propia — ver SLUG_PREDETERMINADO_POR_CATEGORIA) cuando Claude elige una
-// de las 4 genéricas. 'emergencia'/'agendar_cita'/'resultados_laboratorio'
-// TODAVÍA NO tienen ninguna acción real propia (no hay alerta a staff, ni
-// parser de fecha/hora, ni lookup de laboratorio) — responden con la
-// plantilla predeterminada del sistema de esa categoría, editable pero
-// inborrable (migración 20260903000002). `cita_generada_id`/
-// `registro_laboratorio_id` se quedan en null a propósito hasta que esas
-// 3 fases se construyan.
 const claude = require('../../config/claude');
-const whatsapp = require('../../config/whatsapp');
+const { randomUUID } = require('node:crypto');
+const db = require('../../config/database');
 const env = require('../../config/env');
 const logger = require('../../config/logger');
 const { normalizarFormatoWhatsapp } = require('../../../public/js/whatsapp-format');
@@ -57,19 +52,34 @@ const outbox = require('./whatsapp.outbox');
 const menu = require('./whatsapp.menu');
 const laboratorioConsulta = require('./whatsapp.laboratorioConsulta');
 const laboratorioService = require('../laboratorio/laboratorio.service');
+const atencionHumanaService = require('./whatsapp.atencionHumana.service');
 
 const TELEFONO_CLINICA = '7711634578';
 
 // Slugs fijos de las 4 plantillas predeterminadas del sistema (migración
-// 20260903000002) — a diferencia de las demás (matcheadas por Claude
-// contra su `intencion`), estas 4 solo entran cuando Claude elige una
-// categoría genérica en vez de una intención específica del catálogo, y
-// ahí se seleccionan de forma DETERMINISTA por categoria_clasificacion,
-// nunca por el LLM.
+// 20260903000002). US WA 009 cambió CÓMO se llega a ellas: ya no hay una
+// indirección categoría->slug decidida por este archivo tras la respuesta
+// de Claude — Claude ahora nombra el slug DIRECTAMENTE (ver
+// SLUG_POR_CATEGORIA_GENERICA/config/claude.js), y el backend solo resuelve
+// ese slug contra plantillas_whatsapp (AC11/AC12), sin ninguna rama
+// especial para "una de las 4 default" vs. "una del catálogo real".
 const SLUG_EMERGENCIA = 'emergencia-medica';
 const SLUG_AGENDAR_CITA = 'agendar-cita-default';
 const SLUG_RESULTADOS_LABORATORIO = 'resultados-laboratorio-default';
 const SLUG_SIN_COINCIDENCIA = 'sin-coincidencia-default';
+
+// US WA 009 (consideración técnica: "Claude deberá devolver únicamente el
+// slug esperado"): las 4 categorías genéricas de claude.js#CATEGORIAS ahora
+// se le presentan a Claude POR SU SLUG — 'duda_medica' nunca tuvo una
+// plantilla predeterminada propia, así que cae al mismo respaldo
+// sin-coincidencia-default que "sin encaje" (mismo comportamiento de
+// siempre, ver resolverPlantillaPorSlug).
+const SLUG_POR_CATEGORIA_GENERICA = {
+  emergencia: SLUG_EMERGENCIA,
+  agendar_cita: SLUG_AGENDAR_CITA,
+  resultados_laboratorio: SLUG_RESULTADOS_LABORATORIO,
+  duda_medica: SLUG_SIN_COINCIDENCIA,
+};
 
 // Último recurso si una plantilla predeterminada no existiera o estuviera
 // inactiva — no debería pasar nunca (plantillas_whatsapp.service.js las
@@ -87,93 +97,20 @@ function normalizarNumeroSalida(telefono) {
   return telefono.replace(/^521(\d{10})$/, '52$1');
 }
 
-async function auditarEnvio(datos) {
-  try {
-    await repository.registrarEnvioWhatsapp(datos);
-  } catch (err) {
-    logger.error({ err }, 'No se pudo registrar la auditoría del envío de WhatsApp.');
-  }
-}
-
-async function enviarRespuesta(telefono, texto, { plantillaId, plantilla }) {
-  const destinatarioTelefono = normalizarNumeroSalida(telefono);
-  const textoNormalizado = normalizarFormatoWhatsapp(texto);
-  let res;
-  let data;
-  try {
-    res = await fetch(whatsapp.messagesUrl(), {
-      method: 'POST',
-      headers: whatsapp.authHeaders(),
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: destinatarioTelefono,
-        type: 'text',
-        text: { body: textoNormalizado },
-      }),
-    });
-    data = typeof res.json === 'function' ? await res.json() : {};
-  } catch (err) {
-    await auditarEnvio({
-      plantilla,
-      plantillaId,
-      destinatarioTelefono,
-      exitoso: false,
-      errorMensaje: err.message,
-      origen: 'respuesta_automatica',
-    });
-    throw err;
-  }
-
-  if (!res.ok) {
-    const error = new Error(data.error?.message || `Meta rechazó el envío (HTTP ${res.status}).`);
-    await auditarEnvio({
-      plantilla,
-      plantillaId,
-      destinatarioTelefono,
-      exitoso: false,
-      errorCodigo: data.error?.code ? String(data.error.code) : null,
-      errorMensaje: error.message,
-      origen: 'respuesta_automatica',
-    });
-    throw error;
-  }
-
-  await auditarEnvio({
-    plantilla,
-    plantillaId,
-    destinatarioTelefono,
-    exitoso: true,
-    origen: 'respuesta_automatica',
-  });
-}
-
-// Resuelve una de las 4 plantillas predeterminadas por su slug fijo —
-// cuenta como uso real (incrementarUso) igual que una plantilla normal
-// matcheada del catálogo, y su id sí viaja en `plantilla_id` de
-// mensajes_whatsapp.
-async function resolverPlantillaPredeterminada(slug) {
+// US WA 009 (AC11/AC12/AC18/AC19): resuelve CUALQUIER slug que Claude haya
+// devuelto (uno del catálogo real O uno de los 4 predeterminados del
+// sistema, sin distinción — plantillas_whatsapp.slug es único para ambos)
+// contra una plantilla ACTIVA — nunca infiere es_emergencia de nada más
+// que la columna real de esa plantilla (consideración técnica). `null`
+// cubre tanto "Claude no encajó ninguna etiqueta" como "el slug no
+// corresponde a ninguna plantilla activa/utilizable" (AC18) — ambos casos
+// reciben el mismo tratamiento de parte del llamador.
+async function resolverPlantillaPorSlug(slug) {
+  if (!slug) return null;
   const plantilla = await plantillasRepository.findBySlug(slug);
-  if (!plantilla || !plantilla.activo) {
-    return { texto: TEXTO_RESPALDO_ABSOLUTO, plantillaId: null, plantillaSlug: null };
-  }
-  await plantillasRepository.incrementarUso(plantilla.id);
-  return {
-    texto: plantilla.texto_respuesta,
-    plantillaId: plantilla.id,
-    plantillaSlug: plantilla.slug,
-  };
+  if (!plantilla || !plantilla.activo) return null;
+  return plantilla;
 }
-
-// Slug de la plantilla predeterminada del sistema para cada categoría
-// genérica — 'duda_medica' y 'sin_coincidencia' a propósito NO tienen
-// entrada aquí (nunca tuvieron una plantilla predeterminada propia): caen
-// al mismo respaldo `sin-coincidencia-default` vía el `??` de abajo, tal
-// como ya ocurría antes de este rediseño.
-const SLUG_PREDETERMINADO_POR_CATEGORIA = {
-  emergencia: SLUG_EMERGENCIA,
-  agendar_cita: SLUG_AGENDAR_CITA,
-  resultados_laboratorio: SLUG_RESULTADOS_LABORATORIO,
-};
 
 // US WA 001/WA 002: persiste el mensaje Y lo asocia a su conversación
 // (creándola si hace falta) — llamado por el controller en cuanto llega el
@@ -192,6 +129,22 @@ async function registrarEventoEntrante(evento) {
     tituloInteractivo: evento.tituloInteractivo ?? null,
     recibidoEn: new Date(Number(evento.timestamp) * 1000),
   });
+  // WA010: la ruta determinista se convierte en una solicitud del mecanismo
+  // único WA017 antes de confirmar el webhook. La clave por wamid permite
+  // que una reentrega repare de forma segura una interrupción intermedia.
+  if (resultado.rutaResuelta === 'recepcion') {
+    await atencionHumanaService.solicitarAtencionHumana({
+      conversacionId: resultado.conversacionId,
+      origen: 'recepcion',
+      prioridad: 'normal',
+      claveIdempotencia: `recepcion:mensaje:${evento.whatsappMessageId}`,
+      referenciasFuncionales: {
+        groupId: resultado.groupId ?? null,
+        whatsappMessageId: evento.whatsappMessageId,
+      },
+      destinatarioTelefono: telefonoNormalizado,
+    });
+  }
   // US WA 004 (AC2): whatsapp.controller.js necesita el teléfono y el id de
   // conversación para disparar el envío inmediato del menú.
   return { ...resultado, telefonoNormalizado };
@@ -218,7 +171,7 @@ async function intentarEnvioMenu(datosIntento) {
 // para que la idempotencia del outbox nunca colisione entre ambos
 // disparadores (ver comentario de cabecera de este módulo sobre los 2
 // puntos de disparo).
-async function enviarMenuPrincipal({ conversacionId, telefono, claveBase }) {
+async function enviarMenuPrincipal({ conversacionId, telefono, claveBase, groupId = null }) {
   const resultadoMenu = await intentarEnvioMenu({
     claveIdempotencia: `${claveBase}:menu`,
     tipoEnvio: 'conversacional',
@@ -275,7 +228,11 @@ async function enviarMenuPrincipal({ conversacionId, telefono, claveBase }) {
   }
 
   if (enviado) {
-    await repository.confirmarMenuEnviado(conversacionId);
+    if (groupId) {
+      await repository.confirmarMenuEnviado(conversacionId, groupId);
+    } else {
+      await repository.confirmarMenuEnviado(conversacionId);
+    }
   }
   return enviado;
 }
@@ -407,102 +364,249 @@ async function enviarSeguimiento({ conversacionId, telefono, claveIdempotencia }
   }
 }
 
-// US WA 001: clasifica + responde, en segundo plano — llamado por el
-// disparo fire-and-forget del controller Y por whatsappMensajesPendientesJob.js
-// (recuperación tras un reinicio de PM2), así que puede coincidir con
-// alguien más intentando procesar la MISMA fila; reclamarPendiente() hace
-// que solo uno de los dos gane esa carrera (ver su comentario en
-// whatsapp.repository.js). El bloque de clasificación/resolución de
-// plantilla es EXACTAMENTE el mismo que antes vivía en
-// procesarMensajeEntrante — solo cambia cómo se persiste el resultado
-// (UPDATE de la fila ya existente, no un INSERT nuevo al final).
-async function procesarMensajePendiente(mensajeId) {
-  const reclamado = await repository.reclamarPendiente(mensajeId);
-  if (!reclamado) return;
-
-  const mensaje = await repository.findPendientePorId(mensajeId);
-  if (!mensaje) return;
-
-  // US WA 002 (AC7/AC12): si la conversación ya no está 'acumulando' (ej.
-  // esperando_menu tras un comando de menú, o atencion_humana), este
-  // clasificador no debe clasificar ni responder.
-  if (mensaje.conversacion_id && mensaje.conversacion_estado !== 'acumulando') {
-    await repository.marcarProcesado(mensajeId, {
-      categoriaClasificacion: null,
-      plantillaId: null,
-      tokensEntrada: 0,
-      tokensSalida: 0,
-    });
-    return;
-  }
-
-  const telefono = mensaje.telefono_origen;
-  const texto = mensaje.mensaje_recibido;
-
-  let etiqueta;
-  let tokensEntrada;
-  let tokensSalida;
-  let respuesta;
-  let plantillaId;
-  let plantillaSlug;
-  let categoriaGuardada;
-
-  try {
-    const plantillas = await plantillasRepository.findActivasParaClasificar();
-    ({ etiqueta, tokensEntrada, tokensSalida } = await claude.clasificarMensaje(texto, plantillas));
-
-    const plantillaDelCatalogo = plantillas.find((p) => p.intencion === etiqueta);
-    if (plantillaDelCatalogo) {
-      await plantillasRepository.incrementarUso(plantillaDelCatalogo.id);
-      respuesta = plantillaDelCatalogo.texto_respuesta;
-      plantillaId = plantillaDelCatalogo.id;
-      plantillaSlug = plantillaDelCatalogo.slug;
-      // Mismo valor que se guardaba antes para CUALQUIER plantilla real
-      // matcheada del catálogo — no cambia el significado de esta columna
-      // para reportes/métricas ya existentes.
-      categoriaGuardada = 'duda_medica';
-    } else {
-      // Claude eligió una de las 4 categorías genéricas (o ninguna
-      // etiqueta válida) en vez de una intención específica del catálogo.
-      categoriaGuardada = etiqueta ?? claude.SIN_COINCIDENCIA;
-
-      const slugPredeterminado =
-        SLUG_PREDETERMINADO_POR_CATEGORIA[etiqueta] ?? SLUG_SIN_COINCIDENCIA;
-      const resuelto = await resolverPlantillaPredeterminada(slugPredeterminado);
-      respuesta = resuelto.texto;
-      plantillaId = resuelto.plantillaId;
-      plantillaSlug = resuelto.plantillaSlug;
-    }
-  } catch (err) {
-    await repository.marcarError(mensajeId);
-    throw err;
-  }
-
-  let errorEnvio;
-  try {
-    await enviarRespuesta(telefono, respuesta, {
-      plantillaId,
-      plantilla: plantillaSlug ? plantillaSlug.replace(/-/g, '_') : 'respuesta_sin_plantilla',
-    });
-  } catch (err) {
-    errorEnvio = err;
-  }
-
-  await repository.marcarProcesado(mensajeId, {
-    categoriaClasificacion: categoriaGuardada,
-    plantillaId,
-    tokensEntrada,
-    tokensSalida,
+// US WA 009 (AC1/AC2/AC3): envía "Por favor, descríbenos cuál es tu
+// emergencia." — mismo patrón que enviarGuiaMedioNoInterpretable (texto
+// plano vía outbox, sin respaldo — la consideración técnica no pide uno) y
+// sin transición propia: quien confirma flujo_activo/emergencia/
+// esperando_descripcion es repository.confirmarEmergenciaSolicitada, SOLO
+// si el envío tuvo éxito (AC3: "no avanza... hasta que el envío sea
+// confirmado").
+async function enviarSolicitudEmergencia({ conversacionId, telefono, claveBase }) {
+  const { intent } = await outbox.registrarIntento({
+    claveIdempotencia: `${claveBase}:emergencia_solicitud`,
+    tipoEnvio: 'conversacional',
+    origenFuncional: 'respuesta_automatica',
+    conversacionId,
+    destinatarioTelefono: telefono,
+    payloadFuncional: {
+      tipo: 'text',
+      destinatarioTelefono: telefono,
+      texto: menu.textoSolicitudEmergencia(),
+    },
+    usaPlantilla: false,
   });
 
-  // US WA 002 (AC8/AC9): la respuesta es el "flujo" de hoy (un solo tiro)
-  // — si se envió con éxito, cierra la conversación; si falló, se queda
-  // como estaba para no duplicar el cierre ni perder el contexto.
-  if (!errorEnvio && mensaje.conversacion_id) {
-    await repository.cerrarConversacion(mensaje.conversacion_id, new Date());
+  let resultado;
+  try {
+    resultado = await outbox.ejecutarIntento(intent.clave_idempotencia);
+  } catch (err) {
+    logger.error(
+      { err, conversacionId },
+      'Falló el envío de la solicitud de descripción de emergencia.',
+    );
+    resultado = { enviado: false, error: err.message, errorCodigo: null };
   }
 
-  if (errorEnvio) throw errorEnvio;
+  if (!resultado.enviado) {
+    logger.error(
+      { conversacionId, errorCodigo: resultado.errorCodigo, error: resultado.error },
+      'No se pudo confirmar el envío de la solicitud de descripción de emergencia.',
+    );
+    return false;
+  }
+
+  return repository.confirmarEmergenciaSolicitada(conversacionId);
+}
+
+// US WA 009 (AC6/AC10-AC23): clasifica UN grupo consolidado (texto libre
+// normal, AC10/AC17, O la descripción pedida tras MENU_EMERGENCIA, AC6 —
+// ambos casos comparten exactamente esta misma función, sin distinción)
+// y envía la respuesta definitiva. Reemplaza el terminal 'no_resuelto' que
+// dejó pendiente US WA 004 — es la historia que finalmente conecta el
+// grupo consolidado con claude.clasificarMensaje (ver el comentario de
+// cabecera de este archivo).
+//
+// AC26 (reintento sin nueva clasificación): antes de llamar a Claude,
+// siempre relee grupos_whatsapp fresco — si `clasificado_en` ya tiene
+// valor (un intento anterior ya clasificó pero el ENVÍO falló, o el
+// proceso se cayó a medio camino), reutiliza esos mismos valores tal
+// cual, sin volver a llamar a Claude ni a crear otra solicitud de
+// atención humana (AC27, junto con los ON CONFLICT DO NOTHING de la capa
+// de datos).
+async function clasificarYResponderGrupo({ conversacionId, groupId, textoConsolidado, telefono }) {
+  const claveEnvio = `grupo:${groupId}:respuesta`;
+  let grupo = await repository.obtenerClasificacionGrupo(groupId);
+
+  if (!grupo?.clasificado_en) {
+    const reclamoId = randomUUID();
+    const reclamada = await repository.reclamarClasificacionGrupo(groupId, reclamoId);
+    if (!reclamada) {
+      grupo = await repository.obtenerClasificacionGrupo(groupId);
+      if (!grupo?.clasificado_en) return 'clasificacion_en_progreso';
+    } else {
+      try {
+        // AC11/AC18: resuelve el slug ANTES de decidir nada — Claude nunca ve
+        // ni determina es_emergencia (consideración técnica).
+        const plantillasActivas = await plantillasRepository.findActivasParaClasificar();
+        const {
+          etiqueta: slug,
+          tokensEntrada,
+          tokensSalida,
+        } = await claude.clasificarMensaje(
+          textoConsolidado,
+          plantillasActivas,
+          SLUG_POR_CATEGORIA_GENERICA,
+        );
+
+        const plantilla = await resolverPlantillaPorSlug(slug);
+        let plantillaId = null;
+        let slugResuelto = slug;
+        let esEmergencia = false;
+        let respuestaDefinitiva;
+
+        if (plantilla) {
+          plantillaId = plantilla.id;
+          slugResuelto = plantilla.slug;
+          esEmergencia = Boolean(plantilla.es_emergencia);
+          // AC20: contenido no recuperable — conserva la confirmación de
+          // emergencia (si aplica) y usa el respaldo con el medio oficial de
+          // contacto; AC18 usa el respaldo genérico cuando NO hay emergencia.
+          respuestaDefinitiva =
+            plantilla.texto_respuesta ||
+            (esEmergencia
+              ? menu.textoRespaldoEmergencia(TELEFONO_CLINICA)
+              : TEXTO_RESPALDO_ABSOLUTO);
+        } else {
+          // AC18: slug inexistente, inactivo, o Claude no encajó ninguna
+          // opción — respuesta general de respaldo, es_emergencia=false.
+          respuestaDefinitiva = TEXTO_RESPALDO_ABSOLUTO;
+        }
+        respuestaDefinitiva = normalizarFormatoWhatsapp(respuestaDefinitiva);
+
+        let intentoEnvioId;
+        let grupoReprogramado = false;
+        await db.transaction(async (trx) => {
+          // Un fragmento que entró mientras Claude trabajaba invalida esta
+          // clasificación parcial. Se integra al mismo grupo y no se crea ni
+          // ejecuta ningún envío; el worker volverá a clasificar el texto
+          // completo cuando venza la nueva ventana.
+          grupoReprogramado = await repository.incorporarFragmentosTardiosAlGrupo(trx, {
+            conversacionId,
+            groupId,
+            reclamoId,
+          });
+          if (grupoReprogramado) return;
+
+          // AC23/AC27: TODO esto en una sola transacción — la clasificación
+          // del grupo, la intención de envío, y (si aplica) la señal de
+          // emergencia confirmada más la solicitud de atención humana.
+          const persistida = await repository.persistirClasificacionGrupo(trx, groupId, {
+            plantillaId,
+            slugResuelto,
+            esEmergencia,
+            respuestaDefinitiva,
+            tokensEntrada,
+            tokensSalida,
+            reclamoId,
+          });
+          if (!persistida) {
+            throw new Error(`Se perdió el lease de clasificación del grupo ${groupId}.`);
+          }
+
+          if (plantillaId) {
+            await plantillasRepository.incrementarUso(plantillaId, trx);
+          }
+
+          const { intent } = await outbox.registrarIntento(
+            {
+              claveIdempotencia: claveEnvio,
+              tipoEnvio: 'conversacional',
+              origenFuncional: 'respuesta_automatica',
+              conversacionId,
+              destinatarioTelefono: telefono,
+              payloadFuncional: {
+                tipo: 'text',
+                destinatarioTelefono: telefono,
+                texto: respuestaDefinitiva,
+              },
+              usaPlantilla: false,
+            },
+            trx,
+          );
+          intentoEnvioId = intent.intent_id;
+          await repository.vincularIntentoEnvioGrupo(trx, groupId, intentoEnvioId);
+
+          if (esEmergencia) {
+            // AC13/AC14: contrato para US WA 016 (emergencias_confirmadas) +
+            // contrato independiente para US WA 017 (solicitudes_atencion_humana),
+            // origen=emergencia/prioridad=critica, clave derivada del grupo
+            // (consideración técnica). envioPrevioId=intentoEnvioId: el aviso
+            // de transferencia de US WA 017 espera a que la respuesta clínica
+            // ya se haya confirmado enviada (AC5 de esa historia).
+            const emergenciaConfirmada = await repository.insertarEmergenciaConfirmada(trx, {
+              conversacionId,
+              groupId,
+              plantillaId,
+              slug: slugResuelto,
+              respuestaDefinitiva,
+              intentoEnvioId,
+            });
+            await atencionHumanaService.solicitarAtencionHumana({
+              conversacionId,
+              origen: 'emergencia',
+              prioridad: 'critica',
+              claveIdempotencia: `emergencia:grupo:${groupId}`,
+              referenciasFuncionales: {
+                groupId,
+                plantillaId,
+                slug: slugResuelto,
+                emergenciaConfirmadaId: emergenciaConfirmada.id,
+                respuestaIntentId: intentoEnvioId,
+              },
+              envioPrevioId: intentoEnvioId,
+              destinatarioTelefono: telefono,
+              ahora: new Date(),
+              trx,
+            });
+          }
+        });
+
+        if (grupoReprogramado) return 'grupo_reprogramado';
+
+        grupo = {
+          plantilla_id: plantillaId,
+          slug_resuelto: slugResuelto,
+          es_emergencia_resuelta: esEmergencia,
+          respuesta_definitiva: respuestaDefinitiva,
+          intento_envio_id: intentoEnvioId,
+        };
+      } catch (err) {
+        await repository.liberarClasificacionGrupo(groupId, reclamoId);
+        throw err;
+      }
+    }
+  }
+
+  let resultadoEnvio;
+  try {
+    resultadoEnvio = await outbox.ejecutarIntento(claveEnvio);
+  } catch (err) {
+    logger.error(
+      { err, conversacionId, groupId },
+      'Falló el envío de la respuesta clínica del grupo.',
+    );
+    resultadoEnvio = { enviado: false, error: err.message, errorCodigo: null };
+  }
+
+  if (!resultadoEnvio.enviado) {
+    return grupo.es_emergencia_resuelta ? 'emergencia_fallo_envio' : 'clasificado_fallo_envio';
+  }
+
+  // AC27: marca el grupo como definitivamente resuelto SOLO tras confirmar
+  // el envío — mientras no se confirme, sigue 'pendiente_enrutamiento' y
+  // un reintento lo reutiliza tal cual (mismo mecanismo de
+  // confirmarGuiaMedioEnviada).
+  await repository.marcarGrupoProcesado(groupId);
+  if (!grupo.es_emergencia_resuelta) {
+    // AC15/AC16: sin emergencia, el flujo normal de esa plantilla termina
+    // aquí — un solo tiro, como el resto de este sistema.
+    await repository.finalizarConversacionTrasGrupo(conversacionId, new Date());
+    return 'clasificado_normal';
+  }
+  // AC25: a partir de aquí, la US WA 017 administra el mensaje de
+  // transferencia, la ventana de 5 horas y la reactivación — esta
+  // historia no toca el estado de la conversación.
+  return 'clasificado_emergencia';
 }
 
 // US WA 014 (AC4): envía la solicitud de explicación escrita — texto
@@ -553,11 +657,11 @@ async function enviarGuiaMedioNoInterpretable({ conversacionId, telefono, groupI
 // decide cuántas veces la llama por ciclo. Mismo patrón "job llama a
 // service, service llama a repository" ya usado por
 // whatsappMensajesPendientesJob.js. procesarMensajePendiente() sigue sin
-// llamador, sin tocarse, a la espera de una historia futura que conecte el
-// grupo consolidado con la clasificación de Claude — US WA 004 intercepta
-// el caso de saludo puro/comando de menú, y US WA 014 el de un grupo de
-// solo medios (o la resolución de una explicación pendiente) — ninguno de
-// los 2 debe llegar a Claude.
+// llamador — US WA 004 intercepta el caso de saludo puro/comando de menú,
+// US WA 014 el de un grupo de solo medios (o la resolución de una
+// explicación pendiente), y US WA 009 clasifica con Claude cualquier otro
+// grupo con texto procesable (incluida la descripción pedida tras
+// MENU_EMERGENCIA, ver resolviendoEmergencia más abajo).
 async function procesarSiguienteConversacionVencida() {
   const conversacionId = await repository.reclamarConversacionVencida({
     segundosRecuperacion: env.whatsapp.agrupacionReclamoHuerfanoMinutos * 60,
@@ -588,7 +692,13 @@ async function procesarSiguienteConversacionVencida() {
       grupo.groupId,
       contexto.grupoMedioPendienteId,
     );
-    return { ...grupo, resultado: 'explicacion_recibida' };
+    const resultado = await clasificarYResponderGrupo({
+      conversacionId,
+      groupId: grupo.groupId,
+      textoConsolidado: grupo.texto_consolidado,
+      telefono: contexto?.telefonoNormalizado,
+    });
+    return { ...grupo, resultado };
   }
 
   if (!grupo.tieneTextoProcesable) {
@@ -603,33 +713,40 @@ async function procesarSiguienteConversacionVencida() {
     return { ...grupo, resultado: enviado ? 'guia_enviada' : 'guia_fallida' };
   }
 
+  // US WA 009 (AC6): la descripción pedida tras MENU_EMERGENCIA se
+  // clasifica SIEMPRE, sin el filtro de saludo/comando de abajo — un
+  // tutor cuya emergencia completa fuera literalmente "hola" no debe ver
+  // el menú en vez de una respuesta (AC6 no prevé ninguna excepción).
+  const resolviendoEmergencia =
+    contexto?.flujoActual === 'emergencia' && contexto?.pasoActual === 'esperando_descripcion';
+
   // US WA 004 (AC1-AC4): reclamarConversacionVencida solo reclama
   // conversaciones 'acumulando'/'procesando'/'flujo_activo' — una en
   // atencion_humana nunca llega aquí, así que la condición "no está en
   // atención humana" de AC2 ya está garantizada estructuralmente.
-  if (menu.esSaludoPuro(grupo.texto_consolidado) || menu.esComandoMenu(grupo.texto_consolidado)) {
+  if (
+    !resolviendoEmergencia &&
+    (menu.esSaludoPuro(grupo.texto_consolidado) || menu.esComandoMenu(grupo.texto_consolidado))
+  ) {
     const enviado = await enviarMenuPrincipal({
       conversacionId,
       telefono: contexto?.telefonoNormalizado,
       claveBase: `grupo:${grupo.groupId}`,
+      groupId: grupo.groupId,
     });
     return { ...grupo, resultado: enviado ? 'menu_enviado' : 'menu_fallido' };
   }
 
-  // AC3/AC4 (WA004): esta historia no muestra el menú ni clasifica — el
-  // grupo queda en pendiente_enrutamiento para que una historia futura de
-  // enrutamiento lo procese. CORRECCIÓN (descubierta probando en vivo): sin
-  // cerrar la conversación aquí, formarGrupoParaConversacion siempre
-  // reutiliza este MISMO grupo pendiente en cualquier llamada futura para
-  // esta conversación (WA003) — cualquier mensaje posterior del tutor
-  // (incluido un saludo puro que normalmente sí dispararía el menú) queda
-  // huérfano para siempre, sin group_id, porque nunca se vuelve a mirar.
-  // Cerrar la conversación no descarta el grupo (grupos_whatsapp sigue
-  // existiendo para la futura historia de enrutamiento) — solo hace que el
-  // SIGUIENTE mensaje del tutor arranque una conversación nueva y limpia
-  // (AC7 de US WA 013, "mensaje tras cierre -> nueva conversación").
-  await repository.cerrarConversacion(conversacionId, new Date());
-  return { ...grupo, resultado: 'no_resuelto' };
+  // US WA 009 (AC6/AC10/AC17): cualquier otro grupo con texto procesable
+  // — libre o descripción de emergencia (ambas con 10s por defecto) — se clasifica con
+  // Claude y se responde con la plantilla resuelta.
+  const resultado = await clasificarYResponderGrupo({
+    conversacionId,
+    groupId: grupo.groupId,
+    textoConsolidado: grupo.texto_consolidado,
+    telefono: contexto?.telefonoNormalizado,
+  });
+  return { ...grupo, resultado };
 }
 
 // US WA 013 (AC1): reclama UNA conversación con seguimiento vencido y le
@@ -642,11 +759,16 @@ async function procesarSiguienteSeguimientoPendiente() {
   if (!candidato) return null;
 
   const clave = `conversacion:${candidato.id}:seguimiento:${new Date(candidato.recordatorioProgramadoEn).getTime()}`;
-  await enviarSeguimiento({
+  const resultado = await enviarSeguimiento({
     conversacionId: candidato.id,
     telefono: candidato.telefonoNormalizado,
     claveIdempotencia: clave,
   });
+  if (resultado.enviado) {
+    await repository.confirmarSeguimientoEnviado(candidato.id);
+  } else {
+    await repository.liberarSeguimiento(candidato.id);
+  }
   return candidato.id;
 }
 
@@ -669,14 +791,63 @@ async function reenviarSeguimiento({ conversacionId, telefono, mensajeId }) {
   });
 }
 
+// WA013 AC2: "Continuar" reconstruye el paso activo de forma determinista,
+// nunca con Claude. Los textos y botones son los mismos que ya usa cada
+// flujo en su primer envío.
+async function reanudarFlujoPendiente({
+  conversacionId,
+  telefono,
+  mensajeId,
+  flujoActual,
+  pasoActual,
+}) {
+  const claveBase = `mensaje:${mensajeId}:continuar`;
+  if (flujoActual === 'consulta_laboratorio') {
+    const accionPorPaso = {
+      confirmando_telefono: 'iniciar',
+      esperando_folio: 'pedir_folio',
+      esperando_telefono_folio: 'pedir_telefono_folio',
+    };
+    const labAccion = accionPorPaso[pasoActual];
+    if (!labAccion) return null;
+    return enviarPasoLaboratorio({
+      conversacionId,
+      telefono,
+      mensajeId,
+      labAccion,
+      labDatos: null,
+    });
+  }
+
+  let texto = null;
+  if (flujoActual === 'emergencia' && pasoActual === 'esperando_descripcion') {
+    texto = menu.textoSolicitudEmergencia();
+  } else if (flujoActual === 'explicacion_medio' && pasoActual === 'esperando_descripcion') {
+    texto = menu.textoMedioNoInterpretable();
+  }
+  if (!texto) return null;
+
+  return intentarEnvioMenu({
+    claveIdempotencia: `${claveBase}:${flujoActual}:${pasoActual}`,
+    tipoEnvio: 'conversacional',
+    origenFuncional: 'respuesta_automatica',
+    conversacionId,
+    destinatarioTelefono: telefono,
+    payloadFuncional: { tipo: 'text', destinatarioTelefono: telefono, texto },
+    usaPlantilla: false,
+  });
+}
+
 module.exports = {
   registrarEventoEntrante,
-  procesarMensajePendiente,
   procesarSiguienteConversacionVencida,
   procesarSiguienteSeguimientoPendiente,
   cerrarSiguienteConversacionInactiva,
   enviarMenuPrincipal,
   reenviarSeguimiento,
+  reanudarFlujoPendiente,
   enviarSeleccionInvalida,
   enviarPasoLaboratorio,
+  enviarSolicitudEmergencia,
+  clasificarYResponderGrupo,
 };

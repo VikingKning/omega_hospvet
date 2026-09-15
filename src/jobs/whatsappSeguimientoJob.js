@@ -6,6 +6,7 @@ const env = require('../config/env');
 const logger = require('../config/logger');
 const { isWhatsappConfigured } = require('../config/whatsapp');
 const service = require('../modules/whatsapp/whatsapp.service');
+let cicloEnCurso = false;
 
 // Drena todos los seguimientos vencidos del ciclo actual, no solo uno.
 async function enviarSeguimientosPendientes() {
@@ -36,13 +37,17 @@ function start() {
     `Seguimiento y cierre por inactividad de conversaciones de WhatsApp activo, cada ${env.whatsapp.agrupacionPollIntervalSeconds}s.`,
   );
 
-  return setInterval(() => {
-    enviarSeguimientosPendientes().catch((err) => {
-      logger.error({ err }, 'Falló un ciclo de envío de seguimiento de WhatsApp.');
-    });
-    cerrarConversacionesInactivas().catch((err) => {
-      logger.error({ err }, 'Falló un ciclo de cierre por inactividad de WhatsApp.');
-    });
+  return setInterval(async () => {
+    if (cicloEnCurso) return;
+    cicloEnCurso = true;
+    try {
+      await enviarSeguimientosPendientes();
+      await cerrarConversacionesInactivas();
+    } catch (err) {
+      logger.error({ err }, 'Falló un ciclo de seguimiento y cierre de WhatsApp.');
+    } finally {
+      cicloEnCurso = false;
+    }
   }, intervalMs);
 }
 

@@ -120,6 +120,23 @@ describe('POST /webhooks/whatsapp — conversaciones_whatsapp (US WA 002)', () =
     expect(filas[0].procesar_despues_de).not.toBeNull();
   });
 
+  it('calcula la ventana desde la recepción en BD, no desde un timestamp retrasado de Meta', async () => {
+    const timestampMetaRetrasado = String(Math.floor(Date.now() / 1000) - 60);
+    const antesDeRecibir = Date.now();
+
+    await postMensaje(
+      `${WAMID_PREFIX}timestamp-retrasado`,
+      '5215500001097',
+      'primer fragmento',
+      timestampMetaRetrasado,
+    );
+
+    const conversacion = await buscarConversacion('525500001097').first();
+    expect(new Date(conversacion.procesar_despues_de).getTime()).toBeGreaterThan(
+      antesDeRecibir + 9000,
+    );
+  });
+
   it('un segundo mensaje del mismo número reutiliza la conversación abierta (AC4)', async () => {
     await postMensaje(`${WAMID_PREFIX}reuso-1`, '5215500001002', 'uno');
     await postMensaje(`${WAMID_PREFIX}reuso-2`, '5215500001002', 'dos');
@@ -191,18 +208,34 @@ describe('POST /webhooks/whatsapp — conversaciones_whatsapp (US WA 002)', () =
     expect(actualizada.estado).toBe('esperando_menu');
   });
 
-  it('el comando "menu" durante atencion_humana conserva el estado (AC12)', async () => {
+  // US WA 017 (AC11/AC12) SUSTITUYE el comportamiento que esta prueba
+  // verificaba antes de que esa historia existiera ("conserva el estado" a
+  // secas, sin excepción alguna) — ahora "menu" es justo la ÚNICA
+  // excepción explícita al silencio de atencion_humana: cierra la
+  // conversación vieja (motivo_cierre=solicitud_tutor) y crea una nueva en
+  // esperando_menu. El resto de mensajes SÍ siguen sin tocar el estado
+  // (cubierto en tests/integration/whatsapp.atencionHumana.test.js).
+  it('el comando "menu" durante atencion_humana reactiva el bot (US WA 017 AC11/AC12), no "conserva el estado"', async () => {
     const telefono = '5215500001006';
     await postMensaje(`${WAMID_PREFIX}humana-1`, telefono, 'hola');
     const [conversacion] = await buscarConversacion('525500001006');
     await db('conversaciones_whatsapp')
       .where({ id: conversacion.id })
-      .update({ estado: 'atencion_humana' });
+      .update({
+        estado: 'atencion_humana',
+        atencion_humana_hasta: db.raw("now() + interval '5 hours'"),
+      });
 
     await postMensaje(`${WAMID_PREFIX}humana-2`, telefono, 'menu');
 
-    const [actualizada] = await db('conversaciones_whatsapp').where({ id: conversacion.id });
-    expect(actualizada.estado).toBe('atencion_humana');
+    const vieja = await db('conversaciones_whatsapp').where({ id: conversacion.id }).first();
+    expect(vieja.estado).toBe('cerrada');
+    expect(vieja.motivo_cierre).toBe('solicitud_tutor');
+
+    const [nueva] = await db('conversaciones_whatsapp')
+      .where({ phone_number_id: PHONE_NUMBER_ID, telefono_normalizado: '525500001006' })
+      .whereNot('estado', 'cerrada');
+    expect(nueva.estado).toBe('esperando_menu');
   });
 
   it('2 inserciones concurrentes para el mismo teléfono solo crean una conversación (AC17)', async () => {

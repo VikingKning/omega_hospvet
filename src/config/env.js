@@ -75,18 +75,16 @@ module.exports = {
     // espaciado que el de Google Calendar (GOOGLE_SYNC_INTERVAL_MINUTES).
     templatesSyncIntervalMinutes:
       Number(process.env.WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES) || 60,
-    // US WA 001: poller de recuperación de mensajes 'pendiente'/'procesando'
-    // huérfanos (whatsappMensajesPendientesJob.js) — en SEGUNDOS, no
-    // minutos como templatesSyncIntervalMinutes de arriba: esto es chat
-    // casi en tiempo real, no una sincronización de catálogo.
-    workerPollIntervalSeconds: Number(process.env.WHATSAPP_WORKER_POLL_INTERVAL_SECONDS) || 30,
-    // A partir de cuántos minutos una fila 'procesando' se considera
-    // huérfana (el proceso se cayó después de reclamarla pero antes de
-    // terminarla) y se vuelve a reclamar.
-    workerStaleMinutes: Number(process.env.WHATSAPP_WORKER_STALE_MINUTES) || 5,
     // US WA 003: duración de la ventana de agrupación de mensajes
     // (AC1/AC2/AC3) — pedido explícito de la consideración técnica.
     agrupacionSegundos: Number(process.env.WHATSAPP_AGRUPACION_SEGUNDOS) || 10,
+    // Ventana de inactividad para la descripción de una emergencia. En
+    // pruebas reales, 3s cortaban frases antes de que el tutor terminara;
+    // por defecto usa la misma ventana de 10s del flujo normal.
+    agrupacionEmergenciaSegundos:
+      Number(process.env.WHATSAPP_AGRUPACION_EMERGENCIA_SEGUNDOS) ||
+      Number(process.env.WHATSAPP_AGRUPACION_SEGUNDOS) ||
+      10,
     // Cada cuántos segundos whatsappAgrupacionJob.js revisa conversaciones
     // vencidas — corto a propósito (el objetivo es cerrar la ventana de
     // 10s casi en tiempo real, no cada 30s como el poller retirado de
@@ -94,10 +92,9 @@ module.exports = {
     agrupacionPollIntervalSeconds:
       Number(process.env.WHATSAPP_AGRUPACION_POLL_INTERVAL_SEGUNDOS) || 3,
     // A partir de cuántos minutos una conversación 'procesando' se
-    // considera abandonada por un worker interrumpido (AC13) — distinto
-    // de workerStaleMinutes de arriba (ese es de mensajes, no de
-    // conversaciones). Formar un grupo debería tardar milisegundos, así
-    // que unos minutos ya es señal clara de crash.
+    // considera abandonada por un worker interrumpido (AC13). Formar un
+    // grupo debería tardar milisegundos, así que unos minutos ya es señal
+    // clara de crash.
     agrupacionReclamoHuerfanoMinutos:
       Number(process.env.WHATSAPP_AGRUPACION_RECLAMO_HUERFANO_MINUTOS) || 2,
     // US WA 013: minutos sin interacción del tutor (estado esperando_menu o
@@ -111,6 +108,27 @@ module.exports = {
     // despliegue") — el default de 3 es una ASUNCIÓN provisional, sujeta a
     // confirmación de negocio antes de producción.
     labMaxIntentos: Number(process.env.WHATSAPP_LAB_MAX_INTENTOS) || 3,
+    // US WA 017 (consideración técnica: "Configurar
+    // WHATSAPP_ATENCION_HUMANA_HORAS con valor 5") — atencion_humana_hasta
+    // se calcula UNA sola vez a partir de atencion_humana_desde (AC6/AC21);
+    // mensajes posteriores nunca la extienden.
+    atencionHumanaHoras: Number(process.env.WHATSAPP_ATENCION_HUMANA_HORAS) || 5,
+    // Cada cuántos segundos whatsappAtencionHumanaJob.js envía transferencias
+    // pendientes y cierra atenciones humanas vencidas — mismo orden de
+    // magnitud que agrupacionPollIntervalSeconds (esto también debe sentirse
+    // casi en tiempo real: un tutor no debe esperar minutos para enterarse
+    // de que lo canalizaron a personal, ni seguir "congelado" en
+    // atencion_humana mucho después de las 5 horas).
+    atencionHumanaPollIntervalSeconds:
+      Number(process.env.WHATSAPP_ATENCION_HUMANA_POLL_INTERVAL_SEGUNDOS) || 5,
+    // Lease común para recuperar envíos, clasificaciones o transferencias
+    // abandonadas por un proceso interrumpido.
+    workerReclamoHuerfanoSegundos:
+      Number(process.env.WHATSAPP_WORKER_RECLAMO_HUERFANO_SEGUNDOS) || 120,
+    // Backoff persistente de transferencias fallidas: evita que el drain
+    // loop reclame inmediatamente la misma fila una y otra vez.
+    atencionHumanaReintentoSegundos:
+      Number(process.env.WHATSAPP_ATENCION_HUMANA_REINTENTO_SEGUNDOS) || 30,
   },
   // Clasificador de intención de WhatsApp (Bitácora de Decisiones Técnicas
   // v4: "claude-haiku-4-5 vía Claude API, Commercial Terms — solo

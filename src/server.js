@@ -5,14 +5,17 @@ const { store: sessionStore } = require('./config/session');
 const app = require('./app');
 const googleCalendarSyncJob = require('./jobs/googleCalendarSyncJob');
 const plantillasWhatsappMetaSyncJob = require('./jobs/plantillasWhatsappMetaSyncJob');
-// whatsappMensajesPendientesJob (US WA 001) se retira de aquí: US WA 003
-// desactivó el disparo inmediato de clasificación/respuesta que ese job
-// recuperaba cada 30s — dejarlo activo reintroduciría el mismo problema,
-// solo que con 30s de retraso en vez de al instante. El archivo y
-// whatsapp.service.js#procesarMensajePendiente NO se borran: una historia
-// futura probablemente reutilice esa lógica contra el grupo consolidado.
+// whatsappMensajesPendientesJob (US WA 001) y
+// whatsapp.service.js#procesarMensajePendiente se retiraron por completo
+// en US WA 009: esa lógica de clasificación por MENSAJE individual (nunca
+// conectada a nada desde US WA 003, que introdujo la agrupación) quedó
+// reemplazada por whatsapp.service.js#clasificarYResponderGrupo, que
+// clasifica el GRUPO consolidado — la recuperación de huérfanos ya la
+// cubre whatsappAgrupacionJob.js (reclamarConversacionVencida, US WA 003
+// AC13), no hace falta un poller aparte.
 const whatsappAgrupacionJob = require('./jobs/whatsappAgrupacionJob');
 const whatsappSeguimientoJob = require('./jobs/whatsappSeguimientoJob');
+const whatsappAtencionHumanaJob = require('./jobs/whatsappAtencionHumanaJob');
 
 const server = app.listen(env.port, () => {
   logger.info(`Omega Vet AdminSite escuchando en el puerto ${env.port} (${env.nodeEnv})`);
@@ -22,6 +25,7 @@ const googleSyncInterval = googleCalendarSyncJob.start();
 const plantillasMetaSyncInterval = plantillasWhatsappMetaSyncJob.start();
 const whatsappAgrupacionInterval = whatsappAgrupacionJob.start();
 const whatsappSeguimientoInterval = whatsappSeguimientoJob.start();
+const whatsappAtencionHumanaInterval = whatsappAtencionHumanaJob.start();
 
 // Doble Ctrl+C (o SIGINT y SIGTERM llegando casi juntos, ej. de una
 // terminal/supervisor que manda ambos al cerrar) disparaba shutdown() dos
@@ -40,6 +44,7 @@ async function shutdown(signal) {
   if (plantillasMetaSyncInterval) clearInterval(plantillasMetaSyncInterval);
   if (whatsappAgrupacionInterval) clearInterval(whatsappAgrupacionInterval);
   if (whatsappSeguimientoInterval) clearInterval(whatsappSeguimientoInterval);
+  if (whatsappAtencionHumanaInterval) clearInterval(whatsappAtencionHumanaInterval);
   server.close(async () => {
     await Promise.all([db.destroy(), sessionStore.close()]);
     logger.info('Servidor y conexiones a base de datos cerrados.');

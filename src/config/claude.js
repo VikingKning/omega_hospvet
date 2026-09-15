@@ -106,34 +106,50 @@ function resumenTextoRespuesta(texto, maxLen = 160) {
   return limpio.length > maxLen ? `${limpio.slice(0, maxLen)}…` : limpio;
 }
 
-function systemPromptUnificado(candidatosReales) {
+// US WA 009 (consideración técnica: "Claude deberá devolver únicamente el
+// slug esperado por el proceso actual... el esquema de respuesta no deberá
+// permitir que Claude proporcione o modifique es_emergencia"): la etiqueta
+// que Claude elige ahora es el `slug` de la plantilla (un identificador
+// interno estable, mismo criterio que MENU_*/RESPUESTA_*/LAB_* ya
+// establecidos), NUNCA su `intencion` (la frase legible que antes se usaba
+// como etiqueta) — el AC19 de esa historia lo fija con un ejemplo literal
+// ("Claude devuelve el slug emergencia-medica"). `slugPorCategoria` mapea
+// cada una de las 4 categorías genéricas a su slug de plantilla
+// predeterminada del sistema (whatsapp.service.js las posee, no este
+// archivo) — así Claude nunca ve ni decide es_emergencia directamente: solo
+// nombra un slug, y el backend es quien resuelve esa plantilla y lee su
+// columna es_emergencia (AC11/AC12).
+function systemPromptUnificado(candidatosReales, slugPorCategoria) {
   return [
     'Eres un clasificador de mensajes de WhatsApp de una clínica veterinaria.',
-    'Tu ÚNICO trabajo es decidir con cuál ÚNICA etiqueta de esta lista se describe mejor el mensaje del tutor. Hay dos tipos de etiqueta, compitiendo en igualdad de condiciones:',
+    'Tu ÚNICO trabajo es decidir con cuál ÚNICO slug de esta lista se describe mejor el mensaje del tutor. Hay dos tipos de opción, compitiendo en igualdad de condiciones:',
     '',
-    'A) ESPECÍFICAS — las configuró la clínica para un motivo exacto; tienen prioridad sobre las genéricas de abajo cuando de verdad describen el mensaje. El NOMBRE de cada etiqueta ya describe el motivo por el que la clínica la creó — es la pista más directa de cuándo aplica. El resumen de su respuesta es SOLO contexto adicional (a veces la respuesta declina o redirige la solicitud en vez de resolverla directamente, y aun así la etiqueta sigue aplicando si el motivo del mensaje del tutor coincide con el motivo del nombre):',
+    'A) ESPECÍFICAS — las configuró la clínica para un motivo exacto; tienen prioridad sobre las genéricas de abajo cuando de verdad describen el mensaje. El MOTIVO indicado junto a cada slug ya describe por qué la clínica la creó — es la pista más directa de cuándo aplica. El resumen de su respuesta es SOLO contexto adicional (a veces la respuesta declina o redirige la solicitud en vez de resolverla directamente, y aun así el slug sigue aplicando si el motivo del mensaje del tutor coincide):',
     candidatosReales.length > 0
       ? candidatosReales
           .map(
             (c) =>
-              `- ${c.intencion}: se usaría para responder algo como "${resumenTextoRespuesta(c.texto_respuesta)}"`,
+              `- ${c.slug}: se usaría para responder algo como "${resumenTextoRespuesta(c.texto_respuesta)}" (motivo: ${c.intencion})`,
           )
           .join('\n')
       : '(la clínica no tiene ninguna configurada todavía)',
     '',
-    'B) GENÉRICAS — úsalas SOLO si ninguna etiqueta específica de arriba aplica de verdad:',
-    `- emergencia: ${DESCRIPCION_CATEGORIA.emergencia}`,
-    `- agendar_cita: ${DESCRIPCION_CATEGORIA.agendar_cita}`,
-    `- resultados_laboratorio: ${DESCRIPCION_CATEGORIA.resultados_laboratorio}`,
-    `- duda_medica: ${DESCRIPCION_CATEGORIA.duda_medica}`,
+    'B) GENÉRICAS — úsalas SOLO si ninguna opción específica de arriba aplica de verdad:',
+    `- ${slugPorCategoria.emergencia}: ${DESCRIPCION_CATEGORIA.emergencia}`,
+    `- ${slugPorCategoria.agendar_cita}: ${DESCRIPCION_CATEGORIA.agendar_cita}`,
+    `- ${slugPorCategoria.resultados_laboratorio}: ${DESCRIPCION_CATEGORIA.resultados_laboratorio}`,
+    `- ${slugPorCategoria.duda_medica}: ${DESCRIPCION_CATEGORIA.duda_medica}`,
     '',
-    'Regla de desempate: una etiqueta específica de A) gana sobre una genérica de B) cuando de verdad describe el motivo real del mensaje, aunque el mensaje también encaje vagamente en una categoría genérica. Pero NUNCA fuerces una etiqueta específica que no encaja bien solo por una palabra parecida (ej. que ambas mencionen "cita" o "medicamento"): si ninguna específica aplica de verdad, responde la categoría genérica correcta de B) en vez de adivinar una específica.',
+    'Regla de desempate: una opción específica de A) gana sobre una genérica de B) cuando de verdad describe el motivo real del mensaje, aunque el mensaje también encaje vagamente en una categoría genérica. Pero NUNCA fuerces una opción específica que no encaja bien solo por una palabra parecida (ej. que ambas mencionen "cita" o "medicamento"): si ninguna específica aplica de verdad, responde el slug genérico correcto de B) en vez de adivinar una específica.',
     '',
-    'Dos aclaraciones que aplican a CUALQUIER etiqueta específica, no solo a una en particular:',
-    '- Si la respuesta de una etiqueta específica agradece o depende de haber recibido una foto/imagen/video (ej. empieza con "gracias por la foto"), esa etiqueta SOLO aplica si el mensaje del tutor menciona o deja claro que mandó una foto/imagen/video. Si no mandó nada, esa etiqueta no aplica aunque el tema se parezca — compara contra otra específica o una genérica.',
+    'Dos aclaraciones que aplican a CUALQUIER opción específica, no solo a una en particular:',
+    '- Si la respuesta de una opción específica agradece o depende de haber recibido una foto/imagen/video (ej. empieza con "gracias por la foto"), esa opción SOLO aplica si el mensaje del tutor menciona o deja claro que mandó una foto/imagen/video. Si no mandó nada, esa opción no aplica aunque el tema se parezca — compara contra otra específica o una genérica.',
     '- La clínica atiende todo por WhatsApp: pedir que le llamen, hacer una llamada o una videollamada para que revisen a la mascota a distancia SÍ cuenta como pedir una consulta o revisión "por WhatsApp" o "remota", aunque el tutor no use esas palabras exactas.',
     '',
-    reglasComunes([...candidatosReales.map((c) => c.intencion), ...CATEGORIAS]),
+    reglasComunes([
+      ...candidatosReales.map((c) => c.slug),
+      ...CATEGORIAS.map((cat) => slugPorCategoria[cat]),
+    ]),
   ].join('\n');
 }
 
@@ -192,20 +208,24 @@ async function clasificar(mensaje, systemPrompt, etiquetasValidas) {
 // catálogo real de plantillas activas Y las 4 categorías genéricas fijas,
 // al mismo tiempo — ver systemPromptUnificado para el porqué de juntarlas
 // en un solo prompt en vez de 2 llamadas separadas.
-// `candidatosReales` son objetos `{ intencion, texto_respuesta }` (no
-// strings sueltos): systemPromptUnificado usa `texto_respuesta` para darle
-// a cada etiqueta específica el mismo nivel de contexto semántico que ya
-// tienen las 4 categorías genéricas (ver el comentario de
-// resumenTextoRespuesta) — sin eso, una etiqueta específica sin
-// descripción pierde sistemáticamente contra una genérica bien descrita
-// aunque sea la que de verdad aplica. `etiqueta` puede salir siendo una
-// `candidatosReales[].intencion` (con su casing original) o una de
-// CATEGORIAS o null (sin_coincidencia / respuesta inesperada) — el
-// llamador (whatsapp.service.js) decide qué hacer con cada caso.
-async function clasificarMensaje(mensaje, candidatosReales) {
-  return clasificar(mensaje, systemPromptUnificado(candidatosReales), [
-    ...candidatosReales.map((c) => c.intencion),
-    ...CATEGORIAS,
+// `candidatosReales` son objetos `{ intencion, slug, texto_respuesta }`
+// (no strings sueltos): systemPromptUnificado usa `texto_respuesta` para
+// darle a cada opción específica el mismo nivel de contexto semántico que
+// ya tienen las 4 categorías genéricas (ver el comentario de
+// resumenTextoRespuesta) — sin eso, una opción específica sin descripción
+// pierde sistemáticamente contra una genérica bien descrita aunque sea la
+// que de verdad aplica. `slugPorCategoria` (US WA 009) es
+// `{ emergencia, agendar_cita, resultados_laboratorio, duda_medica }` — el
+// slug de plantilla predeterminada del sistema para cada categoría
+// genérica. `etiqueta` puede salir siendo un `candidatosReales[].slug`
+// (con su casing original) o uno de los 4 valores de `slugPorCategoria` o
+// null (sin_coincidencia / respuesta inesperada) — el llamador
+// (whatsapp.service.js) resuelve ese slug contra una plantilla activa,
+// nunca al revés.
+async function clasificarMensaje(mensaje, candidatosReales, slugPorCategoria) {
+  return clasificar(mensaje, systemPromptUnificado(candidatosReales, slugPorCategoria), [
+    ...candidatosReales.map((c) => c.slug),
+    ...CATEGORIAS.map((cat) => slugPorCategoria[cat]),
   ]);
 }
 
