@@ -23,6 +23,7 @@ const APP_SECRET = 'app-secret-de-integracion-agrupacion';
 const VERIFY_TOKEN = 'verify-token-de-integracion-agrupacion';
 
 const WAMID_PREFIX = 'wamid.agrup-';
+const WAMID_FAKE_RUN_ID = `${process.pid}-${Date.now()}`;
 const PHONE_NUMBER_ID = 'phone-integ-agrupacion-test';
 
 const originalFetch = global.fetch;
@@ -43,7 +44,10 @@ beforeEach(() => {
     contadorWamidFake += 1;
     return {
       ok: true,
-      json: () => Promise.resolve({ messages: [{ id: `wamid.agrup-fake-${contadorWamidFake}` }] }),
+      json: () =>
+        Promise.resolve({
+          messages: [{ id: `wamid.agrup-fake-${WAMID_FAKE_RUN_ID}-${contadorWamidFake}` }],
+        }),
     };
   });
   jest
@@ -90,6 +94,10 @@ afterAll(async () => {
   await db('emergencias_confirmadas').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('intent_id', outboxAlertasIds).del();
+  await db('outbox_whatsapp')
+    .where({ destinatario_telefono: '525500002998' })
+    .where('clave_idempotencia', 'like', 'legacy:mensaje:%:respuesta')
+    .del();
   await db('mensajes_whatsapp').where('whatsapp_message_id', 'like', `${WAMID_PREFIX}%`).del();
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('conversaciones_whatsapp').where('phone_number_id', PHONE_NUMBER_ID).del();
@@ -156,6 +164,55 @@ async function vencerConversacion(id) {
 }
 
 describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (US WA 003)', () => {
+  it('US WA 012 conserva el pipeline inicial y excluye el flujo anterior del agrupador nuevo', async () => {
+    const whatsappMessageId = `${WAMID_PREFIX}pipeline-inmutable`;
+    const base = {
+      whatsappMessageId,
+      telefonoOrigen: '5215500002998',
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado: '525500002998',
+      tipoMensaje: 'text',
+      contenido: 'mensaje individual',
+      mediaId: null,
+      mimeType: null,
+      tituloInteractivo: null,
+      recibidoEn: new Date(),
+    };
+
+    const primero = await repository.registrarMensajeYConversacion({
+      ...base,
+      pipelineAsignado: repository.PIPELINE_ANTERIOR,
+    });
+    const duplicado = await repository.registrarMensajeYConversacion({
+      ...base,
+      pipelineAsignado: repository.PIPELINE_NUEVO,
+    });
+
+    expect(primero).toMatchObject({ esNuevo: true, pipelineAsignado: 'flujo_anterior' });
+    expect(duplicado).toMatchObject({ esNuevo: false, pipelineAsignado: 'flujo_anterior' });
+    const mensaje = await db('mensajes_whatsapp')
+      .where({ whatsapp_message_id: whatsappMessageId })
+      .first();
+    expect(mensaje).toMatchObject({
+      pipeline_asignado: 'flujo_anterior',
+      conversacion_id: null,
+      group_id: null,
+      reentregas_meta: 1,
+    });
+    expect(await buscarConversacion(base.telefonoNormalizado)).toHaveLength(0);
+
+    const procesadoId = await service.procesarSiguienteMensajeFlujoAnterior();
+    expect(procesadoId).toBe(mensaje.id);
+    const final = await db('mensajes_whatsapp').where({ id: mensaje.id }).first();
+    expect(final).toMatchObject({
+      pipeline_asignado: 'flujo_anterior',
+      estado_procesamiento: 'procesado',
+      ruta_enrutamiento: 'consulta_libre',
+    });
+    expect(claude.clasificarMensaje).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('cinco fragmentos dentro de una misma ventana forman un solo grupo (AC7/AC9)', async () => {
     const telefono = '5215500002001';
     for (const [i, texto] of ['uno', 'dos', 'tres', 'cuatro', 'cinco'].entries()) {

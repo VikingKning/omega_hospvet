@@ -1,9 +1,6 @@
 const repository = require('./areas.repository');
 const { isValidColorId, findColor } = require('./googleCalendarColors');
 
-// Mismo patrón de errores con `.status` que auth.service.js — el
-// controller los atrapa para re-renderizar el formulario con el mensaje,
-// en vez de un 400/409 JSON crudo (esto es un fragmento HTMX, no una API).
 class AreaValidationError extends Error {
   constructor(message) {
     super(message);
@@ -40,8 +37,6 @@ function parseId(rawId) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-// Query params de un listado GET: se sanean con valores por defecto en vez
-// de rechazarse con un error (mismo criterio que doctores.service.js).
 async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
   const trimmedQ = (q ?? '').trim();
   const activoOnly = estado !== 'todos';
@@ -60,10 +55,6 @@ async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // El repository solo trae el id de color guardado (`color_google_calendar`)
-  // — el hex/nombre para pintar el swatch en la tabla es un dato estático
-  // (googleCalendarColors.js), se resuelve aquí para que la vista no tenga
-  // que conocer el catálogo de colores.
   const areasConColor = areas.map((area) => ({
     ...area,
     color: findColor(area.color_google_calendar),
@@ -83,34 +74,24 @@ async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
   };
 }
 
-// US-611: baja lógica (activo=false + desactivado_por/desactivado_en), nunca
-// un DELETE físico — las citas históricas siguen referenciando esta área.
-// Un id inválido/inexistente no truena, simplemente no hace nada (mismo
-// criterio permisivo que el resto del módulo).
 async function desactivar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
   await repository.desactivar(id, usuarioId);
 }
 
-// Contraparte de desactivar() — ver el comentario de
-// areas.repository.js#activar. Un id inválido/inexistente no truena, mismo
-// criterio permisivo que desactivar().
 async function activar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
   await repository.activar(id, usuarioId);
 }
 
-// US-610: para precargar el formulario de edición.
 async function obtener(rawId) {
   const id = parseId(rawId);
   if (id === null) return undefined;
   return repository.findById(id);
 }
 
-// Quita acentos/diacríticos y cualquier caracter que no sea alfanumérico,
-// para un slug legible y estable ("Cardiología" -> "cardiologia").
 const DIACRITIC_MARKS = /[̀-ͯ]/g;
 
 function slugify(nombre) {
@@ -123,34 +104,20 @@ function slugify(nombre) {
     .replace(/^-+|-+$/g, '');
 }
 
-// Para el chequeo de duplicados (no para lo que se guarda/muestra): dos
-// nombres cuentan como "el mismo" aunque difieran en acentos, mayúsculas o
-// espacios ("Neurología" / "Neurologia" / "neuro logia" son un solo
-// nombre). `nombre`/`slug` guardados NUNCA pasan por esto — el usuario ve y
-// edita el texto tal cual lo escribió (solo recortado por validateNombre).
 function normalizeNombre(nombre) {
   return nombre.normalize('NFD').replace(DIACRITIC_MARKS, '').toLowerCase().replace(/\s+/g, '');
 }
 
-// Trae todas las áreas (menos excludeId, en edición) y compara nombres
-// normalizados en JS — ver el comentario de repository.findAllExcept sobre
-// por qué no se hace con SQL/una extensión de Postgres.
 async function findDuplicado(nombre, excludeId) {
   const objetivo = normalizeNombre(nombre);
   const candidatos = await repository.findAllExcept(excludeId);
   return candidatos.find((candidato) => normalizeNombre(candidato.nombre) === objetivo);
 }
 
-// El slug es único de verdad para siempre. `nombre` también es único
-// (constraint del script de base de datos, sin partial index), así que dos
-// slugs solo pueden colisionar si dos NOMBRES DISTINTOS normalizan al mismo
-// texto (ej. "Área X" y "Área  X" con doble espacio) — caso raro pero se
-// cubre igual con un sufijo numérico, mismo patrón que un slug de blog.
 async function generateUniqueSlug(nombre) {
   const base = slugify(nombre);
   let slug = base;
   let suffix = 2;
-  // Secuencial a propósito: cada intento depende del resultado del anterior.
   while (await repository.existsBySlug(slug)) {
     slug = `${base}-${suffix}`;
     suffix += 1;
@@ -171,23 +138,10 @@ function validateNombre(rawNombre) {
   return nombre;
 }
 
-// El color es opcional — "Sin color" (NULL en BD) es el valor por defecto
-// del picker, una elección válida, no un hueco a rellenar. Un valor
-// ausente/vacío o que no sea uno de los 11 colorId reales de Google
-// resuelve a NULL en vez de rechazar el alta/edición.
 function validateColor(rawColor) {
   return isValidColorId(rawColor) ? String(rawColor) : null;
 }
 
-// US-610 AC: alta — sin id, genera el slug a partir del nombre. `nombre`
-// sigue siendo único de verdad a nivel de base de datos (constraint del
-// script original, sin partial index agregado) — así que "reutilizar el
-// nombre de un área dada de baja" no puede ser un INSERT nuevo (chocaría
-// con el UNIQUE). En vez de eso, si ya existe un registro con ese nombre:
-// - activo -> es un duplicado real, se rechaza (AC de duplicados).
-// - inactivo -> se REACTIVA ese mismo registro (conserva su slug de
-//   siempre, nunca se regenera ni se crea una fila nueva) en vez de crear
-//   uno paralelo con un slug con sufijo.
 async function crear({ nombre: rawNombre, color: rawColor, usuarioId }) {
   const nombre = validateNombre(rawNombre);
   const color = validateColor(rawColor);
@@ -205,20 +159,6 @@ async function crear({ nombre: rawNombre, color: rawColor, usuarioId }) {
   return repository.create({ nombre, slug, color, usuarioId });
 }
 
-// US-610 AC: edición — con id, actualiza solo nombre (+ actualizado_por/
-// actualizado_en), el slug nunca se toca. A diferencia de crear(), aquí SÍ
-// se rechaza contra CUALQUIER otro registro con ese nombre, esté activo o
-// no — el `UNIQUE` de la base de datos lo exige de todos modos (no hay
-// "reactivar" al editar: sería fusionar la identidad de dos registros
-// distintos, algo que el AC nunca pidió).
-//
-// Pedido explícito del usuario: para un área predeterminada del sistema
-// (Consultas/Estética) lo ÚNICO editable es el color de Google Calendar —
-// el nombre que llegue en el body se IGNORA por completo (se guarda el que
-// ya tenía), en vez de rechazar la petición: el formulario ya manda el
-// nombre actual sin cambios (ver area-form.ejs, nombre queda readonly para
-// estas filas), así que esto nunca debería divergir en la práctica; ignorar
-// es solo la defensa server-side de ese mismo candado.
 async function editar({ id, nombre: rawNombre, color: rawColor, usuarioId }) {
   const parsedId = parseId(id);
   const actual = parsedId !== null ? await repository.findById(parsedId) : null;

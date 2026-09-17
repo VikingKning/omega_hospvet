@@ -1,17 +1,7 @@
-// US WA 015: orquestación de envíos salientes idempotentes — tercer
-// concern distinto de whatsapp.service.js (pipeline de mensajes
-// ENTRANTES) y whatsapp.envios.js (envío proactivo específico de
-// laboratorio): esta capa es genérica para cualquier tipo de envío
-// saliente (conversacional, laboratorio, alerta_interna) y no sabe nada
-// de clasificación ni de construir contenido — solo registra una
-// intención YA decidida (AC4) y la ejecuta de forma segura ante
-// reintentos.
 const whatsapp = require('../../config/whatsapp');
 const logger = require('../../config/logger');
 const repository = require('./whatsapp.repository');
 
-// Arma el body exacto de Meta a partir del contenido YA decidido — nunca
-// reconstruye ni reclasifica nada (AC4).
 function construirBody(payload) {
   if (payload.tipo === 'template') {
     return {
@@ -22,9 +12,6 @@ function construirBody(payload) {
     };
   }
   if (payload.tipo === 'interactive') {
-    // US WA 004: reenvía tal cual el `interactive` ya armado por
-    // whatsapp.menu.js — mismo criterio de "nunca reconstruir" que
-    // 'template'/'texto'.
     return {
       messaging_product: 'whatsapp',
       to: payload.destinatarioTelefono,
@@ -51,18 +38,10 @@ async function enviarAMeta(payload) {
   return { res, data };
 }
 
-// AC1: registra la intención ANTES de que se intente enviar. `trx`
-// opcional (US WA 009): permite componer este registro dentro de la
-// transacción atómica de un llamador (AC23) — omitido, se comporta
-// exactamente igual que antes (una escritura suelta contra `db`).
 async function registrarIntento(datos, trx) {
   return repository.registrarIntentoEnvio(datos, trx);
 }
 
-// AC2/AC3/AC4/AC5: ejecuta (o reutiliza) UN intento ya registrado. Siempre
-// relee la fila fresca de BD — nunca recibe el intento como parámetro en
-// memoria, para no arrastrar un estado potencialmente obsoleto entre
-// reintentos.
 async function ejecutarIntento(claveIdempotencia) {
   const { intent, reclamado } = await repository.reclamarIntentoEnvio(claveIdempotencia);
   if (!intent) {
@@ -81,9 +60,6 @@ async function ejecutarIntento(claveIdempotencia) {
     return { enviado: false, motivo: 'ventana_servicio_expirada' };
   }
 
-  // AC2: Meta ya aceptó el mensaje en un intento anterior y el proceso se
-  // cayó antes de terminar la operación local — se finaliza SIN volver a
-  // llamar a Meta.
   if (intent.wamid) {
     await repository.marcarResultadoEnvio(intent.intent_id, { estado: 'enviado' });
     return { enviado: true, yaEnviado: true, wamid: intent.wamid };
@@ -93,9 +69,6 @@ async function ejecutarIntento(claveIdempotencia) {
     return { enviado: false, motivo: 'envio_en_progreso' };
   }
 
-  // AC5: solo los envíos conversacionales están sujetos a la ventana de
-  // servicio de 24h — Meta permite plantillas aprobadas (laboratorio,
-  // AC6) fuera de ella.
   if (intent.tipo_envio === 'conversacional' && intent.conversacion_id) {
     const vencida = await repository.estaVentanaServicioVencida(intent.conversacion_id);
     if (vencida) {
@@ -132,15 +105,18 @@ async function ejecutarIntento(claveIdempotencia) {
   }
 
   const wamid = data.messages?.[0]?.id ?? null;
+  // El wamid se persiste primero para reconocer reintentos tras una interrupción parcial.
   await repository.marcarWamid(intent.intent_id, wamid);
   await repository.marcarResultadoEnvio(intent.intent_id, { estado: 'enviado' });
   return { enviado: true, wamid };
 }
 
-// AC3: aplicado por whatsapp.controller.js#recibir para cada webhook de
-// estado. Si el POST aun no guarda el wamid, el repositorio conserva el
-// evento temporalmente y lo enlaza al finalizar ese POST.
 async function registrarEstadoMeta({ wamid, estadoMeta }) {
+  await repository.registrarEventoMetrica({
+    claveEvento: `estado_meta:${wamid}:${estadoMeta}`,
+    tipoEvento: 'estado_meta',
+    resultado: estadoMeta,
+  });
   const encontrado = await repository.aplicarEstadoMeta(wamid, estadoMeta);
   if (!encontrado) {
     logger.warn(

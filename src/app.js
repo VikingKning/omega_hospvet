@@ -35,10 +35,6 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(
   pinoHttp({
     logger,
-    // Decisión cerrada (Arquitectura y Buenas Prácticas, sección 4.3): pino-http
-    // solo registra fallos (4xx/5xx), nunca cada petición exitosa — evita
-    // consumir disco innecesario en el servidor de recursos limitados de la
-    // clínica (Decisión 9).
     customLogLevel: (req, res, err) => {
       if (err || res.statusCode >= 500) return 'error';
       if (res.statusCode >= 400) return 'warn';
@@ -46,12 +42,6 @@ app.use(
     },
   }),
 );
-// Genera un nonce único por request para el CSP (script-src) — permite los
-// <script> propios del proyecto (inline y js/htmx.min.js) sin necesitar
-// 'unsafe-inline'. Tiene que registrarse ANTES de helmet(): la directiva
-// script-src de abajo lee res.locals.cspNonce vía una función (req, res) =>
-// ..., que helmet invoca al construir el header — el valor ya tiene que
-// existir en res.locals para ese momento.
 app.use((req, res, next) => {
   res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
   next();
@@ -60,33 +50,13 @@ app.use((req, res, next) => {
 app.use(
   helmet({
     contentSecurityPolicy: {
-      // useDefaults:false: se prefiere una política explícita y completa a
-      // heredar en silencio los defaults de helmet (que incluyen
-      // style-src 'unsafe-inline', innecesario aquí — cero CSS inline en
-      // todo el proyecto, confirmado).
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
         scriptSrcAttr: ["'none'"], // refuerza: cero onclick=/onerror=/etc. en el proyecto
-        // 'unsafe-inline' aquí no es un descuido: no hay CSS en atributos
-        // style="" ni <style> en ningún .ejs (verificado), pero el CLIENTE
-        // sí hace `elemento.style.top = ...`/`.left =`/`.width = ...` en
-        // varios lugares (posicionamiento de los combobox flotantes en
-        // usuarios.ejs/doctores.ejs/laboratorio.ejs, animaciones del
-        // sidebar, semáforo de citas). Eso pasa por el mismo mecanismo de
-        // "estilo inline" que un style="" en el HTML — un CSP style-src sin
-        // 'unsafe-inline' lo bloquea igual, y a diferencia de script-src no
-        // hay forma práctica de darle un nonce a un valor que se calcula en
-        // tiempo real (ej. la posición de un rect). Es el mismo trade-off
-        // que usan la mayoría de los CSP nonce-based en producción: el
-        // riesgo real de XSS vive en script-src (ejecución arbitraria),
-        // no en style-src (a lo sumo permite maquetar/ocultar contenido).
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
-        // 'data:' además de 'self': FullCalendar embebe su fuente de
-        // iconos (flechas de navegación) como data URI dentro de su propio
-        // CSS, no como un archivo servido aparte.
         fontSrc: ["'self'", 'data:'],
         connectSrc: ["'self'"], // HTMX (selfRequestsOnly) solo pega al mismo origen
         objectSrc: ["'none'"],
@@ -97,37 +67,17 @@ app.use(
         upgradeInsecureRequests: [],
       },
     },
-    // Reporte de seguridad (hallazgo INFO, no un bug): Helmet YA manda este
-    // header con este mismo valor por default (`hsts` sin configurar
-    // produce exactamente maxAge=31536000 + includeSubDomains) — se deja
-    // explícito aquí, no porque haga falta cambiar nada, sino para que quien
-    // audite este archivo no tenga que conocer los defaults internos de la
-    // librería para confirmar que 1 año + subdominios es intencional. El
-    // navegador simplemente lo ignora sobre HTTP (como en `dev:localhost`);
-    // en producción, detrás de HTTPS real, sí lo aplica.
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
     },
   }),
 );
-// Recomendación de seguridad (buena práctica OWASP, no un hallazgo de un
-// bug real): Helmet dejó de traer esto por su cuenta hace años (el nombre/
-// spec del header tardó en estabilizarse) — se manda a mano. Cámara,
-// micrófono, geolocalización y pagos no se usan en ningún punto del
-// sistema (verificado: cero `getUserMedia`/`geolocation`/`PaymentRequest`
-// en todo `public/js`/`src/views`), así que se deshabilitan por completo en
-// vez de dejarlos disponibles sin necesidad.
 app.use((req, res, next) => {
   res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
   next();
 });
 app.use(compression());
-// `verify` guarda los bytes crudos del body en `req.rawBody` — hace falta
-// para el webhook de WhatsApp (whatsapp.controller.js), que tiene que
-// recalcular el HMAC de la firma de Meta sobre el body TAL CUAL llegó, no
-// sobre el JSON ya parseado (el hash no coincidiría). Inocuo para el
-// resto de las rutas, que nunca leen `req.rawBody`.
 app.use(
   express.json({
     verify: (req, res, buf) => {
@@ -135,24 +85,12 @@ app.use(
     },
   }),
 );
-// HTMX manda el <form> del panel de doctores con la codificación por
-// defecto de un form HTML (application/x-www-form-urlencoded), no JSON —
-// express.json() no lo parsea, hace falta este middleware aparte.
 app.use(express.urlencoded({ extended: false }));
-// Reporte de seguridad M-07: defensa en profundidad contra XSS almacenado —
-// se aplica UNA vez aquí, sobre req.body de TODAS las rutas, en vez de
-// depender de que cada endpoint de escritura de cada módulo se acuerde de
-// llamar sanitizarTexto() por su cuenta (ver el comentario largo en
-// sanitizeBody.js/sanitizarTexto.js para el porqué y sus límites).
 app.use(sanitizeBody);
 app.use(express.static(path.join(rootDir, 'public')));
 app.use(cookieParser());
 app.use(sessionMiddleware);
 
-// Mensaje específico por motivo de expiración — texto exacto de cada AC
-// (US-108 para inactividad, US-111 para el tope absoluto de 8h);
-// `expirarSesion` en requireAuth.js manda el motivo exacto en
-// `?expired=<motivo>`.
 const EXPIRED_MESSAGES = {
   inactividad: 'La sesión expiró por inactividad. Favor de iniciar sesión nuevamente.',
   absoluto: 'Tu sesión ha expirado. Favor de iniciar sesión nuevamente.',
@@ -163,9 +101,6 @@ app.get(['/', '/index.html'], (req, res) => {
     return res.redirect('/main.html');
   }
 
-  // Se toca la sesión para forzar que se guarde (saveUninitialized:false no
-  // la persiste sola) y así el id de sesión usado para firmar el token CSRF
-  // en este GET sea el mismo que llegue de vuelta en el POST /login.
   req.session.csrfInitialized = true;
   const csrfToken = generateCsrfToken(req, res);
   res.render('index', {
@@ -178,11 +113,6 @@ app.get('/main.html', requireAuth, attachSidebarAreas, (req, res) => {
   res.render('main', { user: req.session.user });
 });
 
-// Cada módulo del sidebar se protege con requireAuth (sesión válida) y
-// requirePermission (el permiso sembrado exactamente para ese módulo en
-// US-000), dentro de su propio *.routes.js — así una URL directa no puede
-// saltarse lo que el menú ya oculta (AC6 de US-101: nunca confiar en que el
-// frontend oculte el acceso).
 
 app.use('/', authRoutes);
 app.use('/', doctoresRoutes);
@@ -195,11 +125,6 @@ app.use('/', agendaRoutes);
 app.use('/', laboratorioRoutes);
 app.use('/', metricasRoutes);
 app.use('/', whatsappAlertasRoutes);
-// Callback externo de Meta, nunca una acción de un usuario con sesión —
-// sin requireAuth/CSRF (mismo criterio ya establecido: CSRF es opt-in por
-// ruta, no global). Protegido en su lugar por el verify_token (GET,
-// handshake) y la firma HMAC (POST, cada mensaje) — ver
-// whatsapp.controller.js.
 app.use('/', whatsappRoutes);
 
 app.get('/health', (req, res) => {

@@ -1,17 +1,3 @@
-// US WA 003: consolidación de los fragmentos de una conversaciones_whatsapp
-// tras vencer su ventana de agrupación. `group_id` es el nombre literal
-// que pide la consideración técnica (no "id") — mismo criterio que
-// created_at/updated_at en inglés en conversaciones_whatsapp: se sigue
-// tal cual, sin "corregir" al resto del schema.
-//
-// Índice único parcial (conversacion_id) WHERE estado='pendiente_enrutamiento'
-// es el mecanismo de idempotencia de AC12/AC13: a lo más un grupo sin
-// enrutar por conversación — un reintento tras un crash reutiliza el
-// mismo grupo en vez de crear uno duplicado.
-//
-// Sin CHECK constraint en `estado` — mismo criterio ya establecido en
-// mensajes_whatsapp/conversaciones_whatsapp (documentar los valores
-// válidos vía COMMENT ON COLUMN).
 exports.up = async function up(knex) {
   await knex.schema.createTable('grupos_whatsapp', (table) => {
     table.increments('group_id').primary();

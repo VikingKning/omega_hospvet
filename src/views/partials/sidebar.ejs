@@ -1,20 +1,10 @@
 <%
   const permissions = user?.permissions ?? [];
   const has = (code) => permissions.includes(code);
-  // Mismo criterio que configOpen más abajo: cada página REAL del grupo se
-  // enumera aparte (nunca un valor genérico 'metricas') para que cada
-  // pantalla real del grupo active únicamente su propio enlace.
   const metricasOpen =
     currentPage === 'metricas-laboratorio' ||
     currentPage === 'metricas-agenda' ||
     currentPage === 'metricas-whatsapp';
-  // US-109: "Mi perfil" no requiere ningún permiso (disponible para
-  // cualquier usuario autenticado) y vive dentro de este mismo grupo — el
-  // grupo completo tiene que poder mostrarse aunque el usuario no tenga
-  // NINGUNO de los otros 4 permisos, o "Mi perfil" quedaría inalcanzable
-  // para esa cuenta. Antes de US-109, showConfigGroup dependía solo de
-  // esos 4 permisos porque no había nada más en el grupo que no los
-  // necesitara.
   const showConfigGroup = true;
   const configOpen =
     currentPage === 'doctores' ||
@@ -23,25 +13,6 @@
     currentPage === 'usuarios' ||
     currentPage === 'perfil';
 
-  // Reconstrucción del menú: "Agenda" ya no son links fijos en código —
-  // cada ÁREA activa de la tabla `areas` es su propia agenda (pedido
-  // explícito del usuario), emparejada por slug contra el permiso granular
-  // `agenda.<slug>.ver` (módulo `agenda_<slug>` en el catálogo; mismo
-  // catálogo que ya alimenta el tab "Agendas" de la matriz de permisos,
-  // ver usuarios.service.js#construirTabAgendas) — un área nueva aparece
-  // sola en el menú de quien tenga su permiso, sin tocar este archivo.
-  // `areasAgendaSidebar` llega vía res.locals (middlewares/
-  // attachSidebarAreas.js, encadenado después de requireAuth en cada ruta
-  // que renderiza una página completa), nunca se consulta aquí — un
-  // partial EJS no puede hacer su propia llamada a BD.
-  //
-  // Con el calendario genérico por área (agenda.routes.js,
-  // /agenda/<slug>.html) las 8 áreas tienen página real desde el día uno —
-  // ya no queda ninguna en "Próximamente" (ese estado y agenda.html/
-  // grooming.html, los mockups que lo forzaban, se retiraron junto con
-  // esto). `currentPage` de cada ítem es `agenda-<slug>` (no un genérico
-  // "agenda" compartido) porque ahora cada área tiene su URL propia, a
-  // diferencia del agenda.html combinado de antes.
   const areasAgenda = areasAgendaSidebar ?? [];
   const agendaItems = areasAgenda
     .filter((area) => has(`agenda.${area.slug}.ver`))
@@ -54,11 +25,7 @@
 %>
 <nav class="sidebar-nav" id="sidebar">
   <% if (has('tutores.ver')) { %>
-    <%
-    // US-155: ya existe una página real (catálogo de tutores/pacientes),
-    // deja de ser el link decorativo `href="#"` que era desde la
-    // reconstrucción del menú.
-    %>
+
     <a href="tutores.html" class="nav-link<%= currentPage === 'tutores' ? ' current' : '' %>">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
       <span>Tutores y pacientes</span>
@@ -91,17 +58,6 @@
   <% } %>
 
   <%
-    // US-604: el antiguo metricas.ver único se desdobló en un permiso por
-    // sub-sección real (metricas.whatsapp.ver/metricas.laboratorios.ver/
-    // metricas.agenda.ver) — el grupo se muestra si tiene AL MENOS uno de
-    // los tres, y cada link del submenú se gatea con el suyo propio (mismo
-    // criterio que el submenú de Configuraciones de abajo).
-    // Bug real encontrado al construir la primera pantalla de este grupo
-    // (Laboratorio): estos códigos usaban el nombre de MÓDULO interno
-    // (metricas_laboratorio, con guion bajo) en vez del `codigo` real
-    // sembrado en 01_permissions.js (con puntos, y "laboratorios" en
-    // plural) — el grupo completo nunca se mostraba, para NADIE, ni
-    // siquiera un admin con todos los permisos.
     const metricasPerms = ['metricas.whatsapp.ver', 'metricas.laboratorios.ver', 'metricas.agenda.ver'];
     const showMetricasGroup = metricasPerms.some(has);
   %>

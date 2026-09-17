@@ -4,8 +4,6 @@ exports.up = async function up(knex) {
     table.boolean('notificaciones_alertas').notNullable().defaultTo(false);
   });
 
-  // Las cuentas que ya estaban vinculadas con un doctor deben conservar
-  // desde la migración la misma regla que aplica el alta/edición.
   await knex('usuarios').whereNotNull('doctor_id').update({ tipo_usuario: 'doctor' });
 
   await knex.raw(`

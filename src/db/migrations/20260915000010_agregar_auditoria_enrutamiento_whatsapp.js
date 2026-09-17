@@ -1,6 +1,3 @@
-// US WA 011: la decisión pertenece al grupo consolidado, no a cada
-// fragmento. Estos campos conservan el resultado histórico antes de enviar
-// y permiten que un reintento reutilice la misma ruta y el mismo outbox.
 exports.up = async function up(knex) {
   await knex.schema.alterTable('grupos_whatsapp', (table) => {
     table.string('ruta_enrutamiento', 40);

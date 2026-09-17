@@ -1,6 +1,3 @@
-// US WA 016: adaptador determinista entre la señal histórica producida por
-// WA009 y la bandeja central WA018. No resuelve destinatarios, no prepara
-// canales, no construye contenido clínico y no importa Claude.
 const alertasService = require('./whatsapp.alertas.service');
 
 class EmergenciaAlertaValidationError extends Error {

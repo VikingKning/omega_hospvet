@@ -1,6 +1,3 @@
-// Endurece los workers de WhatsApp con marcas de reclamación recuperables.
-// Las marcas son independientes del resultado definitivo: evitan trabajo
-// concurrente duplicado sin dejar filas bloqueadas después de reiniciar PM2.
 exports.up = async function up(knex) {
   await knex.schema.alterTable('grupos_whatsapp', (table) => {
     table.string('clasificacion_reclamo_id', 64);

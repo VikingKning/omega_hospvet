@@ -1,6 +1,3 @@
-// Bus SSE en memoria para el monolito actual. Los eventos no llevan datos
-// de la alerta: únicamente indican que cada cliente autenticado debe volver
-// a consultar su lista autorizada en PostgreSQL.
 const clientes = new Set();
 
 function suscribir(res) {

@@ -1,13 +1,3 @@
-// US WA 009 (AC13/AC22/AC24): "señal idempotente emergencia_confirmada" —
-// contrato PROPIO para que la US WA 016 genere el banner/notificaciones al
-// personal (esta historia no lo hace, AC24), separado de
-// solicitudes_atencion_humana (contrato independiente para la US WA 017,
-// AC14) — mismo criterio de "tabla dedicada como contrato explícito para
-// otra historia" ya usado por US WA 017 con solicitudes_atencion_humana.
-//
-// UNIQUE(group_id): a lo más UNA señal por grupo — es la mitad de AC27
-// ("una sola señal emergencia_confirmada") junto con el ON CONFLICT DO
-// NOTHING que usará el repository.
 exports.up = async function up(knex) {
   await knex.schema.createTable('emergencias_confirmadas', (table) => {
     table.increments('id').primary();
@@ -31,10 +21,6 @@ exports.up = async function up(knex) {
       .inTable('plantillas_whatsapp')
       .deferrable('immediate');
     table.string('slug', 150).notNullable();
-    // AC13: "una copia inmutable del valor de es_emergencia" — siempre
-    // true mientras esta fila exista (solo se crea cuando lo es), pero se
-    // persiste literal tal como pide el AC, no se infiere de la existencia
-    // de la fila.
     table.boolean('es_emergencia').notNullable().defaultTo(true);
     table.text('respuesta_definitiva').notNullable();
     table

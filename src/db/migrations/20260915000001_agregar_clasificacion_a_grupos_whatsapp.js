@@ -1,15 +1,3 @@
-// US WA 009: conecta finalmente el grupo consolidado (US WA 003) con la
-// clasificación de Claude — consideración técnica: "Persistir por grupo
-// como mínimo plantilla_id, slug_resuelto, es_emergencia_resuelta,
-// respuesta_definitiva, clasificado_en y la referencia a la intención de
-// envío". `es_emergencia_resuelta` es una COPIA inmutable del valor de
-// plantillas_whatsapp.es_emergencia al momento de clasificar (AC22) — un
-// cambio posterior al switch de la plantilla nunca debe alterar esta fila
-// histórica. `tokens_entrada`/`tokens_salida` van aquí (no en
-// mensajes_whatsapp): un grupo puede consolidar varios mensajes en una sola
-// llamada a Claude (AC6), así que el consumo real pertenece al grupo, no a
-// un mensaje individual — consideración técnica: "registrar el consumo
-// real cuando Claude procese el texto consolidado".
 exports.up = async function up(knex) {
   await knex.schema.alterTable('grupos_whatsapp', (table) => {
     table

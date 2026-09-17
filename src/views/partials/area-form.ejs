@@ -1,29 +1,9 @@
 <%
-// US-610: mismo formulario para alta y edición — el modo se decide por si
-// `area` viene o no (edición trae el registro completo, alta viene null).
-// Este partial se usa tanto para el primer render (GET /areas/nuevo o
-// GET /areas/:id/editar) como para el re-render con error (POST/PUT
-// fallidos, ver areas.controller.js) — por eso `nombre` viaja aparte de
-// `area`: en un re-render por error es lo que el usuario acababa de
-// escribir, no necesariamente lo que ya está guardado.
 const esEdicion = Boolean(area);
-// Pedido explícito del usuario: Consultas/Estética (áreas predeterminadas
-// del sistema) SOLO permiten editar el color de Google Calendar — el
-// nombre queda bloqueado (readonly) para estas filas, en vez de ocultar el
-// formulario de edición por completo. La defensa real vive en el servidor
-// (areas.service.js#editar ignora el nombre que llegue para estas filas);
-// esto es solo para no ofrecer un campo que de todos modos se ignoraría.
 const esPredeterminada = Boolean(area?.es_predeterminada);
-// "Ver" (ícono siempre disponible, mismo criterio que plantillas_whatsapp)
-// reusa este mismo formulario en modo totalmente solo-lectura — ver
-// areas.controller.js#verForm.
 const esSoloLectura = Boolean(soloLectura);
 const nombreBloqueado = esSoloLectura || esPredeterminada;
 
-// El picker no distingue null/undefined/'' — las tres formas en que "sin
-// color todavía" puede llegar aquí (alta nueva, área existente sin color,
-// o el hidden input tras un re-render por error) resuelven al mismo id
-// vacío, que es el que trae la opción "Sin color" del grid.
 const selectedColorId = color === null || color === undefined ? '' : String(color);
 const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
 %>

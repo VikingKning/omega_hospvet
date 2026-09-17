@@ -9,17 +9,6 @@ const controller = require('./usuarios.controller');
 
 const router = express.Router();
 
-// US-604 AC: "intento modificar permisos sin contar con usuarios.permisos
-// ... el sistema rechaza el cambio aunque el usuario tenga usuarios.crear o
-// usuarios.editar". El apartado de Permisos vive en el MISMO formulario/
-// ruta que los datos generales (US-602) — no hay una ruta propia de
-// "permisos" a la que colgarle un requirePermission('usuarios.permisos')
-// normal. Este middleware cubre exactamente ese hueco: solo actúa cuando el
-// body trae el marcador `permisosSeccion` (el cliente intentó tocar la
-// matriz — desde el formulario real, o directamente contra el servidor) y
-// en ese caso exige el permiso específico, sin importar que la ruta ya haya
-// pasado el gate de usuarios.crear/usuarios.editar. Mismo criterio de
-// respuesta que requirePermission.js (hxRedirect a /main.html).
 function requirePermisosSiSePresenta(req, res, next) {
   if (req.body.permisosSeccion === undefined) return next();
   const permissions = req.session.user?.permissions ?? [];
@@ -37,11 +26,6 @@ router.get(
   controller.list,
 );
 
-// Filtro/orden/paginación vía HTMX: nunca aparece en la URL ni en el
-// historial del navegador (mismo criterio de privacidad que
-// doctores.html/areas.html/plantillas.html). El body viaja igual de
-// "sucio" que un query string, así que se protege con el mismo CSRF que
-// POST /login.
 router.post(
   '/usuarios.html',
   requireAuth,
@@ -51,9 +35,6 @@ router.post(
   controller.filter,
 );
 
-// US-603: baja lógica, disparada por HTMX desde el ícono de eliminar del
-// listado (con confirmación previa vía hx-confirm) — mismo patrón que
-// DELETE /doctores/:id (US-608)/DELETE /areas/:id (US-611).
 router.delete(
   '/usuarios/:id',
   requireAuth,
@@ -63,14 +44,6 @@ router.delete(
   controller.darDeBaja,
 );
 
-// US-605: restablecimiento de contraseña, disparado por HTMX desde el
-// ícono de reset del listado (con confirmación previa vía hx-confirm) —
-// mismo patrón que DELETE /usuarios/:id (US-603). "Permiso requerido:
-// usuarios.editar" es literal del AC de la historia — el botón en la
-// tabla se gatea con usuarios.resetear_password (ver usuarios-panel.ejs),
-// pero ese permiso nunca existe por separado: siempre se otorga junto con
-// usuarios.editar (ver aplicarReglaEditarUsuariosIncluyePermisos), así que
-// ambos gates son equivalentes en la práctica.
 router.post(
   '/usuarios/:id/resetear-password',
   requireAuth,
@@ -80,13 +53,6 @@ router.post(
   controller.resetearPassword,
 );
 
-// US-602: alta y edición, mismo formulario en un modal. Los GET solo arman
-// el fragmento del formulario (vacío o precargado); los POST/PUT hacen el
-// alta/edición real. Cada ruta exige el permiso específico de la acción
-// (crear ≠ editar) — así un usuario con uno solo de los dos nunca puede
-// ejecutar el otro, aunque el formulario sea visualmente el mismo. US-604
-// agrega el apartado de Permisos al mismo formulario (con su propio gate,
-// ver requirePermisosSiSePresenta arriba).
 router.get(
   '/usuarios/nuevo',
   requireAuth,
@@ -99,15 +65,7 @@ router.get(
   requirePermission('usuarios.editar'),
   controller.editarForm,
 );
-// Pedido explícito del usuario: fragmento de solo-lectura — mismo permiso
-// que el listado (usuarios.ver), no usuarios.editar.
 router.get('/usuarios/:id/ver', requireAuth, requirePermission('usuarios.ver'), controller.verForm);
-// US-604 (quinta iteración): sugerencia de username en vivo mientras se
-// escribe Nombre(s)/Apellidos en el alta — body, no query string, mismo
-// criterio de privacidad que el resto de las rutas HTMX de este módulo (un
-// nombre real nunca debe aparecer en la URL/historial). Requiere
-// usuarios.crear (el único formulario que la usa) y CSRF, igual que
-// cualquier otro POST de este router.
 router.post(
   '/usuarios/username-sugerido',
   requireAuth,

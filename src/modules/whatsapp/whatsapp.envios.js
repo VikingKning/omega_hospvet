@@ -1,43 +1,12 @@
-// Envío PROACTIVO de WhatsApp (resultados de laboratorio) — separado de
-// whatsapp.service.js a propósito: ese módulo es solo el pipeline de
-// mensajes ENTRANTES (webhook + clasificación), este es el negocio
-// iniciando la conversación, un concepto distinto (y sujeto a la regla de
-// Meta de "plantilla aprobada fuera de una ventana de 24h", ver README).
-//
-// Dos pasos siempre, en este orden: 1) subir el archivo real a Meta
-// (subirMedia) para obtener un media id; 2) mandar la plantilla
-// 'resultados_laboratorio_listos' (registrada una sola vez con
-// scripts/registrar-plantilla-resultados-laboratorio.js) referenciando ese
-// id en su encabezado de documento. Ninguna de las 2 funciones atrapa
-// errores — tiran un Error normal si Meta responde con algo distinto de
-// ok; laboratorio.envios.js es quien decide "nunca lanzar" hacia arriba.
 const whatsapp = require('../../config/whatsapp');
 const logger = require('../../config/logger');
 const repository = require('./whatsapp.repository');
 const outbox = require('./whatsapp.outbox');
 
-// v2 (2026-09-11): rediseño del texto del mensaje — nombre nuevo a
-// propósito, ver scripts/registrar-plantilla-resultados-laboratorio.js y
-// la migración 20260911000003_agregar_plantilla_resultados_laboratorio_
-// listos_v2.js (una plantilla ya aprobada por Meta es inmutable).
 const TEMPLATE_NAME = 'resultados_laboratorio_listos_v2';
 const TEMPLATE_LANGUAGE = 'es_MX';
-// US WA 015 (AC7): categoría de facturación de Meta ya registrada para
-// esta plantilla — literal, igual criterio que TEMPLATE_NAME/
-// TEMPLATE_LANGUAGE de arriba (fija para esta única plantilla hardcodeada,
-// no amerita una consulta nueva a plantillas_whatsapp.categoria_meta).
 const TEMPLATE_CATEGORIA_META = 'UTILITY';
 
-// `propietarios.telefono` se guarda como 10 dígitos puros, SIN código de
-// país (ver tutores.service.js#stripTelefono) — a propósito no se reusa
-// normalizarNumeroSalida() de whatsapp.service.js: esa corrige el "1"
-// extra de un número que YA llega con el prefijo 521... desde el webhook
-// de Meta (mensajes entrantes), pero un teléfono de nuestra propia BD
-// nunca tuvo código de país para empezar, ese caso no aplica aquí. Bug
-// real encontrado en vivo: mandarlo tal cual (sin "52") hacía que Meta lo
-// rechazara con "(#131030) Recipient phone number not in allowed list"
-// aunque el número SÍ estuviera en la lista de destinatarios de prueba —
-// sin el código de país, Meta no lo reconocía como el mismo número.
 function formatearNumeroMexicano(telefono) {
   return `52${telefono}`;
 }
@@ -68,14 +37,6 @@ async function subirMedia(buffer, mimetype, nombreArchivo) {
   return data.id;
 }
 
-// `folio` llega ya formateado (solo el número, ej. "005" — ver idLabel()
-// en laboratorio.envios.js) porque el "LAB-" es texto literal dentro del
-// body de la plantilla, no parte de la variable. `saludo` es "día"/
-// "tarde"/"noche" según la hora de envío en America/Mexico_City (ver
-// saludoPorHora() en laboratorio.envios.js) — se calcula en cada envío,
-// nunca se guarda. `claveIdempotencia` (US WA 015 AC6): la arma el
-// llamador (laboratorio.envios.js) para que un reintento del mismo envío
-// nunca lo duplique en Meta.
 async function enviarPlantillaResultados({
   telefono,
   nombreTutor,

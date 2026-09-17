@@ -3,15 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<%#
-  Pedido explícito del usuario: alta/edición/consulta de laboratorio son
-  pantallas completas propias (mismo patrón que tutor-form.ejs — un nivel
-  más profundo que la raíz, /laboratorio/nuevo y /laboratorio/:id/editar),
-  no un modal sobre la tabla como el resto de los módulos del sistema. Mismo
-  motivo del <base> que tutor-form.ejs: sin esto, las referencias relativas
-  de esta página y de partials/sidebar.ejs resolverían contra /laboratorio/
-  en vez de /.
-%>
+<%# La ruta anidada requiere una base explícita para los assets y enlaces relativos. %>
 <base href="/">
 <title><%= registro ? (soloLectura ? 'Consultar registro' : 'Editar registro') : 'Nuevo registro' %> de laboratorio | Omega Hospital Veterinario</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
@@ -21,30 +13,12 @@
 <body>
 
   <%
-  // Pedido explícito del usuario: el badge de Estado (Pendiente/Cargado/
-  // Enviado) que ya existía en el listado también debe verse en Consultar
-  // y Cargar resultados (misma vista, ver el switch de `titulo` más abajo)
-  // — mismo patrón exacto que laboratorio-panel.ejs (badge + ESTADO_LABEL),
-  // declarado también aquí porque esta vista no comparte ese <script> con
-  // el partial del listado.
   const ESTADO_LABEL = { pendiente: 'Pendiente', cargado: 'Cargado', enviado: 'Enviado' };
   const esEdicion = Boolean(registro);
-  // Corrección explícita del usuario: "Ver" es PURAMENTE informativa (qué
-  // se mandó, a quién, cuándo) — nunca debe ofrecer subir archivos. Esa
-  // opción vive en su propia pantalla, /cargar (ícono "Subir resultados"
-  // de la tabla), que el controller también renderiza en solo lectura
-  // (mismos campos bloqueados que /ver) pero con `modoCargarArchivos` en
-  // true — es la ÚNICA condición que activa los controles de carga, ya no
-  // depende de soloLectura genérico.
   const titulo = esEdicion
     ? (modoCargarArchivos ? 'Cargar resultados' : (soloLectura ? 'Consultar registro' : 'Editar registro'))
     : 'Nuevo registro';
   const disabledAttr = soloLectura ? 'disabled' : '';
-  // Regla explícita del usuario: en EDICIÓN (no en alta) los datos de tutor,
-  // paciente y fecha de solicitud quedan bloqueados — un registro nace
-  // ligado a un paciente/fecha específicos y no se deben reasignar después.
-  // Doctor solicitante, Agregar estudios y Observaciones siguen editables
-  // (`disabledAttr` normal, solo se bloquean en consulta).
   const tutorPacienteDisabledAttr = (soloLectura || esEdicion) ? 'disabled' : '';
   const puedeCargarArchivos = Boolean(modoCargarArchivos);
   %>
@@ -96,14 +70,7 @@
           </a>
         </div>
 
-        <%
-        // Pedido explícito del usuario: encabezado (título/Volver) y footer
-        // (Cancelar/Guardar/Imprimir) siempre visibles — solo esta franja de
-        // en medio (banners + las 3 tarjetas) hace scroll. `.lab-form-scroll`
-        // es la ÚNICA parte con overflow-y en esta pantalla; `.lab-form-page`
-        // pasa a llenar el alto disponible como columna flex de 3 renglones
-        // (encabezado/scroll/footer), ver main.css.
-        %>
+
         <div class="lab-form-scroll">
         <span class="form-error-banner" id="labFormError" style="display:none">
           <span id="labFormErrorText"></span>
@@ -190,19 +157,7 @@
         </section>
 
         <section class="profile-card">
-          <%
-          // Pedido explícito del usuario: "Agregar estudios" y "Estudios
-          // solicitados" son 2 zonas propias, cada una con su título al
-          // mismo nivel (antes "Agregar estudios" era el título de TODA la
-          // tarjeta, con "Estudios solicitados" como subtítulo chico
-          // adentro — en /ver y /cargar, donde el picker no se renderiza,
-          // eso dejaba un título "Agregar estudios" encabezando una
-          // pantalla donde no se puede agregar nada). Ahora cada columna
-          // del grid empieza con su propio <h3>, alineadas verticalmente
-          // por diseño (mismo estilo/margen en ambas, primer hijo de su
-          // columna) — en /ver y /cargar, sin picker, "Estudios
-          // solicitados" queda como único título visible de esta tarjeta.
-          %>
+
           <div class="lab-estudios-layout">
             <% if (!soloLectura) { %>
               <div class="lab-estudios-picker-zone">
@@ -212,16 +167,7 @@
                 <label>
                   Categoría
                   <div class="combobox" id="labCategoriaCombobox">
-                    <%
-                    // Pedido explícito del usuario (helper compartido de
-                    // combobox.js): el botón "x" de limpiar se muestra según
-                    // si el trigger tiene texto — un value fijo no vacío
-                    // ("Todas las categorías") nunca se vería como "vacío"
-                    // para ese chequeo. Se resuelve igual que Lateralidad
-                    // abajo: placeholder en vez de value, el campo arranca
-                    // (y vuelve, al elegir "Todas las categorías" o limpiar)
-                    // realmente vacío.
-                    %>
+
                     <input type="text" id="labCategoriaTrigger" autocomplete="off" placeholder="Todas las categorías">
                     <ul class="combobox-list" id="labCategoriaList" hidden></ul>
                   </div>
@@ -307,14 +253,7 @@
               <div class="lab-tutor-card-header">
                 <h3 class="tutor-form-card-title">Estudios solicitados</h3>
                 <% if (puedeCargarArchivos) { %>
-                  <%
-                  // Pedido explícito del usuario: quitar de un solo clic
-                  // TODOS los archivos subidos uno por uno (no toca "Archivo
-                  // para todos" — ese ya tiene su propia x en su chip).
-                  // Empieza deshabilitado, igual que "Enviar resultados";
-                  // actualizarEstadosBotonesArchivo() lo habilita solo
-                  // cuando el camino individual está en uso (modoIndividual).
-                  %>
+
                   <button type="button" class="btn-secondary" id="labQuitarTodosIndividualesBtn" disabled>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
                     Quitar todos los archivos
@@ -322,13 +261,7 @@
                 <% } %>
               </div>
 
-              <%
-              // Movida aquí (antes vivía arriba de las 2 columnas, bajo el
-              // título "Agregar estudios" que ya no existe) — pedido
-              // explícito del usuario: solo tiene sentido junto a "Estudios
-              // solicitados", que es la única zona visible en /cargar
-              // (donde el picker de "Agregar estudios" no se renderiza).
-              %>
+
               <% if (puedeCargarArchivos) { %>
                 <div class="lab-archivo-todos-card">
                   <h4 class="lab-form-subtitle">Archivo para todos los estudios</h4>
@@ -364,19 +297,7 @@
             <button type="button" class="btn-primary" id="labGuardarBtn">Guardar registro</button>
           <% } %>
           <% if (puedeCargarArchivos) { %>
-            <%
-            // "Enviar resultados" — pedido explícito del usuario: vive en
-            // el footer fijo (junto a Cancelar/Imprimir) para que quede
-            // siempre visible aunque el usuario haga scroll dentro de
-            // "Agregar estudios". Envío real por correo/WhatsApp (ver
-            // laboratorio.service.js#enviarResultados) — se queda
-            // habilitado después de un envío exitoso a propósito, para
-            // poder reenviar (ej. reintentar un canal que falló, o el
-            // tutor pide que se lo manden de nuevo). Empieza deshabilitado;
-            // se activa client-side según actualizarEstadosBotonesArchivo()
-            // — solo cuando TODOS los estudios ya tienen archivo (por
-            // "todos" o uno por uno).
-            %>
+
             <button type="button" class="btn-primary" id="labEnviarResultadosBtn" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
               Enviar resultados
@@ -388,18 +309,6 @@
           </button>
         </div>
 
-        <%#
-          Documento de impresión — pedido explícito del usuario: no quería
-          "la pantalla impresa" (reusar el look de tarjetas/formulario), sino
-          algo que se vea como un documento real (orden de laboratorio) para
-          entregar o archivar. Invisible en pantalla (`.lab-print-only`),
-          solo se muestra dentro de @media print — ahí también se oculta
-          TODO lo demás dentro de `.lab-form-page` (ver main.css). El
-          contenido se llena en cliente justo antes de imprimir
-          (prepararDocumentoImpresion()), leyendo lo que ya está en pantalla
-          — funciona igual en alta/edición/consulta sin duplicar lógica de
-          dónde vive cada dato.
-        %>
         <div class="lab-print-only" id="labPrintDocument">
           <header class="lab-print-header">
             <div class="lab-print-brand">
@@ -457,35 +366,14 @@
   </div>
 
   <% if (puedeCargarArchivos) { %>
-    <%
-    // "Enviar resultados" (pedido explícito del usuario): envío real por
-    // WhatsApp y/o correo según los datos de contacto del tutor (ver
-    // laboratorio.service.js#enviarResultados). Este modal ya NO cubre la
-    // espera del envío (eso lo hace el loader global, ver
-    // partials/global-loader.ejs más abajo — bloqueante de verdad, sin
-    // botón de cerrar) — solo aparece DESPUÉS de que el servidor ya
-    // respondió, para mostrar el resultado final (éxito/error por canal,
-    // ver resumenEnvio() más abajo), y ahí sí se puede cerrar libremente.
-    // Mismo patrón visual que #confirmModalBackdrop (.modal-backdrop/
-    // .modal-card/.modal-header, ya usado en el resto del sistema).
-    %>
+
     <div class="modal-backdrop" id="labEnviarModalBackdrop">
       <div class="modal-card">
         <div class="modal-header">
           <h2 id="labEnviarModalTitulo">Resultados enviados</h2>
           <button class="modal-close-btn" type="button" id="labEnviarModalClose" aria-label="Cerrar">&times;</button>
         </div>
-        <%
-        // Pedido explícito del usuario: antes correo y WhatsApp se
-        // anunciaban con un solo párrafo ("Resultados enviados por correo.
-        // WhatsApp: Authentication Error"), difícil de leer de un vistazo —
-        // ahora cada canal intentado es su propia fila con ícono de
-        // éxito/error (ver renderCanalesEnvio() más abajo). #labEnviarModalMensaje
-        // se conserva aparte para el caso de una falla TOTAL sin desglose
-        // por canal (error genérico del servidor o de red, ver
-        // enviarResultados() más abajo) — nunca se muestran los dos a la
-        // vez, uno de los dos siempre queda vacío.
-        %>
+
         <p id="labEnviarModalMensaje"></p>
         <div class="lab-envio-resultado-lista" id="labEnviarModalCanales"></div>
         <div class="modal-actions">
@@ -494,35 +382,14 @@
       </div>
     </div>
 
-    <%
-    // Pedido explícito del usuario: tras subir un archivo (que se sube
-    // solo, sin un botón "Guardar" — ver manejarSeleccionArchivoParaSubir
-    // más abajo) hay que confirmarle al usuario que ya quedó almacenado,
-    // para que no se quede buscando ese botón inexistente. Estilo toast
-    // (flotante, se desvanece solo) en vez de reusar .form-success-banner
-    // (ese empuja el layout y se queda fijo hasta que el usuario lo
-    // cierra — pensado para errores de validación, no para una
-    // confirmación de paso). Primer toast del proyecto.
-    %>
+
     <div class="toast" id="labArchivoToast" role="status" aria-live="polite"></div>
 
-    <%
-    // Loader global de bloqueo (pedido explícito del usuario) — se
-    // muestra mientras la subida de un archivo está en curso (ver
-    // marcarSubiendoArchivo/subirArchivosDeLaboratorio más abajo), para
-    // que el usuario no pueda tocar nada del formulario a medias de una
-    // subida. Primer uso de partials/global-loader.ejs en el proyecto.
-    %>
+
     <%- include('partials/global-loader') %>
   <% } %>
 
-  <%
-  // Isla de datos JSON inerte (nunca un <script>, esta página no usa HTMX
-  // pero el criterio se mantiene igual por consistencia con el resto del
-  // proyecto — ver doctorFormAreasData en doctor-form.ejs). El carácter "<"
-  // se re-escapa a su forma unicode para que un nombre con `<`/`</div>`
-  // nunca pueda cerrar el div antes de tiempo.
-  %>
+
   <div id="labFormData" hidden><%- JSON.stringify({
     catalogo,
     doctores,
@@ -559,7 +426,6 @@
       return div.innerHTML;
     }
 
-    // ---- Datos de la isla JSON ----
     const datosEl = document.getElementById('labFormData');
     const DATOS = JSON.parse(datosEl.textContent);
     const csrfToken = DATOS.csrfToken;
@@ -567,22 +433,10 @@
     const DOCTORES = DATOS.doctores;
     const SOLO_LECTURA = DATOS.soloLectura;
     const PUEDE_CARGAR_ARCHIVOS = DATOS.puedeCargarArchivos;
-    // Tipos permitidos para resultados (pedido explícito del usuario: video,
-    // foto, PDF o Word) — mismo whitelist que laboratorio.archivos.js del
-    // lado servidor, aquí solo restringe qué aparece en el selector de
-    // archivos del sistema operativo (la validación real es la del
-    // servidor).
     const ACCEPT_ARCHIVOS =
       'image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,video/mp4,video/quicktime,video/webm';
-    // Regla explícita del usuario: en EDICIÓN (no alta) tutor/paciente/fecha
-    // quedan bloqueados — mismo criterio que tutorPacienteDisabledAttr del
-    // lado servidor, para el código que solo corre en cliente (JS de
-    // teléfono/tutor por nombre/paciente).
     const ES_EDICION = Boolean(DATOS.registro);
 
-    // Mismos íconos ya usados en tutor-form.ejs (Especie/Sexo) — se repiten
-    // aquí porque esta pantalla no comparte <script> con esa (páginas
-    // completas independientes), pedido de consistencia visual del usuario.
     const DOG_SVG =
       '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M64 176C80.6 176 94.2 188.6 95.8 204.7L96.1 211.3C97.8 227.4 111.4 240 128 240L307.1 240L448 300.4L448 544C448 561.7 433.7 576 416 576L384 576C366.3 576 352 561.7 352 544L352 412.7C328 425 300.8 432 272 432C243.2 432 216 425 192 412.7L192 544C192 561.7 177.7 576 160 576L128 576C110.3 576 96 561.7 96 544L96 298.4C58.7 285.2 32 249.8 32 208C32 190.3 46.3 176 64 176zM387.8 32C395.5 32 402.7 35.6 407.4 41.8L424 64L476.1 64C488.8 64 501 69.1 510 78.1L528 96L584 96C597.3 96 608 106.7 608 120L608 144C608 188.2 572.2 224 528 224L464 224L457 252L332.3 198.6L363.9 51.4C366.3 40.1 376.2 32 387.8 32zM480 108C469 108 460 117 460 128C460 139 469 148 480 148C491 148 500 139 500 128C500 117 491 108 480 108z"/></svg>';
     const CAT_SVG =
@@ -596,10 +450,6 @@
       return str.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     }
 
-    // ---- Combobox flotante (mismo patrón que doctores.ejs#positionComboboxList
-    // — esta página nunca sufre el truco de stacking-context de
-    // `.main-content > *` porque no reparenta nada a <body>, así que basta con
-    // position:fixed). ----
     function positionComboboxList(trigger, list) {
       const rect = trigger.getBoundingClientRect();
       list.style.position = 'fixed';
@@ -632,20 +482,10 @@
       document.getElementById('labFormSuccess').style.display = 'none';
     }
 
-    // Cerrar el banner de error (pedido explícito del usuario) — esta
-    // pantalla no usa HTMX ni se reemplaza a sí misma, así que un listener
-    // directo sobre el botón (sin delegar) alcanza.
     document.getElementById('labFormErrorDismiss').addEventListener('click', () => {
       document.getElementById('labFormError').style.display = 'none';
     });
 
-    // ---- Botón "x" de limpiar de cada combobox (pedido explícito del
-    // usuario, ver public/js/combobox.js#attachComboboxClearButton) — cada
-    // sección de abajo reasigna la suya al armar su botón; se declaran aquí
-    // como no-op por si ese bloque nunca corre (ej. Tutor por nombre y
-    // Paciente no tienen botón activo en modo edición/consulta) y el resto
-    // del código puede llamarlas de todos modos tras cambiar el value por
-    // su cuenta, sin checar primero si el botón llegó a existir.
     let refrescarTutorNombreClear = () => {};
     let refrescarPacienteClear = () => {};
     let refrescarDoctorClear = () => {};
@@ -653,7 +493,6 @@
     let refrescarEstudioClear = () => {};
     let refrescarZonaClear = () => {};
 
-    // ---- Tutor por teléfono ----
     let tutorActual = null; // { id, nombre, apellidos, telefono, correo, pacientes }
 
     function renderTutor() {
@@ -671,10 +510,6 @@
       list.innerHTML = pacientes
         .map((p) => `<li class="combobox-item" data-id="${p.id}">${escapeHtml(p.nombre)}</li>`)
         .join('');
-      // El botón "x" también se oculta cuando trigger.disabled cambia a
-      // true (ej. tutor sin pacientes) — attachComboboxClearButton solo
-      // reacciona a 'input' o a una llamada explícita, así que hace falta
-      // este refrescar() manual tras tocar `disabled` por código.
       refrescarPacienteClear();
     }
 
@@ -691,21 +526,10 @@
       if (!paciente) return;
       document.getElementById('labPacienteId').value = paciente.id;
       document.getElementById('labPacienteTrigger').value = paciente.nombre;
-      // Cambiar de paciente puede cambiar de especie — el estudio que
-      // estuviera seleccionado en el picker podría ya no aplicar, así que se
-      // limpia (mismo criterio que un cambio de tutor ya limpiaba el
-      // paciente). También se resetea la categoría elegida — podría ser una
-      // exclusiva de la otra especie (ej. "Enfermedades infecciosas -
-      // Perro"), que ya no aparece en la lista para la especie nueva. No se
-      // toca `selectedStudies` (el carrito), solo el picker.
       if (paciente.tipo !== pacienteEspecieActual) {
         pacienteEspecieActual = paciente.tipo || null;
         if (!SOLO_LECTURA) {
           categoriaFiltro = '';
-          // Vacío (no el texto "Todas las categorías"): el placeholder ya
-          // muestra ese texto, y así el botón "x" del combobox se oculta
-          // correctamente al volver al default (ver caveat del value fijo
-          // en el markup de labCategoriaTrigger).
           document.getElementById('labCategoriaTrigger').value = '';
           document.getElementById('labCategoriaId').value = '';
           refrescarCategoriaClear();
@@ -755,10 +579,6 @@
       document.getElementById('labTutorNombreList').hidden = true;
     }
 
-    // ---- Botón "Borrar tutor y paciente" (pedido explícito del usuario):
-    // por si ya seleccionaron un tutor/paciente y quieren empezar de cero
-    // sin volver a escribir sobre el campo — no toca Doctor/Fecha ni el
-    // carrito de estudios, solo esta sección. ----
     function limpiarTutorYPaciente() {
       tutorActual = null;
       document.getElementById('labTelefono').value = '';
@@ -774,8 +594,6 @@
       labLimpiarTutorBtn.addEventListener('click', limpiarTutorYPaciente);
     }
 
-    // formatearTelefono() vive en public/js/telefono.js (cargado arriba,
-    // compartido con perfil.ejs/usuarios.ejs/tutor-form.ejs).
     const labTelefonoInput = document.getElementById('labTelefono');
     if (labTelefonoInput && !SOLO_LECTURA && !ES_EDICION) {
       let telefonoTimer = null;
@@ -796,17 +614,6 @@
       });
     }
 
-    // ---- Tutor por nombre: pedido explícito del usuario — Teléfono se
-    // queda como estaba (busca solo por número); el campo Tutor es el que
-    // se vuelve buscable por nombre cuando el doctor no recuerda el
-    // teléfono, en vez de agregar un tercer campo — "no tiene caso que
-    // busque por teléfono y tutor en un mismo campo teniendo teléfono y
-    // tutor para hacer las búsquedas en donde corresponde". Escribir una
-    // letra dispara la búsqueda en servidor (el catálogo de tutores es
-    // grande — no se puede embeber completo como Doctores); elegir un
-    // resultado reutiliza buscarTutorPorTelefono() con el teléfono de ese
-    // tutor, en vez de duplicar la lógica de "tutor activo con sus
-    // pacientes". ----
     const labTutorNombreInput = document.getElementById('labTutorNombre');
     const labTutorNombreList = document.getElementById('labTutorNombreList');
 
@@ -850,7 +657,7 @@
       labTutorNombreList.addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item[data-telefono]');
         if (!item) return;
-        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        event.preventDefault(); // Evita que el label reenvíe el clic al input.
         labTutorNombreList.hidden = true;
         document.getElementById('labTelefono').value = item.dataset.telefono;
         document.getElementById('labTelefonoError').classList.remove('show');
@@ -858,13 +665,6 @@
       });
 
       attachComboboxKeyboardNav(labTutorNombreInput, labTutorNombreList);
-      // Pedido explícito del usuario: el "x" aquí solo limpia ESTE campo
-      // (texto + lista), sin tocar #labTelefono ni el tutor/paciente ya
-      // encontrados — para borrar la selección completa ya existe el botón
-      // "Borrar tutor y paciente" (labLimpiarTutorBtn, arriba, mismo
-      // condicional !soloLectura && !esEdicion), que sí hace ese reset
-      // agresivo (incluido el teléfono). Mismo criterio "ligero" que Doctor
-      // más abajo, que tampoco tiene una función limpiar propia.
       refrescarTutorNombreClear = attachComboboxClearButton(
         document.getElementById('labTutorNombreCombobox'),
         labTutorNombreInput,
@@ -878,13 +678,6 @@
     document.getElementById('labPacienteList').addEventListener('click', (event) => {
       const item = event.target.closest('.combobox-item');
       if (!item) return;
-      // El <li> no es un control enfocable y el combobox vive dentro de un
-      // <label> — sin preventDefault(), el navegador reenvía el click al
-      // control asociado del label (el trigger), reenfocándolo justo
-      // después de seleccionar y reabriendo la lista que este mismo click
-      // acaba de cerrar (mismo bug ya documentado para areaPickerList en
-      // doctores.ejs). Bug real, encontrado en vivo: la lista de Paciente
-      // se quedaba abierta encima de la ficha después de elegir.
       event.preventDefault();
       seleccionarPaciente(item.dataset.id);
       document.getElementById('labPacienteList').hidden = true;
@@ -904,8 +697,6 @@
       limpiarPaciente,
     );
 
-    // ---- Doctor (catálogo chico embebido, filtrado en cliente — mismo
-    // patrón que citaDoctorCombobox en agenda.ejs). ----
     function renderDoctorList(term) {
       const list = document.getElementById('labDoctorList');
       const t = term.trim().toLowerCase();
@@ -928,7 +719,7 @@
       document.getElementById('labDoctorList').addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item[data-id]');
         if (!item) return;
-        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        event.preventDefault(); // Evita que el label reenvíe el clic al input.
         document.getElementById('labDoctorId').value = item.dataset.id;
         labDoctorInput.value = item.dataset.label;
         document.getElementById('labDoctorList').hidden = true;
@@ -936,10 +727,6 @@
       });
 
       attachComboboxKeyboardNav(labDoctorInput, document.getElementById('labDoctorList'));
-      // Sin limpiarDoctor() propia (nada depende de Doctor) — el "x" solo
-      // necesita vaciar lo que el listener de 'input' de arriba ya no
-      // alcanza a vaciar por sí solo (el propio input.value) y cerrar la
-      // lista.
       refrescarDoctorClear = attachComboboxClearButton(
         document.getElementById('labDoctorCombobox'),
         labDoctorInput,
@@ -959,16 +746,8 @@
       refrescarDoctorClear();
     }
 
-    // ---- Categoría (filtro del combobox de estudio, no se manda al
-    // servidor) — pedido explícito del usuario: buscador con escritura y
-    // filtrado incremental, no una lista fija que solo se abre con clic. ----
     let categoriaFiltro = '';
 
-    // Categorías que tienen al menos un estudio visible para la especie del
-    // paciente seleccionado — pedido explícito del usuario: no tiene sentido
-    // ofrecer "Enfermedades infecciosas - Perro" con un gato seleccionado.
-    // Sin paciente todavía, se listan todas (mismo criterio que
-    // findEstudiosFiltrados()).
     function categoriasDisponibles() {
       if (!pacienteEspecieActual) return CATALOGO.categorias;
       return CATALOGO.categorias.filter((c) =>
@@ -993,22 +772,13 @@
 
     if (!SOLO_LECTURA) {
       const labCategoriaTrigger = document.getElementById('labCategoriaTrigger');
-      // Al abrir (focus) siempre se ve la lista completa sin filtrar — si se
-      // reusara el valor actual del input como filtro, reabrir la lista con
-      // "Todas las categorías" ya escrito ocultaba el resto de categorías
-      // (esa cadena no es substring de ninguna otra). Escribir sí filtra
-      // (evento 'input'), igual que Zona anatómica más abajo.
       labCategoriaTrigger.addEventListener('focus', () => renderCategoriaList(''));
       labCategoriaTrigger.addEventListener('input', () => renderCategoriaList(labCategoriaTrigger.value));
       document.getElementById('labCategoriaList').addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item');
         if (!item) return;
-        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        event.preventDefault(); // Evita que el label reenvíe el clic al input.
         categoriaFiltro = item.dataset.id;
-        // "Todas las categorías" (data-id="") deja el campo VACÍO (se ve el
-        // placeholder) en vez de escribir ese texto — mismo motivo que el
-        // reset en seleccionarPaciente(): así el botón "x" se oculta
-        // correctamente al volver al default.
         labCategoriaTrigger.value = categoriaFiltro ? item.textContent : '';
         document.getElementById('labCategoriaId').value = categoriaFiltro;
         document.getElementById('labCategoriaList').hidden = true;
@@ -1030,14 +800,6 @@
       );
     }
 
-    // ---- Estudio (búsqueda en todo el catálogo) ----
-    // estudioActiveIndex ya no vive aquí — attachComboboxKeyboardNav (ver
-    // public/js/combobox.js) lo mantiene internamente, resetéandolo solo él
-    // mismo cuando labEstudioList se vuelve a renderizar (MutationObserver).
-    // Especie del paciente seleccionado (Perro/Gato) — pedido explícito del
-    // usuario: filtrar el picker de estudios según la especie, mismo
-    // criterio que catalogo_estudios.especie ('Perro'|'Gato'|NULL para
-    // ambas). Sin paciente seleccionado todavía, no se filtra nada.
     let pacienteEspecieActual = null;
 
     function findEstudiosFiltrados() {
@@ -1142,14 +904,6 @@
       labEstudioSearch.addEventListener('input', () => renderEstudioList(labEstudioSearch.value));
       labEstudioSearch.addEventListener('focus', () => renderEstudioList(labEstudioSearch.value));
 
-      // Pedido explícito del usuario: una sola fuente de la lógica de
-      // flechas/Enter/Escape para los 7 combobox de esta página — este
-      // input ya tenía su propio manejo de teclado antes de que existiera
-      // combobox.js (precedente real, funcionaba bien), pero se reemplaza
-      // por el helper compartido para no dejar 2 implementaciones
-      // coexistiendo sobre el mismo campo. Mismo resultado: Enter dispara
-      // un click sintético sobre el item activo, que ya cae en el listener
-      // de click de abajo (selectEstudio + hideEstudioList).
       attachComboboxKeyboardNav(labEstudioSearch, document.getElementById('labEstudioList'));
 
       document.getElementById('labEstudioList').addEventListener('click', (event) => {
@@ -1166,8 +920,6 @@
         clearEstudioSelection,
       );
 
-      // Pedido explícito del usuario: buscador con escritura y filtrado
-      // incremental (11 zonas, mismo criterio que Categoría arriba).
       const labZonaTrigger = document.getElementById('labZonaTrigger');
       function renderZonaList(filterText) {
         const list = document.getElementById('labZonaList');
@@ -1182,15 +934,12 @@
           : '<li class="combobox-empty">Sin resultados</li>';
         list.hidden = false;
       }
-      // Mismo motivo que labCategoriaTrigger arriba: al abrir se ve la lista
-      // completa; reabrir con una zona ya elegida no debe filtrar contra su
-      // propio nombre.
       labZonaTrigger.addEventListener('focus', () => renderZonaList(''));
       labZonaTrigger.addEventListener('input', () => renderZonaList(labZonaTrigger.value));
       document.getElementById('labZonaList').addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item');
         if (!item) return;
-        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        event.preventDefault(); // Evita que el label reenvíe el clic al input.
         document.getElementById('labZonaId').value = item.dataset.id;
         document.getElementById('labZonaTrigger').value = item.textContent;
         document.getElementById('labZonaList').hidden = true;
@@ -1198,11 +947,6 @@
       });
 
       attachComboboxKeyboardNav(labZonaTrigger, document.getElementById('labZonaList'));
-      // Sin función limpiarZona() propia — hoy se limpia como parte de
-      // updateCamposAdicionales() (cuando cambia el campo adicional del
-      // estudio elegido), pero eso lo dispara un cambio de ESTUDIO, no el
-      // botón "x" de ESTE combobox en particular. El "x" solo vacía su
-      // propio campo + cierra la lista.
       refrescarZonaClear = attachComboboxClearButton(
         document.getElementById('labZonaCombobox'),
         labZonaTrigger,
@@ -1221,37 +965,25 @@
       document.getElementById('labLateralidadList').addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item');
         if (!item) return;
-        event.preventDefault(); // mismo motivo que labPacienteList — ver ese comentario
+        event.preventDefault(); // Evita que el label reenvíe el clic al input.
         document.getElementById('labLateralidadId').value = item.dataset.id;
         document.getElementById('labLateralidadTrigger').value = item.textContent;
         document.getElementById('labLateralidadList').hidden = true;
       });
 
-      // Lateralidad: SOLO teclado, sin botón "x" (decisión, ver reporte) —
-      // su default "No aplica" es un enum con valor fijo, no un "vacío"
-      // real (mismo criterio ya usado para Estatus en usuario-form.ejs, que
-      // tampoco tiene botón de limpiar).
       attachComboboxKeyboardNav(
         document.getElementById('labLateralidadTrigger'),
         document.getElementById('labLateralidadList'),
       );
     }
 
-    // ---- Carrito de estudios ----
     let selectedStudies = [];
-    // Pedido explícito del usuario: editar un estudio ya agregado ya NO lo
-    // quita de "Estudios solicitados" mientras se edita — se queda en su
-    // lugar y solo se reemplaza en el mismo índice al guardar. `editIndex`
-    // es `null` en modo "agregar", o el índice del estudio en edición.
     let editIndex = null;
 
     function etiquetaLateralidad(valor) {
       return { izquierdo: 'Izquierdo', derecho: 'Derecho', bilateral: 'Bilateral' }[valor] || '';
     }
 
-    // Línea "Categoría · detalle" de cada tarjeta del carrito — pedido
-    // explícito del usuario (mockup HTML): el detalle del campo adicional se
-    // muestra aparte del nombre del estudio, no concatenado a él.
     function detalleDeFila(fila) {
       if (fila.zonaAnatomicaId) {
         const zona = CATALOGO.zonasAnatomicas.find((z) => z.id === fila.zonaAnatomicaId);
@@ -1302,17 +1034,6 @@
         .join('');
     }
 
-    // ---- Carga de archivos de resultados (pedido explícito del usuario) ----
-    // Un solo generador de markup para el uploader (pedido explícito:
-    // "dar formato al botón de elegir archivos, se ve feo") — antes se
-    // repetía este HTML en 4 lugares (aquí, "Archivo para todos" y los 2
-    // "Reemplazar"), ahora todos pasan por esta función. El `<input>` nativo
-    // se oculta (`hidden`) y un `<label>` hace de botón — un <label> sigue
-    // reenviando el click a su input aunque esté hidden, no hace falta JS
-    // para abrir el selector de archivos. `.lab-archivo-picker-estado`
-    // (antes el texto nativo "Sin archivos seleccionados", que no cabía en
-    // la tarjeta angosta) se actualiza aparte, ver el listener de 'change'
-    // delegado más abajo.
     function renderArchivoUploader({ inputId, estudioId } = {}) {
       const estudioAttr = estudioId != null ? ` data-estudio-id="${estudioId}"` : '';
       const inputIdAttr = inputId ? ` id="${inputId}"` : '';
@@ -1327,11 +1048,6 @@
       `;
     }
 
-    // Botón "x" junto al nombre del archivo ya subido (pedido explícito del
-    // usuario: "por si se equivocó el usuario") — a diferencia de
-    // "Reemplazar" (sube uno nuevo de inmediato), este solo desvincula el
-    // archivo actual y deja el estudio/"todos" como si nunca se hubiera
-    // subido nada, sin pedir un archivo nuevo en el momento.
     function renderBotonQuitarArchivo(atributos) {
       return `
         <button type="button" class="lab-archivo-quitar"${atributos} data-tooltip="Quitar archivo" aria-label="Quitar archivo">
@@ -1340,10 +1056,6 @@
       `;
     }
 
-    // Actualiza el texto de estado del uploader (evento 'change' del input,
-    // delegado desde los contenedores — ver más abajo). Se usa para
-    // restaurar el texto real tras una carga fallida; en el camino feliz la
-    // página se recarga completa antes de que el usuario llegue a verlo.
     function actualizarEstadoSeleccionArchivo(input) {
       const span = input.closest('.lab-archivo-uploader')?.querySelector('.lab-archivo-picker-estado');
       if (!span) return;
@@ -1352,19 +1064,6 @@
         n === 0 ? 'Sin archivos seleccionados' : n === 1 ? '1 archivo seleccionado' : `${n} archivos seleccionados`;
     }
 
-    // Toast "Guardando Archivo -> Archivo guardado" (pedido explícito del
-    // usuario): la página se recarga sola tras subir un archivo (no hay
-    // botón "Guardar" que el usuario pueda buscar), así que esta es la
-    // única confirmación visible de que el archivo sí quedó guardado antes
-    // de que la recarga se lo lleve todo. Un color por estado (ajuste
-    // posterior, pedido del usuario): warning mientras sube, success al
-    // terminar, danger si falla — mismas 3 variantes de color que ya usan
-    // los badges de Estado (fondo claro + texto de marca, nunca el color
-    // sólido, mismo criterio de contraste establecido en todo el sistema).
-    // mostrarToast() reinicia la animación aunque el toast ya estuviera
-    // visible (void offsetWidth fuerza un reflow entre quitar y volver a
-    // poner la clase 'show' — sin esto, el navegador puede saltarse la
-    // transición si ambas clases cambian en el mismo tick).
     const labArchivoToast = document.getElementById('labArchivoToast');
     const TOAST_VARIANTES = ['toast--warning', 'toast--success', 'toast--danger'];
 
@@ -1393,13 +1092,6 @@
       labArchivoToast?.classList.remove('show');
     }
 
-    // Pedido explícito del usuario: menos clics — en cuanto se eligen
-    // archivos, se suben solos (sin un paso aparte de "Subir"). Deshabilita
-    // el input mientras sube para evitar un doble envío. El loader global
-    // (partials/global-loader.ejs) bloquea el resto de la pantalla durante
-    // la subida real — se oculta apenas responde el servidor (ver
-    // subirArchivosDeLaboratorio), el toast de abajo sigue siendo quien
-    // confirma el resultado final.
     function marcarSubiendoArchivo(input) {
       input.disabled = true;
       mostrarToast('Guardando Archivo', 'warning');
@@ -1408,13 +1100,6 @@
       if (span) span.textContent = 'Subiendo…';
     }
 
-    // Exclusión mutua OPTIMISTA (pedido explícito del usuario): en cuanto se
-    // eligen archivos de un lado, el otro camino se deshabilita de
-    // inmediato, sin esperar a que la subida termine — evita que el usuario
-    // alcance a iniciar los dos caminos a la vez mientras la solicitud sigue
-    // en curso. actualizarEstadosBotonesArchivo() (con el estado real ya
-    // recargado del servidor) es quien manda a la larga; esto solo cubre la
-    // ventana entre elegir el archivo y que la página se recargue.
     function bloquearCaminoOpuesto(esTodos) {
       const selector = esTodos
         ? '#labCartBody .lab-archivo-uploader input, #labCartBody .lab-archivo-chip button'
@@ -1424,12 +1109,6 @@
       });
     }
 
-    // "Un archivo para todos" (pedido explícito del usuario): se considera
-    // "compartido" cuando TODOS los estudios de la orden apuntan al mismo
-    // archivo — no es una columna aparte, se deriva de selectedStudies cada
-    // vez que se renderiza. Declarada ANTES de renderArchivoEstudioSlot
-    // porque la usa (el orden de function declarations no importa para el
-    // hoisting, pero así se lee en el orden en que se necesita).
     function archivoCompartidoActual() {
       if (!selectedStudies.length) return null;
       const [primero] = selectedStudies;
@@ -1438,23 +1117,6 @@
       return todosIguales ? primero : null;
     }
 
-    // Slot de cada tarjeta del carrito — SOLO en /cargar (PUEDE_CARGAR_ARCHIVOS),
-    // nunca en /ver: corrección explícita del usuario, "Ver" es puramente
-    // informativa y se queda exactamente como estaba (slot vacío, mismo
-    // criterio que antes de que existiera esta función). Si ya existe un
-    // archivo COMPARTIDO ("Archivo para todos"), pedido explícito del
-    // usuario: el slot individual queda vacío por completo (ni chip ni
-    // botón de subir/reemplazar) — el archivo vive a nivel de la orden, no
-    // de cada estudio, así que no hay nada que hacer aquí mientras siga
-    // compartido. Si no, un link de descarga con "Quitar"/"Reemplazar" si el
-    // estudio ya tiene su propio archivo, o un mini-uploader si no.
-    // Pedido explícito del usuario (look and feel): dentro de la tarjeta del
-    // carrito, "Reemplazar" va ARRIBA y el nombre del archivo + la "x" van
-    // ABAJO — al revés que en "Archivo para todos" (ese sí cabe en una sola
-    // línea, tiene toda la fila para él) — así el nombre del archivo tiene
-    // su propio renglón completo para envolver, en vez de competir por
-    // espacio horizontal con los botones en la columna angosta de la
-    // tarjeta.
     function renderArchivoEstudioSlot(fila) {
       if (!PUEDE_CARGAR_ARCHIVOS) return '';
       if (archivoCompartidoActual()) return '';
@@ -1487,13 +1149,6 @@
         : renderArchivoUploader({ inputId: 'labArchivoTodosInput' });
     }
 
-    // Reglas de exclusión mutua + habilitar "Enviar resultados" (pedido
-    // explícito del usuario): "un archivo para todos" y "uno por estudio"
-    // son dos caminos excluyentes — el que se usa primero bloquea al otro,
-    // para no dejar la orden en un estado mezclado (unos estudios con el
-    // archivo compartido, otros con uno propio). "Enviar" solo se habilita
-    // cuando CADA estudio ya tiene su archivo, sin importar por cuál de los
-    // dos caminos haya llegado.
     function actualizarEstadosBotonesArchivo() {
       const compartido = archivoCompartidoActual();
       const modoIndividual = selectedStudies.some((s) => s.archivoId) && !compartido;
@@ -1502,10 +1157,6 @@
       const enviarBtn = document.getElementById('labEnviarResultadosBtn');
       if (enviarBtn) enviarBtn.disabled = !todosConArchivo;
 
-      // "Quitar todos los archivos" (pedido explícito del usuario, a nivel
-      // de "Estudios solicitados") — solo tiene sentido mientras el camino
-      // individual está en uso; nada que ver con "Archivo para todos" (esa
-      // tiene su propia x en su chip).
       const quitarTodosIndividualesBtn = document.getElementById('labQuitarTodosIndividualesBtn');
       if (quitarTodosIndividualesBtn) quitarTodosIndividualesBtn.disabled = !modoIndividual;
 
@@ -1525,12 +1176,6 @@
         });
     }
 
-    // Recarga la página completa tras una carga exitosa — más simple y
-    // robusto que parchear a mano el estado de cada tarjeta/el badge de
-    // "Cargado" de la tabla (a la que se regresa con Cancelar de todos
-    // modos), mismo criterio que guardar()/editar() en esta misma pantalla.
-    // Regresa true/false para que el llamador sepa si debe deshacer el
-    // bloqueo optimista del camino contrario (ver bloquearCaminoOpuesto()).
     async function subirArchivosDeLaboratorio(url, fileList) {
       hideBanners();
       const formData = new FormData();
@@ -1543,20 +1188,12 @@
           body: formData,
         });
       } catch (err) {
-        // Falla de red real (sin conexión, servidor caído) — a diferencia
-        // de un error HTTP normal (res.ok:false, manejado más abajo), acá
-        // ni siquiera hay respuesta: el loader global NUNCA debe quedarse
-        // pegado bloqueando toda la pantalla sin salida.
         ocultarLoaderGlobal();
         actualizarToast('Error al subir archivo', 'danger');
         setTimeout(ocultarToast, 2000);
         showError('No se pudo conectar con el servidor.');
         return false;
       }
-      // El loader global solo cubre la ESPERA de la subida — apenas hay
-      // respuesta (buena o mala) se quita, y el toast de abajo sigue
-      // dando la confirmación/error final sin bloquear el resto de la
-      // pantalla.
       ocultarLoaderGlobal();
       if (res.redirected) {
         ocultarToast();
@@ -1565,21 +1202,11 @@
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // El banner de abajo trae el detalle real del servidor (ej. "Tipo
-        // de archivo no permitido"); el toast es solo la alerta rápida en
-        // rojo pedida por el usuario, con un texto fijo — no reemplaza al
-        // banner, conviven.
         actualizarToast('Error al subir archivo', 'danger');
         setTimeout(ocultarToast, 2000);
         showError(data.error || 'No se pudo subir el archivo.');
         return false;
       }
-      // "Archivo guardado" se queda visible un momento antes de
-      // desvanecerse — la recarga espera ese mismo tiempo para que el
-      // usuario alcance a verlo completo en vez de que la página se lo
-      // lleve a medias. US-409 v2: si el contenido ya estaba activo en
-      // este mismo registro, no se creó nada nuevo — el toast lo aclara en
-      // vez de decir "guardado" como si fuera contenido distinto.
       actualizarToast(
         data.reutilizado ? 'Este archivo ya estaba cargado en este registro' : 'Archivo guardado',
         'success',
@@ -1589,13 +1216,6 @@
       return true;
     }
 
-    // Quitar un archivo ya cargado (pedido explícito del usuario, botón "x"
-    // junto al nombre) — sin modal de confirmación a propósito: no borra
-    // nada de forma permanente (la fila de archivos_laboratorio queda
-    // huérfana, igual que al "Reemplazar", y el archivo físico sigue en
-    // disco), es trivial de deshacer con un solo clic más (subir de nuevo),
-    // y el pedido explícito de esta misma función fue reducir clics — pedir
-    // confirmación aquí iría en contra de eso.
     async function quitarArchivo(url) {
       hideBanners();
       const res = await fetch(url, {
@@ -1614,12 +1234,6 @@
       window.location.reload();
     }
 
-    // Punto de entrada único del evento 'change' de cualquier uploader
-    // (tanto "Archivo para todos" como el de cada tarjeta del carrito):
-    // bloquea el camino contrario de inmediato y sube sin esperar un clic
-    // aparte en "Subir" (ese botón ya no existe, pedido explícito del
-    // usuario para reducir clics). Si la subida falla, deshace el bloqueo
-    // optimista y deja el uploader listo para reintentar.
     async function manejarSeleccionArchivoParaSubir(input) {
       if (!input.files.length) return;
       const wrapper = input.closest('.lab-archivo-uploader');
@@ -1675,27 +1289,12 @@
         }
       });
 
-      // "Quitar todos los archivos" (pedido explícito del usuario, botón a
-      // nivel de "Estudios solicitados") — reutiliza la MISMA ruta que la x
-      // de "Archivo para todos": desvincular el archivo de TODOS los
-      // estudios de la orden es exactamente lo mismo sin importar si esos
-      // archivos eran uno compartido o uno distinto por estudio (el
-      // servidor no distingue, solo limpia archivo_id en cada fila). Este
-      // botón llega deshabilitado salvo cuando el camino individual está en
-      // uso, así que nunca coincide con tener uno compartido activo.
       const quitarTodosIndividualesBtn = document.getElementById('labQuitarTodosIndividualesBtn');
       quitarTodosIndividualesBtn.addEventListener('click', () => {
         if (quitarTodosIndividualesBtn.disabled) return;
         quitarArchivo(`laboratorio/${DATOS.registro.id}/archivos`);
       });
 
-      // "Enviar resultados" (pedido explícito del usuario): envío real por
-      // WhatsApp y/o correo, según qué dato de contacto tenga el tutor —
-      // POST laboratorio.controller.js#enviarResultados, que nunca lanza
-      // por una falla de un canal en sí (viaja en el propio JSON, por
-      // canal). El botón mismo ya llega deshabilitado desde el servidor y
-      // actualizarEstadosBotonesArchivo() decide cuándo se habilita — este
-      // guard es una segunda capa, nunca debería hacer falta.
       const enviarBtn = document.getElementById('labEnviarResultadosBtn');
       const enviarModal = document.getElementById('labEnviarModalBackdrop');
       const enviarModalTitulo = document.getElementById('labEnviarModalTitulo');
@@ -1707,12 +1306,6 @@
       const ICONO_ERROR =
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M14.5 9.5l-5 5M9.5 9.5l5 5"/></svg>';
 
-      // Pedido explícito del usuario: antes correo y WhatsApp se
-      // anunciaban en un solo párrafo ("Resultados enviados por correo.
-      // WhatsApp: Authentication Error"), difícil de leer de un vistazo —
-      // arma una fila POR CANAL intentado, con su propio ícono de éxito/
-      // error (ver renderCanalesEnvio()). Un canal nunca intentado (ej. el
-      // tutor no tiene correo registrado) no genera fila, igual que antes.
       function resumenEnvio(resultado) {
         const filas = [];
         if (resultado.correo?.intentado) {
@@ -1755,10 +1348,6 @@
           .join('');
       }
 
-      // Un solo mensaje genérico (falla TOTAL, sin desglose por canal —
-      // error del servidor o de red) vs. el desglose por canal de arriba:
-      // nunca se muestran los dos al mismo tiempo, así que cada camino
-      // limpia el otro contenedor antes de abrir el modal.
       function mostrarResultadoGenerico(titulo, mensaje) {
         enviarModalTitulo.textContent = titulo;
         enviarModalMensaje.textContent = mensaje;
@@ -1773,17 +1362,6 @@
         enviarModal.classList.add('open');
       }
 
-      // Pedido explícito del usuario: el modal de "Enviando resultados..."
-      // se podía cerrar (botón x / clic afuera) MIENTRAS la solicitud
-      // seguía en curso, dejando al usuario libre de tocar el resto de la
-      // pantalla a medio envío — "unos modales horribles". El loader
-      // global (sin botón de cerrar, sin clic afuera) bloquea de verdad
-      // mientras dura la espera; el modal de #labEnviarModalBackdrop se
-      // conserva, pero ahora solo aparece DESPUÉS de que el servidor ya
-      // respondió, para mostrar el resultado final (éxito/error por
-      // canal) — en ese punto ya no hay nada en curso que proteger, así
-      // que sigue siendo válido dejarlo abierto hasta que el usuario lo
-      // cierre.
       async function enviarResultados() {
         mostrarLoaderGlobal('Enviando archivos por WhatsApp y/o email');
 
@@ -1813,13 +1391,6 @@
               badge.textContent = 'Enviado';
             }
           }
-          // El botón se queda habilitado a propósito (pedido explícito del
-          // usuario): reenviar debe seguir siendo posible — ej. un canal
-          // falló (WhatsApp 131030 por número no verificado) y se corrige
-          // y reintenta sin recargar la página, o el tutor simplemente
-          // pide que se lo manden de nuevo. Mismo criterio que ya
-          // documenta envio_archivo en el schema ("permite reenviar el
-          // mismo archivo en envíos posteriores").
         } catch {
           ocultarLoaderGlobal();
           mostrarResultadoGenerico('No se pudo enviar', 'No se pudo conectar con el servidor.');
@@ -1841,30 +1412,15 @@
       });
     }
 
-    // Pedido explícito del usuario: solo cambia el texto del botón/el
-    // disabled de Categoría y Buscar estudio según si se está editando un
-    // estudio ya agregado (no se puede cambiar CUÁL estudio es, solo sus
-    // detalles/observaciones) o agregando uno nuevo.
     function actualizarModoBotonAgregar() {
       const editando = editIndex !== null;
       document.getElementById('btnAddStudyLabel').textContent = editando ? 'Guardar cambios' : 'Agregar estudio';
       document.getElementById('labCategoriaTrigger').disabled = editando;
       document.getElementById('labEstudioSearch').disabled = editando;
-      // Mismo motivo que refrescarPacienteClear() en renderPacienteOptions:
-      // tocar `disabled` por código no dispara 'input', así que el botón
-      // "x" de Categoría/Estudio no se ocultaría solo mientras se edita un
-      // estudio ya agregado del carrito.
       refrescarCategoriaClear();
       refrescarEstudioClear();
     }
 
-    // ---- Editar un estudio ya agregado (pedido explícito del usuario): a
-    // diferencia de antes, YA NO lo quita de "Estudios solicitados" — se
-    // queda visible en su lugar mientras se edita, y solo el estudio en sí
-    // (cuál es) queda bloqueado; los detalles (zona/tipo de muestra/tejido/
-    // componentes) y la observación del estudio sí son editables. Al
-    // guardar, se reemplaza en el MISMO índice (ver el handler de
-    // btnAddStudy), no se agrega al final. ----
     function editarEstudioEnCarrito(idx) {
       const fila = selectedStudies[idx];
       const estudio = findEstudioPorId(fila.estudioId);
@@ -1956,9 +1512,6 @@
         const observaciones = document.getElementById('labEstudioObservaciones').value.trim();
         if (observaciones) fila.observaciones = observaciones;
 
-        // Editando (pedido explícito del usuario): reemplaza en el MISMO
-        // índice en vez de agregar al final — el estudio nunca se movió de
-        // "Estudios solicitados" mientras se editaba.
         if (editIndex !== null) {
           selectedStudies[editIndex] = fila;
           editIndex = null;
@@ -1976,11 +1529,6 @@
         const idx = Number(btn.dataset.idx);
         if (btn.dataset.action === 'eliminar') {
           selectedStudies.splice(idx, 1);
-          // Ahora que editar ya no saca al estudio del carrito, borrar
-          // cualquier otro estudio mientras uno está en edición puede
-          // recorrer los índices — hay que mantener editIndex apuntando al
-          // estudio correcto (o cancelar la edición si fue justo ese el
-          // que se borró).
           if (editIndex !== null) {
             if (editIndex === idx) {
               editIndex = null;
@@ -1997,18 +1545,7 @@
       });
     }
 
-    // ---- Precarga (edición/consulta) ----
     function precargar() {
-      // Los 3 bloques de campo adicional (Zona/Tipo de muestra/Tejido) son
-      // <div>/<label> con el atributo `hidden` en el HTML — pero
-      // #labTipoMuestraWrap/#labTejidoWrap tienen su propio `display:flex`
-      // por id en main.css (necesario para el layout de sus 2 controles),
-      // que GANA por especificidad sobre el `display:none` nativo de
-      // `[hidden]` en cuanto ese id aplica. En el modal anterior esto no se
-      // notaba porque htmx:afterSwap llamaba clearEstudioSelection() al
-      // abrir; esta pantalla nunca lo hacía en el alta — bug real,
-      // encontrado en vivo (los 3 bloques se veían abiertos desde el
-      // primer render, sin ningún estudio seleccionado).
       if (!SOLO_LECTURA) clearEstudioSelection();
 
       const registro = DATOS.registro;
@@ -2018,10 +1555,6 @@
         return;
       }
 
-      // propietario_telefono llega sin guiones (se guarda así en BD, ver
-      // tutores.service.js#stripTelefono) — se reconstruye el formato
-      // solo para mostrarlo, mismo criterio que formatTelefono() en el
-      // resto del sistema (55/56 → NN-NNNN-NNNN, resto → NNN-NNN-NNNN).
       const digitosTelefono = (registro.propietarioTelefono ?? '').replace(/\D/g, '');
       document.getElementById('labTelefono').value = formatearTelefono(digitosTelefono);
       tutorActual = {
@@ -2042,10 +1575,6 @@
       document.getElementById('labObservacionesGenerales').value = registro.observaciones ?? '';
 
       selectedStudies = registro.estudios.map((e) => {
-        // `id` (la fila real de estudios_solicitados, no el estudio del
-        // catálogo) y los campos de archivo son para la carga de
-        // resultados (pedido explícito del usuario) — solo se usan en modo
-        // consulta, ver renderCart().
         const fila = {
           id: e.id,
           estudioId: e.estudio_id,
@@ -2072,7 +1601,6 @@
       renderCart();
     }
 
-    // ---- Guardar ----
     async function guardar() {
       hideBanners();
 
@@ -2117,17 +1645,6 @@
       document.getElementById('labGuardarBtn').addEventListener('click', guardar);
     }
 
-    // ---- Imprimir: pedido explícito del usuario — no la pantalla tal cual
-    // impresa, sino un documento propio tipo orden de laboratorio
-    // (#labPrintDocument, invisible en pantalla, ver @media print en
-    // main.css). El diálogo de impresión nativo del navegador ya ofrece
-    // "Guardar como PDF" como destino, así que no hace falta ninguna
-    // librería de terceros (este proyecto es deliberadamente conservador
-    // con dependencias del lado del cliente). Se llena justo antes de
-    // imprimir, leyendo lo que YA está en pantalla (mismo criterio en
-    // alta/edición/consulta, sin duplicar de dónde sale cada dato) — así
-    // siempre refleja el estado actual del formulario, incluso datos aún
-    // sin guardar.
     function prepararDocumentoImpresion() {
       document.getElementById('labPrintFolio').textContent = DATOS.registro
         ? `LAB-${String(DATOS.registro.id).padStart(3, '0')}`

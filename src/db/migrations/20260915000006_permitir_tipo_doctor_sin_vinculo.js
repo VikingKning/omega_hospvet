@@ -10,8 +10,6 @@ exports.up = async function up(knex) {
 };
 
 exports.down = async function down(knex) {
-  // Antes de restaurar la regla anterior, las cuentas Doctor sin vínculo
-  // vuelven al tipo neutral para que el rollback no falle.
   await knex('usuarios')
     .whereNull('doctor_id')
     .where({ tipo_usuario: 'doctor' })

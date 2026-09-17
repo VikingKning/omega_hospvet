@@ -12,6 +12,25 @@ const ERRORES = [
   { clave: 'api', etiqueta: 'Error de API' },
   { clave: 'otros', etiqueta: 'Otros' },
 ];
+const RUTAS_CONVERSACIONALES = [
+  'atencion_humana',
+  'respuesta_interactiva',
+  'comando_menu',
+  'medio_sin_texto',
+  'flujo_activo',
+  'saludo_puro',
+  'consulta_libre_sin_claude',
+  'consulta_libre_claude',
+];
+const RESULTADOS_CLAUDE = [
+  'exito',
+  'sin_coincidencia',
+  'timeout',
+  'no_configurado',
+  'etiqueta_invalida',
+  'error_api',
+];
+const ORIGENES_ATENCION = ['emergencia', 'recepcion', 'inicio_manual_omega'];
 
 function formatoFecha(date) {
   return date.toISOString().slice(0, 10);
@@ -118,18 +137,108 @@ function nombreLegible(valor) {
   return valor || 'Sin plantilla';
 }
 
+function numero(valor) {
+  return Number(valor ?? 0);
+}
+
+function porcentaje(numerador, denominador) {
+  return denominador ? Math.round((numerador / denominador) * 1000) / 10 : 0;
+}
+
+function normalizarTendenciaConversacional(rango, filas) {
+  const datos = new Map(
+    filas.map((fila) => [
+      formatoFecha(new Date(fila.periodo)),
+      {
+        mensajes: numero(fila.mensajes),
+        grupos: numero(fila.grupos),
+        respuestas: numero(fila.respuestas),
+      },
+    ]),
+  );
+  const cursor = new Date(`${rango.desde}T00:00:00Z`);
+  const fin = new Date(`${rango.hasta}T00:00:00Z`);
+  const resultado = [];
+  while (cursor <= fin) {
+    const periodo = formatoFecha(cursor);
+    resultado.push({
+      periodo,
+      etiqueta: periodo,
+      ...(datos.get(periodo) ?? { mensajes: 0, grupos: 0, respuestas: 0 }),
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return resultado;
+}
+
+function construirMapaConversacional(filas) {
+  const celdas = new Map(
+    filas.map((fila) => [
+      `${numero(fila.dia_semana)}:${numero(fila.hora)}`,
+      {
+        total: numero(fila.total),
+        emergencias: numero(fila.emergencias),
+        recepcion: numero(fila.recepcion),
+      },
+    ]),
+  );
+  return DIAS_SEMANA.map((etiqueta, indice) => ({
+    etiqueta,
+    total: Array.from({ length: 24 }, (_, hora) => celdas.get(`${indice + 1}:${hora}`)?.total ?? 0),
+    emergencias: Array.from(
+      { length: 24 },
+      (_, hora) => celdas.get(`${indice + 1}:${hora}`)?.emergencias ?? 0,
+    ),
+    recepcion: Array.from(
+      { length: 24 },
+      (_, hora) => celdas.get(`${indice + 1}:${hora}`)?.recepcion ?? 0,
+    ),
+  }));
+}
+
+function completarConteos(claves, filas, campo = 'etiqueta') {
+  const totales = new Map(filas.map((fila) => [fila[campo], numero(fila.total)]));
+  return claves.map((clave) => ({ etiqueta: clave, total: totales.get(clave) ?? 0 }));
+}
+
 async function obtenerMetricasWhatsapp(filtros = {}) {
   const rango = normalizarRango(filtros);
   const agrupacion = resolverAgrupacion(filtros.agrupacion, rango);
-  const [resumenRaw, periodosRaw, plantillasRaw, erroresRaw, diaHoraRaw, fallosPlantillaRaw] =
-    await Promise.all([
-      repository.obtenerResumen(rango),
-      repository.contarPorPeriodo(rango, agrupacion),
-      repository.contarPorPlantilla(rango),
-      repository.listarErrores(rango),
-      repository.contarPorDiaHora(rango),
-      repository.topPlantillasConFallos(rango),
-    ]);
+  const [
+    resumenRaw,
+    periodosRaw,
+    plantillasRaw,
+    erroresRaw,
+    diaHoraRaw,
+    fallosPlantillaRaw,
+    resumenConversacionalRaw,
+    tendenciaConversacionalRaw,
+    agrupacionConversacionalRaw,
+    rutasConversacionalesRaw,
+    seleccionesMenuRaw,
+    usoClaudeRaw,
+    descartesRaw,
+    tiemposRaw,
+    atencionRaw,
+    mapaConversacionalRaw,
+  ] = await Promise.all([
+    repository.obtenerResumen(rango),
+    repository.contarPorPeriodo(rango, agrupacion),
+    repository.contarPorPlantilla(rango),
+    repository.listarErrores(rango),
+    repository.contarPorDiaHora(rango),
+    repository.topPlantillasConFallos(rango),
+    repository.obtenerResumenConversacional(rango),
+    repository.contarTendenciaConversacional(rango),
+    repository.obtenerAgrupacionConversacional(rango),
+    repository.contarRutasConversacionales(rango),
+    repository.contarSeleccionesMenu(rango),
+    repository.obtenerUsoClaude(rango),
+    repository.obtenerDescartesYReintentos(rango),
+    repository.obtenerTiemposProcesamiento(rango),
+    repository.obtenerAtencionYAlertas(rango),
+    repository.contarMapaCalorConversacional(rango),
+  ]);
 
   const total = Number(resumenRaw?.total ?? 0);
   const exitosos = Number(resumenRaw?.exitosos ?? 0);
@@ -191,6 +300,21 @@ async function obtenerMetricasWhatsapp(filtros = {}) {
     total: mapaCalor.reduce((suma, dia) => suma + dia.enviados[hora], 0),
   }));
 
+  const mensajesEntrantes = numero(resumenConversacionalRaw?.mensajes_entrantes);
+  const fragmentosProcesables = numero(resumenConversacionalRaw?.fragmentos_procesables);
+  const gruposProcesados = numero(resumenConversacionalRaw?.grupos_procesados);
+  const gruposSinClaude = numero(resumenConversacionalRaw?.grupos_sin_claude);
+  const llamadasClaude = numero(resumenConversacionalRaw?.llamadas_claude);
+  const resumenClaude = usoClaudeRaw?.resumen ?? {};
+  const tokensTotales = numero(resumenClaude.tokens_entrada) + numero(resumenClaude.tokens_salida);
+  const gruposConClaude = numero(resumenClaude.unidades_con_claude);
+  const alertas = (atencionRaw?.alertas ?? []).map((fila) => ({
+    tipo: fila.tipo_alerta,
+    estado: fila.estado,
+    total: numero(fila.total),
+    segundosAtencion: numero(fila.segundos_atencion),
+  }));
+
   return {
     rango,
     agrupacion,
@@ -217,7 +341,106 @@ async function obtenerMetricasWhatsapp(filtros = {}) {
       total: Number(fila.total),
     })),
     mapaCalor,
+    zonaHoraria: repository.ZONA_HORARIA,
+    conversacional: {
+      kpis: {
+        mensajesEntrantes,
+        gruposProcesados,
+        reduccionAgrupacion: porcentaje(
+          Math.max(fragmentosProcesables - gruposProcesados, 0),
+          fragmentosProcesables,
+        ),
+        tasaSinClaude: porcentaje(gruposSinClaude, gruposProcesados),
+        llamadasClaude,
+        transferenciasHumanas: numero(resumenConversacionalRaw?.transferencias_humanas),
+        emergenciasConfirmadas: numero(resumenConversacionalRaw?.emergencias_confirmadas),
+      },
+      pipeline: [
+        {
+          etiqueta: 'Router conversacional',
+          total: numero(resumenConversacionalRaw?.pipeline_nuevo),
+        },
+        { etiqueta: 'Flujo anterior', total: numero(resumenConversacionalRaw?.pipeline_anterior) },
+      ],
+      tendencia: normalizarTendenciaConversacional(rango, tendenciaConversacionalRaw ?? []),
+      agrupacion: {
+        fragmentos: numero(agrupacionConversacionalRaw?.resumen?.fragmentos),
+        grupos: numero(agrupacionConversacionalRaw?.resumen?.grupos),
+        distribucion: (agrupacionConversacionalRaw?.distribucion ?? []).map((fila) => ({
+          etiqueta: `${numero(fila.cantidad_fragmentos)} fragmento${numero(fila.cantidad_fragmentos) === 1 ? '' : 's'}`,
+          total: numero(fila.total),
+        })),
+      },
+      rutas: completarConteos(RUTAS_CONVERSACIONALES, rutasConversacionalesRaw ?? [], 'ruta'),
+      menu: (seleccionesMenuRaw ?? []).map((fila) => ({
+        identificador: fila.identificador,
+        total: numero(fila.total),
+      })),
+      claude: {
+        llamadas: numero(resumenClaude.llamadas),
+        tokensEntrada: numero(resumenClaude.tokens_entrada),
+        tokensSalida: numero(resumenClaude.tokens_salida),
+        promedioTokensGrupo: gruposConClaude
+          ? Math.round((tokensTotales / gruposConClaude) * 10) / 10
+          : 0,
+        gruposCero: numero(resumenClaude.grupos_cero),
+        gruposUna: numero(resumenClaude.grupos_una),
+        gruposDosOMas: numero(resumenClaude.grupos_dos_o_mas),
+        categorias: (usoClaudeRaw?.categorias ?? []).map((fila) => ({
+          etiqueta: fila.categoria,
+          total: numero(fila.total),
+        })),
+        resultados: completarConteos(
+          RESULTADOS_CLAUDE,
+          usoClaudeRaw?.resultados ?? [],
+          'resultado',
+        ),
+      },
+      descartes: {
+        mensajesNoSoportados: numero(descartesRaw?.mensajes_no_soportados),
+        eventosEstado: numero(descartesRaw?.eventos_estado),
+        duplicadosMeta: numero(descartesRaw?.duplicados_meta),
+        reintentosRouter: numero(descartesRaw?.reintentos_router),
+        reintentosEnvio: numero(descartesRaw?.reintentos_envio),
+      },
+      tiempos: {
+        segundosFragmentoDecision: numero(tiemposRaw?.segundos_fragmento_decision),
+        segundosDecisionEnvio: numero(tiemposRaw?.segundos_decision_envio),
+      },
+      atencion: {
+        transferencias: completarConteos(
+          ORIGENES_ATENCION,
+          atencionRaw?.transferencias ?? [],
+          'origen',
+        ),
+        alertas,
+        pendientes: alertas
+          .filter((fila) => fila.estado === 'pendiente')
+          .reduce((suma, fila) => suma + fila.total, 0),
+        atendidas: alertas
+          .filter((fila) => fila.estado === 'atendida')
+          .reduce((suma, fila) => suma + fila.total, 0),
+        promedioSegundosAtencion: (() => {
+          const atendidas = alertas.filter((fila) => fila.estado === 'atendida' && fila.total > 0);
+          const cantidad = atendidas.reduce((suma, fila) => suma + fila.total, 0);
+          return cantidad
+            ? Math.round(
+                atendidas.reduce((suma, fila) => suma + fila.segundosAtencion * fila.total, 0) /
+                  cantidad,
+              )
+            : 0;
+        })(),
+        canales: (atencionRaw?.canales ?? []).map((fila) => ({
+          canal: fila.canal,
+          estado: fila.estado,
+          total: numero(fila.total),
+        })),
+        destinatariosSeleccionados: numero(atencionRaw?.destinatarios?.destinatarios_seleccionados),
+        enviosWhatsappUnicos: numero(atencionRaw?.destinatarios?.envios_whatsapp_unicos),
+      },
+      mapaCalor: construirMapaConversacional(mapaConversacionalRaw ?? []),
+    },
   };
 }
 
-module.exports = { obtenerMetricasWhatsapp };
+module.exports = { obtenerMetricasWhatsapp, porcentaje };

@@ -1,15 +1,3 @@
-// US WA 014: agrupación de archivos y respuesta para medios no
-// interpretables.
-// - mensajes_whatsapp.mime_type: consideración técnica ("conservar type,
-//   media_id, caption, mime_type").
-// - grupos_whatsapp.grupo_origen_id: autorreferencia — el grupo con la
-//   explicación escrita (AC5/AC6) se relaciona con el grupo de medios que
-//   originó la solicitud.
-// - conversaciones_whatsapp.grupo_medio_pendiente_id: "conservando la
-//   referencia al grupo de medios que originó la solicitud" (AC4) mientras
-//   la conversación está en flujo_activo/esperando_descripcion.
-// Sin CHECK constraints — mismo criterio ya establecido en todo este
-// schema (documentar valores válidos vía COMMENT ON COLUMN).
 exports.up = async function up(knex) {
   await knex.schema.alterTable('mensajes_whatsapp', (table) => {
     table.string('mime_type', 100);

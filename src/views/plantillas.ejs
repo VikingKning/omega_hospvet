@@ -46,14 +46,6 @@
     </div>
   </div>
 
-  <%#
-    Modal de confirmación reutilizable para acciones destructivas de esta
-    vista (por ahora solo "dar de baja", US-614). Vive fuera de
-    #plantillas-panel a propósito: HTMX reemplaza ese contenedor en cada
-    filtro/orden/página, y si el modal viviera adentro se destruiría a
-    medio uso en cuanto la petición terminara. Mismo patrón que
-    confirmModalBackdrop en doctores.ejs/areas.ejs.
-  %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -68,21 +60,6 @@
     </div>
   </div>
 
-  <%#
-    Modal de alta/edición (US-613): mismo formulario para las dos acciones,
-    el contenido real lo llena HTMX (partials/plantilla-form.ejs) al hacer
-    clic en el botón de alta del toolbar o en el ícono de editar de una
-    fila — ver plantillas-panel.ejs. Vive fuera de #plantillas-panel: HTMX
-    reemplaza ese contenedor en cada filtro/orden/página, y si el modal
-    viviera adentro se destruiría a medio uso en cuanto la petición
-    terminara (mismo patrón que areaFormModalBackdrop en areas.ejs).
-  %>
-  <%#
-    modal-card-wide (720px, ya usada en el resto del sistema): pedido
-    explícito del usuario — el detalle/formulario de plantilla ahora se
-    organiza en 2 columnas (ver partials/plantilla-detalle.ejs/
-    plantilla-form.ejs), y en 1 columna se veía apretado.
-  %>
   <div class="modal-backdrop" id="plantillaFormModalBackdrop">
     <div class="modal-card modal-card-wide" id="plantillaFormModalBody"></div>
   </div>
@@ -91,12 +68,6 @@
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script src="js/whatsapp-format.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  // Modal de alta/edición (US-613). El contenido de #plantillaFormModalBody
-  // lo reemplaza HTMX en cada apertura/reintento, así que los botones de
-  // adentro (cerrar, cancelar, cerrar el mensaje de error) se manejan por
-  // delegación en el contenedor — un addEventListener directo sobre esos
-  // botones se perdería en cuanto HTMX los vuelva a crear. Mismo patrón que
-  // areaFormModalBody en areas.ejs.
   const plantillaFormModalBackdrop = document.getElementById('plantillaFormModalBackdrop');
   const plantillaFormModalBody = document.getElementById('plantillaFormModalBody');
 
@@ -111,11 +82,6 @@
 
   document.body.addEventListener('htmx:afterSwap', (event) => {
     if (event.detail.target !== plantillaFormModalBody) return;
-    // Si el fragmento trae un <form> (carga inicial, o reintento tras un
-    // error de validación/intención duplicada) el modal debe quedar/seguir
-    // abierto. La respuesta de éxito no trae form (solo el swap
-    // out-of-band de la tabla) — en ese caso no hay nada que abrir, el
-    // evento closePlantillaModal de abajo se encarga de cerrarlo.
     if (plantillaFormModalBody.querySelector('form')) {
       openPlantillaFormModal();
       inicializarEditorPlantilla();
@@ -123,25 +89,10 @@
     }
   });
 
-  // ---- Editor visual del texto de respuesta (pedido explícito del
-  // usuario: "que se vea negritas ya en el textbox... lo guardas con el
-  // formato para que whatsapp de ese formato") ----
-  // #plantillaTextoEditor es un contenteditable que MUESTRA el formato
-  // aplicado (negrita se ve en negritas, etc.); #plantillaTextoRespuesta
-  // (oculto) es el <textarea> real que viaja en el submit, siempre con la
-  // sintaxis de texto plano de WhatsApp (*negrita*, _cursiva_, etc.) —
-  // nunca HTML. La barra ofrece negrita, cursiva, tachado, monoespaciado,
-  // lista con viñetas, lista numerada, cita y emoticonos. Se conserva el
-  // parseo de `código` para mostrar correctamente plantillas antiguas,
-  // aunque ya no se ofrece como control de edición.
   const CODE_A_MARCADOR = { 'wa-mono': '```', 'wa-code': '`' };
   const ETIQUETA_A_MARCADOR_INLINE = { STRONG: '*', B: '*', EM: '_', I: '_', S: '~', STRIKE: '~', DEL: '~' };
   const { envolverConMarcadorWhatsapp, parsearInlineWhatsapp } = window.WhatsappFormat;
 
-  // Texto plano (con la sintaxis real de WhatsApp) -> HTML del editor.
-  // Agrupa renglones consecutivos de lista. Las citas se conservan como
-  // bloques independientes para poder activar o desactivar sólo el renglón
-  // señalado por el cursor durante una edición posterior.
   function parsearWhatsapp(texto) {
     const lineas = (texto ?? '').split('\n');
     const bloques = [];
@@ -196,8 +147,6 @@
       .join('');
   }
 
-  // HTML del editor -> texto plano con la sintaxis real de WhatsApp
-  // (exactamente el inverso de parsearWhatsapp/parsearInlineWhatsapp).
   function serializarNodoInline(nodo) {
     if (nodo.nodeType === Node.TEXT_NODE) return nodo.textContent;
     if (nodo.nodeName === 'BR') return '\n';
@@ -209,9 +158,6 @@
       const marcador = ETIQUETA_A_MARCADOR_INLINE[nodo.nodeName];
       return envolverConMarcadorWhatsapp(serializarInline(nodo), marcador);
     }
-    // Cualquier otra etiqueta que el navegador haya metido sola
-    // (ej. un <span> al pegar texto de otro lado) se "desenvuelve":
-    // se conserva el texto, se ignora la etiqueta desconocida.
     return serializarInline(nodo);
   }
 
@@ -249,9 +195,6 @@
         const esRenglonVacio = nodo.childNodes.length === 1 && nodo.firstChild.nodeName === 'BR';
         lineas.push(esRenglonVacio ? '' : serializarInline(nodo));
       } else {
-        // El navegador puede dejar texto y etiquetas inline (B/EM/CODE)
-        // como hermanos directos del editor. Deben formar UNA sola línea,
-        // no una línea nueva por cada fragmento formateado.
         inlineEnRaiz += serializarNodoInline(nodo);
       }
     });
@@ -259,10 +202,6 @@
     return lineas.join('\n');
   }
 
-  // Los botones de la barra viven fuera del contenteditable. Al hacer clic,
-  // el navegador puede mover el foco y perder el rango que el usuario había
-  // seleccionado. Se conserva una copia del último rango válido para que
-  // cada comando actúe exactamente sobre esa selección o línea.
   const TEXTO_RESPUESTA_MAX_LENGTH = 550;
   const estadoValidoPorEditor = new WeakMap();
   let rangoEditorGuardado = null;
@@ -277,9 +216,6 @@
   }
 
   function restaurarRangoEditor(editor) {
-    // Conserva una copia ANTES de devolver el foco: el evento focus del
-    // editor puede crear una selección nueva y no debe reemplazar la
-    // posición donde el usuario estaba escribiendo.
     const rangoAnterior =
       rangoEditorGuardado && editor.contains(rangoEditorGuardado.commonAncestorContainer)
         ? rangoEditorGuardado.cloneRange()
@@ -330,9 +266,6 @@
     const longitudNueva = Array.from(textoNuevo).length;
     const estadoAnterior = estadoValidoPorEditor.get(editor);
 
-    // Si una escritura, pegado o formato rebasa el límite, se restaura el
-    // último estado válido. Los marcadores (*, _, ~, ``` y prefijos de
-    // listas/citas) forman parte del texto enviado y también se cuentan.
     if (
       estadoAnterior &&
       longitudNueva > TEXTO_RESPUESTA_MAX_LENGTH &&
@@ -424,9 +357,6 @@
       );
     }
 
-    // Si el navegador dejó texto directo en la raíz, formatBlock sirve de
-    // respaldo. Normalmente cada renglón ya es DIV/P por la inicialización
-    // del editor, por lo que nunca se toca contenido fuera de la selección.
     if (!bloques.length) {
       ejecutarComandoEditor(editor, 'formatBlock', 'blockquote');
       return;
@@ -434,10 +364,6 @@
 
     const convertirACita = !bloques.every((bloque) => bloque.nodeName === 'BLOCKQUOTE');
 
-    // Una selección parcial dentro de un solo renglón se separa en tres
-    // bloques: texto anterior, fragmento citado y texto posterior. Esto es
-    // necesario porque WhatsApp representa una cita al inicio de su propio
-    // renglón (`> texto`); envolverla inline produciría un formato inválido.
     if (!rango.collapsed && bloques.length === 1) {
       const bloque = bloques[0];
       const bloqueInicio = bloqueSuperiorEditor(editor, rango.startContainer);
@@ -501,9 +427,6 @@
     const bloqueInicio = bloqueSuperiorEditor(editor, rango.startContainer);
     const bloqueFin = bloqueSuperiorEditor(editor, rango.endContainer);
 
-    // Cursor o selección dentro de una lista existente: se separan sólo
-    // los LI alcanzados. Los elementos anteriores y posteriores continúan
-    // en sus listas originales.
     if (bloqueInicio && bloqueInicio === bloqueFin && ['UL', 'OL'].includes(bloqueInicio.nodeName)) {
       const listaOriginal = bloqueInicio;
       const items = Array.from(listaOriginal.children);
@@ -577,8 +500,6 @@
       agregarLista(listaOriginal.nodeName.toLowerCase(), items.slice(0, primerIndice));
       let destinoSeleccionado;
       if (listaOriginal.nodeName.toLowerCase() === tipoLista) {
-        // Pulsar otra vez el mismo botón quita la lista sólo a los items
-        // seleccionados; cada uno vuelve a ser un renglón normal.
         seleccionados.forEach((item) => {
           const renglon = document.createElement('div');
           renglon.append(...item.childNodes);
@@ -611,8 +532,6 @@
 
     if (!bloques.length) return;
 
-    // Selección parcial de un solo renglón: texto anterior y posterior se
-    // mantienen normales; únicamente la selección se convierte en LI.
     if (!rango.collapsed && bloques.length === 1 && bloqueInicio === bloqueFin) {
       const bloque = bloques[0];
       const rangoAntes = document.createRange();
@@ -652,8 +571,6 @@
       return;
     }
 
-    // Cursor o varios renglones seleccionados: sólo esos bloques pasan a
-    // ser elementos de una lista común.
     const lista = document.createElement(tipoLista);
     bloques.forEach((bloque) => {
       const item = document.createElement('li');
@@ -678,10 +595,6 @@
     vistaPrevia.innerHTML = parsearWhatsapp(origen.value);
   }
 
-  // Se llama en cada apertura/reintento del modal (htmx:afterSwap, ver
-  // arriba) — el contenteditable siempre arranca desde CERO a partir del
-  // valor real del <textarea> oculto (vacío en alta; el texto guardado o
-  // el que el usuario acababa de escribir en edición/reintento).
   function inicializarEditorPlantilla() {
     const editor = document.getElementById('plantillaTextoEditor');
     const textareaOculto = document.getElementById('plantillaTextoRespuesta');
@@ -737,9 +650,6 @@
   const FORMATOS_LISTA = { lista: 'ul', numerada: 'ol' };
   const FORMATOS_CODIGO = { monoespaciado: 'wa-mono' };
 
-  // Evita que los controles de formato roben el foco antes del click. Así
-  // una lista comienza en el renglón del cursor y no convierte todo el
-  // contenido por haber perdido la selección.
   plantillaFormModalBody.addEventListener('mousedown', (event) => {
     if (event.target.closest('.plantilla-formato-btn, .plantilla-emoji-btn')) {
       event.preventDefault();
@@ -795,11 +705,6 @@
       document.getElementById('plantillaEmojiToggle')?.setAttribute('aria-expanded', 'false');
     }
 
-    // Pedido explícito del usuario: componente "Sí/No" (mismo .toggle-group
-    // ya usado en los filtros Activos/Todos) para "Respuesta a Emergencia"
-    // — sincroniza la clase .active del botón clickeado con el input
-    // oculto #plantillaEmergenciaInput, que es lo que de verdad viaja en
-    // el submit.
     const botonEmergencia = event.target.closest('#plantillaEmergenciaToggle .toggle-btn');
     if (botonEmergencia) {
       const grupo = document.getElementById('plantillaEmergenciaToggle');
@@ -816,8 +721,6 @@
     if (event.target === plantillaFormModalBackdrop) closePlantillaFormModal();
   });
 
-  // HX-Trigger: closePlantillaModal (ver plantillas_whatsapp.controller.js,
-  // renderExito()) — htmx traduce ese header en este evento personalizado.
   document.body.addEventListener('closePlantillaModal', closePlantillaFormModal);
 </script>
 

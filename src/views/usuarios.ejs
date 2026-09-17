@@ -46,16 +46,6 @@
     </div>
   </div>
 
-  <%#
-    Modal de confirmación reutilizable para acciones destructivas de esta
-    vista (por ahora solo "dar de baja", US-603) — mismo componente que
-    areas.ejs/doctores.ejs/plantillas.ejs, en vez del confirm() nativo del
-    navegador (a partir de ahora, criterio único para TODA confirmación de
-    este proyecto). Vive fuera de #usuarios-panel a propósito: HTMX
-    reemplaza ese contenedor en cada filtro/orden/página, y si el modal
-    viviera adentro se destruiría a medio uso en cuanto la petición
-    terminara.
-  %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -70,32 +60,10 @@
     </div>
   </div>
 
-  <%#
-    Modal de alta/edición (US-602): mismo formulario para las dos acciones,
-    el contenido real lo llena HTMX (partials/usuario-form.ejs) al hacer
-    clic en el botón de alta del toolbar o en el ícono de editar de una
-    fila — ver usuarios-panel.ejs. Vive fuera de #usuarios-panel: HTMX
-    reemplaza ese contenedor en cada filtro/orden/página, y si el modal
-    viviera adentro se destruiría a medio uso en cuanto la petición
-    terminara (mismo patrón que areaFormModalBackdrop en areas.ejs).
-  %>
   <div class="modal-backdrop" id="usuarioFormModalBackdrop">
     <div class="modal-card" id="usuarioFormModalBody"></div>
   </div>
 
-  <%#
-    US-605: la contraseña temporal generada por un restablecimiento viaja
-    del servidor al cliente vía el header HX-Trigger (mostrarPasswordTemporal,
-    ver usuarios.controller.js#resetearPassword) — nunca embebida en el
-    HTML del panel, que persiste en el DOM después del swap. Este modal
-    vive fuera de #usuarios-panel por el mismo motivo que los otros dos: no
-    debe destruirse a medio uso cuando HTMX reemplaza ese contenedor. AC:
-    "no permite recuperar ni volver a mostrar la misma contraseña
-    temporal" — se cumple simplemente por diseño (el servidor nunca la
-    guarda en ningún lado más allá de esta respuesta única), y el cliente
-    además borra el valor del DOM al cerrar el modal, para no dejarlo
-    inspeccionable después de cerrado.
-  %>
   <div class="modal-backdrop" id="passwordTemporalModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -118,29 +86,6 @@
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  // Cualquier `.combobox-list` de esta vista puede: (a) abrir cerca del
-  // borde de un contenedor con scroll (un modal con `overflow-y:auto`) —
-  // un elemento `position:absolute` sigue contando para el área
-  // scrolleable de su ancestro con overflow aunque se vea como un overlay;
-  // o (b) terminar tapada por otro contenido que gana el stacking context
-  // — main.css fuerza `position:relative;z-index:1` a TODOS los hijos
-  // directos de `.main-content` (`.main-content > *`, truco para la marca
-  // de agua de fondo), y `#usuarios-panel` ES ese `.main-content`: un
-  // descendiente `position:fixed` de un hijo de ahí (el combobox del
-  // filtro Estatus) sigue atrapado dentro del stacking context de ESE
-  // hijo para pintarse, y puede perder contra otro hijo posterior en el
-  // DOM al mismo z-index:1 (ej. la tabla), sin importar el z-index propio
-  // de la lista. `position:fixed` por sí solo resuelve (a) pero NO (b):
-  // solo cambia respecto a qué ancestro se calculan las coordenadas, no de
-  // qué stacking context depende para pintarse. La única forma de escapar
-  // ambos a la vez es sacar la lista del DOM de su contenedor y colgarla
-  // directo de `<body>` mientras está abierta (un "portal", patrón
-  // estándar en UI flotante) — se recuerda su padre original una sola vez
-  // (`list._homeParent`) para devolverla a su lugar al cerrarla. Como HTMX
-  // reemplaza `#usuarios-panel`/`#usuarioFormModalBody` enteros en cada
-  // filtro/apertura, una lista que quedara flotando en <body> justo cuando
-  // eso pasa se volvería huérfana — el listener de htmx:beforeSwap de más
-  // abajo la limpia como red de seguridad.
   function openFloatingList(trigger, list) {
     if (!list._homeParent) list._homeParent = list.parentElement;
     document.body.appendChild(list);
@@ -150,14 +95,6 @@
     list.style.left = `${rect.left}px`;
     list.style.width = `${rect.width}px`;
     list.style.right = 'auto';
-    // Reparentar a <body> saca la lista del stacking context de su
-    // ancestro, pero NO le gana automáticamente a otro contenido que
-    // también sea hijo directo de <body> con su propio z-index — el
-    // z-index:20 por default de .combobox-list (main.css) pierde contra
-    // .modal-backdrop (z-index:100): el combobox de Estatus en editar
-    // usuario, dentro del modal, quedaba pintándose DETRÁS del propio
-    // modal que lo contiene. Se fuerza un z-index por encima de cualquier
-    // modal del sistema.
     list.style.zIndex = '1000';
     list.hidden = false;
   }
@@ -167,25 +104,12 @@
     if (list._homeParent) list._homeParent.appendChild(list);
   }
 
-  // Red de seguridad: si un swap de HTMX ocurre mientras alguna lista
-  // sigue flotando en <body> (ej. el usuario hizo click en una opción del
-  // filtro Estatus, que dispara la petición sin pasar por closeFloatingList
-  // primero), su contenedor original puede desaparecer del DOM sin que la
-  // lista misma se entere — quedaría huérfana, visible, con contenido
-  // viejo. Se detecta por descarte: ninguna `.combobox-list` de este
-  // sistema vive naturalmente como hijo directo de <body>.
   document.body.addEventListener('htmx:beforeSwap', () => {
     document.querySelectorAll('.combobox-list').forEach((list) => {
       if (list.parentElement === document.body) list.remove();
     });
   });
 
-  // US-601 (segunda iteración): combobox del filtro "Estatus" — abre/cierra
-  // la lista nada más (elegir una opción ya la resuelve HTMX solo, cada
-  // `<li>` trae su propio hx-post/hx-vals, ver usuarios-panel.ejs). Delegado
-  // sobre document.body porque HTMX reemplaza #usuarios-panel entero en
-  // cada filtro/orden/página — un listener directo sobre el trigger se
-  // perdería en cuanto el panel se vuelva a renderizar.
   document.body.addEventListener('click', (event) => {
     const list = document.getElementById('estatusFiltroList');
     if (!list) return;
@@ -200,21 +124,12 @@
     closeFloatingList(list);
   });
 
-  // Teclado + botón "x" del filtro Estatus: #usuarios-panel se reemplaza
-  // entero (innerHTML) en cada filtro/orden/página, así que hay que
-  // reenganchar en cada htmx:afterSwap sobre ese contenedor — mismo motivo
-  // que el resto de los listeners delegados de arriba, pero aquí sí hace
-  // falta re-crear el botón "x" porque attachComboboxClearButton() inserta
-  // un <button> nuevo cada vez (no es delegado).
   function wireEstatusFiltroCombobox() {
     const trigger = document.getElementById('estatusFiltroTrigger');
     const list = document.getElementById('estatusFiltroList');
     if (!trigger || !list) return;
     attachComboboxKeyboardNav(trigger, list);
     attachComboboxClearButton(document.getElementById('estatusFiltroCombobox'), trigger, () => {
-      // "todos" siempre es el último <li> (ver el array de arriba en
-      // usuarios-panel.ejs) — un click sintético reutiliza su propio
-      // hx-post/hx-vals en vez de reimplementar el filtro aquí.
       list.querySelector('.combobox-item:last-child')?.dispatchEvent(
         new MouseEvent('click', { bubbles: true, cancelable: true }),
       );
@@ -225,22 +140,12 @@
     if (event.detail.target.id === 'usuarios-panel') wireEstatusFiltroCombobox();
   });
 
-  // Cerrar el banner de error del panel (pedido explícito del usuario) —
-  // delegado sobre document.body por el mismo motivo que el combobox de
-  // arriba: HTMX reemplaza #usuarios-panel entero en cada filtro/orden.
   document.body.addEventListener('click', (event) => {
     if (event.target.closest('#usuariosBannerErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();
     }
   });
 
-  // Modal de alta/edición (US-602). El contenido de #usuarioFormModalBody
-  // lo reemplaza HTMX en cada apertura/reintento, así que los botones de
-  // adentro (cerrar, cancelar, cerrar el mensaje de error) y el combobox
-  // de Doctor vinculado se manejan por delegación en el contenedor — un
-  // addEventListener directo sobre esos elementos se perdería en cuanto
-  // HTMX los vuelva a crear. Mismo patrón que areaFormModalBody en
-  // areas.ejs / doctorFormModalBody en doctores.ejs.
   const usuarioFormModalBackdrop = document.getElementById('usuarioFormModalBackdrop');
   const usuarioFormModalBody = document.getElementById('usuarioFormModalBody');
 
@@ -250,10 +155,6 @@
 
   function closeUsuarioFormModal() {
     usuarioFormModalBackdrop.classList.remove('open');
-    // El combobox de Estatus se reparenta a <body> mientras está abierto
-    // (ver openFloatingList) — a diferencia del resto del modal, dejarlo
-    // así NO se oculta solo al cerrar el backdrop (ya no es descendiente
-    // suyo), así que hay que cerrarlo explícitamente aquí.
     hideEstatusList();
     hideDoctorList();
   }
@@ -264,18 +165,9 @@
     return div.innerHTML;
   }
 
-  // Catálogo de doctores activos para el combobox: vive en JS, no en el
-  // DOM, para no depender de que HTMX re-ejecute scripts al hacer swap
-  // (ver el <script type="application/json"> inerte en usuario-form.ejs).
-  // Se reinicia en cada apertura/reintento del formulario.
   let usuarioFormDoctores = [];
   let refrescarDoctorClear = () => {};
 
-  // El tipo Doctor depende exclusivamente del vínculo. En alta se activa
-  // al elegir un doctor y vuelve a Usuario al limpiar la selección; en
-  // edición el doctor ya es inmutable, por lo que el control permanece
-  // bloqueado. Esta sincronización es visual: el repository vuelve a
-  // imponer la regla al guardar como defensa ante peticiones manipuladas.
   function sincronizarTipoUsuarioConDoctor(tieneDoctor) {
     const input = usuarioFormModalBody.querySelector('#tipoUsuarioInput');
     const grupo = usuarioFormModalBody.querySelector('#tipoUsuarioToggle');
@@ -298,21 +190,6 @@
     if (list) list.hidden = true;
   }
 
-  // US-602 (novena iteración): combobox de Estatus en edición — mismo
-  // patrón que el de Doctor vinculado (sin buscador, solo 4 valores fijos
-  // ya renderizados por el servidor en usuario-form.ejs, nada que filtrar
-  // ni pedir por fetch). El texto de cada opción ya está en el propio
-  // `<li>` (mismas etiquetas que ESTATUS_LABELS del servidor) — se lee de
-  // ahí en vez de duplicar el mapa en el cliente.
-  //
-  // A diferencia de Doctor vinculado (que va primero en el formulario, así
-  // su lista siempre abre cerca del tope y nunca fuerza scroll — ver
-  // comentario en usuario-form.ejs), Estatus va AL FINAL de la columna de
-  // Datos generales, cerca del borde inferior del modal — ver
-  // openFloatingList() más arriba para el porqué hace falta sacarla del
-  // modal (aunque el modal no está sujeto a la regla `.main-content > *`,
-  // reusa el mismo helper que el filtro Estatus para no mantener dos
-  // implementaciones del mismo comportamiento).
   function openEstatusList() {
     const trigger = document.getElementById('estatusTrigger');
     const list = document.getElementById('estatusList');
@@ -334,10 +211,6 @@
     hideEstatusList();
   }
 
-  // AC: el listbox tiene capacidad de búsqueda y permite dejar el campo
-  // vacío (usuarios.doctor_id = NULL) — "Sin vínculo" siempre aparece
-  // primero, sin importar el texto buscado, como forma explícita de
-  // limpiar la selección.
   function renderDoctorList(filterText) {
     const list = document.getElementById('doctorList');
     if (!list) return;
@@ -361,14 +234,6 @@
     list.hidden = false;
   }
 
-  // El combobox va primero en el formulario (ver usuario-form.ejs) para que
-  // el listbox absoluto siempre abra cerca del tope del modal y nunca fuerce
-  // scroll extra. Como beneficio adicional: al elegir un doctor real (no
-  // "Sin vínculo", que llega con id vacío) se precargan Nombre/Apellidos con
-  // los del doctor — el usuario los puede seguir editando a mano después.
-  // Elegir "Sin vínculo" (id vacío) hace lo simétrico: vacía Nombre/Apellidos,
-  // así un ida-y-vuelta (doctor → Sin vínculo) no deja el nombre del doctor
-  // pegado en un usuario que ya no está vinculado a nadie.
   function selectDoctor(id, label) {
     document.getElementById('doctorSearch').value = label;
     document.getElementById('doctorIdInput').value = id;
@@ -390,26 +255,9 @@
       apellidosInput.value = '';
     }
 
-    // US-604 (séptima iteración): vincular un doctor precarga Nombre/
-    // Apellidos de forma programática (arriba), lo que NO dispara un evento
-    // `input` — sin este llamado explícito, elegir un doctor nunca
-    // recalcularía la propuesta de username, a diferencia de tecleen Nombre
-    // (s)/Apellidos a mano. `intentarSugerirUsername()` ya filtra alta-only
-    // y "no pisar una edición manual del username".
     intentarSugerirUsername();
   }
 
-  // US-604 (última iteración): sugerencia de username en vivo mientras se
-  // escribe Nombre(s)/Apellidos, solo en alta (AC del usuario: en edición
-  // no se autopropone, para no arriesgarse a tocar el username de una
-  // cuenta ya en uso solo por corregir un acento). Se apaga en cuanto el
-  // administrador edita Username a mano: la asignación programática de más
-  // abajo (`usernameInputAhora.value = ...`) nunca dispara un evento
-  // `input`, así que basta con este mismo listener delegado para distinguir
-  // "el admin lo tecleó" de "lo llenó la sugerencia". `usuarioFormAperturaId`
-  // evita que la respuesta de un fetch lanzado en una apertura anterior del
-  // modal (ej. se cerró y se volvió a abrir para otra alta antes de que
-  // respondiera el servidor) le pise el username a un formulario distinto.
   let usuarioFormUsernameEditadoManual = false;
   let usuarioFormUsernameDebounce = null;
   let usuarioFormAperturaId = 0;
@@ -424,12 +272,6 @@
     }
   }
 
-  // Punto de entrada único para disparar la sugerencia — usado tanto por el
-  // listener de `input` de Nombre(s)/Apellidos (tecleo) como por
-  // selectDoctor() (elegir un doctor precarga Nombre/Apellidos de forma
-  // programática, sin disparar `input`; sin este segundo punto de entrada
-  // la sugerencia nunca se recalcularía en ese camino). Mismo criterio de
-  // alta-only + "no pisar una edición manual" en ambos casos.
   function intentarSugerirUsername() {
     const form = usuarioFormModalBody.querySelector('form');
     if (!form || form.dataset.esEdicion === '1' || usuarioFormUsernameEditadoManual) return;
@@ -449,11 +291,6 @@
       body: JSON.stringify({ nombre: nombreInput.value, apellidos: apellidosInput.value }),
     })
       .then((res) => {
-        // US-108 AC: sesión expirada -> requireAuth.js redirige a login;
-        // fetch() ya siguió ese redirect solo, así que esta respuesta es el
-        // HTML de esa página, no el JSON esperado — hay que navegar de
-        // verdad en vez de intentar leerla como JSON (que fallaría en
-        // silencio, dejando al usuario sin saber que su sesión expiró).
         if (res.redirected) {
           window.location.href = res.url;
           return null;
@@ -461,12 +298,6 @@
         return res.ok ? res.json() : null;
       })
       .then((data) => {
-        // `data.username` puede venir vacío a propósito (ej. se limpió
-        // Nombre/Apellidos al volver a "Sin vínculo" tras haber elegido un
-        // doctor) — antes se ignoraba con `!data.username`, dejando pegado
-        // el username del doctor anterior. Ahora sí se aplica: la única
-        // condición real para no tocar el campo es una apertura vieja o que
-        // el admin ya lo haya editado a mano.
         if (!data) return;
         if (aperturaId !== usuarioFormAperturaId || usuarioFormUsernameEditadoManual) return;
         const usernameInputAhora = document.getElementById('usernameInput');
@@ -477,22 +308,8 @@
 
   document.body.addEventListener('htmx:afterSwap', (event) => {
     if (event.detail.target !== usuarioFormModalBody) return;
-    // Si el fragmento trae un <form> (carga inicial, o reintento tras un
-    // error de validación/duplicado) el modal debe quedar/seguir abierto.
-    // La respuesta de éxito no trae form (solo el swap out-of-band de la
-    // tabla) — en ese caso no hay nada que abrir, el evento
-    // closeUsuarioModal de abajo se encarga de cerrarlo.
     if (!usuarioFormModalBody.querySelector('form')) return;
 
-    // Nueva apertura (GET /usuarios/nuevo o /usuarios/:id/editar): cualquier
-    // sugerencia en vuelo de la apertura anterior queda invalidada y el
-    // estado "editado a mano" se reinicia. Un reintento tras un error de
-    // validación (POST/PUT que vuelve a caer aquí) NO reinicia nada — el
-    // admin no cerró el modal, así que si ya había tocado el username a
-    // mano antes de que fallara el guardado, la propuesta automática debe
-    // seguir apagada tras el reintento (AC: "una vez que el administrador
-    // modifique manualmente el username, el sistema no deberá
-    // sobrescribirlo automáticamente").
     const esAperturaFresca = event.detail.requestConfig?.verb === 'get';
     if (esAperturaFresca) {
       usuarioFormAperturaId += 1;
@@ -513,9 +330,6 @@
         () => selectDoctor('', ''),
       );
     }
-    // Estatus (solo en edición): sin botón "x" — son 4 valores fijos, no
-    // tiene sentido un estado "vacío" (mismo criterio que Lateralidad en
-    // laboratorio-form.ejs).
     const estatusTriggerEl = usuarioFormModalBody.querySelector('#estatusTrigger');
     const estatusListEl = usuarioFormModalBody.querySelector('#estatusList');
     if (estatusTriggerEl && estatusListEl) {
@@ -528,12 +342,6 @@
       usuarioFormModalBody.querySelector('#tipoUsuarioInput')?.value === 'doctor';
     sincronizarTipoUsuarioConDoctor(Boolean(doctorIdInicial || doctorVinculadoEnEdicion));
 
-    // US-604: el modal solo necesita ser ancho cuando trae la matriz de
-    // permisos (usuarios sin usuarios.permisos ven un formulario de una
-    // sola columna) — se decide mirando el contenido recién swapeado, no
-    // con una clase fija en el HTML estático de arriba. .modal-card-xwide
-    // (no .modal-card-wide) porque la matriz necesita más espacio que
-    // cualquier otro formulario del sistema hasta ahora.
     usuarioFormModalBody.classList.toggle(
       'modal-card-xwide',
       Boolean(usuarioFormModalBody.querySelector('.usuario-config-row')),
@@ -551,21 +359,12 @@
     }
 
     if (event.target.id === 'telefonoInput') {
-      // Formato de teléfono en México: 10 dígitos. Se reconstruye el valor
-      // completo en cada tecla (no solo se insertan guiones) para que
-      // borrar un dígito de en medio también recorra los guiones
-      // correctamente, en vez de dejarlos "pegados" en su posición
-      // original.
       const digitos = event.target.value.replace(/\D/g, '').slice(0, 10);
       event.target.value = formatearTelefono(digitos);
       return;
     }
 
     if (event.target.id === 'usernameInput') {
-      // Único momento en que se marca "editado a mano": la asignación
-      // programática de la sugerencia (ver solicitarUsernameSugerido) nunca
-      // dispara un evento `input`, así que llegar aquí solo puede ser una
-      // tecla real del administrador.
       usuarioFormUsernameEditadoManual = true;
       return;
     }
@@ -580,12 +379,6 @@
     if (event.target.id === 'estatusTrigger') openEstatusList();
   });
 
-  // US-604 (décima iteración): mantiene el checkbox "Todos" de una fila en
-  // sincronía con sus casillas reales — marcado solo si TODAS están
-  // marcadas. Se llama después de cualquier cambio individual (tecleo
-  // directo, o el efecto de la regla "Ver implica las demás" de abajo),
-  // nunca cuando el cambio vino del propio "Todos" (ver más abajo, ese
-  // camino ya deja el estado correcto a propósito).
   function syncTodosCheckbox(fila) {
     const todosCheckbox = fila.querySelector('.permiso-todos-checkbox');
     if (!todosCheckbox) return;
@@ -593,20 +386,7 @@
     todosCheckbox.checked = casillas.length > 0 && Array.from(casillas).every((c) => c.checked);
   }
 
-  // Regla pedida por el usuario: no tiene sentido crear/editar/eliminar/
-  // etc. algo que no se puede ni ver. Marcar cualquier otra acción de una
-  // fila de la matriz de permisos marca "Ver" automáticamente si no lo
-  // estaba; desmarcar "Ver" desmarca TODA la fila (nada más sobrevive sin
-  // Ver). Delegado sobre .permisos-matrix, con data-accion (ver
-  // usuario-form.ejs) para encontrar el checkbox de "Ver" de la misma fila
-  // sin depender de su posición exacta entre columnas.
   usuarioFormModalBody.addEventListener('change', (event) => {
-    // US-604 (séptima iteración): columna "Todos" pedida por el usuario —
-    // marca/desmarca de un solo clic TODAS las acciones de esa fila. No es
-    // un permiso real (nunca lleva `name="permisos"`, ver usuario-form.ejs),
-    // así que se resuelve aparte del resto de la lógica de abajo, antes de
-    // llegar a la regla "Ver implica las demás" (que de todos modos no
-    // necesita intervenir: marcar/desmarcar TODA la fila ya incluye "Ver").
     const todosCheckbox = event.target.closest('.permiso-todos-checkbox');
     if (todosCheckbox) {
       const fila = todosCheckbox.closest('tr');
@@ -621,7 +401,7 @@
 
     const fila = checkbox.closest('tr');
     const verCheckbox = fila.querySelector('input[data-accion="ver"]');
-    if (!verCheckbox) return; // fila sin columna "Ver" (no debería pasar)
+    if (!verCheckbox) return;
 
     if (checkbox === verCheckbox) {
       if (!checkbox.checked) {
@@ -652,9 +432,6 @@
     }
     const passwordToggle = event.target.closest('#passwordToggle');
     if (passwordToggle) {
-      // Mismo mecanismo que el ojo de index.ejs (login), delegado porque
-      // HTMX reemplaza este formulario en cada apertura/reintento del modal
-      // — un addEventListener directo sobre #passwordToggle se perdería.
       const passwordInput = document.getElementById('passwordInput');
       const eyeIcon = document.getElementById('passwordEyeIcon');
       const isPassword = passwordInput.getAttribute('type') === 'password';
@@ -664,17 +441,8 @@
         ? '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.8 21.8 0 0 1-3.22 4.36M1 1l22 22"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>'
         : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
     }
-    // Dos combobox comparten la clase `.combobox-item` (Doctor vinculado y,
-    // desde la novena iteración, Estatus) — se distingue por el `<ul>` que
-    // lo contiene, no por el ítem en sí.
     const doctorItem = event.target.closest('#doctorList .combobox-item');
     if (doctorItem) {
-      // El combobox vive dentro de un <label> (Doctor vinculado), y el <li>
-      // no es un control enfocable — sin preventDefault(), el navegador
-      // reenvía el click como si fuera sobre el control asociado del label
-      // (#doctorSearch), reenfocándolo justo después de seleccionar. Eso
-      // dispara el listener de "focusin" de abajo y reabre la lista que
-      // selectDoctor() recién cerró.
       event.preventDefault();
       selectDoctor(doctorItem.dataset.id, doctorItem.dataset.label);
     }
@@ -684,15 +452,6 @@
     const combobox = document.getElementById('doctorCombobox');
     if (combobox && !combobox.contains(event.target)) hideDoctorList();
 
-    // A diferencia de #doctorList (que nunca se reparenta, siempre se
-    // queda dentro de #usuarioFormModalBody — ver comentario en
-    // openEstatusList()), #estatusList SÍ se cuelga de <body> mientras
-    // está abierta (openFloatingList). Una vez ahí, un click en uno de
-    // sus <li> ya no burbujea a través de #usuarioFormModalBody — el
-    // listener delegado de ahí (arriba) nunca lo veía, así que
-    // seleccionar una opción no hacía nada. Se maneja aquí, en
-    // document, que siempre contiene la lista sin importar dónde esté
-    // reparentada.
     const estatusItem = event.target.closest('#estatusList .combobox-item');
     if (estatusItem) {
       event.preventDefault();
@@ -712,22 +471,14 @@
     if (event.target === usuarioFormModalBackdrop) closeUsuarioFormModal();
   });
 
-  // HX-Trigger: closeUsuarioModal (ver usuarios.controller.js,
-  // renderExito()) — htmx traduce ese header en este evento personalizado.
   document.body.addEventListener('closeUsuarioModal', closeUsuarioFormModal);
 
-  // US-605: HX-Trigger mostrarPasswordTemporal (ver
-  // usuarios.controller.js#resetearPassword) — el detalle del evento trae
-  // la contraseña en texto plano, leída UNA sola vez.
   const passwordTemporalModalBackdrop = document.getElementById('passwordTemporalModalBackdrop');
   const passwordTemporalValue = document.getElementById('passwordTemporalValue');
 
   function closePasswordTemporalModal() {
     passwordTemporalModalBackdrop.classList.remove('open');
-    // Se borra del DOM al cerrar — no basta con ocultar el modal, el valor
-    // no debe quedar inspeccionable después de este punto (AC: "no
-    // permite recuperar ni volver a mostrar la misma contraseña
-    // temporal").
+    // La contraseña temporal no debe permanecer en el DOM después de cerrar.
     passwordTemporalValue.textContent = '';
   }
 
@@ -742,12 +493,6 @@
   });
 
   document.getElementById('passwordTemporalCopy').addEventListener('click', async (event) => {
-    // event.currentTarget deja de estar disponible (vuelve null) en cuanto
-    // termina el despacho SÍNCRONO del evento — un handler async sigue
-    // ejecutándose después de eso, así que hay que leerlo ANTES del primer
-    // await, nunca después (se confirmó el bug en vivo con Chromium real:
-    // "Cannot read properties of null (reading 'textContent')" al intentar
-    // leerlo después de await navigator.clipboard.writeText()).
     const btn = event.currentTarget;
     const textoOriginal = btn.textContent;
     await navigator.clipboard.writeText(passwordTemporalValue.textContent);

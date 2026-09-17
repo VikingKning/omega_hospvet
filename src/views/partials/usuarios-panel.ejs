@@ -1,9 +1,4 @@
 <%
-// US-601: gestión de usuarios — mismo patrón que doctores-panel.ejs/
-// areas-panel.ejs/plantillas-panel.ejs (tabla estándar del sistema). Solo
-// lectura por ahora: los botones/acciones de alta/edición/permisos/
-// resetear/baja son intencionalmente decorativos (AC de la historia — cada
-// una llega en su propia historia futura: US-602/603/604/605).
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 
@@ -21,14 +16,7 @@ const ESTATUS_LABELS = {
   bloqueo_temp: 'Bloqueo temporal',
   bloqueado: 'Bloqueado',
   inactivo: 'Inactivo',
-  // US-605: usuario con una contraseña temporal pendiente de cambio
-  // obligatorio (ver auth.service.js#login) — filtrable como cualquier
-  // otro estatus real, aunque nunca es un valor elegible a mano desde
-  // "Editar usuario" (ver ESTATUS_VALUES_EDITABLES en usuarios.service.js).
   cambio_pwd: 'Cambio de contraseña pendiente',
-  // "todos" solo existe como valor de FILTRO (nunca es el estatus real de
-  // un usuario) — vive en el mismo mapa para no duplicarlo entre el badge
-  // de la tabla y el trigger del filtro de abajo.
   todos: 'Todos',
 };
 
@@ -37,21 +25,11 @@ const ESTATUS_BADGE_CLASS = {
   bloqueo_temp: ' is-warning',
   bloqueado: ' is-danger',
   inactivo: '',
-  // Mismo color que bloqueo_temp (ámbar) — es una situación transitoria
-  // que requiere atención, no un error (rojo) ni un estado normal (verde).
   cambio_pwd: ' is-warning',
 };
 
 const SORT_LABELS = { nombre: 'Nombre', username: 'Username', correo: 'Correo', estatus: 'Estatus' };
 
-// US-603: a diferencia del formulario (modal, con su propio banner de
-// error), la baja se dispara directo desde un botón de la tabla — no hay
-// otro lugar donde mostrar un rechazo (AC: "propia cuenta"/ninguna baja
-// duplicada) que no sea este mismo panel que HTMX ya está reemplazando.
-// `error` es opcional: solo lo manda usuarios.controller.js#darDeBaja
-// cuando el service rechaza la operación; el resto de los renders de este
-// partial (list/filter/alta/edición) ni lo pasan, así que por default no
-// hay banner.
 const bannerError = typeof error === 'undefined' ? null : error;
 %>
 <% if (bannerError) { %>
@@ -94,37 +72,13 @@ const bannerError = typeof error === 'undefined' ? null : error;
           <input type="text" id="usuarios-search" name="q" value="<%= q %>" placeholder="Buscar por nombre, usuario o correo...">
           <span class="lab-search-spinner htmx-indicator" aria-hidden="true"></span>
         </div>
-        <%
-        // US-601 (segunda iteración, pedido de estilo): un <select> nativo
-        // no puede tener su lista abierta con esquinas redondeadas — lo
-        // dibuja el navegador/SO, no CSS (mismo límite ya documentado en
-        // usuario-form.ejs para Estatus). Se reemplaza por el mismo patrón
-        // de combobox (trigger de solo lectura + <ul class="combobox-list">
-        // ya con esquinas redondeadas de verdad). A diferencia de los
-        // combobox de formulario (Doctor vinculado/Estatus en editar
-        // usuario), este es un FILTRO: cada opción dispara directo su
-        // propio hx-post (mismo patrón que los botones de orden/paginación
-        // de esta misma tabla) — no hace falta un input oculto que se
-        // actualice por JS y luego dispare un evento. El input oculto de
-        // abajo solo existe para que hx-include siga mandando el estatus
-        // vigente en las DEMÁS acciones (buscar, ordenar, paginar).
-        %>
+
         <input type="hidden" name="estatus" value="<%= estatus %>">
         <div class="combobox" id="estatusFiltroCombobox">
           <input type="text" id="estatusFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
                  placeholder="Todos"
                  value="<%= (estatus && estatus !== 'todos') ? ESTATUS_LABELS[estatus] : '' %>">
-          <%
-          // El JS del cliente saca esta lista de #usuarios-filters y la
-          // cuelga de <body> mientras está abierta (para escapar el
-          // stacking context de `.main-content > *` — ver usuarios.ejs,
-          // openFloatingList()). Eso rompe la herencia de hx-headers que el
-          // <form> le pasaba (htmx solo la busca en ancestros REALES en el
-          // DOM al momento del click) — sin el CSRF token, doubleCsrfProtection
-          // rechaza el POST con 403. Se repite hx-headers aquí, directo en el
-          // <ul>, para que viaje con la lista sin importar dónde quede
-          // reparentada.
-          %>
+
           <ul class="combobox-list" id="estatusFiltroList" hidden hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
             <% ['activo', 'bloqueo_temp', 'bloqueado', 'cambio_pwd', 'inactivo', 'todos'].forEach((valor) => { %>
               <li class="combobox-item"
@@ -224,18 +178,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
                       </svg>
                     </button>
                   <% } %>
-                  <%
-                  // US-605: se oculta para usuarios inactivos (no pueden
-                  // iniciar sesión de todos modos — auth.service.js
-                  // rechaza 'inactivo' antes de comparar la contraseña,
-                  // así que resetearla no tendría ningún efecto útil
-                  // visible) y para la propia cuenta (mismo motivo que el
-                  // botón de baja: la operación mata la sesión activa del
-                  // usuario objetivo — ver usuarios.repository.js#resetearPassword
-                  // — y no tiene sentido que alguien se desconecte a la
-                  // mitad de su propia acción; el servicio también lo
-                  // rechaza del lado del servidor si se forzara).
-                  %>
+
                   <% if (has('usuarios.resetear_password') && usuario.estatus !== 'inactivo' && usuario.id !== user.id) { %>
                     <button class="row-action-btn row-action-reset" type="button" data-tooltip="Resetear contraseña"
                             aria-label="Resetear contraseña de <%= usuario.username %>"
@@ -250,12 +193,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
                       </svg>
                     </button>
                   <% } %>
-                  <%
-                  // US-603 AC: "un usuario no puede dar de baja su propia
-                  // cuenta" — se oculta el botón para la propia fila (además
-                  // del rechazo del lado del servidor, defensa en
-                  // profundidad ante una petición directa forjada).
-                  %>
+
                   <% if (has('usuarios.eliminar') && usuario.estatus !== 'inactivo' && usuario.id !== user.id) { %>
                     <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
                             aria-label="Dar de baja a <%= usuario.username %>"
@@ -278,13 +216,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
       <% } %>
 
       <div class="table-footer">
-        <%
-        // Pedido explícito del usuario: mismo formato en TODOS los módulos
-        // (antes cada tabla tenía su propio separador/singular a medias) —
-        // singular cuando el número es 1 (encontrados Y total, cada uno por
-        // su cuenta), plural en cualquier otro caso (0, 2, 50...), separador
-        // en-dash.
-        %>
+
         <span><%= usuarios.length %> resultado<%= usuarios.length === 1 ? '' : 's' %> – <%= total %> usuario<%= total === 1 ? '' : 's' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">

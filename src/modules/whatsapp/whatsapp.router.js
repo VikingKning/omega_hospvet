@@ -1,10 +1,5 @@
 const menu = require('./whatsapp.menu');
 
-// US WA 011: catálogo cerrado y precedencia única para los grupos que sí
-// alcanzan el worker. Atención humana e interacciones se consumen antes de
-// agrupar (en la transacción del webhook) para conservar el silencio y la
-// respuesta inmediata; estas rutas permanecen en el catálogo para que la
-// auditoría use el mismo vocabulario en todo el módulo.
 const RUTAS_ENRUTAMIENTO = Object.freeze({
   ATENCION_HUMANA: 'atencion_humana',
   RESPUESTA_INTERACTIVA: 'respuesta_interactiva',
@@ -16,9 +11,6 @@ const RUTAS_ENRUTAMIENTO = Object.freeze({
 });
 
 function seleccionarRutaGrupo({ contexto, grupo }) {
-  // Las dos primeras condiciones son defensivas. El registro transaccional
-  // del webhook debe impedir que esos mensajes formen un grupo, pero si una
-  // fila heredada o recuperada llega aquí se conserva la precedencia formal.
   if (contexto?.estado === 'atencion_humana') {
     return RUTAS_ENRUTAMIENTO.ATENCION_HUMANA;
   }

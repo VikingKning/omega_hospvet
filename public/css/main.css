@@ -4927,6 +4927,119 @@ body:has(.app)::after {
   line-height: 1.15;
 }
 
+.metricas-report-tabs {
+  display: inline-flex;
+  margin: 4px 0 8px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-base);
+}
+
+.metricas-report-tab {
+  min-height: 38px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.metricas-report-tab:hover {
+  color: var(--primary);
+}
+
+.metricas-report-tab.active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.metricas-report-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+[data-whatsapp-report][hidden] {
+  display: none;
+}
+
+.metricas-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0 14px;
+}
+
+.metricas-section-heading h2 {
+  margin: 0 0 4px;
+  color: var(--text-dark);
+  font-size: 20px;
+}
+
+.metricas-section-heading p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.metricas-conversacional {
+  margin-top: 0;
+}
+
+.metricas-kpis-conversacional .metricas-kpi-card {
+  display: grid;
+  grid-template-rows: minmax(30px, auto) 32px auto;
+  min-width: 175px;
+  row-gap: 2px;
+}
+
+.metricas-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.metricas-stat-grid span {
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.metricas-stat-grid strong {
+  display: block;
+  color: var(--text-dark);
+  font-size: 16px;
+}
+
+.metricas-mini-table {
+  display: grid;
+  gap: 0;
+}
+
+.metricas-mini-table > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.metricas-mini-table code {
+  overflow-wrap: anywhere;
+}
+
 .metricas-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));

@@ -15,17 +15,10 @@ function formatFecha(fecha) {
   return `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }
 
-// Pedido explícito del usuario: acortar Cliente/Dr. Solicitante en la tabla
-// para ahorrar espacio — solo la primera palabra de cada campo (un nombre y
-// un apellido), nunca el nombre completo. "Dr." fijo para ambos sexos: no
-// existe un campo de género en `doctores`, no se inventa uno solo para esto.
 function primeraPalabra(texto) {
   return (texto || '').trim().split(/\s+/)[0] || '';
 }
 
-// Mismo criterio que usuarios-panel.ejs#bannerError: este partial también
-// se renderiza desde filter()/eliminar() (HTMX), que nunca pasan `error` —
-// `undefined` ahí significa "no aplica", no "hay un error").
 const bannerError = typeof error === 'undefined' ? null : error;
 %>
 <% if (bannerError) { %>
@@ -67,16 +60,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
           <input type="text" id="laboratorio-search" name="q" value="<%= q %>" placeholder="Buscar por paciente, tutor, doctor, teléfono o folio (LAB-XXX)...">
           <span class="lab-search-spinner htmx-indicator" aria-hidden="true"></span>
         </div>
-        <%
-        // Un <select> nativo no puede tener su lista abierta con esquinas
-        // redondeadas (mismo límite ya documentado en usuarios-panel.ejs
-        // para su filtro Estatus) — mismo patrón de combobox aquí: trigger
-        // de solo lectura + <ul class="combobox-list"> server-renderizada,
-        // cada opción con su propio hx-post/hx-vals (el JS de laboratorio.ejs
-        // solo abre/cierra la lista, HTMX resuelve la selección). El input
-        // oculto es lo que hx-include manda en las DEMÁS acciones (buscar,
-        // ordenar, paginar, eliminar).
-        %>
+
         <input type="hidden" name="estado" value="<%= estado %>">
         <div class="combobox" id="estadoFiltroCombobox">
           <input type="text" id="estadoFiltroTrigger" class="lab-select select-trigger-input" readonly autocomplete="off"
@@ -126,7 +110,6 @@ const bannerError = typeof error === 'undefined' ? null : error;
             <th>Dr. Solicitante</th>
             <th>Fecha Solicitud</th>
             <th>Estado</th>
-            <!--th>Fecha de Envío</th-->
             <th class="text-right">Acciones</th>
           </tr>
         </thead>
@@ -148,26 +131,13 @@ const bannerError = typeof error === 'undefined' ? null : error;
               <td><%= registro.doctor_nombre ? `Dr. ${primeraPalabra(registro.doctor_nombre)} ${primeraPalabra(registro.doctor_apellidos)}` : '—' %></td>
               <td><%= formatFecha(registro.fecha_solicitud) %></td>
               <td><span class="badge badge-<%= registro.estado %>"><%= ESTADO_LABEL[registro.estado] %></span></td>
-              <!--td>< %= formatFecha(registro.enviado_en) %></td-->
               <td class="text-right">
                 <div class="row-actions">
                   <%
-                  // Pedido explícito del usuario: alta/edición/consulta
-                  // abren su propia pantalla (mismo patrón que
-                  // tutores-panel.ejs) — laboratorio.editar decide si esa
-                  // pantalla es editable o de solo consulta (mismo id de
-                  // ruta para ambos casos, ver laboratorio.controller.js#editarForm).
                   const puedeEditar = has('laboratorio.editar');
                   %>
                   <% if (puedeEditar) { %>
-                    <%
-                    // Ícono de "ojo" nuevo, pedido explícito del usuario:
-                    // quien SÍ puede editar también puede querer solo
-                    // consultar un registro sin riesgo de modificarlo por
-                    // accidente — misma pantalla que Editar (ver
-                    // laboratorio.controller.js#verForm), pero forzada a
-                    // solo lectura sin importar el permiso.
-                    %>
+
                     <a class="row-action-btn" data-tooltip="Ver"
                        aria-label="Ver orden <%= idLabel(registro.id) %>"
                        href="laboratorio/<%= registro.id %>/ver">
@@ -189,14 +159,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
                       </svg>
                     <% } %>
                   </a>
-                  <%
-                  // Pedido explícito del usuario: este ícono abre su propia
-                  // pantalla (/cargar, parecida a /ver pero con los
-                  // controles de carga) — "enviar" (correo/WhatsApp,
-                  // envios_laboratorio/envio_archivo) sigue sin
-                  // implementar, permiso laboratorio.enviar ya sembrado
-                  // pero reservado para una iteración futura.
-                  %>
+
                   <% if (has('laboratorio.cargar')) { %>
                     <a class="row-action-btn" data-tooltip="Subir resultados"
                        aria-label="Subir resultados de la orden <%= idLabel(registro.id) %>"
@@ -231,13 +194,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
       <% } %>
 
       <div class="table-footer">
-        <%
-        // Pedido explícito del usuario: mismo formato en TODOS los módulos
-        // (antes cada tabla tenía su propio separador/singular a medias) —
-        // singular cuando el número es 1 (encontrados Y total, cada uno por
-        // su cuenta), plural en cualquier otro caso (0, 2, 50...), separador
-        // en-dash.
-        %>
+
         <span><%= registros.length %> resultado<%= registros.length === 1 ? '' : 's' %> – <%= total %> registro<%= total === 1 ? '' : 's' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">

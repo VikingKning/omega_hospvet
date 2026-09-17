@@ -3,18 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<%#
-  US-156: única página del sistema servida un nivel más profundo que la
-  raíz (/tutores/nuevo, /tutores/:id/editar) en vez de un solo segmento
-  como el resto (/doctores.html, /areas.html...). Sin esto, CUALQUIER
-  referencia relativa de la página — sus propios <link>/<a>/fetch(), pero
-  también las del partial compartido partials/sidebar.ejs, que asume
-  siempre estar servido desde la raíz — resolvería contra /tutores/ en vez
-  de /, rompiendo silenciosamente todo el menú lateral y el guardado.
-  <base> es el mecanismo estándar para esto: cubre <link>/<a>/<img> Y
-  fetch()/history.replaceState() con un solo cambio, sin tener que
-  reescribir cada referencia (propia y de partials compartidos) a mano.
-%>
+<%# La ruta anidada requiere una base explícita para los assets y enlaces relativos. %>
 <base href="/">
 <title><%= soloLectura ? 'Ver propietario' : (propietario ? 'Editar propietario' : 'Nuevo propietario') %> | Omega Hospital Veterinario</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
@@ -24,31 +13,8 @@
 <body>
 
   <%
-  // US-156: a diferencia de doctores/áreas/plantillas/usuarios (formulario
-  // en un .modal-card sobre la propia tabla), esta página es una página
-  // completa propia — el mockup de esta historia la pide así (breadcrumb,
-  // "Regresar al listado", panel "Resumen" aparte). Por eso no usa HTMX en
-  // absoluto: el guardado es un fetch() + JSON, mismo patrón que
-  // index.ejs (login) y cambiar-password.ejs, no el patrón hx-post de
-  // doctor-form.ejs/area-form.ejs/plantilla-form.ejs.
   const esEdicion = Boolean(propietario);
-  // Búsqueda en vivo del teléfono (pedido del usuario): solo tiene sentido
-  // en ALTA (en edición ya se está editando a alguien específico). No se
-  // condiciona además a tutores.editar — la ruta de búsqueda en sí solo
-  // exige tutores.crear (mismo permiso que esta página), y si el usuario
-  // selecciona una coincidencia, GET /tutores/:id/editar ya exige
-  // tutores.editar por su cuenta; ocultar la búsqueda aquí solo escondía
-  // la función sin aportar nada, el permiso real se sigue aplicando en la
-  // ruta de destino igual que en el resto del sistema.
   const conBusquedaTelefono = !esEdicion;
-  // Pedido explícito del usuario: mismo criterio "Ver" ya usado en
-  // plantillas_whatsapp/areas/doctores/usuarios — reusa esta misma página
-  // en modo solo-lectura (ver tutores.controller.js#verForm). A diferencia
-  // de esos 4 (formulario en modal + HTMX), esta página guarda vía
-  // fetch()+JSON — el flag se lee del lado del cliente más abajo
-  // (SOLO_LECTURA) para deshabilitar los campos/botones y, sobre todo, los
-  // controles de la tabla de pacientes (100% renderizados en JS, ver
-  // renderPacientes()).
   const esSoloLectura = Boolean(soloLectura);
   %>
 
@@ -66,13 +32,6 @@
         <span class="topbar-icon-badge">
           <svg class="topbar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.5 4.05 3 5.5l7 7Z"/></svg>
         </span>
-        <%#
-          Ajuste posterior (pedido del usuario): en mobile la cadena
-          completa se amontonaba junto al menú hamburguesa — el prefijo del
-          breadcrumb se envuelve en su propio <span> para poder ocultarlo
-          solo ahí (CSS, ver main.css), dejando nada más "Nuevo propietario"/
-          "Editar propietario" visible.
-        %>
         <h1 class="topbar-title"><span class="topbar-breadcrumb-prefix">Tutores y Pacientes &rsaquo; Catálogo &rsaquo; </span><%= esSoloLectura ? 'Ver propietario' : (esEdicion ? 'Editar propietario' : 'Nuevo propietario') %></h1>
         <a class="topbar-user" href="mi-perfil.html">
           <span class="topbar-user-avatar avatar-color-<%= user.avatar %>">
@@ -103,15 +62,7 @@
           </a>
         </div>
 
-        <%
-        // Pedido explícito del usuario: encabezado ("Editar propietario"/
-        // "Regresar al listado") y footer (Cancelar/Guardar) siempre
-        // visibles — mismo patrón ya usado en laboratorio-form.ejs
-        // (.lab-form-page/.lab-form-scroll, reutilizados tal cual aquí en
-        // vez de duplicar el CSS): solo esta franja de en medio
-        // (banners + "Información del propietario" + "Pacientes
-        // asociados") hace scroll cuando el número de pacientes crece.
-        %>
+
         <div class="lab-form-scroll">
         <span class="form-error-banner" id="tutorFormError" style="display:none">
           <span id="tutorFormErrorText"></span>
@@ -119,51 +70,15 @@
         </span>
         <span class="form-success-banner" id="tutorFormSuccess" style="display:none"></span>
 
-        <%
-        // Pedido del usuario (ajuste posterior): se quita "Resumen" —
-        // solo repetía datos que el propio formulario ya muestra (nombre/
-        // apellidos capturados arriba, conteo de pacientes visible en la
-        // tabla de abajo) y le robaba ancho a "Información del
-        // propietario" con una columna fija de 300px. La sección ahora
-        // ocupa el 100% del ancho, igual que "Pacientes asociados" debajo
-        // — .tutor-form-grid (auto-fit) acomoda más campos por fila solo
-        // con el ancho de sobra, sin tocar su CSS.
-        %>
+
         <section class="profile-card">
           <h3 class="tutor-form-card-title">Información del propietario</h3>
-          <%
-          // Pedido del usuario: Teléfono/Nombre(s)/Apellidos/Correo/Estado
-          // deben caber siempre en el mismo renglón (nunca dejar que
-          // Estado se vaya solo a una segunda fila) — el auto-fit genérico
-          // de .tutor-form-grid (bueno para las 4 columnas de la alta) no
-          // alcanza a acomodar una 5ta columna angosta sin ese empuje. Solo
-          // en edición: la alta (4 campos) sigue con el auto-fit tal cual.
-          %>
+
           <div class="modal-form tutor-form-grid<%= esEdicion ? ' tutor-form-grid-con-estado' : '' %>">
             <label>
               Teléfono *
-              <%
-              // Pedido del usuario: el teléfono va primero y, solo en
-              // alta, permite buscar entre los propietarios ya
-              // existentes mientras se escribe — si hay coincidencia y
-              // se selecciona, se navega a editar ESE propietario en
-              // vez de continuar el alta; si no hay ninguna, no pasa
-              // nada y se sigue capturando el resto de los campos como
-              // un alta normal. Mismo patrón .combobox/.combobox-list
-              // ya usado en el resto del sistema (Doctor vinculado en
-              // usuario-form.ejs), pero con búsqueda en vivo contra el
-              // servidor en vez de filtrar una lista ya cargada
-              // (propietarios puede crecer mucho más que el catálogo
-              // de doctores).
-              %>
-              <%
-              // Mismo formato de teléfono mexicano (10 dígitos,
-              // NN-NNNN-NNNN) ya establecido en usuario-form.ejs/
-              // perfil-form.ejs — mismos atributos (placeholder,
-              // inputmode, pattern, maxlength, title), pedido explícito
-              // del usuario para mantenerlo consistente en todos los
-              // formularios del sistema.
-              %>
+
+
               <% if (conBusquedaTelefono) { %>
                 <div class="combobox" id="tutorTelefonoCombobox">
                   <input type="text" id="tutorTelefono" placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off" pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)" value="">
@@ -188,29 +103,8 @@
               Correo electrónico
               <input type="email" id="tutorCorreo" maxlength="150" placeholder="Ej. juan.perez@correo.com" value="<%= propietario?.correo ?? '' %>" <%= esSoloLectura ? 'readonly disabled' : '' %>>
             </label>
-            <%
-            // Pedido del usuario: reemplaza el badge fijo ("Activo" a
-            // secas, sin leer el dato real) que vivía en "Resumen" —
-            // mismo patrón .switch-field ya usado en doctor-form.ejs/
-            // plantilla-form.ejs. Solo en edición (mismo criterio que
-            // plantillas, no el de doctores): un alta siempre nace
-            // activo=true (tutores.service.js#crear), no tiene sentido
-            // mostrarlo ahí. Convive con el ícono de baja/reactivar del
-            // listado sin fusionarse — mismo "dos caminos hacia activo"
-            // ya usado en plantillas (US-613/614).
-            %>
-            <%
-            // Envuelto en un <label> normal (caption "Estado" arriba,
-            // como el resto de los campos de esta grilla) con el
-            // .switch-field ya conocido ADENTRO, en vez de ponerle a ese
-            // mismo <label> la clase .switch-field directo (como en
-            // doctor-form.ejs/plantilla-form.ejs, que no viven dentro de
-            // una grilla) — así conserva la fila caption-arriba/control-
-            // abajo de sus vecinos sin pisar el `display:inline-flex`
-            // propio de .switch-field con el `display:flex;
-            // flex-direction:column` de `.modal-form label` (misma regla,
-            // mayor especificidad al incluir el elemento).
-            %>
+
+
             <% if (esEdicion) { %>
               <label>
                 Estado
@@ -231,15 +125,7 @@
         <section class="profile-card">
           <div class="tutor-pacientes-header">
             <h3 class="tutor-form-card-title" style="margin:0">Pacientes asociados</h3>
-            <%
-            // El botón se queda siempre en el DOM (solo `disabled`), nunca
-            // se omite: el script de abajo hace
-            // `document.getElementById('agregarPacienteBtn').addEventListener(...)`
-            // a nivel de módulo — si el botón no existiera, esa línea
-            // tronaría (null.addEventListener) y se caería TODO el resto
-            // del script de la página (mismo motivo por el que
-            // doctor-form.ejs/area-form.ejs deshabilitan en vez de omitir).
-            %>
+
             <button class="btn-primary" type="button" id="agregarPacienteBtn" <%= esSoloLectura ? 'disabled' : '' %>>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               Agregar paciente
@@ -280,13 +166,6 @@
     </div>
   </div>
 
-  <%#
-    Confirmación de reactivación (AC5, decidido con el usuario): nunca un
-    confirm() nativo (regla transversal del proyecto) — mismo patrón visual
-    .modal-backdrop/.modal-card que #confirmModalBackdrop en doctores.ejs,
-    pero disparado a mano desde el manejador del fetch, no desde
-    htmx:confirm (esta página no usa HTMX).
-  %>
   <div class="modal-backdrop" id="reactivarModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -305,13 +184,6 @@
     </div>
   </div>
 
-  <%#
-    Ajuste posterior (pedido del usuario): al salir del campo Teléfono con
-    un número que coincide EXACTO con un propietario ACTIVO, se avisa con
-    esta alerta (además del buscador incremental de arriba, que ya lo
-    sugiere mientras se escribe — conviven, no se reemplaza uno por otro).
-    Mismo patrón .modal-backdrop/.modal-card que #reactivarModalBackdrop.
-  %>
   <div class="modal-backdrop" id="telefonoActivoModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -326,15 +198,7 @@
     </div>
   </div>
 
-  <%
-  // Isla de datos JSON inerte (nunca un <script>): la lista inicial de
-  // pacientes en edición, o vacía en alta — mismo patrón que
-  // doctorFormAreasData en doctor-form.ejs (allowScriptTags:false de HTMX
-  // no aplica aquí porque esta página no usa HTMX, pero el patrón se
-  // mantiene igual por consistencia con el resto del proyecto). El
-  // carácter "<" del JSON se re-escapa a su forma unicode para que un
-  // nombre/raza con `<`/`</div>` nunca pueda cerrar el div antes de tiempo.
-  %>
+
   <div id="tutorFormPacientesData" hidden><%- JSON.stringify(pacientes).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
 
   <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
@@ -347,41 +211,15 @@
       return div.innerHTML;
     }
 
-    // Mismo formato validado del lado del servidor
-    // (tutores.service.js#TELEFONO_REGEX) — duplicado aquí a propósito
-    // (cliente vs. servidor son casos de uso distintos, mismo criterio de
-    // "cada capa valida lo suyo" del resto del proyecto), solo para evitar
-    // un viaje de red en el caso más común. Acepta las 2 máscaras (ver
-    // formatearTelefono() más abajo); no repite la regla del prefijo.
     const TELEFONO_REGEX = /^(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})$/;
 
-    // formatearTelefono() vive en public/js/telefono.js (cargado arriba,
-    // compartido con perfil.ejs/usuarios.ejs/laboratorio-form.ejs) — recibe
-    // los DÍGITOS ya recortados a 10 (nunca el valor con guiones) para
-    // poder decidir el agrupamiento a partir de los primeros 2 caracteres
-    // sin importar cuántos guiones traía antes.
 
-    // ---- Estado del formulario ----
-    // `tutorId` empieza como el id de edición (o null en alta) y se
-    // actualiza tras un "Guardar y continuar" exitoso (US-156, decidido con
-    // el usuario): un alta que se guarda y continúa se convierte en una
-    // edición in situ, sin recargar la página ni perder lo ya capturado.
     let tutorId = <%- propietario ? propietario.id : 'null' %>;
-    // Pedido explícito del usuario: modo "Ver" — la tabla de pacientes es
-    // 100% renderizada en JS (renderPacientes()), así que el flag tiene que
-    // llegar hasta aquí para deshabilitar sus controles (los botones
-    // Agregar/Guardar de arriba ya llevan `disabled` server-side).
     const SOLO_LECTURA = <%- esSoloLectura ? 'true' : 'false' %>;
     const csrfToken = '<%= csrfToken %>';
     const datosEl = document.getElementById('tutorFormPacientesData');
     let pacientes = datosEl ? JSON.parse(datosEl.textContent) : [];
 
-    // Ajuste posterior (pedido del usuario): id del propietario inactivo
-    // que el usuario ya confirmó reactivar desde la alerta de blur del
-    // teléfono — mientras siga vigente (mismo valor que telefonoVerificado,
-    // ver más abajo), Guardar reactiva directo sin volver a preguntar.
-    // Cualquier cambio al teléfono invalida ambos (ver el listener de
-    // máscara más abajo).
     let reactivandoId = null;
     let telefonoVerificado = null;
 
@@ -389,40 +227,22 @@
     const tutorApellidosInput = document.getElementById('tutorApellidos');
     const tutorTelefonoInput = document.getElementById('tutorTelefono');
     const tutorCorreoInput = document.getElementById('tutorCorreo');
-    // Solo existe en edición (ver tutor-form.ejs, el <label> es
-    // condicional a esEdicion) — null en alta, donde el propietario
-    // siempre nace activo por definición (tutores.service.js#crear).
     const tutorActivoInput = document.getElementById('tutorActivo');
     const pacientesTableBody = document.getElementById('pacientesTableBody');
     const pacientesEmpty = document.getElementById('pacientesEmpty');
     const errorBanner = document.getElementById('tutorFormError');
     const successBanner = document.getElementById('tutorFormSuccess');
 
-    // Ajuste posterior (pedido del usuario): por ahora solo hay dos tipos de
-    // mascota posibles (Perro/Gato) — el <input> de texto libre se
-    // reemplaza por un control de 2 íconos, mismo criterio visual que
-    // .toggle-group (selección única, botón activo resaltado).
     const DOG_SVG =
       '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M64 176C80.6 176 94.2 188.6 95.8 204.7L96.1 211.3C97.8 227.4 111.4 240 128 240L307.1 240L448 300.4L448 544C448 561.7 433.7 576 416 576L384 576C366.3 576 352 561.7 352 544L352 412.7C328 425 300.8 432 272 432C243.2 432 216 425 192 412.7L192 544C192 561.7 177.7 576 160 576L128 576C110.3 576 96 561.7 96 544L96 298.4C58.7 285.2 32 249.8 32 208C32 190.3 46.3 176 64 176zM387.8 32C395.5 32 402.7 35.6 407.4 41.8L424 64L476.1 64C488.8 64 501 69.1 510 78.1L528 96L584 96C597.3 96 608 106.7 608 120L608 144C608 188.2 572.2 224 528 224L464 224L457 252L332.3 198.6L363.9 51.4C366.3 40.1 376.2 32 387.8 32zM480 108C469 108 460 117 460 128C460 139 469 148 480 148C491 148 500 139 500 128C500 117 491 108 480 108z"/></svg>';
     const CAT_SVG =
       '<svg width="32" height="32" fill="currentColor" viewBox="0 0 640 640"><path d="M96 160C149 160 192 203 192 256L192 341.8C221.7 297.1 269.8 265.6 325.4 257.8C351 317.8 410.6 359.9 480 359.9C490.9 359.9 501.6 358.8 512 356.8L512 544C512 561.7 497.7 576 480 576C462.3 576 448 561.7 448 544L448 403.2L312 512L368 512C385.7 512 400 526.3 400 544C400 561.7 385.7 576 368 576L224 576C171 576 128 533 128 480L128 256C128 239.4 115.4 225.8 99.3 224.2L92.7 223.9C76.6 222.2 64 208.6 64 192C64 174.3 78.3 160 96 160zM565.8 67.2C576.2 58.5 592 65.9 592 79.5L592 192C592 253.9 541.9 304 480 304C418.1 304 368 253.9 368 192L368 79.5C368 65.9 383.8 58.5 394.2 67.2L448 112L512 112L565.8 67.2zM432 172C421 172 412 181 412 192C412 203 421 212 432 212C443 212 452 203 452 192C452 181 443 172 432 172zM528 172C517 172 508 181 508 192C508 203 517 212 528 212C539 212 548 203 548 192C548 181 539 172 528 172z"/></svg>';
 
-    // Pedido del usuario: reemplaza el toggle de texto "Macho"/"Hembra" por
-    // el mismo patrón de 2 íconos con tooltip que Especie (arriba) — símbolos
-    // estándar de Marte/Venus, mismo criterio visual de .tipo-picker (a
-    // diferencia de Perro/Gato, aquí sí se reutiliza esa clase tal cual, sin
-    // CSS nuevo: mismo tamaño de botón/ícono, mismo padding para el tooltip
-    // en .lab-table-wrap:has(.tipo-picker)).
     const MALE_SVG =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="6"/><path d="M14.5 9.5 20 4"/><path d="M15 4h5v5"/></svg>';
     const FEMALE_SVG =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M12 15v7"/><path d="M9 19h6"/></svg>';
 
-    // Ajuste posterior (pedido del usuario): la columna "Acciones" se quita
-    // por completo — un paciente nuevo (sin id) ahora muestra una cruz
-    // pequeña del lado derecho de su propia celda de Estado (nunca en una
-    // columna aparte), y solo mientras sigue siendo nuevo. Mismo trazo que
-    // el ícono de "Cancelar" del pie del formulario.
     const CLOSE_SVG =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 
@@ -437,9 +257,6 @@
       successBanner.style.display = 'none';
     }
 
-    // Cerrar el banner de error (pedido explícito del usuario) — esta
-    // pantalla no usa HTMX ni se reemplaza a sí misma, así que un listener
-    // directo sobre el botón (sin delegar) alcanza.
     document.getElementById('tutorFormErrorDismiss').addEventListener('click', () => {
       errorBanner.style.display = 'none';
     });
@@ -450,14 +267,6 @@
       successBanner.style.display = 'flex';
     }
 
-    // ---- Pacientes: nombre/tipo/raza/sexo/edad siempre editables
-    // directamente en la fila (sin un modo "editar" aparte) — más simple y
-    // robusto que alternar entre texto de solo lectura y un mini-formulario.
-    // Un paciente YA guardado (tiene `id`) usa el switch Activo/Inactivo
-    // (AC17/19: dar de baja y reactivar son la misma acción, un solo
-    // control) y nunca puede quitarse de la lista (nunca se elimina
-    // físicamente); uno nuevo (sin `id`) siempre nace Activo (AC13, sin
-    // switch) y sí puede quitarse antes de guardar (nada se creó todavía).
     function renderPacientes() {
       pacientesEmpty.hidden = pacientes.length !== 0;
 
@@ -471,11 +280,6 @@
             </div>
           `;
 
-          // Pedido del usuario (ajuste posterior): íconos con tooltip en vez
-          // de texto — mismo patrón exacto que Especie (Perro/Gato) arriba,
-          // reutilizando .tipo-picker/.tipo-picker-btn tal cual. Opcional
-          // (ver tutores.service.js#validateSexo): ningún botón activo es un
-          // estado válido, no solo los 2 valores.
           const sexoCell = `
             <div class="tipo-picker" role="group" aria-label="Sexo de la mascota">
               <button type="button" class="tipo-picker-btn paciente-sexo-btn${paciente.sexo === 'Macho' ? ' active' : ''}" data-sexo="Macho" data-index="${index}" data-tooltip="Macho" aria-label="Macho" ${disabledAttr}>${MALE_SVG}</button>
@@ -483,13 +287,6 @@
             </div>
           `;
 
-          // Un paciente YA guardado (id) usa el switch de siempre. Uno
-          // nuevo (sin id) nace Activo por definición (AC13) — no hace
-          // falta repetirlo en pantalla, así que la celda de Estado se deja
-          // solo con la cruz para quitarlo antes de guardar (ajuste
-          // posterior, pedido del usuario: el badge "Activo" sobraba y
-          // ensanchaba la fila lo suficiente para forzar un scroll
-          // horizontal en la tabla).
           const estadoCell = paciente.id
             ? `<label class="switch-field">
                  <span class="switch">
@@ -515,13 +312,6 @@
         .join('');
     }
 
-    // Ajuste posterior (pedido del usuario): al confirmar la reactivación
-    // desde la alerta de blur del teléfono, se precarga TODA la
-    // información del propietario inactivo (Nombre/Correo/Pacientes) en
-    // este mismo formulario de alta — el usuario la revisa/ajusta y
-    // Guardar la reactiva (ver reactivandoId en guardar() más abajo). El
-    // teléfono NO se toca aquí: ya es el valor que el usuario escribió y
-    // disparó esta verificación.
     function aplicarDatosExistente(tutor) {
       tutorNombreInput.value = tutor.nombre;
       tutorNombreInput.classList.remove('invalid');
@@ -542,14 +332,6 @@
       renderPacientes();
     }
 
-    // Ajuste posterior (pedido del usuario): Cancelar en cualquiera de las
-    // dos alertas del teléfono (activo o inactivo) borra TODO el
-    // formulario, incluido el teléfono — no tendría sentido dejar
-    // capturado un número que el usuario decidió no usar. Se llama desde
-    // cerrarReactivarModal/cerrarTelefonoActivoModal más abajo, en el
-    // camino de "false" (Cancelar, la × de cerrar, o clic fuera del
-    // modal — las tres cuentan como cancelar, mismo criterio ya usado en
-    // el resto del proyecto).
     function limpiarFormulario() {
       tutorNombreInput.value = '';
       tutorNombreInput.classList.remove('invalid');
@@ -573,10 +355,6 @@
       pacientesTableBody.querySelector('tr:last-child input[data-field="nombre"]')?.focus();
     });
 
-    // Delegado sobre el <tbody>: las filas se regeneran completas en cada
-    // agregar/quitar/toggle, así que un listener puesto directo en una fila
-    // se perdería en cuanto se vuelva a construir (mismo criterio que
-    // doctorFormModalBody en doctores.ejs).
     pacientesTableBody.addEventListener('input', (event) => {
       const field = event.target.dataset.field;
       if (!field) return;
@@ -592,17 +370,6 @@
     });
 
     pacientesTableBody.addEventListener('click', (event) => {
-      // Va ANTES que el picker de Tipo de abajo, y a propósito: los botones
-      // de Sexo reutilizan la clase .tipo-picker-btn (mismo look que
-      // Especie), así que también hacen match ahí — si el picker de Tipo se
-      // revisara primero, `closest('.tipo-picker-btn')` encontraría el botón
-      // de Sexo igual, y `tipoBtn.dataset.tipo` (undefined en un botón de
-      // Sexo) pisaría pacientes[index].tipo con undefined sin llegar nunca a
-      // este bloque (bug real, encontrado en vivo antes de este fix). Mismo
-      // criterio que el picker de Tipo: click en un botón ya activo lo
-      // desmarca (sexo vuelve a quedar sin capturar) en vez de quedarse
-      // pegado — Sexo es opcional (ver tutores.service.js#validateSexo), a
-      // diferencia de Tipo.
       const sexoBtn = event.target.closest('.paciente-sexo-btn');
       if (sexoBtn) {
         const index = Number(sexoBtn.dataset.index);
@@ -619,8 +386,6 @@
         return;
       }
 
-      // Cruz de "Quitar paciente nuevo": solo existe en filas sin id (ver
-      // renderPacientes), así que no hace falta comprobar de nuevo aquí.
       const cancelarBtn = event.target.closest('.paciente-cancelar-btn');
       if (cancelarBtn) {
         const index = Number(cancelarBtn.dataset.index);
@@ -639,34 +404,15 @@
       document.getElementById('tutorApellidosError').classList.remove('show');
     });
 
-    // Misma máscara de teléfono mexicano (NN-NNNN-NNNN) que usuarios.ejs/
-    // perfil.ejs — se reconstruye el valor completo en cada tecla (no solo
-    // se insertan guiones) para que borrar un dígito de en medio también
-    // recorra los guiones correctamente. Va ANTES del listener de búsqueda
-    // en vivo de abajo (mismo elemento, mismo evento 'input'): los
-    // listeners corren en el orden en que se registraron, así que la
-    // búsqueda ya lee el valor con máscara aplicada, nunca el crudo.
     tutorTelefonoInput.addEventListener('input', () => {
       const digitos = tutorTelefonoInput.value.replace(/\D/g, '').slice(0, 10);
       tutorTelefonoInput.value = formatearTelefono(digitos);
       tutorTelefonoInput.classList.remove('invalid');
       document.getElementById('tutorTelefonoError').classList.remove('show');
-      // El número cambió: cualquier verificación/confirmación de reactivar
-      // anterior ya no aplica a este valor nuevo.
       reactivandoId = null;
       telefonoVerificado = null;
     });
 
-    // ---- Búsqueda en vivo del teléfono (pedido del usuario, solo en
-    // alta), incremental: sin texto muestra los primeros propietarios
-    // ACTIVOS (nunca inactivos — un teléfono de un propietario inactivo no
-    // debe aparecer aquí, para no ofrecer un atajo que se salte el flujo
-    // real de reactivación con confirmación explícita del guardado, ver
-    // guardar() más abajo); conforme se escribe, filtra por coincidencia
-    // parcial; sin ninguna coincidencia, no se muestra nada (la lista se
-    // oculta, no un mensaje de "sin resultados"). Si el usuario selecciona
-    // una coincidencia, navega a editar ESE propietario en vez de
-    // continuar el alta. ----
     const tutorTelefonoCombobox = document.getElementById('tutorTelefonoCombobox');
     if (tutorTelefonoCombobox) {
       const tutorTelefonoList = document.getElementById('tutorTelefonoList');
@@ -693,8 +439,6 @@
           headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
           body: JSON.stringify({ q }),
         });
-        // US-108 AC: mismo criterio que guardar() más abajo — si la sesión
-        // expiró a mitad de la captura, hay que navegar de verdad al login.
         if (res.redirected) {
           window.location.href = res.url;
           return;
@@ -708,17 +452,11 @@
         telefonoBusquedaTimer = setTimeout(() => buscarTelefono(tutorTelefonoInput.value), 400);
       });
 
-      // Sin texto todavía (recién enfocado) también busca — "si no tiene
-      // nada, salen todos los usuarios" (activos, limitados).
       tutorTelefonoInput.addEventListener('focus', () => buscarTelefono(tutorTelefonoInput.value));
 
       tutorTelefonoList.addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item[data-id]');
         if (!item) return;
-        // Mismo motivo que selectDoctor()/selectEstatus() en usuarios.ejs:
-        // el <li> no es un control enfocable, así que sin preventDefault()
-        // el navegador reenvía el click al input asociado del <label>,
-        // reenfocándolo y volviendo a abrir la lista que se acaba de usar.
         event.preventDefault();
         window.location.href = `tutores/${item.dataset.id}/editar`;
       });
@@ -727,13 +465,6 @@
         if (!tutorTelefonoCombobox.contains(event.target)) ocultarTelefonoList();
       });
 
-      // Ajuste posterior (pedido del usuario): al SALIR del campo (blur)
-      // con un teléfono completo, se verifica si ya existe un propietario
-      // EXACTO con ese número (a diferencia de buscarTelefono() arriba,
-      // este chequeo sí revela inactivos — es el punto de entrada de la
-      // reactivación). Se cachea en telefonoVerificado para no repetir la
-      // consulta si el usuario vuelve a salir del campo sin cambiar el
-      // valor (p. ej. tras cancelar la alerta).
       tutorTelefonoInput.addEventListener('blur', async () => {
         const valor = tutorTelefonoInput.value.trim();
         if (!TELEFONO_REGEX.test(valor) || valor === telefonoVerificado) return;
@@ -749,10 +480,6 @@
         }
         if (!res.ok) return;
         const data = await res.json();
-        // El usuario pudo haber seguido escribiendo mientras la petición
-        // estaba en vuelo — si el valor ya cambió, este resultado quedó
-        // obsoleto, no lo apliques (el próximo blur disparará su propio
-        // chequeo con el valor nuevo).
         if (tutorTelefonoInput.value.trim() !== valor) return;
         telefonoVerificado = valor;
         if (!data.existe) return;
@@ -770,13 +497,6 @@
         }
       });
 
-      // Navegación por teclado + botón "x" de limpiar (pedido explícito del
-      // usuario, ver public/js/combobox.js) — esta página es autocontenida
-      // (sin HTMX/swap), así que se engancha una sola vez aquí, junto al
-      // resto del setup de esta sección. Elegir un resultado NAVEGA fuera de
-      // la página (ver el listener de click arriba), así que no queda nada
-      // más que "limpiar" tras una selección: onClear solo vacía el texto
-      // tecleado y oculta la lista.
       attachComboboxKeyboardNav(tutorTelefonoInput, tutorTelefonoList);
       attachComboboxClearButton(tutorTelefonoCombobox, tutorTelefonoInput, () => {
         tutorTelefonoInput.value = '';
@@ -784,10 +504,6 @@
       });
     }
 
-    // ---- Validación mínima en cliente (obligatoriedad + formato) — la
-    // validación real (duplicados, formato de correo) la hace el servidor
-    // de todos modos; esto solo evita un viaje de red para el caso más
-    // común. ----
     function validarCliente() {
       let valido = true;
       if (!tutorNombreInput.value.trim()) {
@@ -828,9 +544,6 @@
         apellidos: tutorApellidosInput.value,
         telefono: tutorTelefonoInput.value,
         correo: tutorCorreoInput.value,
-        // Solo en edición (tutorActivoInput es null en alta, ver arriba)
-        // — un alta siempre nace activo=true del lado del servidor
-        // (tutores.service.js#crear), sin importar lo que viaje aquí.
         ...(tutorActivoInput ? { activo: tutorActivoInput.checked } : {}),
         pacientes: pacientes.map((p) => ({
           id: p.id,
@@ -845,9 +558,6 @@
       });
     }
 
-    // Modal de reactivación: abre/cierra igual que #confirmModalBackdrop en
-    // doctores.ejs, pero resuelve una Promise en vez de reenviar un evento
-    // htmx:confirm (esta página no usa HTMX).
     const reactivarModalBackdrop = document.getElementById('reactivarModalBackdrop');
     let resolveReactivar = null;
 
@@ -874,9 +584,6 @@
       if (event.target === reactivarModalBackdrop) cerrarReactivarModal(false);
     });
 
-    // Ajuste posterior (pedido del usuario): alerta gemela para un teléfono
-    // que coincide con un propietario ACTIVO al salir del campo — mismo
-    // patrón Promise que abrirReactivarModal/cerrarReactivarModal.
     const telefonoActivoModalBackdrop = document.getElementById('telefonoActivoModalBackdrop');
     let resolveTelefonoActivo = null;
 
@@ -902,17 +609,10 @@
       if (event.target === telefonoActivoModalBackdrop) cerrarTelefonoActivoModal(false);
     });
 
-    // AC24: "Guardar" cierra y regresa al listado. "Guardar y continuar"
-    // (decidido con el usuario) guarda igual pero se queda en el
-    // formulario, ya en modo edición con los ids reales — útil para seguir
-    // agregando pacientes sin salir.
     async function guardar({ continuar }) {
       hideBanners();
       if (!validarCliente()) return;
 
-      // Ajuste posterior (pedido del usuario): si el usuario ya confirmó
-      // reactivar este mismo teléfono desde la alerta de blur, se manda
-      // confirmarReactivacion directo, sin volver a preguntar.
       let body = construirBody(Boolean(reactivandoId));
       let res = await fetch(tutorId ? `tutores/${tutorId}` : 'tutores', {
         method: tutorId ? 'PUT' : 'POST',
@@ -920,12 +620,6 @@
         body,
       });
 
-      // AC5, decidido con el usuario: el teléfono pertenece a un
-      // propietario inactivo — se pide confirmación explícita (nunca un
-      // confirm() nativo) antes de reactivarlo. Con el ajuste posterior,
-      // esto ya casi nunca dispara (el blur del teléfono lo adelanta) pero
-      // se deja como respaldo — p. ej. si el usuario pegó el número y dio
-      // clic en Guardar sin llegar a salir del campo.
       if (res.ok) {
         const data = await res.json();
         if (data.requiereConfirmacion) {
@@ -942,9 +636,6 @@
         }
       }
 
-      // US-108 AC: si la sesión expiró a mitad de la captura, fetch() sigue
-      // el redirect del servidor solo — hay que navegar de verdad al login
-      // en vez de intentar leer la respuesta ya seguida como JSON.
       if (res.redirected) {
         window.location.href = res.url;
         return;

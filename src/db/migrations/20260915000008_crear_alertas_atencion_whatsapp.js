@@ -1,7 +1,3 @@
-// US WA 018: auditoría central de alertas internas derivadas de una
-// conversación de WhatsApp. Su ciclo de vida es independiente del estado
-// de conversaciones_whatsapp y nunca se elimina al vencer la atención
-// humana del bot.
 exports.up = async function up(knex) {
   await knex.schema.createTable('alertas_atencion_whatsapp', (table) => {
     table.increments('id').primary();

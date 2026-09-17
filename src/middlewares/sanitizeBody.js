@@ -1,17 +1,5 @@
 const { sanitizarTexto } = require('../config/sanitizarTexto');
 
-// Reporte de seguridad M-07: en vez de acordarse de aplicar sanitizarTexto()
-// en cada endpoint de escritura de cada módulo (garantizado a fallar tarde
-// o temprano — bastaría con OLVIDAR uno solo), se aplica una vez aquí, sobre
-// req.body, para TODAS las rutas. Nunca sobre req.query: los filtros de
-// tabla son de solo lectura, no se guardan en la BD, y el propio valor ya
-// sale escapado por EJS al reflejarse en el input del buscador.
-//
-// Campos con contraseña en texto plano quedan exentos a propósito — nunca
-// deben pasar por una transformación que no sea EXACTAMENTE la que compara
-// bcrypt (sanitizarTexto podría alterar un símbolo legítimo de la
-// contraseña, ej. `<` o `&`, causando que un login/cambio de contraseña
-// válido falle de forma silenciosa e intermitente).
 const CAMPOS_EXENTOS = new Set(['password', 'confirmacion', 'passwordActual', 'passwordNueva']);
 
 function sanitizarValor(valor, clave) {

@@ -1,9 +1,4 @@
 <%
-// US-612: catálogo de plantillas de WhatsApp — mismo patrón que
-// doctores-panel.ejs/areas-panel.ejs (tabla estándar del sistema). Solo
-// lectura por ahora: los botones de alta/edición/baja son intencionalmente
-// decorativos (AC de la historia — alta/edición llegan en US-613, la baja
-// real en una historia futura todavía sin número).
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 
@@ -91,29 +86,11 @@ function sortVals(column) {
         <tbody>
           <% plantillas.forEach((plantilla) => { %>
             <tr>
-              <%
-                // Todo en una sola línea a propósito: varios tests de
-                // integración anclan la fila buscando el string exacto
-                // "<td>{intención}</td>" — un <td> multilínea rompería ese
-                // anclaje incluso para filas SIN badge.
-              %>
+
               <td><%= plantilla.intencion %><% if (plantilla.es_predeterminada) { %> <span class="status-badge" data-tooltip="Plantilla del sistema, usada como respaldo automático — no se puede eliminar">Predeterminada</span><% } %></td>
               <td><span class="area-tag-empty"><%= plantilla.slug %></span></td>
               <td>
-                <%
-                  // Pedido explícito del usuario (2026-09-12): una
-                  // plantilla de texto libre nunca se manda a Meta —
-                  // "No Requerido" (azul) tiene prioridad sobre cualquier
-                  // otro estado, sin importar si está activa/inactiva o si
-                  // aprobado_meta trae basura de un registro manual viejo.
-                  // Para las demás: una inactiva no se manda a Meta (ni se
-                  // debió mandar, ni se va a mandar mientras siga así) —
-                  // "Aprobado"/"En revisión" solo aplica a las activas —
-                  // "En revisión" (no "Pendiente") para que coincida
-                  // exactamente con la etiqueta que usa el propio panel de
-                  // Meta (Administrador de WhatsApp > Plantillas de
-                  // mensajes).
-                %>
+
                 <% if (plantilla.categoria_meta === 'TEXTO_LIBRE') { %>
                   <span class="status-badge is-info" data-tooltip="Se manda como mensaje de texto normal, nunca como plantilla de Meta">No Requerido</span>
                 <% } else if (!plantilla.activo) { %>
@@ -167,13 +144,7 @@ function sortVals(column) {
       <% } %>
 
       <div class="table-footer">
-        <%
-        // Pedido explícito del usuario: mismo formato en TODOS los módulos
-        // (antes cada tabla tenía su propio separador/singular a medias) —
-        // singular cuando el número es 1 (encontrados Y total, cada uno por
-        // su cuenta), plural en cualquier otro caso (0, 2, 50...), separador
-        // en-dash.
-        %>
+
         <span><%= plantillas.length %> resultado<%= plantillas.length === 1 ? '' : 's' %> – <%= total %> plantilla<%= total === 1 ? '' : 's' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">

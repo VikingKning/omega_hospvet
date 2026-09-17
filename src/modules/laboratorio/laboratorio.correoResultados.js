@@ -1,28 +1,7 @@
-// Diseño del correo de "Resultados de laboratorio disponibles" — pedido
-// explícito del usuario (mockup HTML propio, ver conversación). Tablas
-// anidadas + estilos inline a propósito: es un correo real, no una página
-// web — los clientes de correo (Outlook, Gmail, etc.) no soportan CSS
-// moderno ni <style> externo de forma confiable, por eso cada estilo va en
-// el atributo `style=""` de cada elemento.
-//
-// El logo se manda como adjunto con Content-ID (`cid:logo-omega`, ver
-// laboratorio.envios.js) en vez de una URL pública con `src="https://..."`:
-// este sistema no tiene un dominio público que sirva `public/` fuera de la
-// red de la clínica, así que una URL normal se vería rota en el correo.
-//
-// Pedido explícito del usuario: sin nombres de estudios ni links de
-// "Preferencias de correo"/"Cancelar suscripción" (son de un newsletter de
-// marketing, no aplican a un aviso transaccional de un cliente ya
-// registrado) — la ficha muestra solo Paciente/Fecha de requerimiento/N.°
-// de orden, los 3 en un mismo renglón.
 function idLabel(id) {
   return `LAB-${String(id).padStart(3, '0')}`;
 }
 
-// Mismo criterio que formatFecha() en laboratorio-panel.ejs: fecha_solicitud
-// es una columna DATE pura (sin hora) — leerla con getters LOCALES (en vez
-// de getUTC*) correría el riesgo de mostrar un día distinto según la zona
-// horaria del proceso de Node.
 function formatFecha(fecha) {
   if (!fecha) return '—';
   const d = new Date(fecha);
@@ -30,10 +9,6 @@ function formatFecha(fecha) {
   return `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }
 
-// La insignia del adjunto refleja el archivo real, no presupone PDF. Se
-// toma la última extensión ("estudio.final.jpg" -> JPG), se normaliza a
-// mayúsculas y se limita a 4 caracteres para conservar el cuadro de 38 px.
-// Un nombre sin extensión usa FILE como fallback explícito.
 function extensionLabel(nombreArchivo) {
   const nombre = String(nombreArchivo ?? '');
   const punto = nombre.lastIndexOf('.');
@@ -46,9 +21,6 @@ function extensionLabel(nombreArchivo) {
   return extension ? extension.slice(0, 4) : 'FILE';
 }
 
-// Un registro puede tener varios archivos adjuntos reales (uno consolidado
-// para todos los estudios, o uno por estudio) — se repite este bloque una
-// vez por archivo, nunca se asume que solo hay uno.
 function bloqueAdjunto(nombreArchivo) {
   const extension = extensionLabel(nombreArchivo);
   return `

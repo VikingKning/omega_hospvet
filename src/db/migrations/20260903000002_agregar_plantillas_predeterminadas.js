@@ -1,10 +1,3 @@
-// Pedido explícito del usuario: 4 plantillas "del sistema" — una por cada
-// categoria_clasificacion sin acción real todavía (emergencia,
-// agendar_cita, resultados_laboratorio) más el catch-all genérico
-// (sin_coincidencia). Reemplazan los textos que hasta ahora vivían fijos
-// en whatsapp.service.js — ahora son editables desde el catálogo, pero
-// es_predeterminada=true las marca como inborrables (ver
-// plantillas_whatsapp.service.js#desactivar/editar).
 const TELEFONO_CLINICA = '7711634578';
 
 const PLANTILLAS_PREDETERMINADAS = [

@@ -1,7 +1,3 @@
-// US WA 013: 3 marcas para el seguimiento/expiración de flujos automáticos,
-// persistidas (no en memoria) para recuperar el control tras un reinicio de
-// PM2 (consideración técnica) — mismo idioma que
-// conversaciones_whatsapp.procesamiento_iniciado_en de US WA 003.
 exports.up = async function up(knex) {
   await knex.schema.alterTable('conversaciones_whatsapp', (table) => {
     table.timestamp('recordatorio_programado_en', { useTz: true });

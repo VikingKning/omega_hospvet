@@ -1,7 +1,4 @@
 <%
-// US-609: catálogo de áreas — mismo patrón que doctores-panel.ejs (tabla
-// estándar del sistema). Solo lectura por ahora: los botones de alta/
-// edición/baja son intencionalmente decorativos (AC de la historia).
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 
@@ -150,13 +147,7 @@ function sortVals(column) {
       <% } %>
 
       <div class="table-footer">
-        <%
-        // Pedido explícito del usuario: mismo formato en TODOS los módulos
-        // (antes cada tabla tenía su propio separador/singular a medias) —
-        // singular cuando el número es 1 (encontrados Y total, cada uno por
-        // su cuenta), plural en cualquier otro caso (0, 2, 50...), separador
-        // en-dash.
-        %>
+
         <span><%= areas.length %> resultado<%= areas.length === 1 ? '' : 's' %> – <%= total %> área<%= total === 1 ? '' : 's' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">

@@ -232,12 +232,17 @@ WHATSAPP_ATENCION_HUMANA_HORAS=5
 WHATSAPP_ATENCION_HUMANA_POLL_INTERVAL_SEGUNDOS=5
 WHATSAPP_WORKER_RECLAMO_HUERFANO_SEGUNDOS=120
 WHATSAPP_ATENCION_HUMANA_REINTENTO_SEGUNDOS=30
+WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED=true
+WHATSAPP_LEGACY_POLL_INTERVAL_SEGUNDOS=5
+OMEGA_TIMEZONE=America/Mexico_City
 
 ANTHROPIC_API_KEY=
 ANTHROPIC_TIMEOUT_MS=10000
 ```
 
 Las variables de WhatsApp habilitan el webhook, las respuestas, las alertas internas y el envío de resultados. `WHATSAPP_APP_ID` solo es necesario para registrar la plantilla de resultados con documento adjunto. Los intervalos controlan la agrupación, recuperación de workers interrumpidos, recordatorios y las cinco horas de atención humana; los valores mostrados son los predeterminados.
+
+`WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED` se evalúa únicamente al insertar un `whatsapp_message_id` nuevo. `true` asigna `conversacional_nuevo`; `false` asigna `flujo_anterior`, que clasifica cada mensaje de texto individualmente. La asignación queda persistida: reiniciar o cambiar la variable no mueve mensajes ni grupos existentes. `WHATSAPP_LEGACY_POLL_INTERVAL_SEGUNDOS` controla la recuperación del worker anterior. `OMEGA_TIMEZONE` define la fecha y hora local de todos los filtros del tablero; el valor operativo es `America/Mexico_City`.
 
 `ANTHROPIC_API_KEY` habilita el clasificador de mensajes entrantes. `ANTHROPIC_TIMEOUT_MS` limita cada llamada; si falta la clave, vence el tiempo o la respuesta no pertenece al catálogo cerrado, el grupo utiliza `sin-coincidencia-default` y no vuelve a clasificarse. Claude no se usa para comandos de menú, opciones interactivas, enlaces de agenda, consulta guiada de resultados, transferencias ni alertas, y nunca genera contenido médico libre.
 
@@ -496,6 +501,7 @@ Webhook firmado
 | WA 009 | Confirmación prioritaria de emergencias a partir de la plantilla resuelta históricamente  |
 | WA 010 | Transferencia temporal a Recepción desde `MENU_RECEPCION`                                 |
 | WA 011 | Router determinista previo a Claude, timeout, fallback persistido y auditoría por grupo   |
+| WA 012 | Métricas conversacionales, auditoría de consumo y despliegue reversible por feature flag  |
 | WA 013 | Seguimiento, recordatorio y expiración de flujos automáticos                              |
 | WA 014 | Agrupación de archivos y guía para medios que el sistema no interpreta                    |
 | WA 015 | Outbox saliente idempotente, estados de Meta y respeto de la ventana de servicio          |
@@ -504,7 +510,7 @@ Webhook firmado
 | WA 018 | Alertas persistentes, destinatarios, canales, auditoría y acción transaccional Atender    |
 | WA 019 | Solicitud idempotente `menu_recepcion` y entrega diferida al mecanismo central de alertas |
 
-Las US WA 008 y WA 012 no se marcan como terminadas en esta matriz: requieren su revisión e implementación específica antes de considerarlas cerradas.
+La US WA 008 permanece en Fase 2. Las pruebas de esta fase conservan el envío actual e independiente de resultados por correo y WhatsApp, sin implementar todavía el reenvío seguro definido por esa historia.
 
 Los mensajes libres se consolidan durante `WHATSAPP_AGRUPACION_SEGUNDOS`. La descripción escrita después de elegir Emergencia usa `WHATSAPP_AGRUPACION_EMERGENCIA_SEGUNDOS`, de modo que el tutor pueda completar varios fragmentos. Una agrupación produce una sola respuesta definitiva; un texto de respaldo no se envía en paralelo con la respuesta resuelta.
 
@@ -513,6 +519,33 @@ El outbox conserva el payload decidido antes de llamar a Meta y recupera intento
 La atención humana comienza únicamente cuando Meta confirma el aviso de transferencia. Durante las cinco horas configuradas el bot permanece en silencio y los mensajes posteriores del tutor no producen alertas duplicadas. El vencimiento reactiva el bot, pero no atiende ni elimina una alerta interna pendiente.
 
 Las alertas de emergencia se dirigen a doctores elegibles y las solicitudes de Recepción a usuarios de tipo Recepción. Solo cuando no existe ningún destinatario principal se usan administradores como respaldo. La selección inicial queda fotografiada para auditoría; portal, navegador y WhatsApp registran sus intentos de manera independiente. El portal usa SSE, sondeo de recuperación y `BroadcastChannel` para mantener sincronizadas sus pestañas.
+
+### Despliegue y reversión del router conversacional
+
+El despliegue es manual y reversible; no existe apagado automático por umbrales. Antes de habilitarlo aplica migraciones y ejecuta la suite completa. Después, configura la bandera y recarga el proceso porque `src/config/env.js` lee el entorno al arrancar:
+
+```bash
+WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED=true
+pm2 restart omega-vet-adminsite --update-env
+```
+
+Monitorea en **Métricas → WhatsApp → Flujo conversacional** los siete KPIs, las rutas, llamadas/tokens de Claude, duplicados, reintentos, tiempos, alertas y el reparto de mensajes por pipeline. Los logs estructurados incluyen solo identificadores técnicos, pipeline, ruta/resultado y duración; no incluyen teléfonos completos ni contenido clínico.
+
+Para revertir, cambia la variable a `false` y ejecuta el mismo reinicio con `--update-env`. Verifica que los mensajes recibidos después del reinicio aparezcan como `flujo_anterior`. Los mensajes y grupos que ya estaban asignados a `conversacional_nuevo` deben terminar en ese pipeline; no se actualizan filas ni se ejecutan ambos workers sobre el mismo `whatsapp_message_id`. Para reactivar, vuelve a `true` y reinicia otra vez. No reviertas la migración mientras exista trabajo pendiente de cualquiera de los dos pipelines.
+
+El tablero usa exclusivamente registros persistidos y el mismo rango local para todas sus consultas:
+
+| KPI conversacional        | Fuente y fórmula                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Mensajes entrantes únicos | Una fila entrante por `whatsapp_message_id`, limitada a tipos soportados; las reentregas viven en `reentregas_meta` |
+| Grupos procesados         | Un `group_id` con `enrutado_en` no nulo                                                                             |
+| Reducción por agrupación  | `((fragmentos procesables - grupos procesados) / fragmentos procesables) × 100`; cero sin fragmentos                |
+| Resolución sin Claude     | Grupos con `llamadas_claude=0` / grupos con decisión final                                                          |
+| Llamadas a Claude         | Suma de ejecuciones HTTP persistidas; no incluye reintentos de Meta                                                 |
+| Transferencias humanas    | Claves idempotentes de `solicitudes_atencion_humana` más inicios manuales únicos de Omega                           |
+| Emergencias confirmadas   | Grupos con decisión final y `es_emergencia_resuelta=true`                                                           |
+
+Los mapas de calor saliente y conversacional se mantienen separados: el primero usa `envios_whatsapp`; el segundo usa mensajes entrantes, decisiones de emergencia y solicitudes de Recepción. No se calcula ahorro monetario porque no existe una tarifa configurada para Claude.
 
 ## Configuración de integraciones
 

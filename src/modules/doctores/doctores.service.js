@@ -1,8 +1,5 @@
 const repository = require('./doctores.repository');
 
-// Mismo patrón de errores con `.status` que areas.service.js — el
-// controller los atrapa para re-renderizar el formulario con el mensaje,
-// en vez de un 400 JSON crudo (esto es un fragmento HTMX, no una API).
 class DoctorValidationError extends Error {
   constructor(message) {
     super(message);
@@ -10,13 +7,6 @@ class DoctorValidationError extends Error {
   }
 }
 
-// Pedido explícito del usuario: Consultas siempre debe tener un doctor
-// "Consultas Omega Genérico" — a diferencia de areas.es_predeterminada
-// (que sí permite activar/desactivar), aquí el bloqueo es total: ni
-// renombrar ni dar de baja, porque este doctor es el fallback real que usa
-// la sincronización de reservas externas de Google Calendar (ver
-// agenda.repository.js#obtenerOCrearDoctorConsultasPredeterminado) — debe
-// seguir existiendo, activo y ligado a Consultas siempre.
 class DoctorPredeterminadoError extends Error {
   constructor() {
     super('Este es el doctor predeterminado de Consultas y no se puede editar ni dar de baja.');
@@ -46,10 +36,6 @@ function parseId(rawId) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-// Query params de un listado GET: se sanean con valores por defecto en vez
-// de rechazarse con un error — a diferencia de un formulario que modifica
-// estado, un parámetro de página/búsqueda/orden raro no amerita un 400,
-// solo cae a la página 1 / sin filtro / orden por defecto.
 async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
   const trimmedQ = (q ?? '').trim();
   const activoOnly = estado !== 'todos';
@@ -82,10 +68,6 @@ async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
   };
 }
 
-// US-608: baja lógica (activo=false + desactivado_por/desactivado_en), nunca
-// un DELETE físico — el historial de citas/laboratorio sigue referenciando
-// este doctor. Un id inválido/inexistente no truena, simplemente no hace
-// nada (mismo criterio permisivo que el resto del módulo).
 async function desactivar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
@@ -97,8 +79,6 @@ async function desactivar(rawId, usuarioId) {
   await repository.desactivar(id, usuarioId);
 }
 
-// US-607: para precargar el formulario de edición — incluye las áreas ya
-// asignadas (id + nombre) para pintar la tabla de especialidades.
 async function obtener(rawId) {
   const id = parseId(rawId);
   if (id === null) return undefined;
@@ -108,8 +88,6 @@ async function obtener(rawId) {
   return { ...doctor, areas };
 }
 
-// Catálogo de áreas activas para el <select> de "Especialidades" del
-// formulario (alta y edición usan el mismo).
 async function listAreasDisponibles() {
   return repository.listAreasActivas();
 }
@@ -127,19 +105,10 @@ function validateTexto(rawValor, etiqueta) {
   return valor;
 }
 
-// El checkbox "Activo" del formulario solo viaja en el body cuando está
-// marcado (comportamiento estándar de un <input type="checkbox">) — su
-// ausencia significa desmarcado, no un valor inválido que rechazar.
 function parseActivo(rawActivo) {
   return rawActivo === 'true';
 }
 
-// Normaliza los ids de área seleccionados en el formulario: pueden llegar
-// como un solo string (una sola especialidad), un array (dos o más), o
-// undefined (ninguna) — el AC permite explícitamente guardar sin áreas.
-// Los valores que no sean un entero positivo se descartan en silencio
-// (mismo criterio permisivo que parseId) en vez de rechazar todo el
-// formulario por un id corrupto.
 function parseAreaIds(rawAreaIds) {
   const valores = rawAreaIds === undefined ? [] : [].concat(rawAreaIds);
   const ids = valores
@@ -148,19 +117,12 @@ function parseAreaIds(rawAreaIds) {
   return [...new Set(ids)];
 }
 
-// Resuelve los ids de área submitteados a { id, nombre } — usado por el
-// controller para volver a pintar la tabla de especialidades en un
-// re-render por error, con exactamente lo que el usuario tenía armado (no
-// lo que ya está guardado en la base).
 async function resolverAreas(rawAreaIds) {
   const areaIds = parseAreaIds(rawAreaIds);
   if (!areaIds.length) return [];
   return repository.findAreasByIds(areaIds);
 }
 
-// US-607 AC: alta — inserta el doctor y sus especialidades (si eligió
-// alguna). `nombre`/`apellidos` no son únicos en este catálogo (a
-// diferencia de `areas.nombre`), así que no hay chequeo de duplicados.
 async function crear({
   nombre: rawNombre,
   apellidos: rawApellidos,
@@ -175,9 +137,6 @@ async function crear({
   return repository.crear({ nombre, apellidos, activo, areaIds, usuarioId });
 }
 
-// US-607 AC: edición — actualiza nombre/apellidos/activo y sustituye la
-// selección de especialidades por la actual. El permiso de crear vs.
-// editar se valida en la ruta (middleware), no aquí — ver doctores.routes.js.
 async function editar({
   id,
   nombre: rawNombre,

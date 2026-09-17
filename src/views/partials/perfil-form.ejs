@@ -1,16 +1,4 @@
 <%
-// US-109 (extensión "Datos de mi cuenta", rediseño según mockup
-// mockup_mi_perfil_omega.html / mockup_mi_perfil_omega_colapsable.html):
-// "Mi cuenta" es un resumen SIEMPRE visible (pedido explícito: "no
-// colapsable"); Datos personales/Áreas asignadas/Permisos/Cambiar
-// contraseña son 4 secciones <details> — Datos personales abre por
-// default (es la única con algo que hacer), las otras tres arrancan
-// cerradas, igual que en el mockup colapsable.
-//
-// Username se muestra como texto plano dentro de "Mi cuenta" (no un
-// <input>) — más fuerte que el criterio "readonly sin name" de antes: si
-// no es un campo de formulario, no hay nada que ni siquiera intentar
-// someter.
 const ESTATUS_LABELS = {
   activo: 'Activo',
   bloqueo_temp: 'Bloqueo temporal',
@@ -26,9 +14,6 @@ const ESTATUS_BADGE_CLASS = {
   cambio_pwd: ' is-warning',
 };
 
-// Mismos mapas de etiquetas que usuario-form.ejs (Módulo/Acción),
-// duplicados a propósito — mismo criterio de independencia entre módulos
-// que el resto de perfil/ (no se importa nada de usuarios/).
 const MODULO_LABELS = {
   tutores: 'Tutores y pacientes',
   laboratorio: 'Laboratorio',
@@ -54,9 +39,6 @@ function etiqueta(mapa, valor) {
   return mapa[valor] ?? `${valor.charAt(0).toUpperCase()}${valor.slice(1).replace(/_/g, ' ')}`;
 }
 
-// Misma mecánica que usuario-form.ejs#estaMarcado (checkbox "Carga y
-// Envío" combinado = 2 ids), aquí decide si se dibuja un check o un guion
-// en vez de si un checkbox nace marcado.
 const permisosAsignadosSet = new Set(permisosAsignadosIds);
 function estaMarcado(permiso) {
   return String(permiso.id)
@@ -149,17 +131,7 @@ function formatearUltimoAcceso(fecha) {
                    title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)">
           </label>
         </div>
-        <%
-        // Pedido explícito del usuario: 5 íconos fijos (avataresDisponibles,
-        // ver perfil.service.js#AVATARES_VALIDOS) para elegir cómo se ve el
-        // usuario en la barra de título — radios reales (no botones+JS como
-        // .tipo-picker en tutor-form.ejs) para que HTMX los serialice solo
-        // con el guardado normal del formulario, sin JS adicional. El input
-        // se oculta con .select-hidden-source (ya usado en el resto del
-        // proyecto para "oculto pero sigue participando en el submit"), el
-        // estado de seleccionado se resuelve en CSS con :has(), sin
-        // necesidad de una clase calculada aquí.
-        %>
+
         <label class="avatar-picker-field">
           Ícono de perfil
           <div class="avatar-picker" role="radiogroup" aria-label="Ícono de perfil">
@@ -273,14 +245,7 @@ function formatearUltimoAcceso(fecha) {
       <span class="profile-section-title">Cambiar contraseña</span>
       <svg class="profile-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
     </summary>
-    <%
-    // US-110: fragmento HTMX independiente del resto de la página — el
-    // target es este mismo div (#cambiar-password-panel), no #perfil-panel,
-    // así un guardado exitoso o un error solo reemplaza esta sección: el
-    // <details> que la envuelve nunca se toca, se queda abierto, y no hace
-    // falta volver a consultar doctor/áreas/matriz de permisos por un
-    // cambio que no los afecta (ver perfil.controller.js#cambiarPassword).
-    %>
+
     <div class="profile-section-body" id="cambiar-password-panel">
       <%- include('perfil-password-form', { mensaje: null, error: null, csrfToken }) %>
     </div>

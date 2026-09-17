@@ -145,10 +145,6 @@ function validarSolicitud({ claveIdempotencia, tipoAlerta, conversacionId, orige
   }
 }
 
-// WA019: esta operación es deliberadamente pequeña. Persiste la solicitud
-// de alerta en la misma transacción que la transferencia, pero NO consulta
-// usuarios ni prepara canales. El worker WA018 puede reintentar esas fases
-// aunque falle después de que el tutor ya solicitó Recepción.
 async function registrarSolicitudAlerta({
   claveIdempotencia,
   tipoAlerta,
@@ -230,9 +226,6 @@ async function distribuirAlerta(alerta, trx) {
   };
 }
 
-// Entrada sincrónica conservada para orígenes que requieren crear y
-// distribuir en una misma llamada. WA019 usa registrarSolicitudAlerta y el
-// worker separado de abajo.
 async function solicitarAlerta(datos) {
   validarSolicitud(datos);
   if (!datos.trx) {

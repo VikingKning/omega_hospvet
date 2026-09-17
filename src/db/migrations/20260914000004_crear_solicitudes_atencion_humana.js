@@ -1,17 +1,3 @@
-// US WA 017: entidad central que unifica la transferencia temporal de una
-// conversación hacia el personal de Omega — un único mecanismo para
-// Emergencia/Recepción/futuros orígenes (AC23), en vez de duplicar
-// estados/mensajes/vencimientos/reglas de reactivación por origen.
-//
-// `envio_previo_id`/`outbox_id` referencian outbox_whatsapp.intent_id (US
-// WA 015), NO otra solicitud: "envio_previo" es un mensaje que debe salir
-// ANTES del aviso genérico de transferencia (AC5, ej. una alerta propia de
-// Emergencia armada por esa historia — WA017 no construye ese contenido,
-// solo respeta el orden si existe); "outbox_id" es el intent del propio
-// aviso genérico de transferencia que ESTA historia sí registra (AC3).
-//
-// Sin CHECK constraints — mismo criterio ya establecido en todo el módulo
-// de WhatsApp (documentar valores válidos vía COMMENT ON COLUMN).
 exports.up = async function up(knex) {
   await knex.schema.createTable('solicitudes_atencion_humana', (table) => {
     table.increments('id').primary();
@@ -26,11 +12,6 @@ exports.up = async function up(knex) {
     table.string('estado', 30).notNullable().defaultTo('pendiente');
     table.integer('envio_previo_id').references('intent_id').inTable('outbox_whatsapp');
     table.integer('outbox_id').references('intent_id').inTable('outbox_whatsapp');
-    // AC24: referencias funcionales del origen (ej. el id de la alerta de
-    // Emergencia que disparó esto) para auditoría — JSON libre a propósito,
-    // cada origen trae su propia forma; NUNCA se mezcla con el contenido
-    // visible del mensaje genérico (ese vive fijo en whatsapp.menu.js, sin
-    // interpolar nada de aquí).
     table.json('referencias_funcionales');
     table.timestamp('solicitado_en', { useTz: true }).notNullable();
     table.timestamp('enviado_en', { useTz: true });

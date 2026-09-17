@@ -1,8 +1,5 @@
 const repository = require('./tutores.repository');
 
-// Mismo patrón de errores con `.status` que auth.service.js/areas.service.js
-// — el controller los atrapa para responder JSON con el mensaje, sin
-// tronar con un 500.
 class TutorValidationError extends Error {
   constructor(message) {
     super(message);
@@ -10,12 +7,6 @@ class TutorValidationError extends Error {
   }
 }
 
-// US-156 AC5, decidido con el usuario: el teléfono capturado ya pertenece a
-// OTRO propietario, pero INACTIVO — no es un error final, es una PREGUNTA
-// ("¿reactivar este registro?") que el cliente debe responder antes de
-// continuar (ver tutor-form.ejs, modal de confirmación). No extiende
-// TutorValidationError a propósito: el controller la atrapa aparte, con su
-// propia forma de respuesta (`requiereConfirmacion`, no `error`).
 class RequiereConfirmacionReactivacionError extends Error {
   constructor(tutorExistente) {
     super('El teléfono ya pertenece a un propietario inactivo.');
@@ -29,43 +20,11 @@ const APELLIDOS_TUTOR_MAX = 150;
 const NOMBRE_PACIENTE_MAX = 100;
 const TIPO_PACIENTE_MAX = 20;
 const RAZA_PACIENTE_MAX = 100;
-// Sexo: whitelist real (nunca se confía en que el cliente mande uno de
-// estos 2 valores solo porque el toggle del formulario solo ofrece esos)
-// — mismo criterio que DURACIONES_VALIDAS en agenda.service.js. Edad: en
-// años, un rango 0-40 cubre generosamente perros/gatos (evita capturas
-// claramente erróneas, ej. 200) sin inventar un tope "correcto" que nadie
-// pidió.
 const SEXO_PACIENTE_VALORES = ['Macho', 'Hembra'];
 const EDAD_PACIENTE_MAX = 40;
 const FORMATO_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Mismo formato ya establecido en el resto del sistema para teléfono
-// mexicano — perfil.service.js#TELEFONO_REGEX es la referencia (ahí es
-// opcional; aquí es obligatorio, AC3/AC4, pero el FORMATO en sí debe ser el
-// mismo en todos los formularios del sistema, pedido explícito del
-// usuario). usuarios.service.js no lo valida del lado del servidor todavía
-// (solo el cliente, vía el atributo `pattern` del input) — inconsistencia
-// previa del proyecto, no un segundo estándar a seguir.
-//
-// Ajuste posterior, pedido explícito del usuario: la máscara ya NO es fija
-// — un teléfono que empieza con 55 o 56 (CDMX/Edomex, los únicos con lada
-// de 2 dígitos que este sistema captura) sigue siendo NN-NNNN-NNNN (2-4-4);
-// cualquier otro prefijo pasa a NNN-NNN-NNNN (3-3-4, lada de 3 dígitos del
-// resto del país). El regex acepta ambas formas sin comprobar que el
-// agrupamiento coincida con el prefijo — esa consistencia la garantiza la
-// máscara en vivo del cliente (ver tutor-form.ejs#formatearTelefono, mismo
-// criterio duplicado ahí); el servidor solo necesita rechazar basura, no
-// repetir la regla completa.
 const TELEFONO_REGEX = /^(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})$/;
 
-// Ajuste posterior, pedido explícito del usuario: el formato con guiones
-// es solo "look and feel" — lo que se guarda en `propietarios.telefono` son
-// los 10 dígitos, sin guiones (ver migración
-// 20260819000001_normalizar_telefonos_sin_guiones.js para los datos que ya
-// existían). `stripTelefono` se usa antes de guardar/comparar;
-// `formatTelefono` reconstruye el formato solo al devolver un teléfono para
-// MOSTRARLO (listado, formulario precargado, resultados del buscador) —
-// nunca se guarda el resultado de formatTelefono. Mismo criterio 55/56 →
-// 2-4-4, resto → 3-3-4 que la máscara en vivo (ver arriba).
 function stripTelefono(telefono) {
   return (telefono ?? '').replace(/\D/g, '');
 }
@@ -103,9 +62,6 @@ function validateTexto(rawValor, etiqueta, maxLength) {
   return valor;
 }
 
-// Tipo/Raza del paciente son opcionales a nivel de esquema (mascotas.tipo/
-// raza son NULLABLE, a diferencia de mascotas.nombre) — se valida longitud
-// si viene algo, pero nunca se exige que venga.
 function validateTextoOpcional(rawValor, etiqueta, maxLength) {
   const valor = (rawValor ?? '').trim();
   if (!valor) return '';
@@ -117,10 +73,6 @@ function validateTextoOpcional(rawValor, etiqueta, maxLength) {
   return valor;
 }
 
-// AC3/AC4: obligatorio (a diferencia de perfil.telefono, que es opcional) —
-// se rechaza vacío con el mismo mensaje genérico de "obligatorio" que el
-// resto de campos requeridos, y con formato con el mismo mensaje exacto
-// que perfil.service.js#validateTelefono.
 function validateTelefono(rawTelefono) {
   const telefono = (rawTelefono ?? '').trim();
   if (!telefono) {
@@ -143,11 +95,6 @@ function validateCorreo(rawCorreo) {
   return correo;
 }
 
-// Pedido explícito del usuario: agrega Sexo (Macho/Hembra) al formulario —
-// opcional a nivel de esquema (mascotas.sexo es NULLABLE, igual que
-// tipo/raza), whitelist real en vez de texto libre (el toggle del
-// formulario ya solo ofrece esos 2 valores, pero el servidor nunca confía
-// en eso).
 function validateSexo(rawValor, etiqueta) {
   const valor = (rawValor ?? '').trim();
   if (!valor) return '';
@@ -157,17 +104,9 @@ function validateSexo(rawValor, etiqueta) {
   return valor;
 }
 
-// Pedido explícito del usuario: agrega Edad (años) al formulario — opcional
-// a nivel de esquema (mascotas.anio_nacimiento es NULLABLE). Vacío se valida
-// como `null` (edad desconocida), no como 0 (una edad real) — la conversión
-// a año de nacimiento (edadAAnioNacimiento, más abajo) es quien decide qué
-// se guarda de verdad.
 function validateEdad(rawValor, etiqueta) {
   const valor = (rawValor ?? '').toString().trim();
   if (!valor) return null;
-  // Number() (no parseInt) a propósito: parseInt trunca "3.5" a 3 en vez de
-  // rechazarlo — la edad es en años completos, un decimal es una captura
-  // equivocada, no una fracción de año válida a redondear en silencio.
   const edad = Number(valor);
   if (!Number.isInteger(edad) || edad < 0 || edad > EDAD_PACIENTE_MAX) {
     throw new TutorValidationError(
@@ -177,33 +116,16 @@ function validateEdad(rawValor, etiqueta) {
   return edad;
 }
 
-// Pedido explícito del usuario: NO se guarda la edad capturada tal cual
-// ("si pongo 13 años, guardar el año -13, así el siguiente año podría verse
-// 14 automáticamente") — se guarda el año de nacimiento implícito, para que
-// la edad mostrada se recalcule sola con el paso del tiempo en vez de
-// quedarse congelada en lo que se capturó el día del registro. El
-// formulario nunca pide/muestra un año de nacimiento, solo "años" — esta
-// conversión (y su inversa, edadDesdeAnioNacimiento) son el único lugar del
-// sistema que sabe que por dentro se guarda distinto de lo que se capturó.
 function edadAAnioNacimiento(edad) {
   if (edad === null) return null;
   return new Date().getFullYear() - edad;
 }
 
-// Inversa de edadAAnioNacimiento — usada al precargar el formulario
-// (obtenerParaEditar/verificarTelefono) para volver a mostrar "años" en vez
-// del año de nacimiento guardado.
 function edadDesdeAnioNacimiento(anioNacimiento) {
   if (anioNacimiento === null || anioNacimiento === undefined) return null;
   return new Date().getFullYear() - anioNacimiento;
 }
 
-// AC11/AC13: cada paciente capturado necesita como mínimo Nombre (Tipo/Raza/
-// Sexo/Edad opcionales, ver validateTextoOpcional/validateSexo/validateEdad).
-// Un paciente YA existente (trae `id`) respeta el `activo` que mande el
-// cliente (AC17/19: baja/reactivar); uno nuevo siempre nace activo (AC13),
-// sin importar lo que venga en el body — nunca se puede dar de alta un
-// paciente ya inactivo de origen.
 function parsePacientes(rawPacientes) {
   const valores = Array.isArray(rawPacientes) ? rawPacientes : [];
   return valores.map((paciente, index) => {
@@ -230,19 +152,10 @@ function parsePacientes(rawPacientes) {
   });
 }
 
-// Traduce anio_nacimiento -> edad para cualquier lista de pacientes que
-// vuelva hacia el cliente (obtenerParaEditar/verificarTelefono) — el
-// formulario solo conoce "años", nunca el año de nacimiento guardado por
-// dentro (ver edadAAnioNacimiento).
 function pacientesConEdad(pacientes) {
   return pacientes.map((p) => ({ ...p, edad: edadDesdeAnioNacimiento(p.anio_nacimiento) }));
 }
 
-// Ambos filtros de estado (Tutores/Pacientes) son independientes entre sí
-// (AC: "se aplican de forma conjunta e independiente") — cada uno solo
-// tiene 2 valores válidos, cualquier otra cosa cae a "activos" por default
-// (mismo criterio permisivo que el resto de los módulos: un valor raro no
-// amerita un 400, solo el default seguro).
 function normalizeEstado(rawEstado) {
   return rawEstado === 'todos' ? 'todos' : 'activos';
 }
@@ -251,21 +164,6 @@ function includes(valor, qLower) {
   return (valor ?? '').toLowerCase().includes(qLower);
 }
 
-// Ajuste posterior, pedido explícito del usuario: buscar "5520108565"
-// (sin guiones) debe encontrar un teléfono guardado como "5520108565"
-// (ahora siempre sin guiones, ver stripTelefono/formatTelefono arriba) aun
-// si lo que el usuario escribió en la caja de búsqueda SÍ traía guiones
-// ("55-2010-8565") — se compara `qDigits` (los dígitos de la búsqueda,
-// puede venir vacío si `q` no tiene ningún dígito) contra el teléfono tal
-// cual está guardado, en vez de comparar el `q` crudo.
-//
-// AC: la búsqueda coincide con nombre/teléfono/correo del tutor. El
-// concatenado (mismo patrón que el ILIKE de baseQuery en el repository)
-// cubre buscar el nombre completo de un jalón (ej. "Juan Pérez") — sin él,
-// un tutor que coincidiera solo por nombre completo (ninguna de las 2
-// palabras por separado) se trataría como "coincidió por un paciente", lo
-// que le recortaba de más su lista de pacientes mostrados (bug real
-// encontrado al correr esta suite tras separar nombre/apellidos).
 function tutorCoincide(tutor, qLower, qDigits) {
   return (
     includes(tutor.nombre, qLower) ||
@@ -276,7 +174,6 @@ function tutorCoincide(tutor, qLower, qDigits) {
   );
 }
 
-// AC: la búsqueda coincide con nombre/tipo/raza del paciente.
 function mascotaCoincide(mascota, qLower) {
   return (
     includes(mascota.nombre, qLower) ||
@@ -285,8 +182,6 @@ function mascotaCoincide(mascota, qLower) {
   );
 }
 
-// Query params de un listado GET: se sanean con valores por defecto en vez
-// de rechazarse con un error, mismo criterio que doctores/areas.service.js.
 async function list({
   q: rawQ,
   estadoTutores: rawEstadoTutores,
@@ -330,11 +225,6 @@ async function list({
     mascotasPorTutor.get(mascota.propietario_id).push(mascota);
   }
 
-  // AC: si el tutor coincidió por sus PROPIOS campos (o no hay búsqueda),
-  // se muestran todos sus pacientes que pasen el filtro de estado; si
-  // coincidió solo porque uno de sus pacientes hizo match, se muestran
-  // únicamente los pacientes que también cumplan la búsqueda (además del
-  // filtro de estado, ya aplicado arriba al traer mascotasRows).
   const qLower = q.toLowerCase();
   const tutores = tutoresRows.map((tutor) => {
     let pacientes = mascotasPorTutor.get(tutor.id) ?? [];
@@ -357,10 +247,6 @@ async function list({
   };
 }
 
-// US-156: para precargar el formulario de edición (AC2/AC14) — trae el
-// propietario junto con TODAS sus mascotas (activas e inactivas, a
-// diferencia de list()), porque el formulario necesita poder mostrar y
-// reactivar una mascota inactiva.
 async function obtenerParaEditar(rawId) {
   const id = parseId(rawId);
   if (id === null) return undefined;
@@ -374,12 +260,6 @@ async function obtenerParaEditar(rawId) {
   };
 }
 
-// US-156 AC7/AC8/AC9/AC10/AC12/AC13: alta. Si el teléfono ya pertenece a un
-// propietario ACTIVO, se rechaza (AC5). Si pertenece a uno INACTIVO, no se
-// inserta un registro nuevo (violaría el UNIQUE de propietarios.telefono):
-// se pide confirmación explícita al cliente (decidido con el usuario) y,
-// solo si ya confirmó (`confirmarReactivacion`), se reactiva ESE registro
-// con los datos de este formulario en vez de crear uno nuevo.
 async function crear({
   nombre: rawNombre,
   apellidos: rawApellidos,
@@ -421,20 +301,6 @@ async function crear({
   return repository.crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId });
 }
 
-// US-156 AC15/16/17/19/21: edición. A diferencia de crear(), aquí NUNCA se
-// reactiva — si el teléfono ya pertenece a CUALQUIER otro propietario
-// (activo o inactivo), se rechaza igual (mismo criterio que
-// areas.service.js#editar: "no hay reactivar al editar, sería fusionar la
-// identidad de dos registros distintos", algo que ningún AC de esta
-// historia pidió).
-// Pedido explícito del usuario: switch Activo/Inactivo en el propio
-// formulario de edición (reemplaza el badge fijo que vivía en "Resumen",
-// nunca leía el dato real) — mismo criterio "dos caminos hacia activo, sin
-// fusionar" ya usado en plantillas (US-613/614): convive con la baja
-// lógica desde el listado (desactivar(), más abajo) sin reemplazarla.
-// `rawActivo` es opcional a propósito: cualquier llamador que no lo mande
-// (payload viejo, otra integración futura) no debe tocar el estado actual
-// del propietario como efecto secundario de editar otro campo.
 function normalizeActivoOpcional(rawActivo) {
   return typeof rawActivo === 'boolean' ? rawActivo : undefined;
 }
@@ -478,51 +344,24 @@ async function editar({
 const BUSQUEDA_TELEFONO_LIMIT = 8;
 const BUSQUEDA_MASCOTA_LIMIT = 8;
 
-// US-156 (pedido del usuario, ajustado después): búsqueda incremental
-// mientras se captura el teléfono en el alta — sin texto, sugiere los
-// primeros propietarios (activos); con texto, filtra por coincidencia
-// parcial. Sin mínimo de caracteres a propósito: el AC pide explícitamente
-// que "si no tiene nada, salen todos los usuarios" (activos, limitados a
-// BUSQUEDA_TELEFONO_LIMIT).
 async function buscarPorTelefono(rawQ) {
-  // El combobox manda lo que el usuario ya escribió CON la máscara (guiones
-  // incluidos) — se quitan aquí porque lo guardado en BD ya no los tiene.
   const q = stripTelefono(rawQ);
   const resultados = await repository.searchByTelefono(q, BUSQUEDA_TELEFONO_LIMIT);
   return resultados.map((r) => ({ ...r, telefono: formatTelefono(r.telefono) }));
 }
 
-// Agenda: combobox de "Mascota" del formulario de citas — mismo criterio
-// que buscarPorTelefono (incremental, `q` vacío trae los primeros
-// BUSQUEDA_MASCOTA_LIMIT). Pedido explícito del usuario: la búsqueda cubre
-// Mascota, Dueño y teléfono (qDigits, mismo patrón que tutores.service.js#list)
-// — el nombre no lleva máscara que limpiar, el teléfono sí.
 async function buscarMascotas(rawQ) {
   const q = (rawQ ?? '').trim();
   const qDigits = stripTelefono(q);
   return repository.searchMascotas(q || undefined, qDigits || undefined, BUSQUEDA_MASCOTA_LIMIT);
 }
 
-// Agenda: resuelve una mascota por id para repoblar el combobox del
-// formulario de citas (precarga de edición, o re-render tras un error de
-// validación) — mismo criterio que usuarios.service.js#resolverDoctor. Un
-// id vacío/inválido no truena, regresa null.
 async function resolverMascota(rawId) {
   const id = Number.parseInt(rawId, 10);
   if (!Number.isInteger(id) || id <= 0) return null;
   return (await repository.findMascotaById(id)) ?? null;
 }
 
-// US-157 (ajuste posterior, pedido del usuario): chequeo EXACTO del
-// teléfono al salir del campo (blur) en el alta — a diferencia de
-// buscarPorTelefono() (parcial, incremental, solo activos, para navegar
-// mientras se escribe), este SÍ revela un propietario INACTIVO: es
-// justo el punto de entrada de la reactivación, ahora disparado al salir
-// del campo en vez de hasta el guardado (crear(), arriba, sigue siendo el
-// respaldo real vía confirmarReactivacion si el cliente nunca pasó por
-// aquí). Si es inactivo, trae también correo y mascotas completas para
-// precargar el formulario ("mostrar toda su información y mascotas",
-// pedido del usuario) en vez de dejar que el usuario adivine.
 async function verificarTelefono(rawTelefono) {
   const telefono = stripTelefono(rawTelefono);
   const existente = await repository.findByTelefono(telefono);
@@ -549,14 +388,6 @@ async function verificarTelefono(rawTelefono) {
   };
 }
 
-// Laboratorio: "Nuevo registro" arranca de un tutor YA REGISTRADO por su
-// teléfono (pedido explícito del usuario — "si escribo un teléfono, la
-// información se tiene que mostrar") — a diferencia de verificarTelefono()
-// (que revela inactivos porque es el punto de entrada de reactivación),
-// aquí un tutor INACTIVO se trata igual que uno inexistente: Laboratorio no
-// da de alta ni reactiva tutores/pacientes, solo usa los que ya existen y
-// están activos. Solo trae pacientes ACTIVOS (un registro de laboratorio
-// nuevo no tiene sentido para una mascota ya dada de baja).
 async function resolverTutorActivoPorTelefono(rawTelefono) {
   const telefono = stripTelefono(rawTelefono);
   if (telefono.length !== 10) return null;
@@ -573,13 +404,6 @@ async function resolverTutorActivoPorTelefono(rawTelefono) {
   };
 }
 
-// Laboratorio: combobox de "buscar tutor por nombre" en "Nuevo registro" —
-// pedido explícito del usuario, para cuando no se sabe el teléfono del
-// tutor. Solo tutores ACTIVOS (mismo criterio que
-// resolverTutorActivoPorTelefono). Longitud mínima server-side (además de
-// la del cliente) para no escanear la tabla completa con un ILIKE de una
-// sola letra; resultado acotado a 10, es un combobox de escritura
-// incremental, no un listado.
 async function buscarActivosPorNombre(rawQ) {
   const q = (rawQ ?? '').trim();
   if (q.length < 2) return [];
@@ -592,24 +416,11 @@ async function buscarActivosPorNombre(rawQ) {
   }));
 }
 
-// Laboratorio: precarga del selector de "Paciente" en la pantalla de
-// edición/consulta de una orden ya existente — a diferencia de
-// resolverTutorActivoPorTelefono (que exige un tutor ACTIVO, es el punto de
-// entrada de un alta nueva), aquí el tutor/mascota ya están ligados a un
-// registro real y deben poder mostrarse tal cual aunque alguno haya sido
-// dado de baja después — nunca por teléfono, ya se conoce el id.
 async function obtenerPacientesConEdad(propietarioId) {
   const pacientes = await repository.findMascotasByPropietarioId(propietarioId);
   return pacientesConEdad(pacientes);
 }
 
-// Agenda: precarga del tutor de una reserva externa (agenda.reservasExternas.js)
-// ya matcheada por teléfono pero sin mascota todavía (citas.propietario_id) —
-// mismo criterio que obtenerPacientesConEdad de arriba (el vínculo ya
-// existe, se muestra tal cual aunque el tutor esté inactivo, nunca por
-// teléfono). Mismo shape de salida que resolverTutorActivoPorTelefono
-// (incluye `pacientes`, filtrados a activos) para que el cliente pueda
-// reusar exactamente el mismo render.
 async function resolverTutorPorId(propietarioId) {
   const existente = await repository.findById(propietarioId);
   if (!existente) return null;
@@ -624,9 +435,6 @@ async function resolverTutorPorId(propietarioId) {
   };
 }
 
-// US-157: baja lógica (activo=false + desactivado_por/desactivado_en),
-// nunca un DELETE físico — mismo criterio permisivo que el resto de los
-// módulos: un id inválido/inexistente no truena, simplemente no hace nada.
 async function desactivar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;

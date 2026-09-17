@@ -34,6 +34,7 @@ const CONVERSACION_ID = 55;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  env.whatsapp.conversationalRouterEnabled = true;
   db.transaction = jest.fn((cb) => cb('trx-fake'));
   repository.registrarMensajeYConversacion.mockResolvedValue({ id: MENSAJE_ID, esNuevo: true });
 });
@@ -63,6 +64,7 @@ describe('whatsapp.service.registrarEventoEntrante — solo persiste y asocia, n
       mimeType: null,
       tituloInteractivo: null,
       recibidoEn: new Date(1700000000 * 1000),
+      pipelineAsignado: repository.PIPELINE_NUEVO,
     });
     expect(resultado).toEqual(
       expect.objectContaining({ id: 7, esNuevo: true, telefonoNormalizado: '525500000000' }),
@@ -122,6 +124,52 @@ describe('whatsapp.service.registrarEventoEntrante — solo persiste y asocia, n
     expect(repository.registrarMensajeYConversacion).toHaveBeenCalledWith(
       expect.objectContaining({ telefonoNormalizado: '525529000090' }),
     );
+  });
+
+  it('asigna exclusivamente el flujo anterior cuando la feature flag está apagada', async () => {
+    env.whatsapp.conversationalRouterEnabled = false;
+    repository.registrarMensajeYConversacion.mockResolvedValue({
+      id: 91,
+      esNuevo: true,
+      pipelineAsignado: repository.PIPELINE_ANTERIOR,
+    });
+
+    const resultado = await registrarEventoEntrante({
+      whatsappMessageId: 'wamid.flag-off',
+      from: '5215529000090',
+      phoneNumberId: 'phone-1',
+      timestamp: '1700000000',
+      tipoMensaje: 'text',
+      contenido: 'hola',
+      mediaId: null,
+    });
+
+    expect(repository.registrarMensajeYConversacion).toHaveBeenCalledWith(
+      expect.objectContaining({ pipelineAsignado: repository.PIPELINE_ANTERIOR }),
+    );
+    expect(resultado.pipelineAsignado).toBe(repository.PIPELINE_ANTERIOR);
+    expect(atencionHumanaService.solicitarAtencionHumana).not.toHaveBeenCalled();
+  });
+
+  it('conserva el pipeline persistido de un wamid duplicado aunque cambie la bandera', async () => {
+    env.whatsapp.conversationalRouterEnabled = false;
+    repository.registrarMensajeYConversacion.mockResolvedValue({
+      id: 92,
+      esNuevo: false,
+      pipelineAsignado: repository.PIPELINE_NUEVO,
+    });
+
+    const resultado = await registrarEventoEntrante({
+      whatsappMessageId: 'wamid.existente',
+      from: '5215529000090',
+      phoneNumberId: 'phone-1',
+      timestamp: '1700000000',
+      tipoMensaje: 'text',
+      contenido: 'duplicado',
+      mediaId: null,
+    });
+
+    expect(resultado.pipelineAsignado).toBe(repository.PIPELINE_NUEVO);
   });
 });
 

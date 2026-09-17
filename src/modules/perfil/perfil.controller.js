@@ -1,12 +1,6 @@
 const service = require('./perfil.service');
 const { generateCsrfToken } = require('../../config/csrf');
 
-// Datos ligados a la cuenta (doctor/especialidades/permisos, más
-// estatus/último acceso para la tarjeta "Mi cuenta") — de solo lectura,
-// nunca cambian por un guardado de datos personales, pero viven dentro de
-// #perfil-panel (el swap target de HTMX), así que tienen que viajar en LOS
-// TRES render() de este archivo para no desaparecer de la pantalla tras
-// guardar o tras un error de validación.
 function datosDeCuenta(perfil) {
   return {
     estatus: perfil.estatus,
@@ -18,10 +12,6 @@ function datosDeCuenta(perfil) {
   };
 }
 
-// US-109 AC: "identifica al usuario exclusivamente a partir de la sesión
-// autenticada" — el id SIEMPRE sale de req.session.user.id, nunca de
-// req.params/req.query/req.body. No hay ninguna otra forma de llegar a
-// esta función con un id distinto: ni la ruta ni el formulario aceptan uno.
 async function mostrarForm(req, res, next) {
   try {
     const perfil = await service.obtener(req.session.user.id);
@@ -45,8 +35,6 @@ async function mostrarForm(req, res, next) {
   }
 }
 
-// US-109 AC: fragmento HTMX — actualiza y re-renderiza solo el formulario
-// (con el mensaje de éxito o de error), sin recargar la página completa.
 async function actualizar(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {
@@ -58,10 +46,6 @@ async function actualizar(req, res, next) {
       avatar: req.body.avatar,
     });
 
-    // Mantiene la sesión en sincronía — evita que el resto de la app siga
-    // mostrando el nombre/apellidos/ícono viejos hasta el próximo login
-    // (la barra de título SÍ los muestra, ver partials del topbar en cada
-    // vista — req.session.user es la fuente que usan).
     req.session.user.nombre = guardado.nombre;
     req.session.user.apellidos = guardado.apellidos;
     req.session.user.avatar = guardado.avatar;
@@ -101,12 +85,6 @@ async function actualizar(req, res, next) {
   }
 }
 
-// US-110: fragmento HTMX independiente del resto de la página — solo
-// re-renderiza la sección "Cambiar contraseña" (partials/perfil-password-form,
-// swap sobre #cambiar-password-panel, ver perfil-form.ejs), no todo
-// #perfil-panel. No hay razón para volver a consultar doctor/áreas/matriz
-// de permisos por un cambio que no los toca, y mantiene el <details> de esa
-// sección abierto (su innerHTML se reemplaza, el propio <details> no).
 async function cambiarPassword(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {

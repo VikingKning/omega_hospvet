@@ -2,17 +2,12 @@
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 
-// propietarios.nombre/apellidos ya están separados (mismo criterio que
-// doctores) — ya no hace falta el heurístico de "2 palabras o 2 letras".
 function initialesTutor(nombre, apellidos) {
   const inicialNombre = (nombre || '').charAt(0);
   const inicialApellido = (apellidos || '').charAt(0);
   return `${inicialNombre}${inicialApellido}`.toUpperCase() || '—';
 }
 
-// Mismo criterio que usuarios-panel.ejs#bannerError: este partial también
-// se renderiza desde filter() (HTMX), que nunca pasa `error` — `undefined`
-// ahí significa "no aplica", no "hay un error".
 const bannerError = typeof error === 'undefined' ? null : error;
 %>
 <% if (bannerError) { %>
@@ -85,17 +80,6 @@ const bannerError = typeof error === 'undefined' ? null : error;
       <% } %>
     </div>
 
-    <%#
-      Ajuste posterior (pedido del usuario): en mobile, la columna Estado se
-      oculta y su badge se duplica DENTRO de la celda de Propietario (bajo
-      el teléfono, oculto en desktop) — mismo criterio que el resto de
-      ajustes mobile de esta sesión: no perder información (sigue
-      distinguiendo Activo/Inactivo con el filtro "Todos"), solo liberar
-      una columna entera para que Propietario y Pacientes asociados queden
-      más cerca en la misma línea. Clase `tutores-table` nueva y exclusiva
-      de esta tabla — el resto de catálogos (doctores/áreas/plantillas/
-      usuarios) no se tocan.
-    %>
     <div class="lab-table-wrap">
       <table class="lab-table tutores-table">
         <thead>
@@ -186,14 +170,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
       <% } %>
 
       <div class="table-footer">
-        <%
-        // Pedido explícito del usuario: mismo formato en TODOS los módulos
-        // (este separador en-dash, antes exclusivo de Tutores por su AC
-        // original, ahora es el estándar del sistema — ver
-        // doctores-panel.ejs/areas-panel.ejs/etc.) — singular cuando el
-        // número es 1 (encontrados Y total, cada uno por su cuenta), plural
-        // en cualquier otro caso (0, 2, 50...).
-        %>
+
         <span><%= tutores.length %> resultado<%= tutores.length === 1 ? '' : 's' %> – <%= total %> tutor<%= total === 1 ? '' : 'es' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">

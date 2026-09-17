@@ -7,9 +7,6 @@ const isDevelopment = !isProduction && !isTest;
 const logger = pino({
   enabled: !isTest,
   level: process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
-  // El transporte "pretty" corre en un worker thread; solo tiene sentido en
-  // desarrollo interactivo. En test/producción se evita: en tests deja un
-  // handle abierto que impide que Jest termine, y en producción no aporta.
   transport: isDevelopment
     ? {
         target: 'pino-pretty',

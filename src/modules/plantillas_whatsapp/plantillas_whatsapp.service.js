@@ -3,9 +3,6 @@ const whatsapp = require('../../config/whatsapp');
 const { normalizarFormatoWhatsapp } = require('../../../public/js/whatsapp-format');
 const repository = require('./plantillas_whatsapp.repository');
 
-// Mismo patrón de errores con `.status` que areas.service.js — el
-// controller los atrapa para re-renderizar el formulario con el mensaje,
-// en vez de un 400/409 JSON crudo (esto es un fragmento HTMX, no una API).
 class PlantillaValidationError extends Error {
   constructor(message) {
     super(message);
@@ -20,10 +17,6 @@ class DuplicateIntencionError extends Error {
   }
 }
 
-// Las 4 plantillas predeterminadas del sistema (migración 20260903000002)
-// son inborrables — pedido explícito del usuario, son la respuesta de
-// respaldo que usa whatsapp.service.js para las categorías sin acción
-// real todavía, nunca deben poder quedar en 0.
 class PlantillaPredeterminadaError extends Error {
   constructor() {
     super('Esta es una plantilla predeterminada del sistema y no se puede eliminar.');
@@ -49,13 +42,6 @@ function parseDir(rawDir) {
   return rawDir === 'desc' ? 'desc' : 'asc';
 }
 
-// Query params de un listado GET: se sanean con valores por defecto en vez
-// de rechazarse con un error (mismo criterio que doctores/areas.service.js).
-//
-// Cambio explícito del usuario (2026-09-03): el filtro por defecto ahora
-// es "Activos", igual que doctores/áreas — antes era "Todos" (AC original
-// de US-612). `activoOnly` solo se desactiva cuando se pide
-// explícitamente estado=todos.
 async function list({ q, estado, page: rawPage, sort: rawSort, dir: rawDir }) {
   const trimmedQ = (q ?? '').trim();
   const activoOnly = estado !== 'todos';
@@ -93,20 +79,12 @@ function parseId(rawId) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-// US-613: para precargar el formulario de edición.
 async function obtener(rawId) {
   const id = parseId(rawId);
   if (id === null) return undefined;
   return repository.findById(id);
 }
 
-// US-614: baja lógica (activo=false + desactivado_por/desactivado_en),
-// nunca un DELETE físico — se conserva veces_usada y el historial de
-// mensajes enviados con esta plantilla. Un id inválido/inexistente no
-// truena, simplemente no hace nada (mismo criterio permisivo que
-// doctores/areas.service.js#desactivar). Una plantilla predeterminada del
-// sistema (es_predeterminada) SÍ rechaza — es la única validación real de
-// esta operación.
 async function desactivar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
@@ -118,35 +96,18 @@ async function desactivar(rawId, usuarioId) {
   await repository.desactivar(id, usuarioId);
 }
 
-// Quita acentos/diacríticos para el chequeo de duplicados — mismo criterio
-// que areas.service.js#normalizeNombre: "Confirmar cita" y "confirmar  Cita"
-// (espacios/mayúsculas/acentos distintos) cuentan como la misma intención.
-// Lo que se guarda/muestra es siempre el texto tal cual lo escribió el
-// usuario (solo recortado por validateTexto), la normalización es solo
-// para decidir si es un duplicado.
 const DIACRITIC_MARKS = /[̀-ͯ]/g;
 
 function normalizeIntencion(intencion) {
   return intencion.normalize('NFD').replace(DIACRITIC_MARKS, '').toLowerCase().replace(/\s+/g, '');
 }
 
-// Trae todas las plantillas y compara intenciones normalizadas en JS — ver
-// el comentario de repository.findAllExcept sobre por qué no se hace con
-// SQL/una extensión de Postgres. Solo la usa crear(): intención es
-// inmutable tras el alta (ver editar() más abajo), así que editar() ya no
-// necesita comparar contra las demás.
 async function findDuplicado(intencion) {
   const objetivo = normalizeIntencion(intencion);
   const candidatos = await repository.findAllExcept();
   return candidatos.find((candidato) => normalizeIntencion(candidato.intencion) === objetivo);
 }
 
-// Mismo slugify que areas.service.js, duplicado a propósito (módulos de
-// dominio independientes entre sí, mismo criterio que
-// areas.repository.js#asegurarPermisosAgenda). El slug es la clave que un
-// LLM usará para elegir esta plantilla — se genera UNA VEZ al crear y
-// nunca se regenera (ver editar() más abajo y la migración
-// 20260824000002).
 function slugify(intencion) {
   return intencion
     .normalize('NFD')
@@ -161,7 +122,6 @@ async function generateUniqueSlug(intencion) {
   const base = slugify(intencion);
   let slug = base;
   let suffix = 2;
-  // Secuencial a propósito: cada intento depende del resultado del anterior.
   while (await repository.existsBySlug(slug)) {
     slug = `${base}-${suffix}`;
     suffix += 1;
@@ -182,38 +142,12 @@ function validateTexto(rawValor, etiqueta, maxLength) {
   return valor;
 }
 
-// `intencion` es texto libre (lo escribe el staff) — Meta exige
-// minúsculas/números/guion_bajo para el `name` de una plantilla, así que
-// se deriva de `slug` (ya normalizado por slugify() de arriba) cambiando
-// los guiones por guion_bajo. Exportado: scripts/registrar-plantillas-whatsapp.js
-// y plantillas_whatsapp.metaSync.js lo reusan para no duplicarlo.
 function nombreMeta(slug) {
   return slug.replace(/-/g, '_');
 }
 
-// Único valor de categoria_meta que NO es una categoría real de Meta —
-// significa "esta plantilla es un mensaje de texto libre dentro de una
-// conversación ya abierta por el cliente, nunca se manda como plantilla
-// de Meta" (decisión explícita del usuario, 2026-09-12: de todo el
-// catálogo, solo la de resultados de laboratorio de verdad necesita ser
-// una plantilla aprobada — es la única que el NEGOCIO inicia, sin
-// importar si el cliente escribió antes). Es el default de toda plantilla
-// nueva creada desde este módulo; ver la migración
-// 20260912000002_categoria_meta_texto_libre_por_defecto.js para el
-// backfill de las que ya existían.
 const CATEGORIA_TEXTO_LIBRE = 'TEXTO_LIBRE';
 
-// Alta/reactivación → intenta registrar la plantilla en Meta de inmediato
-// (push best-effort, mismo criterio que agenda.googleSync.js#pushCita):
-// nunca lanza ni bloquea la operación local. Se salta por completo cuando
-// categoria_meta es CATEGORIA_TEXTO_LIBRE (el caso normal hoy) — no se
-// borra este flujo porque sigue haciendo falta el día que se dé de alta
-// una plantilla real de Marketing/Utility/Authentication (mercadotecnia,
-// por ejemplo). Si el POST falla (Meta caído, ya registrada, etc.), la
-// plantilla queda con aprobado_meta=false (su default) y no hay reintento
-// automático del registro en sí — solo el job periódico
-// (plantillas_whatsapp.metaSync.js) sincroniza el estado y la categoría
-// que Meta termine asignándole, pero no reintenta el registro.
 async function registrarEnMeta({ id, slug, texto_respuesta, categoria_meta }) {
   if (categoria_meta === CATEGORIA_TEXTO_LIBRE) return;
   if (!whatsapp.isWhatsappConfigured()) return;
@@ -241,19 +175,6 @@ async function registrarEnMeta({ id, slug, texto_respuesta, categoria_meta }) {
   }
 }
 
-// US-613 AC: alta — sin id. `intencion` sigue siendo única de verdad a
-// nivel de base de datos (constraint del script original, sin tocar), así
-// que "reutilizar la intención de una plantilla dada de baja" no puede ser
-// un INSERT nuevo (chocaría con el UNIQUE). Mismo patrón que
-// areas.service.js#crear: si ya existe un registro con esa intención,
-// activo -> duplicado real (se rechaza); inactivo -> se reactiva ese mismo
-// registro en vez de crear uno paralelo (una plantilla se desactiva desde
-// el switch del formulario de edición, ver editar()/repository.js#update).
-// `categoria_meta` no tiene todavía un campo en el formulario (pedido
-// explícito del usuario: por ahora toda plantilla nueva es texto libre) —
-// se acepta como parámetro opcional para no tener que volver a tocar esta
-// función el día que se agregue un selector real (Marketing, por
-// ejemplo); mientras tanto siempre llega undefined y cae al default.
 async function crear({
   intencion: rawIntencion,
   texto_respuesta: rawTexto,
@@ -275,14 +196,7 @@ async function crear({
     if (existing.activo) {
       throw new DuplicateIntencionError();
     }
-    // Reactivación de una plantilla ya dada de baja: el slug original se
-    // conserva (nunca se regenera), igual que areas.service.js#crear.
     await repository.reactivar(existing.id, intencion, usuarioId);
-    // texto_respuesta NUEVO del formulario, ojo: reactivar() no lo guarda
-    // (solo reactivar() en sí toca intencion/activo/desactivado_*), así
-    // que Meta se registra con el texto Y LA CATEGORÍA YA GUARDADOS
-    // (existing.texto_respuesta/categoria_meta), no con lo que se acaba
-    // de escribir en este alta.
     await registrarEnMeta({
       id: existing.id,
       slug: existing.slug,
@@ -305,34 +219,10 @@ async function crear({
   return id;
 }
 
-// El switch Activo/Inactivo del formulario solo viaja en el body cuando
-// está marcado (comportamiento estándar de un <input type="checkbox">) —
-// su ausencia significa "Inactivo", no un valor inválido que rechazar.
-// Mismo criterio que doctores.service.js#parseActivo.
 function parseActivo(rawActivo) {
   return rawActivo === 'true';
 }
 
-// US-613 AC (ampliada): edición — con id, actualiza SOLO texto_respuesta y
-// el estado Activo/Inactivo (switch agregado a petición explícita del
-// usuario, no estaba en el AC original de la historia), conserva
-// veces_usada. `intencion`/`slug` son inmutables después del alta —
-// decisión explícita del usuario: son la identidad con la que el LLM
-// matchea un mensaje de WhatsApp a esta plantilla, y con la que
-// mensajes_whatsapp.plantilla_id enlaza el histórico; si se pudieran
-// editar, un mensaje viejo quedaría re-interpretado en silencio bajo un
-// significado distinto al que tenía cuando realmente se envió. Para
-// "cambiar la intención" hay que dar de baja esta plantilla (switch de
-// esta misma pantalla) y crear una nueva — nunca reescribir esta. Por eso
-// ya no hay chequeo de duplicados aquí (a diferencia de crear()): con
-// intención fija, no hay forma de que una edición choque con otra fila.
-//
-// `esPredeterminada` (lo trae el controller, ya tenía el registro cargado
-// para el 404/re-render) fuerza activo=true sin importar lo que mande el
-// formulario — las 4 plantillas del sistema son "solo editables" (el
-// texto), nunca se pueden desactivar, ni siquiera por este switch (el
-// formulario ni lo muestra para estas, ver plantilla-form.ejs, pero esto
-// es la defensa real del lado del servidor).
 async function editar({
   id,
   texto_respuesta: rawTexto,

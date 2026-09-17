@@ -1,10 +1,3 @@
-// Catálogo completo de laboratorio (pedido explícito del usuario, estilo
-// "catálogo de hospital veterinario" — no limitado a lo que la clínica
-// hace en sitio, es un catálogo de referencia). 33 categorías; reemplaza
-// a las 10 anteriores (más chicas). Orden preservado del mockup que mandó
-// el usuario, con una corrección de nombre ("Microbiología" -> el nombre
-// que ya usaba tanto este catálogo como la lista original de referencia:
-// "Bacteriología").
 const categorias = [
   'Hematología',
   'Química sanguínea / Bioquímica',

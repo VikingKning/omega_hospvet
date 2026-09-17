@@ -1,20 +1,3 @@
-// US WA 015: intenciones de envío saliente registradas ANTES de llamar a
-// Meta — idempotencia por clave_idempotencia y guarda de reintento.
-// envios_whatsapp sigue siendo la bitácora histórica por intento (sin
-// cambios), sin relación con esta tabla; outbox_whatsapp es la capa de
-// orquestación que existe ANTES y DURANTE un intento, incluidos reintentos.
-//
-// `intent_id` es el nombre literal que pide la consideración técnica (no
-// "id") — mismo criterio que `group_id` en grupos_whatsapp (US WA 003).
-//
-// `estado` (ciclo LOCAL: pendiente|enviado|fallido|ventana_servicio_expirada)
-// y `estado_meta` (lo que reporta el webhook de Meta: sent|delivered|read|
-// failed) son columnas SEPARADAS a propósito — son dos cosas distintas, y
-// mezclarlas haría que un webhook de Meta pisara nuestro propio control de
-// reintento o viceversa.
-//
-// Sin CHECK constraints — mismo criterio ya establecido en todo este
-// módulo (documentar valores válidos vía COMMENT ON COLUMN).
 exports.up = async function up(knex) {
   await knex.schema.createTable('outbox_whatsapp', (table) => {
     table.increments('intent_id').primary();

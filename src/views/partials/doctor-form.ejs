@@ -1,22 +1,5 @@
 <%
-// US-607: mismo formulario para alta y edición — el modo se decide por si
-// `doctor` viene o no (edición trae el registro completo, alta viene
-// null). Este partial se usa tanto para el primer render (GET
-// /doctores/nuevo o GET /doctores/:id/editar) como para el re-render con
-// error (POST/PUT fallidos, ver doctores.controller.js) — por eso
-// nombre/apellidos/activo viajan aparte de `doctor`: en un re-render por
-// error son lo que el usuario acababa de escribir, no necesariamente lo
-// que ya está guardado.
 const esEdicion = Boolean(doctor);
-// Pedido explícito del usuario: mismo criterio "Ver" ya usado en
-// plantillas_whatsapp/areas — reusa este mismo formulario en modo
-// totalmente solo-lectura (ver doctores.controller.js#verForm) en vez de
-// una vista de detalle aparte. Los pickers/switch se vuelven inertes
-// agregando `disabled` (un control deshabilitado no dispara click/change,
-// así que el JS delegado de doctores.ejs no necesita ningún guard nuevo
-// para el switch/nombre/apellidos — solo el picker de especialidades, que
-// se arma en el cliente, necesita conocer el flag: ver doctorFormAreasData
-// más abajo).
 const esSoloLectura = Boolean(soloLectura);
 %>
 <div class="modal-header">
@@ -46,14 +29,7 @@ const esSoloLectura = Boolean(soloLectura);
     Apellidos
     <input type="text" name="apellidos" value="<%= apellidos %>" required maxlength="100" <%= esSoloLectura ? 'readonly disabled' : '' %>>
   </label>
-  <%
-  // Pedido de estilo: mismo switch ya usado en plantilla-form.ejs (US-613)
-  // en vez de un checkbox — reusa las clases .switch-field/.switch/
-  // .switch-track ya definidas en main.css, sin CSS nuevo. A diferencia de
-  // plantillas (donde el switch solo aparece en edición, porque el alta
-  // siempre crea activo=true), en doctores ya se mostraba en alta también
-  // — se mantiene ese comportamiento, solo cambia el control visual.
-  %>
+
   <label class="switch-field">
     <span class="switch">
       <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
@@ -65,16 +41,7 @@ const esSoloLectura = Boolean(soloLectura);
 
   <label>
     Especialidades
-    <%
-    // US-607 (segunda iteración, pedido de estilo): mismo motivo que el
-    // filtro "Estatus" de usuarios-panel.ejs — un <select> nativo no puede
-    // tener su lista abierta con esquinas redondeadas. Se reemplaza por un
-    // combobox propio (trigger de solo lectura + <ul class="combobox-list">
-    // ya poblada por JS, ver doctores.ejs#renderAreaPicker). El input
-    // oculto es lo único que lee #areaPickerAdd; ninguno de los dos lleva
-    // `name` — nunca se someten directamente, doctorAreasBody es quien
-    // arma los `name="areaIds"` reales al agregar.
-    %>
+
     <div class="area-picker-row">
       <div class="combobox" id="areaPickerCombobox">
         <input type="text" id="areaPickerTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Selecciona un área..." <%= esSoloLectura ? 'disabled' : '' %>>
@@ -105,20 +72,7 @@ const esSoloLectura = Boolean(soloLectura);
   </div>
 </form>
 
-<%
-// Datos para el picker de especialidades (JS de doctores.ejs): una isla de
-// datos inerte. NO puede ser un <script> (ni con type="application/json"):
-// con allowScriptTags:false en la config de HTMX (SEC-002), HTMX elimina
-// TODO <script> del contenido swapeado antes de insertarlo
-// (querySelectorAll('script') no distingue por `type`) — confirmado en
-// vivo que esto dejaba el picker de Especialidades siempre vacío. Un
-// <div hidden> no es un <script>, ni HTMX ni el CSP (que solo rige
-// script-src) lo tocan. El JS que la lee vive en el <script> persistente
-// de doctores.ejs, delegado sobre #doctorFormModalBody. El caracter
-// "menor que" del JSON se re-escapa a su forma unicode (sigue siendo JSON
-// válido) para que un nombre de área con `<`/`</div>` nunca pueda cerrar
-// el div de forma anticipada.
-%>
+
 <div id="doctorFormAreasData" hidden><%- JSON.stringify({
   disponibles: areasDisponibles,
   seleccionadas: areasSeleccionadas,

@@ -1,17 +1,3 @@
-<%#
-  Loader global de bloqueo (pedido explícito del usuario, basado en un
-  diseño propio: huella de pata rellenándose) — fondo negro semitransparente
-  a pantalla completa que cubre TODO, incluyendo la topbar/sidebar, así que
-  cualquier clic mientras está visible cae sobre este overlay y no sobre la
-  acción de debajo (bloqueo real, no solo visual). A diferencia de
-  #confirmModalBackdrop, este NUNCA se cierra con un clic afuera ni tiene
-  botones — es puramente informativo mientras dura una operación que no se
-  puede interrumpir (ej. subir un archivo). Requiere global-loader.js
-  (expone mostrarLoaderGlobal(texto)/ocultarLoaderGlobal() en el scope
-  global de la vista, mismo patrón que confirmModal.js).
-  Un solo id fijo por página — igual que #confirmModalBackdrop, se incluye
-  una sola vez por vista, fuera de cualquier contenedor que HTMX reemplace.
-%>
 <div class="global-loader-backdrop" id="globalLoaderBackdrop" role="alert" aria-live="assertive">
   <div class="global-loader">
     <div class="global-loader-paw">

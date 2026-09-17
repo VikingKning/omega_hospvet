@@ -1,9 +1,6 @@
 const db = require('../../config/database');
 
 const INICIO_LOCAL = "timezone('America/Mexico_City', c.fecha_hora_inicio)";
-// Las métricas describen las citas que se registraron para el rango elegido,
-// sin inferir confirmación, asistencia ni atención. Incluso una cita que más
-// tarde se canceló sigue representando demanda recibida por la agenda.
 function baseQuery({ desde, hasta, areaId, doctorId }) {
   return db('citas as c')
     .whereRaw(`${INICIO_LOCAL}::date >= ?`, [desde])

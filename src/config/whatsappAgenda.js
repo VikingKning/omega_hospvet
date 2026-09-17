@@ -1,6 +1,3 @@
-// US WA 006: enlaces públicos de reservación enviados desde el menú de
-// WhatsApp. Son distintos de GOOGLE_CALENDAR_ID: este último identifica el
-// calendario privado usado por la sincronización, no una página pública.
 const env = require('./env');
 
 const CONFIGURACION_POR_RUTA = {
@@ -46,8 +43,6 @@ function construirTextoEnlace(tipoCita, url) {
   return `Agenda tu cita de ${tipoCita} en el calendario de Omega:\n${url}`;
 }
 
-// Se llama al iniciar el servidor. Solo registra el nombre y el estado de
-// cada variable; nunca incluye la URL completa en los logs.
 function validarConfiguracionAlArrancar(logger) {
   for (const ruta of Object.keys(CONFIGURACION_POR_RUTA)) {
     const configuracion = obtenerConfiguracionRuta(ruta);

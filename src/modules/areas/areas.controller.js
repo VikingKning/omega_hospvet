@@ -2,9 +2,6 @@ const service = require('./areas.service');
 const { generateCsrfToken } = require('../../config/csrf');
 const { GOOGLE_CALENDAR_COLORS } = require('./googleCalendarColors');
 
-// Carga inicial de la página: siempre el estado por defecto, nunca lee
-// query params (mismo criterio de privacidad que doctores.controller.js —
-// el filtrado real ocurre por el POST de abajo, vía HTMX, sin tocar la URL).
 async function list(req, res, next) {
   try {
     const data = await service.list({});
@@ -15,9 +12,6 @@ async function list(req, res, next) {
   }
 }
 
-// Fragmento HTMX: recibe el filtro/orden/página completos en el body y
-// devuelve solo el panel (toolbar + tabla + paginación), no la página
-// entera.
 async function filter(req, res, next) {
   try {
     const data = await service.list(req.body);
@@ -28,16 +22,6 @@ async function filter(req, res, next) {
   }
 }
 
-// US-611: baja lógica de un área. Igual que filter(), recibe el estado de
-// filtro/orden/página actual (el botón lo arrastra vía hx-include del mismo
-// <form>) para que el fragmento devuelto refleje la vista donde el usuario
-// ya estaba, no un estado por defecto.
-//
-// A diferencia de filter() (POST), aquí SÍ hace falta leer también
-// req.query: la config por default de HTMX (`methodsThatUseUrlParams`)
-// incluye "delete" junto con "get" — los valores incluidos vía hx-include
-// viajan como query string en la URL del DELETE, no como body (mismo
-// gotcha ya documentado en doctores.controller.js).
 async function desactivar(req, res, next) {
   try {
     await service.desactivar(req.params.id, req.session.user.id);
@@ -49,11 +33,6 @@ async function desactivar(req, res, next) {
   }
 }
 
-// Pedido explícito del usuario: contraparte de desactivar() — reactiva un
-// área (sobre todo pensado para Consultas/Estética, que no son editables y
-// por lo tanto solo pueden volver a activo por aquí, nunca dando de alta
-// de nuevo). Mismo patrón que desactivar(): PUT, arrastra el filtro/orden/
-// página actual vía hx-include.
 async function activar(req, res, next) {
   try {
     await service.activar(req.params.id, req.session.user.id);
@@ -65,8 +44,6 @@ async function activar(req, res, next) {
   }
 }
 
-// US-610: fragmento HTMX con el formulario vacío ("Nueva área"), swapeado
-// dentro del modal.
 async function nuevoForm(req, res, next) {
   try {
     const csrfToken = generateCsrfToken(req, res);
@@ -85,8 +62,6 @@ async function nuevoForm(req, res, next) {
   }
 }
 
-// US-610: fragmento HTMX con el formulario precargado ("Editar área"), con
-// el slug en modo solo-lectura.
 async function editarForm(req, res, next) {
   try {
     const area = await service.obtener(req.params.id);
@@ -109,11 +84,6 @@ async function editarForm(req, res, next) {
   }
 }
 
-// Pedido explícito del usuario: fragmento HTMX de solo-lectura para las
-// áreas predeterminadas del sistema (Consultas/Estética) — mismo modal que
-// alta/edición, pero area-form.ejs oculta el submit y deshabilita los
-// campos cuando soloLectura=true (nunca se confía solo en el servidor NO
-// exponer el ícono de editar para estas filas — ver areas.service.js#editar).
 async function verForm(req, res, next) {
   try {
     const area = await service.obtener(req.params.id);
@@ -136,10 +106,6 @@ async function verForm(req, res, next) {
   }
 }
 
-// Tras un alta/edición exitosa: la tabla se refresca vía un swap
-// "out-of-band" (el fragmento normal que responde a esta petición no
-// vive dentro de #areas-panel, sino en el modal) y el header HX-Trigger le
-// avisa al JS del cliente que cierre el modal — ver areas.ejs.
 async function renderExito(req, res, next, csrfToken) {
   try {
     const data = await service.list({});
@@ -150,9 +116,6 @@ async function renderExito(req, res, next, csrfToken) {
   }
 }
 
-// US-610 AC: alta sin id — el service genera el slug a partir del nombre.
-// Un nombre vacío o duplicado (entre áreas ACTIVAS) no truena: re-renderiza
-// el mismo formulario con el mensaje de error, sin cerrar el modal.
 async function crear(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {
@@ -179,9 +142,6 @@ async function crear(req, res, next) {
   return renderExito(req, res, next, csrfToken);
 }
 
-// US-610 AC: edición con id — actualiza solo el nombre, el slug nunca se
-// toca. Mismo manejo de error que crear(), pero conservando el slug/id
-// originales en el formulario re-renderizado (sigue en modo "Editar área").
 async function editar(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {

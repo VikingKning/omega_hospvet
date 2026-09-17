@@ -1,6 +1,3 @@
-// US WA 016: la solicitud de alerta de emergencia conserva su prioridad y
-// sus propios contadores deterministas. Los tokens pertenecen a esta etapa
-// de generación de alerta (siempre cero), no a la clasificación WA009.
 exports.up = async function up(knex) {
   await knex.schema.alterTable('alertas_atencion_whatsapp', (table) => {
     table.string('prioridad', 20);

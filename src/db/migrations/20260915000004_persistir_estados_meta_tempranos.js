@@ -1,5 +1,3 @@
-// US WA 015 AC3: conserva estados de entrega que lleguen antes de que el
-// proceso que envio el mensaje alcance a guardar el wamid en el outbox.
 exports.up = async function up(knex) {
   await knex.schema.createTable('estados_meta_whatsapp_pendientes', (table) => {
     table.string('wamid', 100).primary();

@@ -7,9 +7,6 @@ exports.up = async function up(knex) {
     table.text('error_whatsapp');
   });
 
-  // Los registros históricos representan únicamente envíos exitosos. Se
-  // reconstruye su resultado a partir de `medio` antes de hacer obligatorio
-  // el nuevo campo que describe qué canales se intentaron.
   await knex('envios_laboratorio').update({
     canal_intentado: knex.ref('medio'),
     correo_exitoso: knex.raw("case when medio in ('correo', 'ambos') then true else null end"),
@@ -18,8 +15,6 @@ exports.up = async function up(knex) {
 
   await knex.schema.alterTable('envios_laboratorio', (table) => {
     table.string('canal_intentado', 20).notNullable().alter();
-    // `medio` continúa indicando qué canal(es) sí tuvieron éxito. Es null
-    // cuando fallaron todos los canales del intento.
     table.string('medio', 20).nullable().alter();
   });
 
@@ -32,8 +27,6 @@ exports.up = async function up(knex) {
 };
 
 exports.down = async function down(knex) {
-  // La versión anterior no admite medio NULL. Para que el rollback sea
-  // posible, conserva el canal intentado en los intentos totalmente fallidos.
   await knex('envios_laboratorio')
     .whereNull('medio')
     .update({ medio: knex.ref('canal_intentado') });

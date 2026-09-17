@@ -1,22 +1,3 @@
-// US WA 002: una fila por interacción activa (o cerrada, como historial)
-// entre un número oficial de WhatsApp de Omega y el teléfono normalizado
-// de un tutor — agrupa mensajes_whatsapp (vía la columna conversacion_id
-// ya reservada en la migración de US WA 001) y controla el estado del
-// bot/flujo.
-//
-// phone_number_id NO está en la lista de columnas de la consideración
-// técnica del US, pero AC2 ("utiliza la combinación phone_number_id de
-// Omega y teléfono normalizado... para evitar colisiones entre números o
-// bots") y el índice único parcial de abajo lo exigen como columna real —
-// se agrega como llenado de ese hueco, no como algo extra.
-//
-// Sin CHECK constraint en `estado` — mismo criterio ya usado en
-// mensajes_whatsapp.estado_procesamiento: documentar los valores válidos
-// vía COMMENT ON COLUMN, no con una restricción rígida.
-//
-// created_at/updated_at en inglés tal cual los nombra la consideración
-// técnica, aunque el resto del schema usa creado_en/actualizado_en — se
-// sigue literal, no se corrige sin que lo pida el usuario.
 exports.up = async function up(knex) {
   await knex.schema.createTable('conversaciones_whatsapp', (table) => {
     table.increments('id').primary();

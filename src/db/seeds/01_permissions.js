@@ -45,30 +45,11 @@ const permissions = [
   ['plantillas', 'editar', 'Editar una plantilla de respuesta de WhatsApp'],
   ['plantillas', 'eliminar', 'Eliminar (dar de baja) una plantilla de respuesta de WhatsApp'],
 
-  // US-604: se desdobla el antiguo `metricas.ver` único en un permiso por
-  // cada sub-sección real del menú de Métricas (sidebar.ejs) — cada una es
-  // su propio "módulo" en la matriz de permisos, con una sola acción "ver".
-  // `codigo` explícito (`metricas.<seccion>.ver`, con puntos) pedido por el
-  // usuario — no coincide con `${modulo}.${accion}` porque el módulo interno
-  // sigue siendo `metricas_whatsapp` (con guion bajo) para la agrupación.
   ['metricas_whatsapp', 'ver', 'Ver métricas de WhatsApp', 'metricas.whatsapp.ver'],
   ['metricas_laboratorio', 'ver', 'Ver métricas de laboratorio', 'metricas.laboratorios.ver'],
   ['metricas_agenda', 'ver', 'Ver métricas de agenda', 'metricas.agenda.ver'],
 ];
 
-// US-604 (tercera iteración): permisos granulares por categoría de agenda
-// para el tab "Agendas" de la matriz de permisos de usuarios — un catálogo
-// FIJO de 8 categorías (tipos de cita + especialidades médicas), cada una
-// con las 5 acciones típicas de una agenda, pedido explícitamente por el
-// usuario con la lista completa de códigos. A diferencia de `agenda`/
-// `grooming` de arriba (que siguen existiendo, sin tocar, porque gatean
-// las rutas reales /agenda.html y /grooming.html en app.js), estos son
-// exclusivamente para la matriz de permisos — más granular, pero sin
-// reemplazar el gate de acceso a la página. El `codigo` es explícito
-// (`agenda.<categoria>.<accion>`, con puntos) en vez de derivarse de
-// `modulo`/`accion` como el resto del catálogo — por eso viaja como un
-// cuarto elemento en cada fila, distinto del criterio `${modulo}.${accion}`
-// usado en todos los demás módulos.
 const AGENDA_CATEGORIAS = [
   ['agenda_consultas', 'consultas', 'Consultas'],
   ['agenda_estetica', 'estetica', 'Estética'],

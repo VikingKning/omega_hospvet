@@ -1,24 +1,3 @@
-// Catálogo completo de laboratorio (pedido explícito del usuario, a partir
-// de una lista de referencia tipo "catálogo de hospital veterinario" que
-// mandó por chat + un mockup mostrando cómo se agrupan los campos
-// adicionales por estudio). Reconciliado una segunda vez contra un mockup
-// HTML posterior (laboratorio_mockup.html) que traía su propio objeto
-// `catalog` — unión de ambas fuentes, pedido explícito: nada de lo que ya
-// estaba se quita, lo que trae el mockup y no existía se agrega. 785
-// estudios en las 33 categorías de 03_catalogo_categorias_estudio.js.
-// `campoAdicional` (segundo elemento de cada tupla, opcional) espeja lo que
-// vive en catalogo_estudios.campo_adicional ('zona' | 'tipo_muestra' |
-// 'tejido_lateralidad' | 'componentes_liquido') — asignado con criterio
-// clínico razonable, no exhaustivo. `especie` (tercer elemento, opcional)
-// espeja catalogo_estudios.especie ('Perro' | 'Gato') — pedido explícito del
-// usuario para filtrar el picker de "Agregar estudios" según la especie del
-// paciente seleccionado; solo se marca cuando el nombre del estudio ya lo
-// dice ("canino"/"felino") o la categoría entera es de una sola especie
-// (Enfermedades infecciosas - Perro/Gato) — todo lo demás aplica a ambas
-// (NULL). Como es dato de captura (no lógica), el usuario puede pedir
-// ajustes puntuales después sin que sea un cambio de código. `codigo` NO
-// se escribe a mano (785 códigos únicos a mano es garantía de error) — se
-// genera programáticamente desde el nombre.
 function normalizar(texto) {
   return texto
     .normalize('NFD')
