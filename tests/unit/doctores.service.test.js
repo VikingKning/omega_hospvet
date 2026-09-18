@@ -206,6 +206,7 @@ describe('doctores.service.crear (US-607)', () => {
     expect(repository.crear).toHaveBeenCalledWith({
       nombre: 'Ana',
       apellidos: 'Gómez',
+      cedulaProfesional: null,
       activo: true,
       areaIds: [1, 2],
       usuarioId: 3,
@@ -232,6 +233,35 @@ describe('doctores.service.crear (US-607)', () => {
       usuarioId: 3,
     });
     expect(repository.crear).toHaveBeenCalledWith(expect.objectContaining({ activo: false }));
+  });
+
+  it('normaliza y conserva una cédula profesional válida, incluidos ceros iniciales', async () => {
+    await crear({
+      nombre: 'Ana',
+      apellidos: 'Gómez',
+      cedulaProfesional: ' 0012345 ',
+      activo: 'true',
+      areaIds: [],
+      usuarioId: 3,
+    });
+
+    expect(repository.crear).toHaveBeenCalledWith(
+      expect.objectContaining({ cedulaProfesional: '0012345' }),
+    );
+  });
+
+  it.each(['123456', '12345678901', '12345A7'])('rechaza la cédula inválida %s', async (cedula) => {
+    await expect(
+      crear({
+        nombre: 'Ana',
+        apellidos: 'Gómez',
+        cedulaProfesional: cedula,
+        activo: 'true',
+        areaIds: [],
+        usuarioId: 3,
+      }),
+    ).rejects.toThrow('La cédula profesional debe contener únicamente entre 7 y 10 números.');
+    expect(repository.crear).not.toHaveBeenCalled();
   });
 
   it('rechaza un nombre vacío sin llegar al repository', async () => {
@@ -281,6 +311,7 @@ describe('doctores.service.editar (US-607)', () => {
       id: '5',
       nombre: 'Ana',
       apellidos: 'Gómez',
+      cedulaProfesional: null,
       activo: true,
       areaIds: [1],
       usuarioId: 2,

@@ -6,17 +6,37 @@ const SORT_COLUMNS = {
   estado: 'r.estado',
 };
 
-async function findCatalogo() {
-  const [categorias, estudios] = await Promise.all([
+async function findCatalogo(estudiosHistoricosIds = []) {
+  const idsHistoricos = estudiosHistoricosIds.filter(Number.isInteger);
+  const [categorias, estudios, zonasPorEstudio] = await Promise.all([
     db('catalogo_categorias_estudio')
       .where('activo', true)
       .orderBy('nombre')
       .select('id', 'nombre'),
     db('catalogo_estudios')
-      .where('activo', true)
+      .where((builder) => {
+        builder.where('activo', true);
+        if (idsHistoricos.length) builder.orWhereIn('id', idsHistoricos);
+      })
       .orderBy('nombre')
-      .select('id', 'categoria_id', 'codigo', 'nombre', 'campo_adicional', 'especie'),
+      .select(
+        'id',
+        'categoria_id',
+        'codigo',
+        'nombre',
+        'campo_adicional',
+        'especie',
+        'permite_antibiograma',
+        'activo',
+      ),
+    db('catalogo_estudio_zonas').select('estudio_id', 'zona_anatomica_id'),
   ]);
+  const zonasIdsPorEstudio = new Map();
+  for (const relacion of zonasPorEstudio) {
+    const ids = zonasIdsPorEstudio.get(relacion.estudio_id) ?? [];
+    ids.push(relacion.zona_anatomica_id);
+    zonasIdsPorEstudio.set(relacion.estudio_id, ids);
+  }
   return categorias.map((categoria) => ({
     id: categoria.id,
     nombre: categoria.nombre,
@@ -28,6 +48,14 @@ async function findCatalogo() {
         nombre: estudio.nombre,
         campoAdicional: estudio.campo_adicional,
         especie: estudio.especie,
+        permiteAntibiograma: Boolean(
+          estudio.permite_antibiograma ||
+          (!estudio.activo &&
+            /^(cultivo|urocultivo|hemocultivo)/i.test(estudio.nombre) &&
+            !/(micológico|hongos)/i.test(estudio.nombre)),
+        ),
+        zonasPermitidasIds: zonasIdsPorEstudio.get(estudio.id) ?? [],
+        activo: estudio.activo,
       })),
   }));
 }
@@ -45,9 +73,24 @@ async function findCategorias() {
 
 async function findEstudiosByIds(ids) {
   if (!ids.length) return [];
-  return db('catalogo_estudios')
-    .whereIn('id', ids)
-    .select('id', 'nombre', 'campo_adicional', 'activo');
+  return db('catalogo_estudios as e')
+    .leftJoin('catalogo_estudio_zonas as ez', 'ez.estudio_id', 'e.id')
+    .whereIn('e.id', ids)
+    .groupBy('e.id')
+    .select(
+      'e.id',
+      'e.nombre',
+      'e.campo_adicional',
+      'e.especie',
+      'e.permite_antibiograma',
+      'e.activo',
+      db.raw(
+        `coalesce(
+          array_agg(ez.zona_anatomica_id) filter (where ez.zona_anatomica_id is not null),
+          '{}'
+        ) as zonas_permitidas_ids`,
+      ),
+    );
 }
 
 const PG_INTEGER_MAX = 2147483647;

@@ -79,8 +79,8 @@ async function formularioDeRegistro(req, res, next, { forzarSoloLectura, modoCar
       );
     }
     const [catalogo, doctores] = await Promise.all([
-      service.catalogoParaFormulario(),
-      service.listarDoctoresActivos(),
+      service.catalogoParaFormulario(registro.estudios.map((estudio) => estudio.estudio_id)),
+      service.listarDoctoresActivos(registro.doctor_id),
     ]);
     const permissions = req.session.user.permissions ?? [];
     const csrfToken = generateCsrfToken(req, res);

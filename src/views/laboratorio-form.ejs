@@ -140,7 +140,7 @@
           </div>
 
           <h4 class="lab-form-subtitle">Doctor y fecha</h4>
-          <div class="modal-form lab-form-grid lab-form-grid-2">
+          <div class="modal-form lab-form-grid lab-form-grid-3">
             <label>
               Dr. solicitante *
               <div class="combobox" id="labDoctorCombobox">
@@ -148,6 +148,10 @@
                 <ul class="combobox-list" id="labDoctorList" hidden></ul>
               </div>
               <input type="hidden" id="labDoctorId">
+            </label>
+            <label>
+              Cédula profesional
+              <input type="text" id="labDoctorCedula" readonly disabled placeholder="—">
             </label>
             <label>
               Fecha de solicitud *
@@ -192,17 +196,18 @@
 
                   <div id="labTipoMuestraWrap" hidden>
                     <label>Tipo de muestra
-                      <input type="text" id="labTipoMuestra" placeholder="Ej. Hisopo de piel, orina por cistocentesis...">
-                    </label>
-                    <label class="switch-field">
-                      <span class="switch">
-                        <input type="checkbox" id="labAntibiograma">
-                        <span class="switch-track"></span>
-                      </span>
-                      <span class="switch-state-on">Con antibiograma</span>
-                      <span class="switch-state-off">Sin antibiograma</span>
+                      <input type="text" id="labTipoMuestra" placeholder="Ej. Orina, sangre, tejido hepático, hisopo de piel...">
                     </label>
                   </div>
+
+                  <label class="switch-field" id="labAntibiogramaWrap" hidden>
+                    <span class="switch">
+                      <input type="checkbox" id="labAntibiograma">
+                      <span class="switch-track"></span>
+                    </span>
+                    <span class="switch-state-on">Con antibiograma</span>
+                    <span class="switch-state-off">Sin antibiograma</span>
+                  </label>
 
                   <div id="labTejidoWrap" hidden>
                     <label>Tejido de origen
@@ -340,8 +345,9 @@
 
           <section class="lab-print-section">
             <h3>Doctor y fecha</h3>
-            <div class="lab-print-grid">
+            <div class="lab-print-grid lab-print-grid-3">
               <div><span>Dr. solicitante</span><strong id="labPrintDoctor">—</strong></div>
+              <div><span>Cédula profesional</span><strong id="labPrintDoctorCedula">—</strong></div>
               <div><span>Fecha de solicitud</span><strong id="labPrintFecha">—</strong></div>
             </div>
           </section>
@@ -514,16 +520,22 @@
     }
 
     function limpiarPaciente() {
+      const teniaPaciente = Boolean(document.getElementById('labPacienteId').value);
       document.getElementById('labPacienteId').value = '';
       document.getElementById('labPacienteTrigger').value = '';
       document.getElementById('labPacienteFicha').hidden = true;
       pacienteEspecieActual = null;
+      if (teniaPaciente) limpiarEstudiosPorCambioPaciente();
       refrescarPacienteClear();
     }
 
     function seleccionarPaciente(id) {
       const paciente = (tutorActual?.pacientes ?? []).find((p) => String(p.id) === String(id));
       if (!paciente) return;
+      const pacienteAnteriorId = document.getElementById('labPacienteId').value;
+      if (pacienteAnteriorId && String(pacienteAnteriorId) !== String(paciente.id)) {
+        limpiarEstudiosPorCambioPaciente();
+      }
       document.getElementById('labPacienteId').value = paciente.id;
       document.getElementById('labPacienteTrigger').value = paciente.nombre;
       if (paciente.tipo !== pacienteEspecieActual) {
@@ -700,7 +712,9 @@
     function renderDoctorList(term) {
       const list = document.getElementById('labDoctorList');
       const t = term.trim().toLowerCase();
-      const filtrados = DOCTORES.filter((d) => `${d.nombre} ${d.apellidos}`.toLowerCase().includes(t));
+      const filtrados = DOCTORES.filter(
+        (d) => d.activo !== false && `${d.nombre} ${d.apellidos}`.toLowerCase().includes(t),
+      );
       list.innerHTML = filtrados.length
         ? filtrados
             .map((d) => `<li class="combobox-item" data-id="${d.id}" data-label="${escapeHtml(`${d.nombre} ${d.apellidos}`)}">${escapeHtml(`${d.nombre} ${d.apellidos}`)}</li>`)
@@ -710,9 +724,14 @@
     }
 
     const labDoctorInput = document.getElementById('labDoctorInput');
+    function actualizarCedulaDoctor(doctor) {
+      document.getElementById('labDoctorCedula').value = doctor?.cedula_profesional ?? '';
+    }
+
     if (!SOLO_LECTURA) {
       labDoctorInput.addEventListener('input', () => {
         document.getElementById('labDoctorId').value = '';
+        actualizarCedulaDoctor(null);
         renderDoctorList(labDoctorInput.value);
       });
       labDoctorInput.addEventListener('focus', () => renderDoctorList(labDoctorInput.value));
@@ -722,6 +741,9 @@
         event.preventDefault(); // Evita que el label reenvíe el clic al input.
         document.getElementById('labDoctorId').value = item.dataset.id;
         labDoctorInput.value = item.dataset.label;
+        actualizarCedulaDoctor(
+          DOCTORES.find((doctor) => String(doctor.id) === String(item.dataset.id)),
+        );
         document.getElementById('labDoctorList').hidden = true;
         refrescarDoctorClear();
       });
@@ -733,6 +755,7 @@
         () => {
           document.getElementById('labDoctorId').value = '';
           labDoctorInput.value = '';
+          actualizarCedulaDoctor(null);
           document.getElementById('labDoctorList').hidden = true;
         },
       );
@@ -743,13 +766,14 @@
       if (!doctor) return;
       document.getElementById('labDoctorId').value = doctor.id;
       labDoctorInput.value = `${doctor.nombre} ${doctor.apellidos}`;
+      actualizarCedulaDoctor(doctor);
       refrescarDoctorClear();
     }
 
     let categoriaFiltro = '';
 
     function categoriasDisponibles() {
-      if (!pacienteEspecieActual) return CATALOGO.categorias;
+      if (!pacienteEspecieActual) return [];
       return CATALOGO.categorias.filter((c) =>
         c.estudios.some((e) => !e.especie || e.especie === pacienteEspecieActual),
       );
@@ -773,7 +797,12 @@
     if (!SOLO_LECTURA) {
       const labCategoriaTrigger = document.getElementById('labCategoriaTrigger');
       labCategoriaTrigger.addEventListener('focus', () => renderCategoriaList(''));
-      labCategoriaTrigger.addEventListener('input', () => renderCategoriaList(labCategoriaTrigger.value));
+      labCategoriaTrigger.addEventListener('input', () => {
+        categoriaFiltro = '';
+        document.getElementById('labCategoriaId').value = '';
+        clearEstudioSelection();
+        renderCategoriaList(labCategoriaTrigger.value);
+      });
       document.getElementById('labCategoriaList').addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item');
         if (!item) return;
@@ -803,9 +832,11 @@
     let pacienteEspecieActual = null;
 
     function findEstudiosFiltrados() {
+      if (!pacienteEspecieActual) return [];
       return CATALOGO.categorias
         .filter((c) => !categoriaFiltro || String(c.id) === String(categoriaFiltro))
         .flatMap((c) => c.estudios.map((e) => ({ ...e, categoriaId: c.id, categoriaNombre: c.nombre })))
+        .filter((e) => e.activo !== false)
         .filter((e) => !pacienteEspecieActual || !e.especie || e.especie === pacienteEspecieActual);
     }
 
@@ -828,7 +859,9 @@
       positionComboboxList(search, list);
 
       if (filtered.length === 0) {
-        list.innerHTML = '<li class="combobox-empty">Sin resultados</li>';
+        list.innerHTML = pacienteEspecieActual
+          ? '<li class="combobox-empty">Sin resultados</li>'
+          : '<li class="combobox-empty">Selecciona primero un paciente</li>';
         list.hidden = false;
         return;
       }
@@ -859,6 +892,7 @@
 
       document.getElementById('labZonaWrap').hidden = campo !== 'zona';
       document.getElementById('labTipoMuestraWrap').hidden = campo !== 'tipo_muestra';
+      document.getElementById('labAntibiogramaWrap').hidden = !estudio?.permiteAntibiograma;
       document.getElementById('labTejidoWrap').hidden = campo !== 'tejido_lateralidad';
       document.getElementById('labComponentesWrap').hidden = campo !== 'componentes_liquido';
 
@@ -867,8 +901,8 @@
         document.getElementById('labZonaTrigger').value = '';
         refrescarZonaClear();
       }
-      if (campo !== 'tipo_muestra') {
-        document.getElementById('labTipoMuestra').value = '';
+      if (campo !== 'tipo_muestra') document.getElementById('labTipoMuestra').value = '';
+      if (!estudio?.permiteAntibiograma) {
         document.getElementById('labAntibiograma').checked = false;
       }
       if (campo !== 'tejido_lateralidad') {
@@ -901,7 +935,11 @@
 
     if (!SOLO_LECTURA) {
       const labEstudioSearch = document.getElementById('labEstudioSearch');
-      labEstudioSearch.addEventListener('input', () => renderEstudioList(labEstudioSearch.value));
+      labEstudioSearch.addEventListener('input', () => {
+        document.getElementById('labEstudioId').value = '';
+        updateCamposAdicionales();
+        renderEstudioList(labEstudioSearch.value);
+      });
       labEstudioSearch.addEventListener('focus', () => renderEstudioList(labEstudioSearch.value));
 
       attachComboboxKeyboardNav(labEstudioSearch, document.getElementById('labEstudioList'));
@@ -923,7 +961,9 @@
       const labZonaTrigger = document.getElementById('labZonaTrigger');
       function renderZonaList(filterText) {
         const list = document.getElementById('labZonaList');
-        const entries = CATALOGO.zonasAnatomicas;
+        const estudio = findEstudioPorId(document.getElementById('labEstudioId').value);
+        const zonasPermitidas = new Set((estudio?.zonasPermitidasIds ?? []).map(String));
+        const entries = CATALOGO.zonasAnatomicas.filter((zona) => zonasPermitidas.has(String(zona.id)));
         const filtered = filterText
           ? entries.filter((z) => normalizeText(z.nombre).includes(normalizeText(filterText)))
           : entries;
@@ -935,7 +975,11 @@
         list.hidden = false;
       }
       labZonaTrigger.addEventListener('focus', () => renderZonaList(''));
-      labZonaTrigger.addEventListener('input', () => renderZonaList(labZonaTrigger.value));
+      labZonaTrigger.addEventListener('input', () => {
+        document.getElementById('labZonaId').value = '';
+        refrescarZonaClear();
+        renderZonaList(labZonaTrigger.value);
+      });
       document.getElementById('labZonaList').addEventListener('click', (event) => {
         const item = event.target.closest('.combobox-item');
         if (!item) return;
@@ -980,6 +1024,15 @@
     let selectedStudies = [];
     let editIndex = null;
 
+    function limpiarEstudiosPorCambioPaciente() {
+      if (SOLO_LECTURA || selectedStudies.length === 0) return;
+      selectedStudies = [];
+      editIndex = null;
+      renderCart();
+      clearEstudioSelection();
+      actualizarModoBotonAgregar();
+    }
+
     function etiquetaLateralidad(valor) {
       return { izquierdo: 'Izquierdo', derecho: 'Derecho', bilateral: 'Bilateral' }[valor] || '';
     }
@@ -992,6 +1045,7 @@
       if (fila.tipoMuestra) {
         return `Muestra: ${fila.tipoMuestra}${fila.antibiograma ? ' · Con antibiograma' : ''}`;
       }
+      if (fila.antibiograma) return 'Con antibiograma';
       if (fila.tejidoOrigen) {
         const lateralidad = etiquetaLateralidad(fila.lateralidad);
         return `Origen: ${fila.tejidoOrigen}${lateralidad ? ` · ${lateralidad}` : ''}`;
@@ -1442,10 +1496,8 @@
         document.getElementById('labZonaTrigger').value = zona ? zona.nombre : '';
         refrescarZonaClear();
       }
-      if (fila.tipoMuestra) {
-        document.getElementById('labTipoMuestra').value = fila.tipoMuestra;
-        document.getElementById('labAntibiograma').checked = Boolean(fila.antibiograma);
-      }
+      if (fila.tipoMuestra) document.getElementById('labTipoMuestra').value = fila.tipoMuestra;
+      document.getElementById('labAntibiograma').checked = Boolean(fila.antibiograma);
       if (fila.tejidoOrigen) {
         document.getElementById('labTejidoOrigen').value = fila.tejidoOrigen;
         if (fila.lateralidad) {
@@ -1490,7 +1542,6 @@
             return;
           }
           fila.tipoMuestra = tipoMuestra;
-          fila.antibiograma = document.getElementById('labAntibiograma').checked;
         } else if (estudio.campoAdicional === 'tejido_lateralidad') {
           const tejidoOrigen = document.getElementById('labTejidoOrigen').value.trim();
           if (!tejidoOrigen) {
@@ -1507,6 +1558,10 @@
             return;
           }
           fila.componentesLiquido = componentesLiquido;
+        }
+
+        if (estudio.permiteAntibiograma) {
+          fila.antibiograma = document.getElementById('labAntibiograma').checked;
         }
 
         const observaciones = document.getElementById('labEstudioObservaciones').value.trim();
@@ -1587,13 +1642,13 @@
           fila.zonaAnatomicaId = e.zona_anatomica_id;
         } else if (e.tipo_muestra) {
           fila.tipoMuestra = e.tipo_muestra;
-          fila.antibiograma = Boolean(e.antibiograma);
         } else if (e.tejido_origen) {
           fila.tejidoOrigen = e.tejido_origen;
           if (e.lateralidad) fila.lateralidad = e.lateralidad;
         } else if (e.componentes_liquido) {
           fila.componentesLiquido = e.componentes_liquido;
         }
+        if (e.antibiograma != null) fila.antibiograma = Boolean(e.antibiograma);
         if (e.observaciones) fila.observaciones = e.observaciones;
 
         return fila;
@@ -1668,6 +1723,8 @@
       document.getElementById('labPrintRaza').textContent = document.getElementById('labPacienteRaza').textContent || '—';
 
       document.getElementById('labPrintDoctor').textContent = document.getElementById('labDoctorInput').value || '—';
+      document.getElementById('labPrintDoctorCedula').textContent =
+        document.getElementById('labDoctorCedula').value || '—';
       const fechaRaw = document.getElementById('labFecha').value;
       document.getElementById('labPrintFecha').textContent = fechaRaw
         ? new Date(`${fechaRaw}T00:00:00`).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })

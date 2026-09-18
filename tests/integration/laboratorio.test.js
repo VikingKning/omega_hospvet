@@ -152,6 +152,8 @@ describe('GET /laboratorio/nuevo', () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('labFormData');
+    expect(res.text).toContain('id="labDoctorCedula"');
+    expect(res.text).toContain('id="labPrintDoctorCedula"');
     const match = res.text.match(/<div id="labFormData" hidden>(.*?)<\/div>/s);
     const datos = JSON.parse(match[1].replace(/\\u003c/g, '<'));
     expect(datos.catalogo.categorias).toHaveLength(33);
@@ -166,6 +168,128 @@ describe('GET /laboratorio/nuevo', () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('organiza Imagenología por modalidad y solicita zona solo cuando aporta información', async () => {
+    const agent = await loginAs(SOLO_CREAR);
+    const res = await agent.get('/laboratorio/nuevo');
+    const match = res.text.match(/<div id="labFormData" hidden>(.*?)<\/div>/s);
+    const datos = JSON.parse(match[1].replace(/\\u003c/g, '<'));
+    const imagenologia = datos.catalogo.categorias.find(
+      (categoria) => categoria.nombre === 'Imagenología',
+    );
+    const porNombre = new Map(imagenologia.estudios.map((estudio) => [estudio.nombre, estudio]));
+
+    expect(porNombre.get('Radiografía simple').campoAdicional).toBe('zona');
+    expect(porNombre.get('Radiografía de contraste').campoAdicional).toBe('zona');
+    expect(porNombre.get('Ultrasonido').campoAdicional).toBe('zona');
+    expect(porNombre.get('Ultrasonido gestacional').campoAdicional).toBeNull();
+    expect(porNombre.has('Radiografía de cráneo')).toBe(false);
+    expect(porNombre.has('Radiografía abdominal')).toBe(false);
+    expect(porNombre.has('Serie radiográfica')).toBe(false);
+    expect(porNombre.has('Ultrasonido abdominal')).toBe(false);
+    expect(datos.catalogo.zonasAnatomicas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ codigo: 'dental', nombre: 'Dental' }),
+        expect.objectContaining({ codigo: 'cuello', nombre: 'Cuello' }),
+      ]),
+    );
+
+    const zonaIdPorCodigo = new Map(
+      datos.catalogo.zonasAnatomicas.map((zona) => [zona.codigo, zona.id]),
+    );
+    expect(porNombre.get('Radiografía simple').zonasPermitidasIds).toContain(
+      zonaIdPorCodigo.get('dental'),
+    );
+    expect(porNombre.get('Ultrasonido').zonasPermitidasIds).not.toContain(
+      zonaIdPorCodigo.get('dental'),
+    );
+  });
+
+  it('incluye los nuevos estudios diferenciados para Perro y Gato', async () => {
+    const agent = await loginAs(SOLO_CREAR);
+    const res = await agent.get('/laboratorio/nuevo');
+    const match = res.text.match(/<div id="labFormData" hidden>(.*?)<\/div>/s);
+    const datos = JSON.parse(match[1].replace(/\\u003c/g, '<'));
+    const estudios = datos.catalogo.categorias.flatMap((categoria) => categoria.estudios);
+    const nombresPorEspecie = (especie) =>
+      estudios.filter((estudio) => estudio.especie === especie).map((estudio) => estudio.nombre);
+
+    expect(nombresPorEspecie('Perro')).toEqual(
+      expect.arrayContaining([
+        'Función renal',
+        'Perfil metabólico',
+        'ALKP / Fosfatasa alcalina',
+        'Uroanálisis completo',
+        'Coprológico por flotación',
+        'Coprológico funcional / digestivo',
+        'Citología de piel',
+        'Punción con aguja fina (PAF)',
+      ]),
+    );
+    expect(nombresPorEspecie('Gato')).toEqual(
+      expect.arrayContaining([
+        'Prueba rápida ViLeF/VIF (FeLV/FIV)',
+        'PCR para ViLeF/VIF (FeLV/FIV)',
+        'Frotis sanguíneo felino',
+        'ALKP / Fosfatasa alcalina',
+        'Cardiopet proBNP felino',
+        'Uroanálisis completo',
+        'Coprológico por flotación',
+        'Coprológico por extensión directa',
+        'Perfil respiratorio felino',
+        'Citología de raspado de oreja',
+        'Punción con aguja fina (PAF) de masas hepáticas',
+        'Punción con aguja fina (PAF) de nódulos tiroideos',
+        'PCR para hemoplasmas',
+      ]),
+    );
+  });
+
+  it('ofrece antibiograma solo para cultivos bacterianos y elimina duplicados funcionales', async () => {
+    const agent = await loginAs(SOLO_CREAR);
+    const res = await agent.get('/laboratorio/nuevo');
+    const match = res.text.match(/<div id="labFormData" hidden>(.*?)<\/div>/s);
+    const datos = JSON.parse(match[1].replace(/\\u003c/g, '<'));
+    const estudios = datos.catalogo.categorias.flatMap((categoria) =>
+      categoria.estudios.map((estudio) => ({ ...estudio, categoria: categoria.nombre })),
+    );
+
+    const cultivosBacterianos = estudios.filter((estudio) =>
+      /^(cultivo|urocultivo|hemocultivo)/i.test(estudio.nombre),
+    );
+    expect(cultivosBacterianos.some((estudio) => estudio.permiteAntibiograma)).toBe(true);
+    expect(estudios.some((estudio) => estudio.nombre === 'Antibiograma')).toBe(false);
+    expect(estudios.find((estudio) => estudio.nombre === 'Cultivo bacteriano aerobio')).toEqual(
+      expect.objectContaining({ campoAdicional: 'tipo_muestra', permiteAntibiograma: true }),
+    );
+    expect(estudios.find((estudio) => estudio.nombre === 'Urocultivo')).toEqual(
+      expect.objectContaining({ campoAdicional: null, permiteAntibiograma: true }),
+    );
+    expect(estudios.some((estudio) => estudio.nombre === 'Cultivo de orina / urocultivo')).toBe(
+      false,
+    );
+    expect(
+      estudios.find(
+        (estudio) =>
+          estudio.categoria === 'Dermatología' && estudio.nombre === 'Cultivo micológico',
+      ),
+    ).toBeUndefined();
+    expect(
+      estudios.find(
+        (estudio) =>
+          estudio.categoria === 'Toxicología' &&
+          estudio.nombre === 'Análisis toxicológico de orina',
+      ).campoAdicional,
+    ).toBeNull();
+
+    const duplicadosUniversales = estudios
+      .filter((estudio) => !estudio.especie)
+      .reduce(
+        (conteo, estudio) => conteo.set(estudio.nombre, (conteo.get(estudio.nombre) ?? 0) + 1),
+        new Map(),
+      );
+    expect([...duplicadosUniversales.entries()].filter(([, total]) => total > 1)).toEqual([]);
   });
 });
 

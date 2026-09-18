@@ -79,9 +79,9 @@ function validateObservaciones(rawValor, etiqueta) {
   return valor;
 }
 
-async function catalogoParaFormulario() {
+async function catalogoParaFormulario(estudiosHistoricosIds = []) {
   const [categorias, zonasAnatomicas] = await Promise.all([
-    repository.findCatalogo(),
+    repository.findCatalogo(estudiosHistoricosIds),
     repository.findZonasAnatomicas(),
   ]);
   return { categorias, zonasAnatomicas, componentesLiquido: COMPONENTES_LIQUIDO };
@@ -146,8 +146,8 @@ async function list({
   };
 }
 
-async function listarDoctoresActivos() {
-  return doctoresRepository.findActivos();
+async function listarDoctoresActivos(incluirDoctorId = null) {
+  return doctoresRepository.findActivos(incluirDoctorId);
 }
 
 function parseComponentesLiquido(raw) {
@@ -155,7 +155,16 @@ function parseComponentesLiquido(raw) {
   return [...new Set(valores.filter((v) => COMPONENTES_LIQUIDO_VALIDOS.includes(v)))];
 }
 
-async function validarEstudios(rawEstudios, zonasValidasIds) {
+function normalizarEspecie(especie) {
+  return (especie ?? '').trim().toLowerCase();
+}
+
+async function validarEstudios(
+  rawEstudios,
+  zonasValidasIds,
+  especieMascota,
+  estudiosInactivosPermitidosIds = new Set(),
+) {
   const lista = Array.isArray(rawEstudios) ? rawEstudios : [];
   if (lista.length === 0) {
     throw new LaboratorioValidationError('Agrega al menos un estudio antes de guardar.');
@@ -168,9 +177,20 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
   return lista.map((entrada) => {
     const estudioId = parseId(entrada.estudioId);
     const estudio = estudioId !== null ? catalogoPorId.get(estudioId) : undefined;
-    if (!estudio || !estudio.activo) {
+    const esEstudioHistorico = Boolean(
+      estudio && !estudio.activo && estudiosInactivosPermitidosIds.has(estudio.id),
+    );
+    if (!estudio || (!estudio.activo && !esEstudioHistorico)) {
       throw new LaboratorioValidationError(
         'Uno de los estudios seleccionados ya no está disponible en el catálogo.',
+      );
+    }
+    if (
+      estudio.especie &&
+      normalizarEspecie(estudio.especie) !== normalizarEspecie(especieMascota)
+    ) {
+      throw new LaboratorioValidationError(
+        `"${estudio.nombre}" no está disponible para la especie del paciente.`,
       );
     }
 
@@ -178,9 +198,16 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
 
     if (estudio.campo_adicional === 'zona') {
       const zonaAnatomicaId = parseId(entrada.zonaAnatomicaId);
-      if (zonaAnatomicaId === null || !zonasValidasIds.has(zonaAnatomicaId)) {
+      const zonasPermitidasIds = new Set(
+        (estudio.zonas_permitidas_ids ?? []).map((id) => Number(id)),
+      );
+      if (
+        zonaAnatomicaId === null ||
+        !zonasValidasIds.has(zonaAnatomicaId) ||
+        (!esEstudioHistorico && !zonasPermitidasIds.has(zonaAnatomicaId))
+      ) {
         throw new LaboratorioValidationError(
-          `"${estudio.nombre}" requiere seleccionar una zona anatómica.`,
+          `"${estudio.nombre}" requiere seleccionar una zona anatómica válida.`,
         );
       }
       fila.zonaAnatomicaId = zonaAnatomicaId;
@@ -192,7 +219,6 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
         );
       }
       fila.tipoMuestra = tipoMuestra;
-      fila.antibiograma = Boolean(entrada.antibiograma);
     } else if (estudio.campo_adicional === 'tejido_lateralidad') {
       const tejidoOrigen = (entrada.tejidoOrigen ?? '').trim();
       if (!tejidoOrigen) {
@@ -214,6 +240,18 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
       fila.componentesLiquido = componentesLiquido;
     }
 
+    if (entrada.antibiograma && !estudio.permite_antibiograma && !esEstudioHistorico) {
+      throw new LaboratorioValidationError(
+        `"${estudio.nombre}" no permite solicitar antibiograma.`,
+      );
+    }
+    if (
+      estudio.permite_antibiograma ||
+      (esEstudioHistorico && entrada.antibiograma !== undefined && entrada.antibiograma !== null)
+    ) {
+      fila.antibiograma = Boolean(entrada.antibiograma);
+    }
+
     const observaciones = validateObservaciones(
       entrada.observaciones,
       `Observaciones de "${estudio.nombre}"`,
@@ -224,13 +262,16 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
   });
 }
 
-async function validarDatosRegistro({
-  mascotaId: rawMascotaId,
-  doctorId: rawDoctorId,
-  fechaSolicitud: rawFechaSolicitud,
-  observaciones: rawObservaciones,
-  estudios: rawEstudios,
-}) {
+async function validarDatosRegistro(
+  {
+    mascotaId: rawMascotaId,
+    doctorId: rawDoctorId,
+    fechaSolicitud: rawFechaSolicitud,
+    observaciones: rawObservaciones,
+    estudios: rawEstudios,
+  },
+  estudiosInactivosPermitidosIds = new Set(),
+) {
   const mascotaId = parseId(rawMascotaId);
   if (mascotaId === null) {
     throw new LaboratorioValidationError('Selecciona un paciente.');
@@ -250,7 +291,12 @@ async function validarDatosRegistro({
 
   const zonas = await repository.findZonasAnatomicas();
   const zonasValidasIds = new Set(zonas.map((z) => z.id));
-  const estudios = await validarEstudios(rawEstudios, zonasValidasIds);
+  const estudios = await validarEstudios(
+    rawEstudios,
+    zonasValidasIds,
+    mascota.tipo,
+    estudiosInactivosPermitidosIds,
+  );
 
   return { mascotaId, doctorId, fechaSolicitud, observaciones, estudios };
 }
@@ -265,7 +311,14 @@ async function editar(rawId, { usuarioId, ...datos }) {
   if (id === null) {
     throw new LaboratorioValidationError('Registro no encontrado.');
   }
-  const validados = await validarDatosRegistro(datos);
+  const registroActual = await repository.findById(id);
+  if (!registroActual) {
+    throw new LaboratorioValidationError('Registro no encontrado.');
+  }
+  const estudiosInactivosPermitidosIds = new Set(
+    registroActual.estudios.map((estudioActual) => estudioActual.estudio_id),
+  );
+  const validados = await validarDatosRegistro(datos, estudiosInactivosPermitidosIds);
   await repository.actualizarRegistro(id, { ...validados, usuarioId });
 }
 

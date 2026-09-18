@@ -14,52 +14,68 @@ const esSoloLectura = Boolean(soloLectura);
   </div>
 <% } %>
 
-<form class="modal-form"
+<form class="modal-form modal-form-columns doctor-form"
       <% if (!esSoloLectura) { %>
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `doctores/${doctor.id}` : 'doctores' %>"
       hx-target="#doctorFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
       <% } %>>
-  <label>
-    Nombre(s)
-    <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100"
-           <%= esSoloLectura ? 'readonly disabled' : 'autofocus' %>>
-  </label>
-  <label>
-    Apellidos
-    <input type="text" name="apellidos" value="<%= apellidos %>" required maxlength="100" <%= esSoloLectura ? 'readonly disabled' : '' %>>
-  </label>
+  <div class="modal-col doctor-form-data">
+    <h3 class="modal-col-title">Datos generales</h3>
 
-  <label class="switch-field">
-    <span class="switch">
-      <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
-      <span class="switch-track"></span>
-    </span>
-    <span class="switch-state-on">Activo</span>
-    <span class="switch-state-off">Inactivo</span>
-  </label>
+    <label>
+      Nombre(s)
+      <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100"
+             <%= esSoloLectura ? 'readonly disabled' : 'autofocus' %>>
+    </label>
+    <label>
+      Apellidos
+      <input type="text" name="apellidos" value="<%= apellidos %>" required maxlength="100" <%= esSoloLectura ? 'readonly disabled' : '' %>>
+    </label>
+    <label>
+      Cédula profesional <span class="lab-opcional">(opcional)</span>
+      <input type="text" name="cedulaProfesional" id="doctorCedulaProfesional"
+             value="<%= cedulaProfesional %>" inputmode="numeric" pattern="[0-9]{7,10}"
+             minlength="7" maxlength="10" autocomplete="off"
+             title="Ingresa entre 7 y 10 números"
+             <%= esSoloLectura ? 'readonly disabled' : '' %>>
+    </label>
 
-  <label>
-    Especialidades
-
-    <div class="area-picker-row">
-      <div class="combobox" id="areaPickerCombobox">
-        <input type="text" id="areaPickerTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Selecciona un área..." <%= esSoloLectura ? 'disabled' : '' %>>
-        <input type="hidden" id="areaPickerValue">
-        <ul class="combobox-list" id="areaPickerList" hidden></ul>
-      </div>
-      <button type="button" class="btn-secondary" id="areaPickerAdd" <%= esSoloLectura ? 'disabled' : '' %>>Agregar</button>
+    <div class="doctor-status-field">
+      <span class="doctor-field-title">Estatus</span>
+      <label class="switch-field">
+        <span class="switch">
+          <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
+          <span class="switch-track"></span>
+        </span>
+        <span class="switch-state-on">Activo</span>
+        <span class="switch-state-off">Inactivo</span>
+      </label>
     </div>
-  </label>
+  </div>
 
-  <div class="mini-table-wrap">
-    <table class="mini-table">
-      <thead>
-        <tr><th>Área</th><th><%= esSoloLectura ? '' : 'Quitar' %></th></tr>
-      </thead>
-      <tbody id="doctorAreasBody"></tbody>
-    </table>
-    <p class="mini-table-empty" id="doctorAreasEmpty">Sin especialidades asignadas.</p>
+  <div class="modal-col doctor-form-specialties">
+    <h3 class="modal-col-title">Especialidades</h3>
+
+    <label>
+      Agregar área
+      <div class="area-picker-row">
+        <div class="combobox" id="areaPickerCombobox">
+          <input type="text" id="areaPickerTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Selecciona un área..." <%= esSoloLectura ? 'disabled' : '' %>>
+          <ul class="combobox-list" id="areaPickerList" hidden></ul>
+        </div>
+      </div>
+    </label>
+
+    <div class="mini-table-wrap doctor-areas-table-wrap">
+      <table class="mini-table">
+        <thead>
+          <tr><th>Área</th><th><%= esSoloLectura ? '' : 'Quitar' %></th></tr>
+        </thead>
+        <tbody id="doctorAreasBody"></tbody>
+      </table>
+      <p class="mini-table-empty" id="doctorAreasEmpty">Sin especialidades asignadas.</p>
+    </div>
   </div>
 
   <div class="modal-actions">

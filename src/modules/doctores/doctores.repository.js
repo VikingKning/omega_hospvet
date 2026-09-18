@@ -96,17 +96,27 @@ async function findActivosByAreaId(areaId) {
     .select('d.id', 'd.nombre', 'd.apellidos');
 }
 
-async function findActivos() {
+async function findActivos(incluirDoctorId = null) {
   return db('doctores')
-    .where('activo', true)
+    .where((builder) => {
+      builder.where('activo', true);
+      if (incluirDoctorId) builder.orWhere('id', incluirDoctorId);
+    })
     .orderBy(['apellidos', 'nombre'])
-    .select('id', 'nombre', 'apellidos');
+    .select('id', 'nombre', 'apellidos', 'cedula_profesional', 'activo');
 }
 
-async function crear({ nombre, apellidos, activo, areaIds, usuarioId }) {
+async function crear({ nombre, apellidos, cedulaProfesional, activo, areaIds, usuarioId }) {
   return db.transaction(async (trx) => {
     const [row] = await trx('doctores')
-      .insert({ nombre, apellidos, activo, creado_por: usuarioId, creado_en: trx.fn.now() })
+      .insert({
+        nombre,
+        apellidos,
+        cedula_profesional: cedulaProfesional,
+        activo,
+        creado_por: usuarioId,
+        creado_en: trx.fn.now(),
+      })
       .returning('id');
 
     if (areaIds.length) {
@@ -119,13 +129,14 @@ async function crear({ nombre, apellidos, activo, areaIds, usuarioId }) {
   });
 }
 
-async function editar({ id, nombre, apellidos, activo, areaIds, usuarioId }) {
+async function editar({ id, nombre, apellidos, cedulaProfesional, activo, areaIds, usuarioId }) {
   await db.transaction(async (trx) => {
     const actual = await trx('doctores').where({ id }).first('activo');
 
     const update = {
       nombre,
       apellidos,
+      cedula_profesional: cedulaProfesional,
       activo,
       actualizado_por: usuarioId,
       actualizado_en: trx.fn.now(),

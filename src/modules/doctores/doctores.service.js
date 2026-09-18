@@ -17,6 +17,7 @@ class DoctorPredeterminadoError extends Error {
 const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['doctor', 'areas', 'estado'];
 const TEXTO_MAX_LENGTH = 100;
+const CEDULA_PROFESIONAL_REGEX = /^\d{7,10}$/;
 
 function parsePage(rawPage) {
   const page = Number.parseInt(rawPage, 10);
@@ -105,6 +106,17 @@ function validateTexto(rawValor, etiqueta) {
   return valor;
 }
 
+function validateCedulaProfesional(rawValor) {
+  const valor = (rawValor ?? '').toString().trim();
+  if (!valor) return null;
+  if (!CEDULA_PROFESIONAL_REGEX.test(valor)) {
+    throw new DoctorValidationError(
+      'La cédula profesional debe contener únicamente entre 7 y 10 números.',
+    );
+  }
+  return valor;
+}
+
 function parseActivo(rawActivo) {
   return rawActivo === 'true';
 }
@@ -126,21 +138,24 @@ async function resolverAreas(rawAreaIds) {
 async function crear({
   nombre: rawNombre,
   apellidos: rawApellidos,
+  cedulaProfesional: rawCedulaProfesional,
   activo: rawActivo,
   areaIds: rawAreaIds,
   usuarioId,
 }) {
   const nombre = validateTexto(rawNombre, 'Nombre(s)');
   const apellidos = validateTexto(rawApellidos, 'Apellidos');
+  const cedulaProfesional = validateCedulaProfesional(rawCedulaProfesional);
   const activo = parseActivo(rawActivo);
   const areaIds = parseAreaIds(rawAreaIds);
-  return repository.crear({ nombre, apellidos, activo, areaIds, usuarioId });
+  return repository.crear({ nombre, apellidos, cedulaProfesional, activo, areaIds, usuarioId });
 }
 
 async function editar({
   id,
   nombre: rawNombre,
   apellidos: rawApellidos,
+  cedulaProfesional: rawCedulaProfesional,
   activo: rawActivo,
   areaIds: rawAreaIds,
   usuarioId,
@@ -155,9 +170,18 @@ async function editar({
 
   const nombre = validateTexto(rawNombre, 'Nombre(s)');
   const apellidos = validateTexto(rawApellidos, 'Apellidos');
+  const cedulaProfesional = validateCedulaProfesional(rawCedulaProfesional);
   const activo = parseActivo(rawActivo);
   const areaIds = parseAreaIds(rawAreaIds);
-  await repository.editar({ id, nombre, apellidos, activo, areaIds, usuarioId });
+  await repository.editar({
+    id,
+    nombre,
+    apellidos,
+    cedulaProfesional,
+    activo,
+    areaIds,
+    usuarioId,
+  });
 }
 
 module.exports = {

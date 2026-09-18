@@ -61,7 +61,7 @@
   </div>
 
   <div class="modal-backdrop" id="doctorFormModalBackdrop">
-    <div class="modal-card" id="doctorFormModalBody"></div>
+    <div class="modal-card modal-card-wide doctor-form-modal" id="doctorFormModalBody"></div>
   </div>
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
@@ -100,9 +100,8 @@
 
   function renderAreaPicker() {
     const trigger = document.getElementById('areaPickerTrigger');
-    const valueInput = document.getElementById('areaPickerValue');
     const list = document.getElementById('areaPickerList');
-    if (!trigger || !valueInput || !list) return;
+    if (!trigger || !list) return 0;
     const yaAsignadas = new Set(doctorFormAreas.seleccionadas.map((area) => area.id));
     const opciones = doctorFormAreas.disponibles.filter((area) => !yaAsignadas.has(area.id));
     list.innerHTML = opciones.length
@@ -114,11 +113,11 @@
           .join('')
       : '<li class="combobox-empty">No hay más especialidades disponibles.</li>';
     trigger.value = '';
-    valueInput.value = '';
     refrescarAreaPickerClear();
+    return opciones.length;
   }
 
-  function renderDoctorAreas() {
+  function renderDoctorAreas({ scrollToEnd = false } = {}) {
     const body = document.getElementById('doctorAreasBody');
     const empty = document.getElementById('doctorAreasEmpty');
     if (!body || !empty) return;
@@ -137,6 +136,10 @@
         `,
       )
       .join('');
+    if (scrollToEnd) {
+      const wrap = doctorFormModalBody.querySelector('.doctor-areas-table-wrap');
+      if (wrap) wrap.scrollTop = wrap.scrollHeight;
+    }
   }
 
   document.body.addEventListener('htmx:afterSwap', (event) => {
@@ -147,6 +150,12 @@
     const datos = datosEl ? JSON.parse(datosEl.textContent) : { disponibles: [], seleccionadas: [] };
     doctorFormAreas = { disponibles: datos.disponibles, seleccionadas: datos.seleccionadas.slice() };
     doctorFormSoloLectura = Boolean(datos.soloLectura);
+    const cedulaInput = doctorFormModalBody.querySelector('#doctorCedulaProfesional');
+    if (cedulaInput && !doctorFormSoloLectura) {
+      cedulaInput.addEventListener('input', () => {
+        cedulaInput.value = cedulaInput.value.replace(/\D/g, '').slice(0, 10);
+      });
+    }
     attachComboboxKeyboardNav(
       doctorFormModalBody.querySelector('#areaPickerTrigger'),
       doctorFormModalBody.querySelector('#areaPickerList'),
@@ -179,20 +188,21 @@
     const areaItem = event.target.closest('#areaPickerList .combobox-item');
     if (areaItem) {
       event.preventDefault();
-      document.getElementById('areaPickerTrigger').value = areaItem.dataset.label;
-      document.getElementById('areaPickerValue').value = areaItem.dataset.id;
-      document.getElementById('areaPickerList').hidden = true;
-      refrescarAreaPickerClear();
-      return;
-    }
-    if (event.target.closest('#areaPickerAdd')) {
-      const id = Number(document.getElementById('areaPickerValue').value);
+      const id = Number(areaItem.dataset.id);
       if (!id) return;
       const area = doctorFormAreas.disponibles.find((a) => a.id === id);
       if (!area) return;
       doctorFormAreas.seleccionadas.push(area);
-      renderAreaPicker();
-      renderDoctorAreas();
+      const opcionesRestantes = renderAreaPicker();
+      renderDoctorAreas({ scrollToEnd: true });
+
+      const trigger = document.getElementById('areaPickerTrigger');
+      const list = document.getElementById('areaPickerList');
+      if (opcionesRestantes > 0 && trigger && list) {
+        positionComboboxList(trigger, list);
+        list.hidden = false;
+      }
+      return;
     }
     const removeBtn = event.target.closest('.mini-remove');
     if (removeBtn) {

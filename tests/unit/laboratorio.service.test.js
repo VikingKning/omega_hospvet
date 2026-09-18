@@ -28,7 +28,7 @@ const {
   reenviarResultadosPorWhatsapp,
 } = require('../../src/modules/laboratorio/laboratorio.service');
 
-const MASCOTA = { id: 11, nombre: 'Cachis', propietario_id: 6 };
+const MASCOTA = { id: 11, nombre: 'Cachis', propietario_id: 6, tipo: 'Perro' };
 const ZONAS = [
   { id: 127, codigo: 'abdomen', nombre: 'Abdomen' },
   { id: 128, codigo: 'torax', nombre: 'Tórax' },
@@ -40,6 +40,9 @@ function estudio(id, campoAdicional, overrides = {}) {
     id,
     nombre: `Estudio ${id}`,
     campo_adicional: campoAdicional,
+    especie: null,
+    permite_antibiograma: campoAdicional === 'tipo_muestra',
+    zonas_permitidas_ids: campoAdicional === 'zona' ? ZONAS.map((zona) => zona.id) : [],
     activo: true,
     ...overrides,
   };
@@ -152,7 +155,7 @@ describe('laboratorio.service.crear', () => {
         estudios: [{ estudioId: 1 }],
         usuarioId: 1,
       }),
-    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica.');
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
   });
 
   it('rechaza una zonaAnatomicaId que no pertenece al catálogo real', async () => {
@@ -165,7 +168,35 @@ describe('laboratorio.service.crear', () => {
         estudios: [{ estudioId: 1, zonaAnatomicaId: 9999 }],
         usuarioId: 1,
       }),
-    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica.');
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
+  });
+
+  it('rechaza una zona que existe pero no está permitida para ese estudio', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(1, 'zona', { zonas_permitidas_ids: [127] }),
+    ]);
+    await expect(
+      crear({
+        mascotaId: 11,
+        doctorId: 1,
+        fechaSolicitud: FECHA_VALIDA,
+        estudios: [{ estudioId: 1, zonaAnatomicaId: 128 }],
+        usuarioId: 1,
+      }),
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
+  });
+
+  it('rechaza estudios restringidos a otra especie aunque el cliente los envíe manualmente', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([estudio(6, null, { especie: 'Gato' })]);
+    await expect(
+      crear({
+        mascotaId: 11,
+        doctorId: 1,
+        fechaSolicitud: FECHA_VALIDA,
+        estudios: [{ estudioId: 6 }],
+        usuarioId: 1,
+      }),
+    ).rejects.toThrow('"Estudio 6" no está disponible para la especie del paciente.');
   });
 
   it('rechaza un estudio con campo_adicional=tipo_muestra sin tipoMuestra', async () => {
@@ -291,6 +322,39 @@ describe('laboratorio.service.crear', () => {
       }),
     );
   });
+
+  it('permite antibiograma sin pedir tipo de muestra cuando el cultivo ya identifica el origen', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(7, null, { nombre: 'Urocultivo', permite_antibiograma: true }),
+    ]);
+    await crear({
+      mascotaId: 11,
+      doctorId: 7,
+      fechaSolicitud: FECHA_VALIDA,
+      usuarioId: 1,
+      estudios: [{ estudioId: 7, antibiograma: true }],
+    });
+    expect(repository.crearRegistro).toHaveBeenCalledWith(
+      expect.objectContaining({
+        estudios: [{ estudioId: 7, antibiograma: true }],
+      }),
+    );
+  });
+
+  it('rechaza antibiograma cuando el estudio no es un cultivo bacteriano compatible', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(2, 'tipo_muestra', { permite_antibiograma: false }),
+    ]);
+    await expect(
+      crear({
+        mascotaId: 11,
+        doctorId: 7,
+        fechaSolicitud: FECHA_VALIDA,
+        usuarioId: 1,
+        estudios: [{ estudioId: 2, tipoMuestra: 'Pelo', antibiograma: true }],
+      }),
+    ).rejects.toThrow('"Estudio 2" no permite solicitar antibiograma.');
+  });
 });
 
 describe('laboratorio.service.editar', () => {
@@ -299,6 +363,10 @@ describe('laboratorio.service.editar', () => {
     tutoresRepository.findMascotaById.mockResolvedValue(MASCOTA);
     repository.findZonasAnatomicas.mockResolvedValue(ZONAS);
     repository.findEstudiosByIds.mockResolvedValue([estudio(5, null)]);
+    repository.findById.mockResolvedValue({
+      id: 42,
+      estudios: [{ estudio_id: 5 }],
+    });
   });
 
   it('rechaza un id inválido (a diferencia de eliminar, aquí SÍ es un error, no un no-op)', async () => {
@@ -344,8 +412,45 @@ describe('laboratorio.service.editar', () => {
         usuarioId: 3,
         estudios: [{ estudioId: 1 }],
       }),
-    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica.');
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
     expect(repository.actualizarRegistro).not.toHaveBeenCalled();
+  });
+
+  it('conserva un estudio histórico inactivo que ya pertenecía a la requisición', async () => {
+    repository.findById.mockResolvedValue({
+      id: 42,
+      estudios: [{ estudio_id: 8 }],
+    });
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(8, 'zona', { activo: false, zonas_permitidas_ids: [] }),
+    ]);
+
+    await editar('42', {
+      mascotaId: 11,
+      doctorId: 7,
+      fechaSolicitud: FECHA_VALIDA,
+      usuarioId: 3,
+      estudios: [{ estudioId: 8, zonaAnatomicaId: 127 }],
+    });
+
+    expect(repository.actualizarRegistro).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ estudios: [{ estudioId: 8, zonaAnatomicaId: 127 }] }),
+    );
+  });
+
+  it('no permite inyectar otro estudio inactivo al editar una requisición', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([estudio(8, null, { activo: false })]);
+
+    await expect(
+      editar('42', {
+        mascotaId: 11,
+        doctorId: 7,
+        fechaSolicitud: FECHA_VALIDA,
+        usuarioId: 3,
+        estudios: [{ estudioId: 8 }],
+      }),
+    ).rejects.toThrow('Uno de los estudios seleccionados ya no está disponible en el catálogo.');
   });
 });
 
@@ -465,6 +570,14 @@ describe('laboratorio.service catálogo/doctores', () => {
       { id: 1, nombre: 'Ana', apellidos: 'Pérez' },
     ]);
     expect(await listarDoctoresActivos()).toEqual([{ id: 1, nombre: 'Ana', apellidos: 'Pérez' }]);
+    expect(doctoresRepository.findActivos).toHaveBeenCalledWith(null);
+  });
+
+  it('incluye al doctor histórico solicitado aunque ya no esté activo', async () => {
+    doctoresRepository.findActivos.mockResolvedValue([{ id: 9, activo: false }]);
+
+    expect(await listarDoctoresActivos(9)).toEqual([{ id: 9, activo: false }]);
+    expect(doctoresRepository.findActivos).toHaveBeenCalledWith(9);
   });
 
   it('catalogoParaFormulario incluye la whitelist de componentes de líquido', async () => {
@@ -473,6 +586,15 @@ describe('laboratorio.service catálogo/doctores', () => {
     const catalogo = await catalogoParaFormulario();
     expect(catalogo.componentesLiquido.length).toBeGreaterThan(0);
     expect(catalogo.zonasAnatomicas).toEqual(ZONAS);
+  });
+
+  it('solicita al repositorio los estudios históricos requeridos por una requisición', async () => {
+    repository.findCatalogo.mockResolvedValue([]);
+    repository.findZonasAnatomicas.mockResolvedValue(ZONAS);
+
+    await catalogoParaFormulario([8, 9]);
+
+    expect(repository.findCatalogo).toHaveBeenCalledWith([8, 9]);
   });
 });
 
