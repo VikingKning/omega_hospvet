@@ -647,6 +647,38 @@ describe('POST /laboratorio/:id/archivos', () => {
     expect(res.status).toBe(404);
   });
 
+  it('acepta el campo multipart archivos sin campos de texto adicionales', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent
+      .post('/laboratorio/999999/archivos')
+      .set('x-csrf-token', csrfToken)
+      .attach('archivos', Buffer.from('%PDF-1.4'), {
+        filename: 'resultado.pdf',
+        contentType: 'application/pdf',
+      });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('rechaza campos multipart con índices manipulados antes de llegar al controller', async () => {
+    const agent = await loginAs(SOLO_CARGAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent
+      .post('/laboratorio/999999/archivos')
+      .set('x-csrf-token', csrfToken)
+      .field('items[4294967294]', 'x')
+      .attach('archivos', Buffer.from('%PDF-1.4'), {
+        filename: 'resultado.pdf',
+        contentType: 'application/pdf',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('La carga no admite campos de texto adicionales.');
+  });
+
   it('un usuario sin laboratorio.cargar es rebotado a /main.html (aunque tenga laboratorio.ver)', async () => {
     const agent = await loginAs(SOLO_VER);
     const csrfToken = await getLaboratorioCsrfToken(agent);

@@ -11,12 +11,21 @@ const router = express.Router();
 
 const uploadArchivos = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024, files: 10 },
+  limits: {
+    fileSize: 50 * 1024 * 1024,
+    files: 10,
+    fields: 0,
+    parts: 10,
+    fieldArrayIndexLimit: 0,
+  },
 });
 
 const MULTER_ERROR_MESSAGES = {
   LIMIT_FILE_SIZE: 'El archivo es demasiado grande (máximo 50MB).',
   LIMIT_FILE_COUNT: 'Puedes subir máximo 10 archivos a la vez.',
+  LIMIT_FIELD_COUNT: 'La carga no admite campos de texto adicionales.',
+  LIMIT_PART_COUNT: 'La carga contiene demasiadas partes.',
+  INVALID_FIELD_NAME: 'La carga contiene un nombre de campo no válido.',
 };
 
 function subirArchivos(req, res, next) {
