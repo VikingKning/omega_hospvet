@@ -4,7 +4,6 @@ const { TRANSICIONES, validarTransicion } = require('./whatsapp.estados');
 
 const DEBOUNCE_ACUMULANDO_MS = env.whatsapp.agrupacionSegundos * 1000;
 
-
 async function solicitarAtencionHumana({
   conversacionId,
   origen,
@@ -180,7 +179,6 @@ async function cancelarEnviosConversacionalesPendientes(trx, conversacionId) {
     .update({ estado: 'cancelado', actualizado_en: trx.fn.now() });
 }
 
-
 async function crearMensajeIgnorado(
   trx,
   {
@@ -282,7 +280,6 @@ async function cerrarPorVencimientoYCrearNueva(
 
   return nueva ?? null;
 }
-
 
 async function registrarEchoManual(
   trx,

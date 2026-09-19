@@ -1,4 +1,3 @@
-
 const EMOJI_REGEX =
   /[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu; // eslint-disable-line no-misleading-character-class
 const PUNTUACION_PERIFERICA = /^[\s¡!¿?.,;:()"'«»-]+|[\s¡!¿?.,;:()"'«»-]+$/g;

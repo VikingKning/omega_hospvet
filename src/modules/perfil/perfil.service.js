@@ -78,7 +78,6 @@ function validateAvatar(rawAvatar) {
   return avatar;
 }
 
-
 const ORDEN_ACCIONES_PRIORITARIAS = ['ver', 'crear', 'editar', 'eliminar'];
 
 function ordenarAcciones(acciones) {

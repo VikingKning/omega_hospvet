@@ -8,7 +8,6 @@ const controller = require('./agenda.controller');
 
 const router = express.Router();
 
-
 router.get(
   '/agenda/:slug.html',
   requireAuth,
