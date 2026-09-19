@@ -770,3 +770,125 @@ describe('POST /areas y PUT /areas/:id (US-610 — alta y edición)', () => {
     expect(res.headers.location).toBe('/main.html');
   });
 });
+
+// Pedido explícito del usuario: Consultas y Estética deben existir SIEMPRE
+// y no ser editables ni eliminables — solo lectura y activar/desactivar
+// (migración 20260914000001_agregar_areas_predeterminadas.js). No se
+// muta 'Consultas'/'Estética' reales aquí (son filas del sistema
+// compartidas con el resto de la app y otros archivos de test corriendo en
+// paralelo) — el comportamiento de protección se prueba sobre un área
+// predeterminada propia, creada y limpiada con el mismo SUFFIX que el
+// resto de este archivo.
+describe('US: áreas predeterminadas del sistema (Consultas/Estética)', () => {
+  it('la migración deja Consultas y Estética activas y marcadas como predeterminadas', async () => {
+    const consultas = await db('areas').where({ slug: 'consultas' }).first();
+    const estetica = await db('areas').where({ slug: 'estetica' }).first();
+
+    expect(consultas).toBeDefined();
+    expect(consultas.es_predeterminada).toBe(true);
+    expect(estetica).toBeDefined();
+    expect(estetica.nombre).toBe('Estética');
+    expect(estetica.es_predeterminada).toBe(true);
+    expect(estetica.activo).toBe(true);
+  });
+
+  it('el listado marca la fila con el badge "Predeterminada" y muestra los íconos Ver + Editar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarAreas(agent, { estado: 'todos', q: 'Estética' });
+
+    expect(res.text).toContain('Predeterminada');
+    // "Ver" (mismo criterio que plantillas_whatsapp: siempre disponible) +
+    // "Editar" (esta fila SÍ es editable, aunque restringido al color).
+    expect(res.text).toMatch(/hx-get="areas\/\d+\/ver"/);
+    expect(res.text).toMatch(/hx-get="areas\/\d+\/editar"/);
+  });
+
+  describe('protección de edición/baja (sobre un área predeterminada propia de prueba)', () => {
+    let areaId;
+
+    beforeAll(async () => {
+      const [area] = await db('areas')
+        .insert({
+          nombre: `Predeterminada ${SUFFIX}`,
+          slug: `predeterminada-${SUFFIX.toLowerCase()}`,
+          activo: true,
+          es_predeterminada: true,
+          creado_en: db.fn.now(),
+        })
+        .returning('id');
+      areaId = area.id;
+    });
+
+    it('PUT /areas/:id ignora el nombre recibido (sigue igual) pero SÍ guarda el color', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+      const csrfToken = await getAreasCsrfToken(agent);
+
+      const res = await agent
+        .put(`/areas/${areaId}`)
+        .type('form')
+        .set('x-csrf-token', csrfToken)
+        .send({ nombre: 'Nombre Que No Debe Guardarse', color: '7' });
+
+      expect(res.status).toBe(200);
+
+      const actualizada = await db('areas').where({ id: areaId }).first();
+      expect(actualizada.nombre).toBe(`Predeterminada ${SUFFIX}`); // ignorado
+      expect(actualizada.color_google_calendar).toBe('7'); // sí se guardó
+    });
+
+    it('GET /areas/:id/ver abre el modal en modo solo-lectura, sin botón Guardar', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+      const res = await agent.get(`/areas/${areaId}/ver`);
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('Área del sistema');
+      expect(res.text).toContain(`value="Predeterminada ${SUFFIX}"`);
+      expect(res.text).toContain('readonly');
+      expect(res.text).not.toContain('>Guardar<');
+    });
+
+    it('DELETE /areas/:id (desactivar) SÍ funciona — solo editar/eliminar físico están bloqueados', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+      const csrfToken = await getAreasCsrfToken(agent);
+
+      const res = await agent
+        .delete(`/areas/${areaId}`)
+        .query({ estado: 'todos' })
+        .set('x-csrf-token', csrfToken);
+
+      expect(res.status).toBe(200);
+      const row = await db('areas').where({ id: areaId }).first();
+      expect(row.activo).toBe(false);
+    });
+
+    it('PUT /areas/:id/activar la reactiva sin tocar nombre/slug', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+      const csrfToken = await getAreasCsrfToken(agent);
+
+      const res = await agent
+        .put(`/areas/${areaId}/activar`)
+        .type('form')
+        .query({ estado: 'todos' })
+        .set('x-csrf-token', csrfToken);
+
+      expect(res.status).toBe(200);
+      const row = await db('areas').where({ id: areaId }).first();
+      expect(row.activo).toBe(true);
+      expect(row.desactivado_por).toBeNull();
+      expect(row.desactivado_en).toBeNull();
+      expect(row.nombre).toBe(`Predeterminada ${SUFFIX}`);
+      expect(row.slug).toBe(`predeterminada-${SUFFIX.toLowerCase()}`);
+    });
+
+    it('un usuario con solo areas.ver no puede activar', async () => {
+      const agent = await loginAs(SOLO_VER_USER);
+
+      const res = await agent.put(`/areas/${areaId}/activar`).query({ estado: 'todos' });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/main.html');
+    });
+  });
+});

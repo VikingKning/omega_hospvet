@@ -602,6 +602,53 @@ describe('GET /tutores/nuevo y GET /tutores/:id/editar (US-156 AC1/AC2 — formu
   });
 });
 
+// Pedido explícito del usuario: "Ver" (mismo criterio ya usado en
+// plantillas_whatsapp/areas/doctores/usuarios) — quien puede entrar a la
+// tabla (tutores.ver) puede ver el detalle, sin importar si también tiene
+// tutores.editar.
+describe('GET /tutores/:id/ver (pedido explícito del usuario)', () => {
+  it('AC: trae los mismos datos que "Editar" pero en modo solo-lectura, sin botones de Guardar/Agregar paciente', async () => {
+    const agent = await loginAs(SOLO_EDITAR_USER);
+
+    const res = await agent.get(`/tutores/${anaId}/ver`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Ver propietario');
+    expect(res.text).toContain('value="Ana"');
+    expect(res.text).toContain(`value="García ${SUFFIX}"`);
+    expect(res.text).toContain(`Firulais ${SUFFIX}`);
+    expect(res.text).toMatch(/id="tutorNombre"[^>]*readonly/);
+    expect(res.text).toMatch(/id="guardarBtn"[^>]*disabled/);
+    expect(res.text).toMatch(/id="agregarPacienteBtn"[^>]*disabled/);
+  });
+
+  it('un usuario con SOLO tutores.ver (sin editar ni crear) sí puede abrir "Ver"', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.get(`/tutores/${anaId}/ver`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('un usuario sin tutores.ver no puede abrir "Ver"', async () => {
+    const agent = await loginAs(SIN_PERMISOS_USER);
+
+    const res = await agent.get(`/tutores/${anaId}/ver`);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+
+  it('un id inexistente redirige al listado con un mensaje (mismo criterio que /editar)', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.get('/tutores/999999/ver');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/tutores.html?error=no-encontrado&id=999999');
+  });
+});
+
 describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
   it('AC3/AC4: nombre y teléfono son obligatorios', async () => {
     const agent = await loginAs(SOLO_CREAR_USER);

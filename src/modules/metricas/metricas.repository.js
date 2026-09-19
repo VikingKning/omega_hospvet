@@ -1,17 +1,7 @@
-// Única capa que habla con Knex para este módulo (documento de Arquitectura
-// y Buenas Prácticas, sección 4.1 — inversión de dependencias).
 const db = require('../../config/database');
 
-// Cuántos "top N" mostrar en las gráficas de barras — catálogo real de
-// laboratorio (33 categorías/~780 estudios, ver
-// laboratorio_catalogo_completo) es demasiado grande para una sola gráfica
-// legible; un top 10 cubre el caso de uso real (saber qué se pide MÁS) sin
-// amontonar barras ilegibles.
 const TOP_N = 10;
 
-// La clínica opera en esta zona horaria. `pendiente_desde` es timestamptz,
-// por lo que convertirlo antes de extraer día/hora evita que una orden de la
-// tarde aparezca en una franja UTC distinta a la que vio el personal.
 const RECEPCION_LOCAL = "timezone('America/Mexico_City', coalesce(r.pendiente_desde, r.creado_en))";
 
 const ANTIGUEDAD_ABIERTA = `case
@@ -31,11 +21,6 @@ const RESULTADO_ENVIO = `case
   else 'fallido'
 end`;
 
-// Filtro base compartido por todas las queries de este módulo: siempre
-// `eliminado = false` (mismo criterio que laboratorio.repository.js) y
-// siempre acotado al rango de fechas de NEGOCIO (`fecha_solicitud`, la
-// fecha que el staff capturó al crear la orden — no `creado_en`, que solo
-// refleja cuándo se guardó el registro en el sistema).
 function baseQuery({ desde, hasta }) {
   return db('registros_laboratorio as r')
     .where('r.eliminado', false)
@@ -47,10 +32,6 @@ async function contarPorEstado(rango) {
   return baseQuery(rango).groupBy('r.estado').select('r.estado').count({ total: 'r.id' });
 }
 
-// Un punto por día calendario dentro del rango (el propio front decide si
-// mostrarlo como línea/barras) — días sin ninguna orden simplemente no
-// aparecen en el resultado; se rellenan con 0 del lado de metricas.service.js
-// para que la gráfica no salte fechas.
 async function contarPorDia(rango) {
   return baseQuery(rango)
     .groupBy('r.fecha_solicitud')
@@ -82,10 +63,6 @@ async function topCategorias(rango) {
     .limit(TOP_N);
 }
 
-// `doctor_id` es nullable (registros_laboratorio.doctor_id, ver migración
-// create_registros_laboratorio) — un leftJoin deja esas filas con
-// `nombre`/`apellidos` en NULL en vez de perderlas del conteo;
-// metricas.service.js las agrupa como "Sin doctor asignado".
 async function topDoctores(rango) {
   return baseQuery(rango)
     .leftJoin('doctores as d', 'd.id', 'r.doctor_id')
@@ -127,17 +104,6 @@ async function contarAntiguedadAbiertas(rango) {
     .count({ total: 'r.id' });
 }
 
-// A diferencia de las demás queries de este módulo, esta NO usa baseQuery()
-// — el resto filtra por `r.fecha_solicitud` (cuándo se CREÓ la orden),
-// correcto para "volumen"/"recepción"/"por especie", pero esta métrica es
-// sobre el ENVÍO en sí: una orden creada hace 2 meses cuyo resultado se
-// mandó hoy debe contar en "últimos 7 días", aunque su fecha_solicitud
-// quede fuera de esa ventana (bug real encontrado en la primera versión —
-// filtraba por fecha_solicitud y ocultaba envíos recientes de órdenes
-// viejas). Se filtra por `envios_laboratorio.enviado_en` (timestamptz) en
-// vez de `fecha_solicitud` (date); `hasta` necesita el "+1 día" porque
-// `enviado_en` sí tiene hora — un envío a las 3pm del día `hasta` quedaría
-// excluido con un `<=` simple contra la medianoche de esa fecha.
 async function contarEnviosPorCanalResultado({ desde, hasta }) {
   return db('envios_laboratorio as e')
     .join('registros_laboratorio as r', 'r.id', 'e.registro_laboratorio_id')
@@ -150,11 +116,6 @@ async function contarEnviosPorCanalResultado({ desde, hasta }) {
     .count({ total: 'e.id' });
 }
 
-// Promedios en horas de cada transición del flujo (pendiente -> cargado ->
-// enviado). Cada promedio se calcula SOLO sobre las filas que de verdad ya
-// pasaron por esa transición (`cargado_en`/`enviado_en` no nulos) — una
-// orden que sigue pendiente no cuenta como "0 horas", contarla así sesgaría
-// el promedio hacia abajo en vez de simplemente no tener dato todavía.
 async function tiemposPromedio(rango) {
   const row = await baseQuery(rango)
     .select(

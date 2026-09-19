@@ -1,12 +1,4 @@
 <%
-// US-613: mismo formulario para alta y edición — el modo se decide por si
-// `plantilla` viene o no (edición trae el registro completo, alta viene
-// null). Este partial se usa tanto para el primer render (GET
-// /plantillas/nuevo o GET /plantillas/:id/editar) como para el re-render
-// con error (POST/PUT fallidos, ver plantillas_whatsapp.controller.js) —
-// por eso intencion/texto_respuesta viajan aparte de `plantilla`: en un
-// re-render por error es lo que el usuario acababa de escribir, no
-// necesariamente lo que ya está guardado.
 const esEdicion = Boolean(plantilla);
 %>
 <div class="modal-header">
@@ -25,18 +17,7 @@ const esEdicion = Boolean(plantilla);
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `plantillas/${plantilla.id}` : 'plantillas' %>"
       hx-target="#plantillaFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
-  <%
-    // Intención (y su slug derivado) son inmutables tras el alta —
-    // decisión explícita del usuario: son la identidad con la que un LLM
-    // matcheará esta plantilla más adelante, y con la que
-    // mensajes_whatsapp.plantilla_id enlaza el histórico. Editar el
-    // significado bajo el mismo id reinterpretaría en silencio mensajes ya
-    // enviados. Por eso en edición se muestran de solo lectura (sin
-    // `name`, para que ni siquiera viajen en el submit — mismo criterio
-    // que el slug de área en area-form.ejs) y solo se puede tocar el
-    // texto de respuesta. Para "cambiar la intención" hay que dar de baja
-    // esta plantilla (switch de abajo) y crear una nueva.
-  %>
+
   <% if (esEdicion) { %>
     <div class="profile-form-row">
       <label>
@@ -54,23 +35,7 @@ const esEdicion = Boolean(plantilla);
       <input type="text" name="intencion" value="<%= intencion %>" required maxlength="100" autofocus>
     </label>
   <% } %>
-  <%
-    // Barra de formato (pedido explícito del usuario, con 7 formatos
-    // REALES que soporta WhatsApp — no solo negrita/cursiva): negrita
-    // (*texto*), cursiva (_texto_), tachado (~texto~), monoespaciado
-    // (```texto```), lista con viñetas ("- item"), lista numerada
-    // ("1. item") y cita ("> texto"). El editor
-    // visible (#plantillaTextoEditor) es un contenteditable que SÍ muestra
-    // el formato aplicado en vivo (pedido explícito: "que se vea negritas
-    // ya en el textbox") — el <textarea> real que de verdad viaja en el
-    // submit (name="texto_respuesta") queda oculto, y se mantiene
-    // sincronizado con la sintaxis real de WhatsApp a cada cambio (ver
-    // serializarWhatsapp() en plantillas.ejs). Toda la lógica (parseo,
-    // serializado, botones) vive en plantillas.ejs (script que NUNCA se
-    // re-swapea) por el mismo motivo que confirmModal.js: un <script>
-    // DENTRO de un fragmento que HTMX reemplaza con hx-swap="innerHTML"
-    // nunca se re-ejecuta en swaps siguientes.
-  %>
+  
   <div class="plantilla-texto-field">
     <label for="plantillaTextoEditor">Texto de respuesta</label>
     <div class="plantilla-formato-toolbar" role="toolbar" aria-label="Formato de texto de WhatsApp">
@@ -88,8 +53,6 @@ const esEdicion = Boolean(plantilla);
         <button type="button" class="plantilla-formato-btn" id="plantillaEmojiToggle" aria-label="Insertar emoticono" aria-expanded="false" data-tooltip="Insertar emoticono">🙂</button>
         <div class="plantilla-emoji-panel" id="plantillaEmojiPanel" hidden>
         <%
-          // WhatsApp acepta emojis Unicode. El panel es flotante y usa
-          // cinco columnas, por lo que no modifica la altura del modal.
           ['👋','🙏','👍','👏','🙌','😊','😀','😉','🥲','😢','❤️','💙','🐾','🐶','🐱','🐰','🐹','🦴','🩺','💊','💉','🌡️','🏥','👨‍⚕️','👩‍⚕️','🚑','📅','⏰','⏳','📍','📞','📱','✉️','📄','📎','✅','☑️','❌','⚠️','🚫','❗','❓','⭐','🔔','🔥','💡','🎉'].forEach((emoji) => {
         %>
             <button type="button" class="plantilla-emoji-btn" aria-label="Insertar <%= emoji %>" data-emoji="<%= emoji %>"><%= emoji %></button>
@@ -97,13 +60,6 @@ const esEdicion = Boolean(plantilla);
         </div>
       </div>
     </div>
-    <%
-      // El contenteditable arranca vacío — plantillas.ejs lo llena en cada
-      // apertura del modal (htmx:afterSwap) parseando el valor real del
-      // <textarea> oculto de abajo (parsearWhatsapp()), tanto en alta
-      // (vacío) como en edición/reintento tras error (con el texto ya
-      // guardado o el que el usuario acababa de escribir).
-    %>
     <div class="plantilla-texto-editor" id="plantillaTextoEditor" contenteditable="true" role="textbox" aria-multiline="true" aria-required="true" aria-label="Texto de respuesta" data-placeholder="Escribe la respuesta que verá el tutor…"></div>
     <div class="plantilla-editor-meta">
       <p class="plantilla-editor-error" id="plantillaEditorError" hidden>Escribe el texto de respuesta.</p>
@@ -111,20 +67,20 @@ const esEdicion = Boolean(plantilla);
     </div>
     <textarea name="texto_respuesta" id="plantillaTextoRespuesta" hidden><%= texto_respuesta %></textarea>
   </div>
-  <%
-    // Switch Activo/Inactivo: solo en edición, a petición explícita (no
-    // estaba en el AC original de la historia). En alta no tiene sentido
-    // mostrarlo — el AC exige activo=true siempre para un registro nuevo.
-    // Una plantilla predeterminada del sistema (es_predeterminada) NUNCA
-    // lo muestra — pedido explícito del usuario: son inborrables, solo
-    // editables (el texto), siempre quedan activas. La defensa real vive
-    // en el servidor (plantillas_whatsapp.service.js#editar), esto es
-    // solo para no ofrecer un control que de todos modos se ignoraría.
-  %>
+  <label>
+    Tipo de Respuesta 
+    <div class="toggle-group" id="plantillaEmergenciaToggle">
+      <button type="button" class="toggle-btn<%= es_emergencia ? '' : ' active' %>" data-value="false">Informativa</button>
+      <button type="button" class="toggle-btn<%= es_emergencia ? ' active' : '' %>" data-value="true">Emergencia</button>
+    </div>
+  </label>
+  <input type="hidden" name="es_emergencia" id="plantillaEmergenciaInput" value="<%= es_emergencia ? 'true' : 'false' %>">
+  
   <% if (esEdicion && plantilla.es_predeterminada) { %>
     <p class="tutor-form-hint">Esta es una plantilla predeterminada del sistema — siempre permanece activa, solo se puede editar el texto de respuesta.</p>
   <% } else if (esEdicion) { %>
     <label class="switch-field">
+      Estado
       <span class="switch">
         <input type="checkbox" name="activo" value="true" <%= activo ? 'checked' : '' %>>
         <span class="switch-track"></span>

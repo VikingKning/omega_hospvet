@@ -1,36 +1,30 @@
 <%
-// US-602: mismo formulario para alta y edición — el modo se decide por si
-// `usuario` viene o no (edición trae el registro completo, alta viene
-// null). Este partial se usa tanto para el primer render (GET
-// /usuarios/nuevo o GET /usuarios/:id/editar) como para el re-render con
-// error (POST/PUT fallidos, ver usuarios.controller.js) — por eso los
-// campos viajan aparte de `usuario`: en un re-render por error son lo que
-// el usuario acababa de escribir, no necesariamente lo que ya está
-// guardado. El campo de contraseña solo existe en alta (AC: en edición ni
-// aparece ni puede modificarse desde aquí, el reseteo es la US-605), y el
-// de Estatus solo existe en edición (AC: alta siempre crea activo=true).
 const esEdicion = Boolean(usuario);
+const esSoloLectura = Boolean(soloLectura);
 const ESTATUS_LABELS = {
   activo: 'Activo',
   bloqueo_temp: 'Bloqueo temporal',
   bloqueado: 'Bloqueado',
   inactivo: 'Inactivo',
-  // US-605: no es una opción elegible en el combobox de abajo (a propósito
-  // — solo se llega aquí vía la acción de reset, nunca a mano), pero sí
-  // hace falta la etiqueta para que el trigger muestre algo legible si se
-  // edita a un usuario que ACTUALMENTE está en este estatus.
   cambio_pwd: 'Cambio de contraseña pendiente',
 };
 
-// US-604: el apartado de Permisos es una columna aparte del mismo
-// formulario, visible solo con usuarios.permisos — mismo criterio que el
-// resto de los botones/columnas gateados por permiso en las vistas de este
-// módulo (ver usuarios-panel.ejs: `const has = (code) => permissions...`).
-// Ni crear ni editar sin este permiso alcanzan a ver la matriz, aunque
-// tengan usuarios.crear/usuarios.editar.
 const permissions = user?.permissions ?? [];
 const puedeGestionarPermisos = permissions.includes('usuarios.permisos');
 const permisosAsignadosSet = new Set(permisosAsignadosIds);
+const estaVinculadoADoctor = Boolean(doctorSeleccionado);
+const esAdmin = tipoUsuario === 'admin';
+const tipoUsuarioEfectivo = esAdmin
+  ? 'admin'
+  : estaVinculadoADoctor
+    ? 'doctor'
+    : tipoUsuario || 'usuario';
+const TIPOS_USUARIO = [
+  { valor: 'doctor', etiqueta: 'Doctor' },
+  { valor: 'estilista', etiqueta: 'Estilista' },
+  { valor: 'recepcion', etiqueta: 'Recepción' },
+  { valor: 'usuario', etiqueta: 'Usuario' },
+];
 
 const MODULO_LABELS = {
   tutores: 'Tutores y pacientes',
@@ -53,19 +47,10 @@ const ACCION_LABELS = {
   carga_envio: 'Carga y envío',
   exportar: 'Exportar',
 };
-// Cualquier módulo/acción que se agregue a `permissions` más adelante y no
-// tenga una etiqueta bonita en los mapas de arriba cae aquí — nunca rompe
-// la matriz ni requiere tocar este archivo (AC: "los nuevos permisos
-// aparecen... sin requerir modificar manualmente la estructura").
 function etiqueta(mapa, valor) {
   return mapa[valor] ?? `${valor.charAt(0).toUpperCase()}${valor.slice(1).replace(/_/g, ' ')}`;
 }
 
-// US-604 (segunda iteración): el checkbox "Carga y Envío" es UNO solo que
-// representa DOS permisos reales (laboratorio.cargar + laboratorio.enviar,
-// ver usuarios.service.js#combinarCargaEnvio) — su `id` llega como
-// "idCargar,idEnviar", así que está marcado solo si el usuario tiene
-// AMBOS ya asignados, nunca uno solo.
 function estaMarcado(permiso) {
   return String(permiso.id)
     .split(',')
@@ -74,7 +59,7 @@ function estaMarcado(permiso) {
 }
 %>
 <div class="modal-header">
-  <h2><%= esEdicion ? 'Editar usuario' : 'Nuevo usuario' %></h2>
+  <h2><%= esSoloLectura ? 'Usuario' : (esEdicion ? 'Editar usuario' : 'Nuevo usuario') %></h2>
   <button class="modal-close-btn" type="button" id="usuarioFormClose" aria-label="Cerrar">&times;</button>
 </div>
 
@@ -85,25 +70,19 @@ function estaMarcado(permiso) {
   </div>
 <% } %>
 
-<form class="modal-form<%= puedeGestionarPermisos ? ' modal-form-columns' : '' %>"
+<form class="modal-form modal-form-columns usuario-form"
+      <% if (!esSoloLectura) { %>
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `usuarios/${usuario.id}` : 'usuarios' %>"
       hx-target="#usuarioFormModalBody" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+      <% } %>
       data-es-edicion="<%= esEdicion ? '1' : '' %>">
-  <div class="modal-col<%= puedeGestionarPermisos ? ' modal-col-datos' : '' %>">
-    <% if (puedeGestionarPermisos) { %><h3 class="modal-col-title">Datos generales</h3><% } %>
+  <div class="modal-col modal-col-datos">
+    <h3 class="modal-col-title">Datos generales</h3>
     <label>
       Doctor vinculado
       <% if (esEdicion) { %>
-        <%
-        // US-602 (octava iteración) AC: el vínculo con un doctor ya no se
-        // puede cambiar desde edición — se muestra de solo lectura (mismo
-        // estilo ya definido en main.css para `.modal-form input:read-only`)
-        // y, a propósito, SIN `name`: el servidor de todos modos ignora
-        // cualquier doctorId que llegara en el body de una edición
-        // (usuarios.service.js#editar ya ni acepta ese parámetro), así que
-        // ni hace falta que este campo viaje.
-        %>
+
         <input type="text" value="<%= doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : 'Sin vínculo' %>" readonly>
       <% } else { %>
         <div class="combobox" id="doctorCombobox">
@@ -116,38 +95,33 @@ function estaMarcado(permiso) {
     </label>
     <label>
       Nombre(s)
-      <input type="text" name="nombre" id="nombreInput" value="<%= nombre %>" required maxlength="100" autofocus>
+      <input type="text" name="nombre" id="nombreInput" value="<%= nombre %>" required maxlength="100"
+             <%= esSoloLectura ? 'readonly disabled' : 'autofocus' %>>
     </label>
     <label>
       Apellidos
-      <input type="text" name="apellidos" id="apellidosInput" value="<%= apellidos %>" required maxlength="100">
+      <input type="text" name="apellidos" id="apellidosInput" value="<%= apellidos %>" required maxlength="100" <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <label>
       Correo
-      <input type="email" name="correo" value="<%= correo %>" required maxlength="150">
+      <input type="email" name="correo" value="<%= correo %>" required maxlength="150" <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <label>
       Teléfono
       <input type="text" name="telefono" id="telefonoInput" value="<%= telefono %>"
              placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off"
              pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12"
-             title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)">
+             title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)"
+             <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <label>
       Username
-      <input type="text" name="username" id="usernameInput" value="<%= username %>" required maxlength="50" autocomplete="off">
+      <input type="text" name="username" id="usernameInput" value="<%= username %>" required maxlength="50" autocomplete="off" <%= esSoloLectura ? 'readonly disabled' : '' %>>
     </label>
     <% if (!esEdicion) { %>
       <label>
         Contraseña inicial
-        <%
-        // Mismo patrón (markup+SVG+clases) que el ojo de mostrar/ocultar de
-        // index.ejs (login) — .input-wrap/.toggle-pass ya viven en
-        // styles.css (usuarios.ejs carga ese archivo además de main.css).
-        // Aquí el toggle se maneja por delegación sobre
-        // usuarioFormModalBody (usuarios.ejs), no con un listener directo,
-        // porque HTMX reemplaza este formulario en cada apertura/reintento.
-        %>
+
         <div class="input-wrap password-field-wrap">
           <input type="password" name="password" id="passwordInput" required minlength="15" maxlength="72"
                  title="La contraseña debe tener al menos 15 caracteres. Puedes utilizar letras, números, símbolos y espacios."
@@ -161,23 +135,9 @@ function estaMarcado(permiso) {
     <% if (esEdicion) { %>
       <label>
         Estatus
-        <%
-        // US-602 (novena iteración, pedido de estilo): un <select> nativo
-        // no se puede forzar a que su lista abierta se vea "fondo blanco,
-        // esquinas redondeadas" — eso lo dibuja el sistema operativo/
-        // navegador, no CSS (ya se intentó solo con CSS y seguía viéndose
-        // distinto). Se reemplaza por el mismo patrón de combobox de
-        // Doctor vinculado (sin buscador, son 4 valores fijos nada más):
-        // un input de solo lectura como "trigger" — reutiliza tal cual el
-        // estilo `.modal-form input:read-only` que ya usa Doctor vinculado,
-        // cero CSS nuevo para el recuadro — más la MISMA `.combobox-list`/
-        // `.combobox-item` ya usada ahí (blanco, esquinas redondeadas,
-        // reales esta vez porque el navegador ya no dibuja la lista). El
-        // input oculto es el que de verdad viaja al servidor como
-        // `estatus`.
-        %>
+
         <div class="combobox" id="estatusCombobox">
-          <input type="text" id="estatusTrigger" class="select-trigger-input" value="<%= ESTATUS_LABELS[estatus] %>" readonly autocomplete="off">
+          <input type="text" id="estatusTrigger" class="select-trigger-input" value="<%= ESTATUS_LABELS[estatus] %>" readonly autocomplete="off" <%= esSoloLectura ? 'disabled' : '' %>>
           <input type="hidden" name="estatus" id="estatusInput" value="<%= estatus %>">
           <ul class="combobox-list" id="estatusList" hidden>
             <% ['activo', 'bloqueo_temp', 'bloqueado', 'inactivo'].forEach((valor) => { %>
@@ -189,31 +149,50 @@ function estaMarcado(permiso) {
     <% } %>
   </div>
 
-  <% if (puedeGestionarPermisos) { %>
-    <div class="modal-col modal-col-permisos">
+  <div class="modal-col modal-col-permisos">
+    <div class="usuario-config-row">
+      <div class="usuario-config-field">
+        <span class="usuario-config-label">Tipo de usuario</span>
+        <input type="hidden" name="tipoUsuario" id="tipoUsuarioInput" value="<%= tipoUsuarioEfectivo %>">
+        <% if (esAdmin) { %>
+          <span class="badge badge-admin">Administrador</span>
+        <% } else { %>
+          <div class="toggle-group tipo-usuario-toggle" id="tipoUsuarioToggle" role="group"
+               aria-label="Tipo de usuario" data-solo-lectura="<%= esSoloLectura ? '1' : '0' %>">
+            <% TIPOS_USUARIO.forEach((tipo) => { %>
+              <% const deshabilitado = esSoloLectura || estaVinculadoADoctor; %>
+              <button type="button"
+                      class="toggle-btn<%= tipoUsuarioEfectivo === tipo.valor ? ' active' : '' %>"
+                      data-tipo-usuario="<%= tipo.valor %>"
+                      aria-pressed="<%= tipoUsuarioEfectivo === tipo.valor ? 'true' : 'false' %>"
+                      <%= deshabilitado ? 'disabled' : '' %>><%= tipo.etiqueta %></button>
+            <% }) %>
+          </div>
+          <% if (estaVinculadoADoctor) { %>
+            <small class="usuario-config-help">Se asigna automáticamente por el vínculo con el doctor.</small>
+          <% } %>
+        <% } %>
+      </div>
+
+      <div class="usuario-config-field usuario-alertas-field">
+        <span class="usuario-config-label">Notificación de alertas</span>
+        <label class="switch-field">
+          <span class="switch">
+            <input type="checkbox" name="notificacionesAlertas" value="true"
+                   <%= notificacionesAlertas ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
+            <span class="switch-track"></span>
+          </span>
+          <span class="switch-state-on">Activo</span>
+          <span class="switch-state-off">Inactivo</span>
+        </label>
+      </div>
+    </div>
+
+    <% if (puedeGestionarPermisos) { %>
       <h3 class="modal-col-title">Permisos</h3>
-      <%
-      // Marcador de presencia: distingue "el apartado se mostró y se
-      // guardó sin ningún permiso marcado" de "el apartado ni siquiera se
-      // mostró" (un checkbox group vacío no manda ninguna clave al
-      // servidor) — ver usuarios.controller.js#editar y
-      // usuarios.routes.js#requirePermisosSiSePresenta.
-      %>
+
       <input type="hidden" name="permisosSeccion" value="1">
-      <%
-      // US-604 (segunda iteración): tabs puro-CSS (radio+label, sin JS) —
-      // mismo criterio que el switch Activo/Inactivo de plantillas
-      // (US-613): el estado visible se decide con selectores CSS sobre un
-      // input real, nada que enganchar/re-enganchar cuando HTMX reemplaza
-      // este contenido en cada apertura/reintento del modal. Los radios
-      // viven como hermanos DIRECTOS de .permisos-tabs y de cada panel
-      // (no anidados adentro de .permisos-tabs) — el selector `~` de
-      // main.css exige que compartan el mismo padre. Los ids de tab son un
-      // conjunto fijo y conocido (principal/agendas/configuraciones,
-      // ver TAB_MENU_PRINCIPAL/TAB_AGENDAS/TAB_CONFIGURACIONES en
-      // usuarios.service.js), así que el CSS tiene una regla explícita por
-      // cada uno.
-      %>
+
       <% matrizPermisos.tabs.forEach((tab, i) => { %>
         <input type="radio" name="permisosTabUI" id="permisosTab-<%= tab.id %>" class="permisos-tab-radio"
                <%= i === 0 ? 'checked' : '' %> hidden>
@@ -230,16 +209,7 @@ function estaMarcado(permiso) {
               <thead>
                 <tr>
                   <th>Módulo</th>
-                  <%
-                  // US-604 (séptima iteración): columna de conveniencia
-                  // pedida por el usuario — un checkbox por fila que marca
-                  // (o desmarca) TODAS las acciones de ESA fila en un solo
-                  // clic. No representa un permiso real: nunca lleva
-                  // `name="permisos"`, así que nunca viaja al servidor ni se
-                  // guarda ("esta tabla no es persistente") — es puramente
-                  // una acción de UI, manejada por delegación en
-                  // usuarios.ejs (clase .permiso-todos-checkbox).
-                  %>
+
                   <th>Todos</th>
                   <% tab.acciones.forEach((accion) => { %>
                     <th><%= etiqueta(ACCION_LABELS, accion) %></th>
@@ -255,48 +225,24 @@ function estaMarcado(permiso) {
                   <% } %>
                   <% seccion.modulos.forEach((fila) => { %>
                     <tr>
-                      <%
-                      // El tab Agendas trae `nombre` real de la tabla
-                      // `areas` (ver usuarios.service.js#construirTabAgendas)
-                      // — se prioriza sobre el mapa estático, que ni
-                      // siquiera tiene entradas para módulos `agenda_*`
-                      // (son dinámicos, no fijos).
-                      %>
-                      <%
-                      // US-604 (décima iteración) AC: si YA están marcadas
-                      // todas las acciones de la fila (ej. al precargar la
-                      // edición de un usuario que ya tenía el módulo
-                      // completo), "Todos" debe verse marcado desde que se
-                      // abre el formulario, no solo cuando el propio
-                      // administrador lo clickea. `celdas` siempre tiene al
-                      // menos un permiso real (si el módulo llegó hasta
-                      // aquí es porque contribuyó con alguna acción a las
-                      // columnas del tab), así que basta con que ninguna
-                      // celda real esté sin marcar.
-                      %>
+
+
                       <% const filaCompleta = fila.celdas.every((permiso) => !permiso || estaMarcado(permiso)); %>
                       <td><%= fila.nombre ?? etiqueta(MODULO_LABELS, fila.modulo) %></td>
                       <td class="permiso-cell">
                         <input type="checkbox" class="permiso-todos-checkbox"
                                aria-label="Otorgar todos los permisos de <%= fila.nombre ?? etiqueta(MODULO_LABELS, fila.modulo) %>"
                                title="Marca o desmarca todas las acciones de esta fila"
-                               <%= filaCompleta ? 'checked' : '' %>>
+                               <%= filaCompleta ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
                       </td>
                       <% fila.celdas.forEach((permiso, celdaIndex) => { %>
                         <td class="permiso-cell">
                           <% if (permiso) { %>
-                            <%
-                            // data-accion identifica la columna (ver/crear/...)
-                            // dentro de SU fila — usuarios.ejs lo usa para la
-                            // regla "Ver implica las demás / sin Ver no hay
-                            // nada más" (pedida por el usuario), delegado
-                            // sobre .permisos-matrix porque HTMX reemplaza
-                            // este contenido en cada apertura/reintento.
-                            %>
+
                             <input type="checkbox" name="permisos" value="<%= permiso.id %>"
                                    title="<%= permiso.descripcion ?? '' %>"
                                    data-accion="<%= tab.acciones[celdaIndex] %>"
-                                   <%= estaMarcado(permiso) ? 'checked' : '' %>>
+                                   <%= estaMarcado(permiso) ? 'checked' : '' %> <%= esSoloLectura ? 'disabled' : '' %>>
                           <% } %>
                         </td>
                       <% }) %>
@@ -308,27 +254,19 @@ function estaMarcado(permiso) {
           </div>
         </div>
       <% }) %>
-    </div>
-  <% } %>
+    <% } %>
+  </div>
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" id="usuarioFormCancel">Cancelar</button>
-    <button type="submit" class="btn-primary">Guardar</button>
+    <% if (esSoloLectura) { %>
+      <button type="button" class="btn-secondary" id="usuarioFormCancel">Cerrar</button>
+    <% } else { %>
+      <button type="button" class="btn-secondary" id="usuarioFormCancel">Cancelar</button>
+      <button type="submit" class="btn-primary">Guardar</button>
+    <% } %>
   </div>
 </form>
 
-<%
-// Datos para el combobox de "Doctor vinculado" (JS de usuarios.ejs): una
-// isla de datos inerte — mismo criterio que doctorFormAreasData en
-// doctor-form.ejs (US-607). NO puede ser un <script> (ni siquiera
-// type="application/json"): con allowScriptTags:false en la config de
-// HTMX (SEC-002), HTMX elimina TODO <script> del contenido swapeado antes
-// de insertarlo (querySelectorAll('script') no distingue por `type`) — se
-// confirmó en vivo que esto dejaba el combobox de Doctor vinculado
-// siempre vacío. Un <div hidden> no es un <script>, así que ni HTMX ni el
-// CSP (que solo rige script-src) lo tocan. El caracter "menor que" del
-// JSON se re-escapa a su forma unicode (sigue siendo JSON válido,
-// JSON.parse lo interpreta igual) para que un nombre de doctor que lo
-// traiga nunca pueda cerrar el div de forma anticipada.
-%>
+
+<%# Datos inertes: HTMX no ejecuta etiquetas script recibidas en fragmentos. %>
 <div id="usuarioFormDoctoresData" hidden><%- JSON.stringify(doctoresDisponibles).replace(/</g, String.fromCharCode(92,117,48,48,51,99)) %></div>

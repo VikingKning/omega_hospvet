@@ -49,8 +49,6 @@
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/telefono.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  // Delegado sobre #perfil-panel (nunca se reemplaza a sí mismo, solo su
-  // contenido) porque HTMX reemplaza el <form> completo en cada guardado.
   document.getElementById('perfil-panel').addEventListener('input', (event) => {
     if (event.target.id !== 'telefonoInput') return;
 
@@ -58,17 +56,7 @@
     event.target.value = formatearTelefono(digitos);
   });
 
-  // Ojo de mostrar/ocultar de los 3 campos de "Cambiar contraseña" — mismo
-  // mecanismo que usuario-form.ejs/index.ejs (login), delegado sobre
-  // #perfil-panel por la misma razón que la máscara de teléfono de arriba:
-  // ese fragmento se reemplaza completo en cada guardado. Un solo handler
-  // para los 3 botones vía data-input-id/data-eye-icon-id, en vez de
-  // repetirlo 3 veces con ids fijos.
   document.getElementById('perfil-panel').addEventListener('click', (event) => {
-    // Cerrar el banner de error (pedido explícito del usuario) — mismo
-    // motivo de delegación que el resto de este listener: los fragmentos
-    // de "Datos personales"/"Cambiar contraseña" se reemplazan completos
-    // en cada guardado.
     if (event.target.closest('#perfilFormErrorDismiss, #perfilPasswordFormErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();
       return;

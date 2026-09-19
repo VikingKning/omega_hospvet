@@ -1,27 +1,17 @@
 <%
-// Agenda: calendario real por área (reemplaza el mockup con iframe de
-// Google Calendar). Una sola vista genérica para las 8 áreas — lo que
-// cambia por request es `area`/`color`/`resumen`/`doctores`, montados por
-// agenda.controller.js#pagina. El feed real de eventos lo pide FullCalendar
-// por su cuenta (GET agenda/<slug>/citas.json) cada vez que cambia el
-// rango visible — este archivo solo arma el shell y lo inicializa.
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 const puedeCrear = has(`agenda.${area.slug}.crear`);
 const puedeEditar = has(`agenda.${area.slug}.editar`);
+const etiquetaDoctor = area.slug === 'estetica' ? 'Estilista' : 'Doctor';
+const etiquetaDoctorPlural = area.slug === 'estetica' ? 'estilistas' : 'doctores';
 %>
 <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<%#
-  Servida un nivel más profundo que la raíz (/agenda/<slug>.html), igual
-  que /tutores/nuevo (ver tutor-form.ejs) — sin <base>, cualquier
-  referencia relativa (las de este archivo, las del partial compartido
-  sidebar.ejs, y los hx-get/hx-post/fetch() de este módulo) resolvería
-  contra /agenda/ en vez de /, rompiendo el menú y el guardado.
-%>
+<%# La ruta incluye el área; la base mantiene assets y enlaces relativos en la raíz. %>
 <base href="/">
 <title>Agenda: <%= area.nombre %> | Omega Hospital Veterinario</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
@@ -29,13 +19,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
 <link rel="stylesheet" href="css/main.css">
 <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'>
 <script src="js/htmx.min.js" nonce="<%= cspNonce %>"></script>
-<%#
-  Orden importa: @fullcalendar/timegrid depende en tiempo de ejecución de
-  @fullcalendar/daygrid (dependencia real del paquete, no solo de tipos —
-  TimeGrid reutiliza internamente el renderizado de DayGrid para la fila
-  "todo el día" y el encabezado de semana) — sin cargar su bundle global
-  ANTES, FullCalendar truena con "viewType timeGridWeek is not available".
-%>
 <script src="js/fullcalendar-core.min.js" nonce="<%= cspNonce %>"></script>
 <script src="js/fullcalendar-daygrid.min.js" nonce="<%= cspNonce %>"></script>
 <script src="js/fullcalendar-timegrid.min.js" nonce="<%= cspNonce %>"></script>
@@ -107,35 +90,12 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
         </div>
 
         <div class="agenda-calendar">
-          <%#
-            Pedido explícito del usuario (2do reacomodo): arriba, filtro de
-            doctor junto con "Nueva cita"; abajo, navegación de fecha
-            (prev/hoy/next + rango + ícono de calendario) junto con el
-            switch Semana/Día.
-          %>
           <div class="agenda-toolbar">
             <div class="agenda-toolbar-row">
-              <%#
-                Filtro por doctor (pedido explícito del usuario): filtra el
-                feed de citas de ESTA área+rango visible por el doctor
-                elegido — mismo catálogo ya embebido (#agendaDoctoresData) que
-                el combobox de doctor del formulario de alta/edición, filtrado
-                en cliente. "Todos los doctores" (data-id vacío) limpia el
-                filtro. No usa <select> nativo (no puede tener esquinas
-                redondeadas en su lista abierta) — mismo patrón .combobox que
-                el resto del sistema.
-              %>
               <div class="combobox agenda-doctor-filter" id="agendaDoctorFilterCombobox">
-                <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly placeholder="Todos los doctores" aria-label="Filtrar por doctor">
+                <input type="text" id="agendaDoctorFilterInput" class="lab-select select-trigger-input" autocomplete="off" readonly placeholder="Todos los <%= etiquetaDoctorPlural %>" aria-label="Filtrar por <%= etiquetaDoctor.toLowerCase() %>">
                 <ul class="combobox-list" id="agendaDoctorFilterList" hidden></ul>
               </div>
-              <%#
-                Pedido explícito del usuario: si hay un doctor filtrado, "Nueva
-                cita" debe abrir el formulario con ESE doctor ya seleccionado —
-                por eso ya no es un hx-get estático (no conoce filtroDoctorId
-                en tiempo de render), se abre vía JS igual que select() más
-                abajo, mandando doctorId solo cuando hay filtro activo.
-              %>
               <% if (puedeCrear) { %>
                 <button class="btn-primary" type="button" id="agendaNuevaCita">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -154,25 +114,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
                   </button>
                 </div>
-                <%#
-                  El ícono es decorativo — el <input type="date"> invisible
-                  encima de él (mismo rectángulo, .agenda-date-trigger
-                  position:relative + input con inset:0) es el que de
-                  verdad recibe el clic/tap y abre el selector NATIVO del
-                  navegador con su comportamiento default (sin
-                  showPicker()). Bug real reportado por el usuario: en
-                  iPhone el ícono no abría nada (funcionaba en Android y en
-                  los <input type="date"> normales del formulario de
-                  citas) — Safari/iOS respeta al pie de la letra que
-                  showPicker() debe lanzar NotAllowedError si el elemento
-                  (o un ancestro) tiene pointer-events:none, que es
-                  justamente como estaba montado este input; Chromium
-                  (desktop/Android) es más permisivo y lo dejaba pasar. Con
-                  el input real recibiendo el tap (pointer-events:auto) ya
-                  no hace falta showPicker() en absoluto: cualquier
-                  navegador abre su propio selector al tocar/clicar
-                  cualquier <input type="date">, sin JS.
-                %>
                 <div class="agenda-date-nav">
                   <span class="agenda-toolbar-title" id="agendaTitle"></span>
                   <div class="agenda-date-trigger">
@@ -199,26 +140,10 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     </div>
   </div>
 
-  <%#
-    Modal de alta/edición de citas — mismo patrón que areaFormModalBackdrop/
-    plantillaFormModalBackdrop: vive fuera de #calendar (que se re-dibuja
-    solo, no vía HTMX) así que el modal nunca se destruye a medio uso.
-  %>
-  <%#
-    Pedido explícito del usuario: el formulario pasa a 2-3 columnas por
-    fila para no necesitar scroll (ver cita-form.ejs) — .modal-card-wide
-    (720px, ya definida en main.css) le da el espacio horizontal que ese
-    layout necesita; el .modal-card angosto (440px) original se quedaba
-    corto para 2-3 campos por fila.
-  %>
   <div class="modal-backdrop" id="citaFormModalBackdrop">
     <div class="modal-card modal-card-wide" id="citaFormModalBody"></div>
   </div>
 
-  <%#
-    Modal de confirmación reutilizable para "cancelar cita" — mismo patrón
-    que #confirmModalBackdrop en areas.ejs/plantillas.ejs.
-  %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -233,10 +158,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     </div>
   </div>
 
-  <%# Isla de datos JSON: doctores activos de esta área, para el combobox del
-      formulario (catálogo chico, se filtra en cliente) — nunca un
-      <script>, HTMX lo borraría al hacer swap del modal (allowScriptTags
-      false). %>
   <div id="agendaDoctoresData" hidden><%- JSON.stringify(doctores).replace(/</g, '\\u003c') %></div>
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
@@ -250,11 +171,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     return div.innerHTML;
   }
 
-  // Semáforo de la próxima cita: verde antes de la hora, amarillo hasta 10
-  // min después, rojo pasados 10 min y 1 segundo — mismo criterio visual
-  // que el mockup que esto reemplaza, ahora contra una fecha/hora ISO real
-  // (no solo "HH:MM"), para que también funcione si la próxima cita es
-  // mañana.
   const GRACE_PERIOD_MS = 10 * 60 * 1000;
 
   function updateSemaforo() {
@@ -283,7 +199,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
   updateSemaforo();
   setInterval(updateSemaforo, 1000);
 
-  // ---- Modal de alta/edición de citas — mismo patrón que areaFormModalBody. ----
   const citaFormModalBackdrop = document.getElementById('citaFormModalBackdrop');
   const citaFormModalBody = document.getElementById('citaFormModalBody');
 
@@ -295,12 +210,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     citaFormModalBackdrop.classList.remove('open');
   }
 
-  // Fecha+hora del formulario: el servidor manda un solo ISO
-  // (#citaFechaHoraInicio) — se separa en los dos <input> nativos EN HORA
-  // LOCAL DEL NAVEGADOR al abrir el form, y se recombina a ISO (también en
-  // hora local, vía el constructor numérico de Date, que la interpreta
-  // correctamente sin tener que adivinar ningún huso horario del lado del
-  // servidor) cada vez que cualquiera de los dos cambia.
   function pad2(n) { return String(n).padStart(2, '0'); }
 
   function separarFechaHora() {
@@ -330,11 +239,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
       openCitaFormModal();
       separarFechaHora();
       inicializarTutorDesdeIsla();
-      // El modal se recrea por completo en cada swap (HTMX borra/repone el
-      // HTML), así que el botón "x" (insertado por JS) y los listeners de
-      // teclado hay que volver a engancharlos cada vez — pedido explícito
-      // del usuario: navegación con flechas + botón de limpiar en todos
-      // los combobox (ver public/js/combobox.js).
       attachComboboxKeyboardNav(
         citaFormModalBody.querySelector('#citaDoctorInput'),
         citaFormModalBody.querySelector('#citaDoctorList'),
@@ -384,9 +288,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     }
   });
 
-  // ---- Combobox de Doctor (catálogo chico de esta área, precargado como
-  // isla JSON — se filtra en cliente, mismo patrón que "Doctor vinculado"
-  // en usuario-form.ejs). ----
   function doctoresCatalogo() {
     const el = document.getElementById('agendaDoctoresData');
     return el ? JSON.parse(el.textContent) : [];
@@ -410,19 +311,8 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     list.hidden = false;
   }
 
-  // ---- Tutor antes que mascota (pedido explícito del usuario, mismo
-  // patrón que labTutor*/labPaciente* en laboratorio-form.ejs): se busca al
-  // tutor por teléfono (10 dígitos exactos) o por nombre (parcial, en
-  // servidor); al elegirlo, el combobox de Mascota se limita a SUS
-  // pacientes. Así, al confirmar una reserva externa de Google Calendar
-  // (agenda.reservasExternas.js) que ya trae el teléfono matcheado pero sin
-  // mascota, el staff solo tiene que elegir el paciente. ----
   let tutorActual = null; // { id, nombre, apellidos, telefono, correo, pacientes }
   let tutorDebounceTimer = null;
-  // Asignadas dentro de htmx:afterSwap (ver arriba) — cada una "refresca"
-  // la visibilidad del botón "x" de su combobox; hay que llamarlas después
-  // de cualquier punto donde el código cambia el .value del trigger por su
-  // cuenta (un 'input' del usuario ya se detecta solo).
   let refrescarDoctorClear = () => {};
   let refrescarTutorClear = () => {};
   let refrescarMascotaClear = () => {};
@@ -465,11 +355,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     refrescarMascotaClear();
   }
 
-  // Cascada compartida por el botón "x" de Tutor y por el input de
-  // teléfono cuando el usuario borra dígitos hasta dejarlo incompleto (ver
-  // el listener de 'input' más abajo) — a diferencia del botón "x", ese
-  // segundo caso NUNCA toca #citaTutorTelefono (el usuario sigue
-  // escribiendo ahí, borrarle el valor le pelearía la edición).
   function resetearTutorActual() {
     tutorActual = null;
     const tutorInput = citaFormModalBody.querySelector('#citaTutorNombreInput');
@@ -522,9 +407,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     list.hidden = false;
   }
 
-  // "Confirmar cita" (reserva pendiente sin mascota, ver cita-form.ejs):
-  // se habilita en vivo en cuanto se elige una mascota, sin esperar a un
-  // Guardar aparte — pedido explícito del usuario.
   function actualizarBotonConfirmar() {
     const btn = citaFormModalBody.querySelector('#citaFormConfirmar');
     if (!btn) return;
@@ -575,8 +457,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     true,
   );
 
-  // Cierra la lista al salir del campo — con un pequeño retraso para que el
-  // click sobre un <li> (que dispara blur primero) alcance a registrarse.
   citaFormModalBody.addEventListener(
     'blur',
     (event) => {
@@ -615,14 +495,14 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
       refrescarDoctorClear();
     }
     if (tutorList && tutorList.contains(item) && item.dataset.telefono) {
-      event.preventDefault(); // el <li> no es enfocable y vive dentro de un <label> — sin esto el navegador reenvía el click al input y reabre la lista que este mismo click acaba de cerrar
+      event.preventDefault(); // Evita que el label reenvíe el clic al input y reabra la lista.
       tutorList.hidden = true;
       const telefono = item.dataset.telefono;
       citaFormModalBody.querySelector('#citaTutorTelefono').value = telefono;
       buscarTutorPorTelefono(telefono.replace(/\D/g, ''));
     }
     if (mascotaList && mascotaList.contains(item) && item.dataset.id) {
-      event.preventDefault(); // mismo motivo que arriba
+      event.preventDefault(); // Evita que el label reenvíe el clic al input y reabra la lista.
       seleccionarMascota(item.dataset.id);
       mascotaList.hidden = true;
     }
@@ -632,15 +512,11 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     if (event.target === citaFormModalBackdrop) closeCitaFormModal();
   });
 
-  // HX-Trigger: closeCitaModal (ver agenda.controller.js#renderExito) —
-  // cierra el modal Y le pide a FullCalendar que vuelva a pedir el feed
-  // (la cita recién creada/editada/cancelada ya está en la BD).
   document.body.addEventListener('closeCitaModal', () => {
     closeCitaFormModal();
     calendar.refetchEvents();
   });
 
-  // ---- FullCalendar ----
   const calendarEl = document.getElementById('calendar');
   const areaSlug = <%- JSON.stringify(area.slug) %>;
   const eventColor = <%- JSON.stringify(color.hex) %>;
@@ -648,17 +524,8 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
   const puedeEditar = <%- JSON.stringify(puedeEditar) %>;
   const csrfToken = <%- JSON.stringify(csrfToken) %>;
 
-  // Filtro por doctor (pedido explícito del usuario): se manda como
-  // extraParams en CADA fetch del feed (navegación de semana/día incluida,
-  // no solo el primer render) — el servidor ya filtra por área+rango, esto
-  // solo agrega "+ el doctor seleccionado" (agenda.controller.js#eventos).
   let filtroDoctorId = '';
 
-  // Abre el formulario de alta — usado por el botón "Nueva cita" y por
-  // select() (clic/arrastre sobre un slot vacío). Pedido explícito del
-  // usuario: si hay un doctor filtrado, ya viene preseleccionado en el
-  // formulario (agenda.controller.js#nuevoForm valida que pertenezca a
-  // esta área antes de preseleccionarlo).
   function abrirCitaNueva(inicioIso) {
     const params = new URLSearchParams();
     if (inicioIso) params.set('inicio', inicioIso);
@@ -672,31 +539,19 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
 
   document.getElementById('agendaNuevaCita')?.addEventListener('click', () => abrirCitaNueva());
 
-  // Con los bundles "global" (script tags, no ESM), core/timegrid/
-  // interaction se registran solos en el objeto FullCalendar al cargar —
-  // no hace falta (ni se puede) pasar `plugins` aquí.
   const calendar = new FullCalendar.Calendar(calendarEl, {
     initialView: 'timeGridWeek',
     locale: 'es',
     headerToolbar: false,
     height: '100%',
     nowIndicator: true,
-    // Las citas siempre tienen hora — no existe una noción de "todo el
-    // día" en este calendario, esa fila (que se lee como un segundo
-    // encabezado pegado al real) solo estorbaba.
     allDaySlot: false,
     eventColor: eventColor || undefined,
     eventTextColor: <%- JSON.stringify(color.foreground) %> || undefined,
-    // Tooltip "No disponible" sobre los bloques "ocupado" — mismo patrón
-    // [data-tooltip] de CSS puro que el resto del sistema (main.css), el
-    // propio .fc-bg-event ya viene con position:absolute de FullCalendar,
-    // suficiente como contexto de posicionamiento para el tooltip.
     eventDidMount(info) {
       if (info.event.display === 'background') {
         info.el.setAttribute('data-tooltip', 'No disponible');
       }
-      // Reserva externa (agenda.reservasExternas.js) sin match completo,
-      // todavía no confirmada — ver .fc-event-pendiente-confirmar en main.css.
       if (info.event.extendedProps.estado === 'registrada') {
         info.el.classList.add('fc-event-pendiente-confirmar');
         info.el.setAttribute('data-tooltip', 'Reserva pendiente de confirmar');
@@ -707,19 +562,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
         url: `agenda/${areaSlug}/citas.json`,
         extraParams: () => (filtroDoctorId ? { doctorId: filtroDoctorId } : {}),
       },
-      // Bloques "ocupado" (pedido explícito del usuario): con un doctor
-      // filtrado, sus citas en OTRAS áreas se pintan en gris y SIN detalle
-      // (el propio feed ya no manda título/mascota/motivo) — el usuario ve
-      // que esa hora ya no está disponible "entre calendarios" y elige
-      // otra. `backgroundColor` en rgba (no `color`, que también fija el
-      // borde) — FullCalendar la aplica como estilo INLINE, que gana
-      // siempre sobre cualquier regla de main.css por especificidad; sin
-      // esto el bloque caía al `eventColor` del área entera (el mismo
-      // cyan de las citas reales) en vez de gris. La traslucidez vive en
-      // el propio alpha del rgba, no en `opacity` del elemento — FullCalendar
-      // pone opacity:0.3 por default en TODO el elemento, lo que también
-      // apaga sus pseudo-elementos (el tooltip ::before/::after se veía
-      // "lavado"); .fc-bg-event en main.css cancela esa opacity a 1.
       {
         url: `agenda/${areaSlug}/citas/ocupado.json`,
         backgroundColor: 'rgba(111, 108, 106, 0.35)',
@@ -729,17 +571,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     datesSet(info) {
       document.getElementById('agendaTitle').textContent = info.view.title;
     },
-    // Bug real reportado por el usuario: en mobile, dar tap sobre un
-    // horario para agendar no abría nada. Causa: se usaba `select`
-    // (arrastrar para elegir un rango), que en pantallas táctiles
-    // FullCalendar solo activa con un TOQUE SOSTENIDO (~1s, para no
-    // confundirlo con hacer scroll de la grilla) — y aun bajando ese
-    // retraso casi a cero, seguía sin abrir con un tap normal (confirmado
-    // con Playwright + emulación táctil real de iPhone). Como el formulario
-    // nunca usó el FIN del rango seleccionado (la duración se elige aparte,
-    // con un <select>), `select` nunca hacía falta — un solo tap/clic con
-    // `dateClick` abre exactamente lo mismo, sin ningún retraso ni gesto
-    // especial, igual en mouse y en touch.
     dateClick(info) {
       if (!puedeCrear) return;
       if (info.date < new Date()) return;
@@ -759,14 +590,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
   });
   calendar.render();
 
-  // FullCalendar solo se re-mide solo ante un evento `resize` de `window`
-  // (opción `handleWindowResize`, activada por default) — pero abrir/cerrar
-  // el sidebar (#sidebarToggle arriba) cambia el ancho de #calendar sin
-  // disparar ese evento (es un cambio de layout de un hermano, la ventana
-  // sigue midiendo lo mismo), así que el calendario se quedaba con el
-  // ancho viejo y dejaba un hueco vacío a la derecha. Un ResizeObserver
-  // sobre el propio contenedor cubre ese caso (y cualquier otro cambio de
-  // layout futuro) sin depender de enganchar el toggle a mano.
   new ResizeObserver(() => calendar.updateSize()).observe(
     document.querySelector('.agenda-calendar-wrap'),
   );
@@ -775,11 +598,6 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
   document.getElementById('agendaNext').addEventListener('click', () => calendar.next());
   document.getElementById('agendaHoy').addEventListener('click', () => calendar.today());
 
-  // El <input type="date"> invisible sobre el ícono recibe el tap/clic
-  // directo y abre el selector nativo del navegador por su cuenta (sin
-  // showPicker() — ver el comentario en agenda.ejs sobre por qué en
-  // iPhone showPicker() no abría nada). Solo hace falta sincronizar su
-  // valor a la fecha actual del calendario justo antes de que se abra.
   const agendaDatePicker = document.getElementById('agendaDatePicker');
   agendaDatePicker.addEventListener('focus', () => {
     const actual = calendar.getDate();
@@ -790,16 +608,12 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     if (event.target.value) calendar.gotoDate(event.target.value);
   });
 
-  // ---- Filtro por doctor (toolbar) — mismo catálogo/combobox que el
-  // formulario de citas (doctoresCatalogo(), definida más abajo junto al
-  // combobox de "Doctor" del modal), pero de solo-selección: no filtra por
-  // texto al escribir (input readonly), solo abre la lista completa. ----
   const agendaDoctorFilterInput = document.getElementById('agendaDoctorFilterInput');
   const agendaDoctorFilterList = document.getElementById('agendaDoctorFilterList');
 
   function abrirDoctorFilterList() {
     const items = [
-      '<li class="combobox-item" data-id="" data-label="Todos los doctores">Todos los doctores</li>',
+      '<li class="combobox-item" data-id="" data-label="Todos los <%= etiquetaDoctorPlural %>">Todos los <%= etiquetaDoctorPlural %></li>',
       ...doctoresCatalogo().map(
         (d) =>
           `<li class="combobox-item" data-id="${d.id}" data-label="${d.nombre} ${d.apellidos}">${d.nombre} ${d.apellidos}</li>`,
@@ -818,22 +632,12 @@ const puedeEditar = has(`agenda.${area.slug}.editar`);
     const item = event.target.closest('.combobox-item');
     if (!item) return;
     filtroDoctorId = item.dataset.id;
-    // Vacío (no el texto "Todos los doctores") cuando se quita el filtro —
-    // así el placeholder vuelve a mostrarse solo, y el botón "x" (que se
-    // basa en si el trigger tiene texto) sabe que ya no hay nada que
-    // limpiar. Ver el <input> arriba: usa placeholder, ya no value fijo.
     agendaDoctorFilterInput.value = item.dataset.id ? item.dataset.label : '';
     agendaDoctorFilterList.hidden = true;
     calendar.refetchEvents();
     refrescarDoctorFiltroClear();
   });
 
-  // Navegación con flechas + botón "x" (pedido explícito del usuario, ver
-  // public/js/combobox.js) — este combobox nunca se recrea vía HTMX (vive
-  // en la página, no en un modal swapeado), así que basta engancharlo una
-  // sola vez aquí. La lista ya trae "Todos los doctores" (data-id="") como
-  // primer item — el botón "x" solo simula un click sobre ese mismo item
-  // en vez de duplicar la lógica de "quitar filtro".
   attachComboboxKeyboardNav(agendaDoctorFilterInput, agendaDoctorFilterList);
   const refrescarDoctorFiltroClear = attachComboboxClearButton(
     document.getElementById('agendaDoctorFilterCombobox'),

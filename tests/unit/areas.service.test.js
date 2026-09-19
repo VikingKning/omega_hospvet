@@ -3,6 +3,7 @@ const repository = require('../../src/modules/areas/areas.repository');
 const {
   list,
   desactivar,
+  activar,
   crear,
   editar,
   AreaValidationError,
@@ -103,6 +104,25 @@ describe('areas.service.desactivar (US-611)', () => {
   it('un id inválido no truena y no llega al repository', async () => {
     await desactivar('no-es-un-numero', 42);
     expect(repository.desactivar).not.toHaveBeenCalled();
+  });
+});
+
+// Pedido explícito del usuario: contraparte de desactivar(), pensada sobre
+// todo para las áreas predeterminadas del sistema (Consultas/Estética),
+// que al no ser editables solo pueden volver a activo por aquí.
+describe('areas.service.activar', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('delega en el repository con el id ya parseado y el usuario que ejecuta la reactivación', async () => {
+    await activar('7', 42);
+    expect(repository.activar).toHaveBeenCalledWith(7, 42);
+  });
+
+  it('un id inválido no truena y no llega al repository', async () => {
+    await activar('no-es-un-numero', 42);
+    expect(repository.activar).not.toHaveBeenCalled();
   });
 });
 
@@ -243,5 +263,36 @@ describe('areas.service.editar (US-610)', () => {
 
   it('rechaza un nombre vacío', async () => {
     await expect(editar({ id: 5, nombre: '', usuarioId: 2 })).rejects.toThrow(AreaValidationError);
+  });
+
+  // Pedido explícito del usuario: en un área predeterminada del sistema
+  // (Consultas/Estética) lo ÚNICO editable es el color — el nombre que
+  // llegue en el body se ignora (se guarda el que ya tenía), sin rechazar
+  // la petición.
+  it('en un área predeterminada, ignora el nombre recibido y conserva el que ya tenía — solo guarda el color', async () => {
+    repository.findById.mockResolvedValue({
+      id: 5,
+      nombre: 'Consultas',
+      es_predeterminada: true,
+    });
+    await editar({ id: 5, nombre: 'Nombre Que No Debe Guardarse', color: '4', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Consultas', '4', 2);
+    expect(repository.findAllExcept).not.toHaveBeenCalled(); // ni siquiera se chequea duplicado de nombre
+  });
+
+  it('en un área predeterminada, un nombre vacío/inválido en el body no truena (se ignora igual)', async () => {
+    repository.findById.mockResolvedValue({
+      id: 5,
+      nombre: 'Estética',
+      es_predeterminada: true,
+    });
+    await editar({ id: 5, nombre: '', color: '4', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Estética', '4', 2);
+  });
+
+  it('un área normal (es_predeterminada:false) se puede editar sin problema', async () => {
+    repository.findById.mockResolvedValue({ id: 5, es_predeterminada: false });
+    await editar({ id: 5, nombre: 'Nuevo Nombre', color: '2', usuarioId: 2 });
+    expect(repository.updateNombre).toHaveBeenCalledWith(5, 'Nuevo Nombre', '2', 2);
   });
 });

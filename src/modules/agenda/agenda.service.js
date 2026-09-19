@@ -4,19 +4,12 @@ const doctoresRepository = require('../doctores/doctores.repository');
 const googleSync = require('./agenda.googleSync');
 const logger = require('../../config/logger');
 
-// Push a Google Calendar tras crear/editar/cancelar: best-effort, nunca
-// bloquea la respuesta al usuario (pedido explícito del usuario). pushCita
-// ya atrapa sus propios errores y los loguea — el .catch() de aquí es solo
-// una red de seguridad extra para no dejar una promesa rechazada suelta.
 function dispararSyncGoogle(citaId) {
   googleSync.pushCita(citaId).catch((err) => {
     logger.error({ err, citaId }, 'Push a Google Calendar no manejado.');
   });
 }
 
-// Mismo patrón de errores con `.status` que areas.service.js — el
-// controller los atrapa para re-renderizar el formulario con el mensaje,
-// en vez de un 400/409 JSON crudo (fragmento HTMX, no una API).
 class CitaValidationError extends Error {
   constructor(message) {
     super(message);
@@ -38,9 +31,6 @@ class DoctorFueraDeAreaError extends Error {
   }
 }
 
-// Solo aplica a citas 'registrada' (nacidas de una reserva externa sin
-// match completo, ver agenda.reservasExternas.js) — nunca a 'confirmada'
-// (ya está confirmada) ni 'cancelada'.
 class CitaNoConfirmableError extends Error {
   constructor(message) {
     super(message);
@@ -48,10 +38,6 @@ class CitaNoConfirmableError extends Error {
   }
 }
 
-// Presets fijos del <select> de duración del formulario — whitelist real,
-// no solo una sugerencia visual (mismo criterio que cualquier <select> de
-// este sistema: nunca se confía en que el cliente mande uno de estos
-// valores solo porque el HTML los ofrece).
 const DURACIONES_VALIDAS = [15, 30, 45, 60, 90];
 
 function parseId(rawId) {
@@ -59,17 +45,11 @@ function parseId(rawId) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-// Agenda: resuelve el área de la URL (/agenda/:slug.html) contra un área
-// real y activa — un slug inexistente o de un área desactivada no debe
-// abrir un calendario "huérfano".
 async function resolverArea(slug) {
   const area = await areasRepository.findBySlug(slug);
   return area && area.activo ? area : undefined;
 }
 
-// Catálogo chico para el combobox de "Doctor" — se embebe entero en la
-// página (isla JSON), no hace falta una búsqueda incremental como en
-// mascotas (ver tutores.service.js#buscarMascotas).
 async function listarDoctoresDelArea(areaId) {
   return doctoresRepository.findActivosByAreaId(areaId);
 }
@@ -86,20 +66,12 @@ async function resumenDelDia(areaId) {
     repository.findSiguiente(areaId, ahora),
   ]);
 
-  // "Pasadas"/"pendientes" se deciden solo por la hora (< o >= ahora) —
-  // confirmada o registrada da igual, nunca se cuentan las canceladas
-  // (repository.findEnRango ya las excluye por completo).
   const pasadas = citasDeHoy.filter((cita) => new Date(cita.fecha_hora_inicio) < ahora);
   const pendientes = citasDeHoy.filter((cita) => new Date(cita.fecha_hora_inicio) >= ahora);
 
   return { pasadas, pendientes, siguiente: siguiente ?? null };
 }
 
-// Feed del calendario: FullCalendar pide `start`/`end` automáticamente al
-// navegar semana/día (opción `events: { url }`). `doctorId` es el filtro
-// opcional de doctor (pedido explícito del usuario) — un valor inválido/
-// vacío simplemente no filtra, no truena (es un filtro de vista, no un
-// dato que se vaya a guardar).
 async function listarEventos(areaId, { desde, hasta, doctorId }) {
   return repository.findEnRango(
     areaId,
@@ -109,9 +81,6 @@ async function listarEventos(areaId, { desde, hasta, doctorId }) {
   );
 }
 
-// Bloques "ocupado" (sin detalle) del doctor filtrado en OTRAS áreas —
-// pedido explícito del usuario. Sin doctorId (nadie filtrado todavía) no
-// tiene sentido preguntar por nadie: regresa vacío en vez de tronar.
 async function listarOcupado(areaId, { desde, hasta, doctorId }) {
   const id = parseId(doctorId);
   if (id === null) return [];
@@ -130,14 +99,6 @@ function validateMascotaId(raw) {
   return id;
 }
 
-// El cliente arma este valor combinando los <input type="date">/"time"> en
-// hora LOCAL DEL NAVEGADOR y lo convierte a ISO con `Date.toISOString()`
-// (ver agenda.ejs) — aquí solo se parsea, nunca se asume ni se hardcodea
-// ninguna zona horaria del lado del servidor. Pedido explícito del usuario:
-// no se pueden agendar citas del momento actual hacia atrás (ni "hoy más
-// temprano") — se comparte esta validación entre crear() y editar(), así
-// que también aplica a reagendar una cita existente hacia un horario ya
-// pasado.
 function validateFechaHoraInicio(raw) {
   const fecha = raw ? new Date(raw) : null;
   if (!fecha || Number.isNaN(fecha.getTime())) {
@@ -175,9 +136,6 @@ async function validarTraslape(doctorId, inicio, fin, excludeId) {
   }
 }
 
-// US: alta desde el portal — nace `confirmada` directamente (decisión
-// explícita del usuario, ver plan). Rechaza si el doctor no atiende esta
-// área o si traslapa con otra cita del mismo doctor.
 async function crear({
   areaId,
   doctorId: rawDoctorId,
@@ -210,10 +168,6 @@ async function crear({
   return id;
 }
 
-// Editar: puede reagendar (fecha/hora/doctor), cambiar de mascota o motivo
-// — nunca toca `estado` (decisión explícita del usuario: "editar" y
-// "confirmar" son acciones separadas, y esta iteración no expone
-// "confirmar" porque nada nace `registrada` desde el portal).
 async function editar({
   id,
   areaId,
@@ -245,8 +199,6 @@ async function editar({
   dispararSyncGoogle(id);
 }
 
-// "Eliminar" en la UI es cancelar — baja lógica (mismo patrón que todo el
-// resto del sistema). Un id inválido/inexistente no truena.
 async function cancelar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
@@ -254,20 +206,12 @@ async function cancelar(rawId, usuarioId) {
   dispararSyncGoogle(id);
 }
 
-// Para precargar el formulario de edición.
 async function obtener(rawId) {
   const id = parseId(rawId);
   if (id === null) return undefined;
   return repository.findById(id);
 }
 
-// "Confirmar": transición 'registrada' -> 'confirmada' para una cita
-// importada de una reserva externa que el staff ya completó a mano (le
-// asignó mascota vía editar(), acción separada — ver comentario de
-// editar() arriba). Un id inválido/inexistente no truena (mismo criterio
-// permisivo que cancelar()); una cita que no está 'registrada', o que
-// sigue sin mascota_id, sí rechaza — es la única validación real de esta
-// acción.
 async function confirmar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;

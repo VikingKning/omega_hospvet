@@ -1,24 +1,26 @@
 <%
-// US-610: mismo formulario para alta y edición — el modo se decide por si
-// `area` viene o no (edición trae el registro completo, alta viene null).
-// Este partial se usa tanto para el primer render (GET /areas/nuevo o
-// GET /areas/:id/editar) como para el re-render con error (POST/PUT
-// fallidos, ver areas.controller.js) — por eso `nombre` viaja aparte de
-// `area`: en un re-render por error es lo que el usuario acababa de
-// escribir, no necesariamente lo que ya está guardado.
 const esEdicion = Boolean(area);
+const esPredeterminada = Boolean(area?.es_predeterminada);
+const esSoloLectura = Boolean(soloLectura);
+const nombreBloqueado = esSoloLectura || esPredeterminada;
 
-// El picker no distingue null/undefined/'' — las tres formas en que "sin
-// color todavía" puede llegar aquí (alta nueva, área existente sin color,
-// o el hidden input tras un re-render por error) resuelven al mismo id
-// vacío, que es el que trae la opción "Sin color" del grid.
 const selectedColorId = color === null || color === undefined ? '' : String(color);
 const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
 %>
 <div class="modal-header">
-  <h2><%= esEdicion ? 'Editar área' : 'Nueva área' %></h2>
+  <h2><%= esSoloLectura ? 'Área del sistema' : (esEdicion ? 'Editar área' : 'Nueva área') %></h2>
   <button class="modal-close-btn" type="button" id="areaFormClose" aria-label="Cerrar">&times;</button>
 </div>
+
+<% if (esSoloLectura) { %>
+  <div class="form-info-banner">
+    <span>Esta es un área predeterminada del sistema — no se puede editar ni eliminar, solo activar o desactivar.</span>
+  </div>
+<% } else if (esPredeterminada) { %>
+  <div class="form-info-banner">
+    <span>Esta es un área predeterminada del sistema — solo puedes cambiar su color en Google Calendar.</span>
+  </div>
+<% } %>
 
 <% if (error) { %>
   <div class="form-error-banner">
@@ -28,12 +30,16 @@ const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
 <% } %>
 
 <form class="modal-form"
+      <% if (!esSoloLectura) { %>
       hx-<%= esEdicion ? 'put' : 'post' %>="<%= esEdicion ? `areas/${area.id}` : 'areas' %>"
       hx-target="#areaFormModalBody" hx-swap="innerHTML"
-      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+      hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'
+      <% } %>>
   <label>
     Nombre
-    <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100" autofocus>
+    <input type="text" name="nombre" value="<%= nombre %>" required maxlength="100"
+           <%= nombreBloqueado ? 'readonly' : '' %> <%= esSoloLectura ? 'disabled' : '' %>
+           <%= nombreBloqueado ? '' : 'autofocus' %>>
   </label>
   <% if (esEdicion) { %>
     <label>
@@ -48,14 +54,14 @@ const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
         <button type="button"
                 class="color-swatch-option<%= selectedColorId === c.id ? ' selected' : '' %>"
                 data-color-id="<%= c.id %>" data-hex="<%= c.hex %>"
-                role="radio" aria-checked="<%= selectedColorId === c.id %>">
+                role="radio" aria-checked="<%= selectedColorId === c.id %>" <%= esSoloLectura ? 'disabled' : '' %>>
           <span class="color-swatch-box" style="--swatch-color: <%= c.hex %>;" aria-hidden="true"></span>
           <span class="color-swatch-name"><%= c.nombre %></span>
         </button>
       <% }) %>
       <button type="button"
               class="color-swatch-option color-swatch-none<%= selectedColorId === '' ? ' selected' : '' %>"
-              data-color-id="" role="radio" aria-checked="<%= selectedColorId === '' %>">
+              data-color-id="" role="radio" aria-checked="<%= selectedColorId === '' %>" <%= esSoloLectura ? 'disabled' : '' %>>
         <span class="color-swatch-box color-swatch-box-none" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/></svg>
         </span>
@@ -89,7 +95,11 @@ const selectedColorObj = colores.find((c) => c.id === selectedColorId) ?? null;
     </div>
   </div>
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" id="areaFormCancel">Cancelar</button>
-    <button type="submit" class="btn-primary">Guardar</button>
+    <% if (esSoloLectura) { %>
+      <button type="button" class="btn-secondary" id="areaFormCancel">Cerrar</button>
+    <% } else { %>
+      <button type="button" class="btn-secondary" id="areaFormCancel">Cancelar</button>
+      <button type="submit" class="btn-primary">Guardar</button>
+    <% } %>
   </div>
 </form>

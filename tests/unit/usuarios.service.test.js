@@ -412,6 +412,8 @@ describe('usuarios.service.crear (US-602)', () => {
       telefono: '5551234',
       username: 'ana.gomez',
       doctorId: null,
+      tipoUsuario: 'usuario',
+      notificacionesAlertas: false,
       usuarioId: 1,
     });
     expect(args.passwordHash).not.toBe('ContraseñaSegura1');
@@ -442,8 +444,47 @@ describe('usuarios.service.crear (US-602)', () => {
       doctorId: '5',
       usuarioId: 1,
     });
-    expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ doctorId: 5 }));
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ doctorId: 5, tipoUsuario: 'doctor' }),
+    );
     expect(repository.findByDoctorId).toHaveBeenCalledWith(5);
+  });
+
+  it('guarda el tipo elegido y las notificaciones para una cuenta sin doctor', async () => {
+    await crear({
+      nombre: 'Ana',
+      apellidos: 'Gómez',
+      correo: 'ana@omegavet.test',
+      username: 'ana.gomez',
+      password: 'ContraseñaSegura1',
+      tipoUsuario: 'estilista',
+      notificacionesAlertas: 'true',
+      usuarioId: 1,
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        doctorId: null,
+        tipoUsuario: 'estilista',
+        notificacionesAlertas: true,
+      }),
+    );
+  });
+
+  it('permite asignar Doctor manualmente aunque no exista un vínculo', async () => {
+    await crear({
+      nombre: 'Ana',
+      apellidos: 'Gómez',
+      correo: 'ana@omegavet.test',
+      username: 'ana.gomez',
+      password: 'ContraseñaSegura1',
+      tipoUsuario: 'doctor',
+      usuarioId: 1,
+    });
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ doctorId: null, tipoUsuario: 'doctor' }),
+    );
   });
 
   it('AC (octava iteración): rechaza un doctorId ya vinculado a otro usuario, sin crear el registro', async () => {
@@ -617,6 +658,8 @@ describe('usuarios.service.editar (US-602)', () => {
       telefono: '5551234',
       username: 'ana.gomez',
       estatus: 'activo',
+      tipoUsuario: 'usuario',
+      notificacionesAlertas: false,
       permissionIds: undefined,
       usuarioId: 2,
     });
@@ -698,6 +741,25 @@ describe('usuarios.service.editar (US-602)', () => {
       usuarioId: 2,
     });
     expect(repository.update.mock.calls[0][1]).not.toHaveProperty('doctorId');
+  });
+
+  it('actualiza el tipo operativo y activa las notificaciones de alertas', async () => {
+    await editar({
+      id: 5,
+      nombre: 'Ana',
+      apellidos: 'Gómez',
+      correo: 'ana@omegavet.test',
+      username: 'ana.gomez',
+      estatus: 'activo',
+      tipoUsuario: 'recepcion',
+      notificacionesAlertas: 'on',
+      usuarioId: 2,
+    });
+
+    expect(repository.update).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ tipoUsuario: 'recepcion', notificacionesAlertas: true }),
+    );
   });
 
   it('rechaza apellidos vacíos', async () => {

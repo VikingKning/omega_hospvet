@@ -1,11 +1,3 @@
-// Job periódico (src/jobs/plantillasWhatsappMetaSyncJob.js): sincroniza el
-// estado y la categoría reales de todas las plantillas locales. Meta puede
-// reclasificar una plantilla de UTILITY a MARKETING incluso después del
-// registro, por eso no basta revisar únicamente aprobado_meta=false. El
-// registro en sí (el POST) pasa en
-// plantillas_whatsapp.service.js#registrarEnMeta, al crear/reactivar (push
-// inmediato, mismo criterio que agenda.googleSync.js: push al momento +
-// pull periódico).
 const logger = require('../../config/logger');
 const whatsapp = require('../../config/whatsapp');
 const repository = require('./plantillas_whatsapp.repository');
@@ -19,12 +11,6 @@ async function sincronizarDatosMeta(plantillasMeta, plantillasLocales) {
   let actualizadas = 0;
 
   for (const plantilla of locales) {
-    // Una plantilla de texto libre nunca se registró a propósito (ver
-    // plantillas_whatsapp.service.js#registrarEnMeta) — si Meta igual
-    // reporta un template con ese mismo nombre (ej. quedó de un registro
-    // manual viejo, antes de esta decisión), no se debe pisar la decisión
-    // local con lo que Meta diga: sigue siendo texto libre para este
-    // sistema, punto.
     if (plantilla.categoria_meta === CATEGORIA_TEXTO_LIBRE) continue;
     const datosMeta = metaPorNombre.get(nombreMeta(plantilla.slug));
     if (!datosMeta) continue;

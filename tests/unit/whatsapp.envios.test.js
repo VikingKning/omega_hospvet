@@ -14,6 +14,13 @@ const {
 
 const originalFetch = global.fetch;
 
+// US WA 015: enviarPlantillaResultados ahora pasa por whatsapp.outbox.js,
+// que a su vez llama al repository (mockeado wholesale arriba) — este fake
+// en memoria imita lo mínimo que outbox.ejecutarIntento necesita para que
+// el body de fetch/las aserciones de auditoría existentes sigan siendo
+// exactamente las mismas de antes.
+let intents;
+
 beforeEach(() => {
   jest.clearAllMocks();
   global.fetch = jest.fn();
@@ -23,6 +30,36 @@ beforeEach(() => {
     .mockReturnValue('https://graph.facebook.com/fake/messages');
   jest.spyOn(whatsappConfig, 'bearerHeader').mockReturnValue({ Authorization: 'Bearer fake' });
   jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
+
+  intents = new Map();
+  repository.registrarIntentoEnvio.mockImplementation(async (datos) => {
+    // Shape en snake_case, igual que una fila real de outbox_whatsapp —
+    // whatsapp.outbox.js lee intent.payload_funcional/intent.tipo_envio/etc.
+    const intent = {
+      intent_id: intents.size + 1,
+      clave_idempotencia: datos.claveIdempotencia,
+      tipo_envio: datos.tipoEnvio,
+      conversacion_id: datos.conversacionId ?? null,
+      destinatario_telefono: datos.destinatarioTelefono,
+      payload_funcional: datos.payloadFuncional,
+      wamid: null,
+      estado: 'pendiente',
+    };
+    intents.set(datos.claveIdempotencia, intent);
+    return { intent, esNuevo: true };
+  });
+  repository.buscarIntentoPorClave.mockImplementation(async (clave) => intents.get(clave));
+  repository.reclamarIntentoEnvio.mockImplementation(async (clave) => ({
+    intent: intents.get(clave),
+    reclamado: true,
+  }));
+  repository.incrementarIntento.mockResolvedValue();
+  repository.marcarWamid.mockImplementation(async (id, wamid) => {
+    for (const intent of intents.values()) if (intent.intent_id === id) intent.wamid = wamid;
+  });
+  repository.marcarResultadoEnvio.mockImplementation(async (id, { estado }) => {
+    for (const intent of intents.values()) if (intent.intent_id === id) intent.estado = estado;
+  });
 });
 
 afterEach(() => {
@@ -79,6 +116,7 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
       saludo: 'tarde',
       mediaId: 'media-123',
       nombreArchivo: 'resultados.pdf',
+      claveIdempotencia: 'laboratorio:1:1',
     });
 
     const [url, opciones] = global.fetch.mock.calls[0];
@@ -115,6 +153,10 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
         origen: 'laboratorio',
       }),
     );
+    // US WA 002 AC13: un envío proactivo nunca activa atención humana ni
+    // toca ninguna conversación.
+    expect(repository.registrarMensajeYConversacion).not.toHaveBeenCalled();
+    expect(repository.cerrarConversacion).not.toHaveBeenCalled();
   });
 
   it('si Meta rechaza el envío, lanza con el mensaje de error de Meta', async () => {
@@ -135,6 +177,7 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
         saludo: 'tarde',
         mediaId: 'media-123',
         nombreArchivo: 'resultados.pdf',
+        claveIdempotencia: 'laboratorio:2:2',
       }),
     ).rejects.toThrow('La plantilla no está aprobada todavía.');
     expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(

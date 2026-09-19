@@ -8,12 +8,6 @@ const controller = require('./agenda.controller');
 
 const router = express.Router();
 
-// El permiso depende del área de la URL (`agenda.<slug>.<accion>`), que no
-// existe todavía cuando se arma este router — por eso `requirePermission`
-// recibe una función `(req) => código`, evaluada en cada request (ver
-// requirePermission.js). `attachArea` resuelve `:slug` contra un área
-// real/activa (404 si no) DESPUÉS del permiso, nunca antes — mismo orden
-// que areas.routes.js (requireAuth -> requirePermission -> lo demás).
 
 router.get(
   '/agenda/:slug.html',
@@ -24,7 +18,6 @@ router.get(
   controller.pagina,
 );
 
-// Feed de FullCalendar — mismo permiso que la página (solo lectura).
 router.get(
   '/agenda/:slug/citas.json',
   requireAuth,
@@ -33,9 +26,6 @@ router.get(
   controller.eventos,
 );
 
-// Bloques "ocupado" del doctor filtrado en OTRAS áreas (sin detalle, solo
-// para pintarlos en gris) — pedido explícito del usuario. Mismo permiso de
-// solo lectura que el feed de arriba.
 router.get(
   '/agenda/:slug/citas/ocupado.json',
   requireAuth,
@@ -80,8 +70,6 @@ router.put(
   controller.editar,
 );
 
-// "Eliminar" en la UI es cancelar (baja lógica) — mismo permiso que
-// cancelar/dar de baja en el resto del sistema.
 router.delete(
   '/agenda/:slug/citas/:id',
   requireAuth,
@@ -92,10 +80,6 @@ router.delete(
   controller.cancelar,
 );
 
-// "Confirmar" una cita 'registrada' (reserva externa ya completada a mano
-// — ver agenda.service.js#confirmar). Mismo permiso que editar: es parte
-// de la misma capacidad de modificar la agenda de esta área, no se
-// inventa un permiso nuevo solo para esta acción.
 router.post(
   '/agenda/:slug/citas/:id/confirmar',
   requireAuth,

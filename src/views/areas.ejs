@@ -46,13 +46,6 @@
     </div>
   </div>
 
-  <%#
-    Modal de confirmación reutilizable para acciones destructivas de esta
-    vista (por ahora solo "dar de baja"). Vive fuera de #areas-panel a
-    propósito: HTMX reemplaza ese contenedor en cada filtro/orden/página, y
-    si el modal viviera adentro se destruiría a medio uso en cuanto la
-    petición terminara.
-  %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -67,13 +60,6 @@
     </div>
   </div>
 
-  <%#
-    Modal de alta/edición (US-610): mismo formulario para las dos acciones,
-    el contenido real lo llena HTMX (partials/area-form.ejs) al hacer clic
-    en el botón de alta del toolbar o en el ícono de editar de una fila —
-    ver areas-panel.ejs. Vive fuera de #areas-panel por la misma razón que
-    el modal de confirmación.
-  %>
   <div class="modal-backdrop" id="areaFormModalBackdrop">
     <div class="modal-card" id="areaFormModalBody"></div>
   </div>
@@ -81,11 +67,6 @@
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  // Modal de alta/edición (US-610). El contenido de #areaFormModalBody lo
-  // reemplaza HTMX en cada apertura/reintento, así que los botones de
-  // adentro (cerrar, cancelar, cerrar el mensaje de error) se manejan por
-  // delegación en el contenedor — un addEventListener directo sobre esos
-  // botones se perdería en cuanto HTMX los vuelva a crear.
   const areaFormModalBackdrop = document.getElementById('areaFormModalBackdrop');
   const areaFormModalBody = document.getElementById('areaFormModalBody');
 
@@ -99,11 +80,6 @@
 
   document.body.addEventListener('htmx:afterSwap', (event) => {
     if (event.detail.target !== areaFormModalBody) return;
-    // Si el fragmento trae un <form> (carga inicial, o reintento tras un
-    // error de validación/nombre duplicado) el modal debe quedar/seguir
-    // abierto. La respuesta de éxito no trae form (solo el swap
-    // out-of-band de la tabla) — en ese caso no hay nada que abrir, el
-    // evento closeAreaModal de abajo se encarga de cerrarlo.
     if (areaFormModalBody.querySelector('form')) openAreaFormModal();
   });
 
@@ -115,14 +91,6 @@
       event.target.closest('.form-error-banner')?.remove();
     }
 
-    // Picker de color (US: color de área para Google Calendar) — un swatch
-    // no es un <input type="radio"> real (así puede pintarse como un
-    // cuadro de color puro-CSS), así que el estado "seleccionado" y el
-    // input oculto que HTMX manda en el submit se sincronizan a mano por
-    // delegación, igual que el resto de este modal. También actualiza en
-    // vivo la tarjeta "Vista previa en Google Calendar" — data-hex viene
-    // vacío en el swatch "Sin color", así que ese caso cae solo al estado
-    // "sin color" de la vista previa.
     const swatch = event.target.closest('.color-swatch-option');
     if (swatch) {
       const picker = swatch.closest('.color-swatch-picker');
@@ -144,8 +112,6 @@
     }
   });
 
-  // Vista previa en vivo del nombre del área (misma delegación: el <input>
-  // se recrea en cada swap de HTMX).
   areaFormModalBody.addEventListener('input', (event) => {
     if (!event.target.matches('input[name="nombre"]')) return;
     const previewName = areaFormModalBody.querySelector('#areaColorPreviewName');
@@ -156,8 +122,6 @@
     if (event.target === areaFormModalBackdrop) closeAreaFormModal();
   });
 
-  // HX-Trigger: closeAreaModal (ver areas.controller.js, renderExito()) —
-  // htmx traduce ese header en este evento personalizado.
   document.body.addEventListener('closeAreaModal', closeAreaFormModal);
 </script>
 

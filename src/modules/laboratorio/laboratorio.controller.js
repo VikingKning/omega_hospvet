@@ -2,14 +2,6 @@ const service = require('./laboratorio.service');
 const { generateCsrfToken } = require('../../config/csrf');
 const fs = require('fs');
 
-// Carga inicial de la página: siempre el estado por defecto, nunca lee query
-// params PARA FILTRAR (mismo criterio que doctores.controller.js#list — así
-// una URL pegada a mano nunca filtra nada, el filtrado real solo ocurre por
-// el POST de abajo, vía HTMX, sin tocar la URL). La única excepción es
-// `?error=no-encontrado&id=...`, que no filtra nada — es el mismo mecanismo
-// de mensaje-tras-redirect que ya usa app.js con `?expired=<motivo>` para
-// index.ejs, aquí para avisar por qué se volvió a esta lista (ver
-// formularioDeRegistro más abajo).
 async function pagina(req, res, next) {
   try {
     const data = await service.list({});
@@ -23,9 +15,6 @@ async function pagina(req, res, next) {
   }
 }
 
-// Fragmento HTMX: filtro/orden/página completos en el body, devuelve solo
-// el panel (toolbar + tabla + paginación) — mismo patrón que
-// doctores.controller.js#filter.
 async function filter(req, res, next) {
   try {
     const data = await service.list(req.body);
@@ -42,10 +31,6 @@ async function filter(req, res, next) {
   }
 }
 
-// Baja lógica de una orden. Igual que doctores.controller.js#desactivar:
-// hx-include viaja como query string en un DELETE (methodsThatUseUrlParams
-// de HTMX), por eso se leen req.query Y req.body para no perder el filtro
-// activo del usuario en el panel que se devuelve.
 async function eliminar(req, res, next) {
   try {
     await service.eliminar(req.params.id, req.session.user.id);
@@ -63,10 +48,6 @@ async function eliminar(req, res, next) {
   }
 }
 
-// Pedido explícito del usuario: alta/edición/consulta son cada una su
-// propia pantalla completa (mismo patrón que tutor-form.ejs), no un modal
-// sobre la tabla — a diferencia del resto de los módulos del sistema
-// (doctor-form.ejs/area-form.ejs/plantilla-form.ejs, todos modales).
 async function nuevoForm(req, res, next) {
   try {
     const [catalogo, doctores] = await Promise.all([
@@ -76,10 +57,6 @@ async function nuevoForm(req, res, next) {
     const csrfToken = generateCsrfToken(req, res);
     res.render('laboratorio-form', {
       registro: null,
-      // Pedido explícito del usuario: si quien registra la orden es, él
-      // mismo, un doctor vinculado (usuarios.doctor_id, cacheado en
-      // sesión al hacer login — ver auth.service.js#login), se
-      // preselecciona como "Dr. solicitante"; si no, se deja en blanco.
       doctorIdPreseleccionado: req.session.user.doctorId ?? null,
       soloLectura: false,
       modoCargarArchivos: false,
@@ -93,35 +70,17 @@ async function nuevoForm(req, res, next) {
   }
 }
 
-// Misma pantalla para /editar, /ver y /cargar — pedido explícito del
-// usuario: "usar el mismo de agregar/editar para ver la información, solo
-// ocultar los botones y el formulario de seleccionar estudio", que es
-// exactamente lo que ya hace `soloLectura` (oculta el picker server-side,
-// el botón Guardar, y deshabilita todos los campos). `forzarSoloLectura`
-// distingue las rutas: /editar respeta el permiso real del usuario (si no
-// tiene laboratorio.editar, cae en solo lectura de todos modos, como ya
-// hacía); /ver y /cargar SIEMPRE son de solo lectura sin importar el
-// permiso de editar. `modoCargarArchivos` es la diferencia entre esas dos
-// últimas — corrección explícita del usuario: "Ver" es PURAMENTE
-// informativa (qué se mandó, a quién, cuándo), nunca debe ofrecer subir
-// nada; el ícono de "Subir resultados" de la tabla abre /cargar, la única
-// ruta que muestra los controles de carga (ver laboratorio-form.ejs,
-// puedeCargarArchivos ya no depende de soloLectura genérico).
 async function formularioDeRegistro(req, res, next, { forzarSoloLectura, modoCargarArchivos }) {
   try {
     const registro = await service.obtenerParaEditar(req.params.id);
     if (!registro) {
-      // Pedido explícito del usuario: un id inexistente (o basura, ej.
-      // /laboratorio/asdfasddfsdf/ver) ya no muestra un 404 en blanco sin
-      // el diseño del sistema — regresa al listado con un mensaje, mismo
-      // mecanismo de `?expired=<motivo>` que ya usa app.js para index.ejs.
       return res.redirect(
         `/laboratorio.html?error=no-encontrado&id=${encodeURIComponent(req.params.id)}`,
       );
     }
     const [catalogo, doctores] = await Promise.all([
-      service.catalogoParaFormulario(),
-      service.listarDoctoresActivos(),
+      service.catalogoParaFormulario(registro.estudios.map((estudio) => estudio.estudio_id)),
+      service.listarDoctoresActivos(registro.doctor_id),
     ]);
     const permissions = req.session.user.permissions ?? [];
     const csrfToken = generateCsrfToken(req, res);
@@ -154,8 +113,6 @@ async function verForm(req, res, next) {
   });
 }
 
-// Ícono "Subir resultados" de la tabla — pedido explícito del usuario, en
-// vez de la pantalla de Ver (que se queda puramente informativa).
 async function cargarForm(req, res, next) {
   return formularioDeRegistro(req, res, next, {
     forzarSoloLectura: true,
@@ -163,11 +120,6 @@ async function cargarForm(req, res, next) {
   });
 }
 
-// Búsqueda de tutor por teléfono para el formulario de "Nuevo registro"
-// (pedido explícito del usuario: "si escribo un teléfono, la información se
-// tiene que mostrar") — vive en este módulo (no en tutores.routes.js)
-// porque el permiso correcto aquí es `laboratorio.crear`, mismo motivo que
-// el comentario de /tutores/buscar-mascota en tutores.routes.js.
 async function buscarTutor(req, res, next) {
   try {
     const tutor = await service.resolverTutorPorTelefono(req.body.telefono);
@@ -177,9 +129,6 @@ async function buscarTutor(req, res, next) {
   }
 }
 
-// Combobox "buscar tutor por nombre" — pedido explícito del usuario, para
-// cuando no se conoce el teléfono. Mismo permiso que buscarTutor (solo se
-// usa en "Nuevo registro").
 async function buscarTutorPorNombre(req, res, next) {
   try {
     const tutores = await service.buscarTutoresPorNombre(req.body.q);
@@ -189,9 +138,6 @@ async function buscarTutorPorNombre(req, res, next) {
   }
 }
 
-// Alta — respuesta JSON con redirectTo (mismo patrón que
-// tutores.controller.js#crear: esta pantalla también es una página propia
-// que habla con el servidor vía fetch(), no un fragmento HTMX).
 async function crear(req, res, next) {
   try {
     const id = await service.crear({ ...req.body, usuarioId: req.session.user.id });
@@ -216,9 +162,6 @@ async function editar(req, res, next) {
   }
 }
 
-// Carga de archivos de resultados (pedido explícito del usuario) — un
-// archivo (o varios, que el service fusiona en un PDF) para TODOS los
-// estudios de la orden.
 async function subirArchivoRegistro(req, res, next) {
   try {
     const resultado = await service.subirArchivoParaTodos(
@@ -235,7 +178,6 @@ async function subirArchivoRegistro(req, res, next) {
   }
 }
 
-// Mismo mecanismo, para UN estudio en particular.
 async function subirArchivoEstudio(req, res, next) {
   try {
     const resultado = await service.subirArchivoParaEstudio(
@@ -253,10 +195,6 @@ async function subirArchivoEstudio(req, res, next) {
   }
 }
 
-// Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
-// equivocó el usuario") — no necesita multer, no lleva body. `usuarioId`
-// sí hace falta ahora (bug real corregido en US-409 v2: antes no viajaba
-// en absoluto) — retirado_por/retirado_en lo necesitan para auditoría.
 async function eliminarArchivoRegistro(req, res, next) {
   try {
     await service.eliminarArchivoDeTodos(req.params.id, req.session.user.id);
@@ -285,14 +223,40 @@ async function eliminarArchivoEstudio(req, res, next) {
   }
 }
 
-// Envío real de resultados (pedido explícito del usuario) — reemplaza el
-// stub anterior (modal que se cerraba solo a los 5s sin mandar nada). El
-// service nunca lanza por una falla de correo/WhatsApp en sí (eso viaja en
-// el propio JSON de respuesta, por canal) — solo lanza (con `.status`) por
-// datos inválidos (registro inexistente, algún estudio sin archivo).
+async function prepararEnvioResultados(req, res, next) {
+  try {
+    const confirmacion = await service.prepararConfirmacionEnvio(
+      req.params.id,
+      req.session.user.id,
+    );
+    req.session.confirmacionesEnvioLaboratorio = {
+      ...(req.session.confirmacionesEnvioLaboratorio ?? {}),
+      [req.params.id]: confirmacion.confirmacionToken,
+    };
+    res.json(confirmacion);
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return next(err);
+  }
+}
+
 async function enviarResultados(req, res, next) {
   try {
-    const resultado = await service.enviarResultados(req.params.id, req.session.user.id);
+    const confirmacionToken = req.body?.confirmacionToken;
+    const confirmaciones = req.session.confirmacionesEnvioLaboratorio ?? {};
+    if (!confirmacionToken || confirmaciones[req.params.id] !== confirmacionToken) {
+      return res.status(400).json({
+        error: 'Debes revisar y confirmar los destinatarios antes de enviar los resultados.',
+      });
+    }
+    delete confirmaciones[req.params.id];
+    req.session.confirmacionesEnvioLaboratorio = confirmaciones;
+
+    const resultado = await service.enviarResultados(req.params.id, req.session.user.id, {
+      confirmacionToken,
+    });
     res.json(resultado);
   } catch (err) {
     if (err.status) {
@@ -302,8 +266,6 @@ async function enviarResultados(req, res, next) {
   }
 }
 
-// Descarga autenticada — nunca por static serving directo (ver comentario
-// del .gitignore, son resultados médicos de pacientes).
 async function descargarArchivo(req, res, next) {
   try {
     const archivo = await service.obtenerArchivoParaDescarga(req.params.archivoId);
@@ -332,6 +294,7 @@ module.exports = {
   subirArchivoEstudio,
   eliminarArchivoRegistro,
   eliminarArchivoEstudio,
+  prepararEnvioResultados,
   enviarResultados,
   descargarArchivo,
 };

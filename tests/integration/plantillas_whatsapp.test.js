@@ -874,6 +874,103 @@ describe('POST /plantillas y PUT /plantillas/:id (US-613 — alta y edición)', 
     const sinCambios = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
     expect(sinCambios.intencion).toBe(intencion);
   });
+
+  // Pedido explícito del usuario: switch "es_emergencia" — para identificar
+  // si el slug que regresó el LLM es una emergencia médica. Por ahora solo
+  // el campo + el switch en pantalla, sin conectarse a ningún flujo real.
+  //
+  // A propósito, un solo registro nuevo se reusa entre varios asserts (en
+  // vez de una fila por `it`): este archivo pagina /plantillas.html a 10 —
+  // varias filas SUFFIX nuevas más las 4 predeterminadas del sistema
+  // pueden empujar a "Plantillas predeterminadas..." (más abajo, que busca
+  // su fila en la página 1 por defecto) fuera de esa primera página. Ya
+  // pasó una vez con 5 filas nuevas — se corrigió bajando a 2.
+  describe('AC (pedido explícito del usuario): switch "Es emergencia médica"', () => {
+    it('el alta sin marcar el switch guarda es_emergencia=false por default', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+      const intencion = `SinEmergencia ${SUFFIX}`;
+
+      await crearPlantilla(agent, intencion);
+
+      const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
+      expect(plantilla.es_emergencia).toBe(false);
+    });
+
+    it('AC: alta marcando el switch, precarga en editar, "Ver" y desmarcar al editar (un solo registro, varios pasos)', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+      const csrfToken = await getPlantillasCsrfToken(agent);
+      const intencion = `ConEmergencia ${SUFFIX}`;
+
+      await agent
+        .post('/plantillas')
+        .type('form')
+        .set('x-csrf-token', csrfToken)
+        .send({ intencion, texto_respuesta: 'Texto de prueba.', es_emergencia: 'true' });
+      const plantilla = await db('plantillas_whatsapp').where({ intencion }).first();
+      expect(plantilla.es_emergencia).toBe(true);
+
+      const resEditar = await agent.get(`/plantillas/${plantilla.id}/editar`);
+      // Componente "Sí/No" (toggle-group): el botón "Sí" trae la clase
+      // .active y el input oculto que de verdad viaja en el submit trae
+      // value="true" — ver plantilla-form.ejs.
+      expect(resEditar.text).toContain('class="toggle-btn active" data-value="true">Emergencia');
+      expect(resEditar.text).toContain('id="plantillaEmergenciaInput" value="true"');
+
+      const resVer = await agent.get(`/plantillas/${plantilla.id}/ver`);
+      // Pedido explícito del usuario (ajuste posterior): píldora a lado
+      // del título "Detalle de la plantilla" en vez de texto plano Sí/No.
+      expect(resVer.text).toContain('Detalle de la plantilla');
+      expect(resVer.text).toMatch(/is-emergencia">\s*Respuesta a Emergencia/);
+
+      // Editar sin mandar es_emergencia en el body lo desmarca — el
+      // helper editarPlantilla() (usado por el resto del archivo) no lo
+      // manda, a diferencia del formulario real (que siempre incluye el
+      // input oculto, "Sí" o "No") — mismo criterio de "ausente = false"
+      // que ya regía para el switch Activo/checkbox.
+      await editarPlantilla(agent, plantilla.id, 'Texto editado.');
+      const actualizada = await db('plantillas_whatsapp').where({ id: plantilla.id }).first();
+      expect(actualizada.es_emergencia).toBe(false);
+    });
+
+    // La migración 20260914000003 ya deja 'emergencia-medica' en
+    // es_emergencia=true — se prueba con OTRA plantilla predeterminada
+    // (nunca esa) para no arriesgarse a que un `.first()` sin filtro la
+    // agarre a ella y el cleanup de este test termine apagando el true que
+    // la migración sembró para el resto de la suite/sesión.
+    it('SÍ se puede marcar es_emergencia en una plantilla predeterminada del sistema (no está restringido por es_predeterminada)', async () => {
+      const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+      const csrfToken = await getPlantillasCsrfToken(agent);
+      const predeterminada = await db('plantillas_whatsapp')
+        .where({ es_predeterminada: true })
+        .whereNot({ slug: 'emergencia-medica' })
+        .first();
+
+      const res = await agent
+        .put(`/plantillas/${predeterminada.id}`)
+        .type('form')
+        .set('x-csrf-token', csrfToken)
+        .send({ texto_respuesta: predeterminada.texto_respuesta, es_emergencia: 'true' });
+
+      expect(res.status).toBe(200);
+      const actualizada = await db('plantillas_whatsapp').where({ id: predeterminada.id }).first();
+      expect(actualizada.es_emergencia).toBe(true);
+      expect(actualizada.activo).toBe(true); // sigue forzado, sin cambios en esa regla
+
+      // Deja la fila como estaba para no afectar otros tests que corren en
+      // paralelo contra esta misma fila compartida del sistema.
+      await db('plantillas_whatsapp')
+        .where({ id: predeterminada.id })
+        .update({ es_emergencia: false });
+    });
+
+    it('AC: la migración deja la plantilla predeterminada "emergencia-medica" con es_emergencia=true', async () => {
+      const emergenciaMedica = await db('plantillas_whatsapp')
+        .where({ slug: 'emergencia-medica' })
+        .first();
+
+      expect(emergenciaMedica.es_emergencia).toBe(true);
+    });
+  });
 });
 
 describe('DELETE /plantillas/:id (US-614 — baja lógica)', () => {
@@ -1078,11 +1175,21 @@ describe('Plantillas predeterminadas del sistema (es_predeterminada) — inborra
       .put(`/plantillas/${predeterminada.id}`)
       .type('form')
       .set('x-csrf-token', csrfToken)
-      .send({ texto_respuesta: 'Texto de emergencia actualizado en la prueba.', activo: 'true' });
+      .send({
+        texto_respuesta: 'Texto de emergencia actualizado en la prueba.',
+        activo: 'true',
+        // El formulario real siempre reenvía el estado actual del switch
+        // (viene precargado, ver plantilla-form.ejs) — replicarlo aquí
+        // evita apagar en falso el es_emergencia=true que la migración
+        // 20260914000003 sembró para esta fila (bug real ya encontrado:
+        // un PUT de prueba sin este campo lo resetea a false).
+        es_emergencia: predeterminada.es_emergencia ? 'true' : undefined,
+      });
 
     expect(res.status).toBe(200);
     const row = await db('plantillas_whatsapp').where({ id: predeterminada.id }).first();
     expect(row.texto_respuesta).toBe('Texto de emergencia actualizado en la prueba.');
+    expect(row.es_emergencia).toBe(predeterminada.es_emergencia);
 
     // Deja el texto como estaba, para no afectar otras corridas de este archivo.
     await db('plantillas_whatsapp')
@@ -1098,7 +1205,10 @@ describe('Plantillas predeterminadas del sistema (es_predeterminada) — inborra
       .put(`/plantillas/${predeterminada.id}`)
       .type('form')
       .set('x-csrf-token', csrfToken)
-      .send({ texto_respuesta: predeterminada.texto_respuesta }); // sin "activo" en el body
+      .send({
+        texto_respuesta: predeterminada.texto_respuesta,
+        es_emergencia: predeterminada.es_emergencia ? 'true' : undefined,
+      }); // sin "activo" en el body
 
     const row = await db('plantillas_whatsapp').where({ id: predeterminada.id }).first();
     expect(row.activo).toBe(true);
@@ -1112,6 +1222,23 @@ describe('Plantillas predeterminadas del sistema (es_predeterminada) — inborra
     expect(res.status).toBe(200);
     expect(res.text).not.toContain('name="activo"');
     expect(res.text).toContain('predeterminada del sistema');
+  });
+
+  // Pedido explícito del usuario (ajuste posterior): para una plantilla
+  // predeterminada, la nota "predeterminada del sistema" va SIEMPRE debajo
+  // del componente "Respuesta a Emergencia", justo encima de los botones.
+  it('AC: la nota de predeterminada aparece DESPUÉS del componente de Emergencia y justo ANTES de los botones', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/plantillas/${predeterminada.id}/editar`);
+
+    const posEmergencia = res.text.indexOf('plantillaEmergenciaToggle');
+    const posNota = res.text.indexOf('predeterminada del sistema');
+    const posBotones = res.text.indexOf('modal-actions');
+
+    expect(posEmergencia).toBeGreaterThan(-1);
+    expect(posNota).toBeGreaterThan(posEmergencia);
+    expect(posBotones).toBeGreaterThan(posNota);
   });
 
   it('AC: el detalle (Ver) muestra la nota de plantilla predeterminada', async () => {

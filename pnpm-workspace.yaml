@@ -13,3 +13,5 @@ allowBuilds:
 # funcional en su mapa de exports.
 overrides:
   htmlparser2: ^10.0.0
+  qs: 6.16.0
+  'js-yaml@3': 3.15.2

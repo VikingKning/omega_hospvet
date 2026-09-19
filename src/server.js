@@ -1,10 +1,18 @@
 const env = require('./config/env');
 const logger = require('./config/logger');
+const whatsappAgenda = require('./config/whatsappAgenda');
 const db = require('./config/database');
 const { store: sessionStore } = require('./config/session');
 const app = require('./app');
 const googleCalendarSyncJob = require('./jobs/googleCalendarSyncJob');
 const plantillasWhatsappMetaSyncJob = require('./jobs/plantillasWhatsappMetaSyncJob');
+const whatsappAgrupacionJob = require('./jobs/whatsappAgrupacionJob');
+const whatsappSeguimientoJob = require('./jobs/whatsappSeguimientoJob');
+const whatsappAtencionHumanaJob = require('./jobs/whatsappAtencionHumanaJob');
+const whatsappAlertasJob = require('./jobs/whatsappAlertasJob');
+const whatsappFlujoAnteriorJob = require('./jobs/whatsappFlujoAnteriorJob');
+
+whatsappAgenda.validarConfiguracionAlArrancar(logger);
 
 const server = app.listen(env.port, () => {
   logger.info(`Omega Vet AdminSite escuchando en el puerto ${env.port} (${env.nodeEnv})`);
@@ -12,13 +20,12 @@ const server = app.listen(env.port, () => {
 
 const googleSyncInterval = googleCalendarSyncJob.start();
 const plantillasMetaSyncInterval = plantillasWhatsappMetaSyncJob.start();
+const whatsappAgrupacionInterval = whatsappAgrupacionJob.start();
+const whatsappSeguimientoInterval = whatsappSeguimientoJob.start();
+const whatsappAtencionHumanaInterval = whatsappAtencionHumanaJob.start();
+const whatsappAlertasInterval = whatsappAlertasJob.start();
+const whatsappFlujoAnteriorInterval = whatsappFlujoAnteriorJob.start();
 
-// Doble Ctrl+C (o SIGINT y SIGTERM llegando casi juntos, ej. de una
-// terminal/supervisor que manda ambos al cerrar) disparaba shutdown() dos
-// veces en paralelo — la segunda pasada llamaba sessionStore.close() sobre
-// un pool ya cerrado por la primera, y pg-pool revienta con "Called end on
-// pool more than once" en vez de ignorarlo. Este flag hace que solo la
-// primera señal recibida tenga efecto.
 let shuttingDown = false;
 
 async function shutdown(signal) {
@@ -28,6 +35,11 @@ async function shutdown(signal) {
   logger.info(`Señal ${signal} recibida, cerrando servidor...`);
   if (googleSyncInterval) clearInterval(googleSyncInterval);
   if (plantillasMetaSyncInterval) clearInterval(plantillasMetaSyncInterval);
+  if (whatsappAgrupacionInterval) clearInterval(whatsappAgrupacionInterval);
+  if (whatsappSeguimientoInterval) clearInterval(whatsappSeguimientoInterval);
+  if (whatsappAtencionHumanaInterval) clearInterval(whatsappAtencionHumanaInterval);
+  if (whatsappAlertasInterval) clearInterval(whatsappAlertasInterval);
+  if (whatsappFlujoAnteriorInterval) clearInterval(whatsappFlujoAnteriorInterval);
   server.close(async () => {
     await Promise.all([db.destroy(), sessionStore.close()]);
     logger.info('Servidor y conexiones a base de datos cerrados.');

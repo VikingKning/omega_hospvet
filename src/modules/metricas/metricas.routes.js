@@ -16,10 +16,6 @@ router.get(
   controller.pagina,
 );
 
-// Filtro de rango de fechas vía HTMX — mismo criterio de privacidad que
-// laboratorio.routes.js/doctores.routes.js (nunca en la URL/historial,
-// protegido con el mismo CSRF real que un POST de escritura aunque este
-// módulo sea 100% lectura).
 router.post(
   '/metricas/laboratorio.html',
   requireAuth,

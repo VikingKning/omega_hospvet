@@ -16,10 +16,6 @@ router.get(
   controller.list,
 );
 
-// Filtro/orden/paginación vía HTMX: nunca aparece en la URL ni en el
-// historial del navegador (mismo criterio de privacidad que
-// doctores.html/areas.html). El body viaja igual de "sucio" que un query
-// string, así que se protege con el mismo CSRF que POST /login.
 router.post(
   '/plantillas.html',
   requireAuth,
@@ -29,8 +25,6 @@ router.post(
   controller.filter,
 );
 
-// US-614: baja lógica de una plantilla, disparada por HTMX desde el ícono
-// de eliminar del listado (con confirmación previa vía hx-confirm).
 router.delete(
   '/plantillas/:id',
   requireAuth,
@@ -40,11 +34,6 @@ router.delete(
   controller.desactivar,
 );
 
-// US-613: alta y edición, mismo formulario en un modal. Los GET solo arman
-// el fragmento del formulario (vacío o precargado); los POST/PUT hacen el
-// alta/edición real. Cada ruta exige el permiso específico de la acción
-// (crear ≠ editar) — así un usuario con uno solo de los dos nunca puede
-// ejecutar el otro, aunque el formulario sea visualmente el mismo.
 router.get(
   '/plantillas/nuevo',
   requireAuth,
@@ -57,9 +46,6 @@ router.get(
   requirePermission('plantillas.editar'),
   controller.editarForm,
 );
-// Ícono "Ver": solo lectura, gate plantillas.ver (a diferencia de editar
-// arriba) — quien solo puede consultar el catálogo también puede abrir el
-// detalle completo de una plantilla, sin poder modificarla.
 router.get(
   '/plantillas/:id/ver',
   requireAuth,

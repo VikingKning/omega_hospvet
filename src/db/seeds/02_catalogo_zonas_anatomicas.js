@@ -1,5 +1,6 @@
 const zonas = [
   ['craneo', 'Cráneo'],
+  ['cuello', 'Cuello'],
   ['cervical', 'Columna cervical'],
   ['toracica_columna', 'Columna torácica'],
   ['lumbar', 'Columna lumbar'],
@@ -9,6 +10,7 @@ const zonas = [
   ['miembro_toracico', 'Miembro torácico'],
   ['miembro_pelvico', 'Miembro pélvico'],
   ['ocular', 'Ocular'],
+  ['dental', 'Dental'],
   ['articular', 'Articular'],
 ];
 

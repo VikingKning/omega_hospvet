@@ -24,10 +24,12 @@ const {
   eliminarArchivoDeTodos,
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
+  prepararConfirmacionEnvio,
   enviarResultados,
+  reenviarResultadosPorWhatsapp,
 } = require('../../src/modules/laboratorio/laboratorio.service');
 
-const MASCOTA = { id: 11, nombre: 'Cachis', propietario_id: 6 };
+const MASCOTA = { id: 11, nombre: 'Cachis', propietario_id: 6, tipo: 'Perro' };
 const ZONAS = [
   { id: 127, codigo: 'abdomen', nombre: 'Abdomen' },
   { id: 128, codigo: 'torax', nombre: 'Tórax' },
@@ -39,6 +41,9 @@ function estudio(id, campoAdicional, overrides = {}) {
     id,
     nombre: `Estudio ${id}`,
     campo_adicional: campoAdicional,
+    especie: null,
+    permite_antibiograma: campoAdicional === 'tipo_muestra',
+    zonas_permitidas_ids: campoAdicional === 'zona' ? ZONAS.map((zona) => zona.id) : [],
     activo: true,
     ...overrides,
   };
@@ -151,7 +156,7 @@ describe('laboratorio.service.crear', () => {
         estudios: [{ estudioId: 1 }],
         usuarioId: 1,
       }),
-    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica.');
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
   });
 
   it('rechaza una zonaAnatomicaId que no pertenece al catálogo real', async () => {
@@ -164,7 +169,35 @@ describe('laboratorio.service.crear', () => {
         estudios: [{ estudioId: 1, zonaAnatomicaId: 9999 }],
         usuarioId: 1,
       }),
-    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica.');
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
+  });
+
+  it('rechaza una zona que existe pero no está permitida para ese estudio', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(1, 'zona', { zonas_permitidas_ids: [127] }),
+    ]);
+    await expect(
+      crear({
+        mascotaId: 11,
+        doctorId: 1,
+        fechaSolicitud: FECHA_VALIDA,
+        estudios: [{ estudioId: 1, zonaAnatomicaId: 128 }],
+        usuarioId: 1,
+      }),
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
+  });
+
+  it('rechaza estudios restringidos a otra especie aunque el cliente los envíe manualmente', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([estudio(6, null, { especie: 'Gato' })]);
+    await expect(
+      crear({
+        mascotaId: 11,
+        doctorId: 1,
+        fechaSolicitud: FECHA_VALIDA,
+        estudios: [{ estudioId: 6 }],
+        usuarioId: 1,
+      }),
+    ).rejects.toThrow('"Estudio 6" no está disponible para la especie del paciente.');
   });
 
   it('rechaza un estudio con campo_adicional=tipo_muestra sin tipoMuestra', async () => {
@@ -290,6 +323,39 @@ describe('laboratorio.service.crear', () => {
       }),
     );
   });
+
+  it('permite antibiograma sin pedir tipo de muestra cuando el cultivo ya identifica el origen', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(7, null, { nombre: 'Urocultivo', permite_antibiograma: true }),
+    ]);
+    await crear({
+      mascotaId: 11,
+      doctorId: 7,
+      fechaSolicitud: FECHA_VALIDA,
+      usuarioId: 1,
+      estudios: [{ estudioId: 7, antibiograma: true }],
+    });
+    expect(repository.crearRegistro).toHaveBeenCalledWith(
+      expect.objectContaining({
+        estudios: [{ estudioId: 7, antibiograma: true }],
+      }),
+    );
+  });
+
+  it('rechaza antibiograma cuando el estudio no es un cultivo bacteriano compatible', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(2, 'tipo_muestra', { permite_antibiograma: false }),
+    ]);
+    await expect(
+      crear({
+        mascotaId: 11,
+        doctorId: 7,
+        fechaSolicitud: FECHA_VALIDA,
+        usuarioId: 1,
+        estudios: [{ estudioId: 2, tipoMuestra: 'Pelo', antibiograma: true }],
+      }),
+    ).rejects.toThrow('"Estudio 2" no permite solicitar antibiograma.');
+  });
 });
 
 describe('laboratorio.service.editar', () => {
@@ -298,6 +364,10 @@ describe('laboratorio.service.editar', () => {
     tutoresRepository.findMascotaById.mockResolvedValue(MASCOTA);
     repository.findZonasAnatomicas.mockResolvedValue(ZONAS);
     repository.findEstudiosByIds.mockResolvedValue([estudio(5, null)]);
+    repository.findById.mockResolvedValue({
+      id: 42,
+      estudios: [{ estudio_id: 5 }],
+    });
   });
 
   it('rechaza un id inválido (a diferencia de eliminar, aquí SÍ es un error, no un no-op)', async () => {
@@ -343,8 +413,45 @@ describe('laboratorio.service.editar', () => {
         usuarioId: 3,
         estudios: [{ estudioId: 1 }],
       }),
-    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica.');
+    ).rejects.toThrow('"Estudio 1" requiere seleccionar una zona anatómica válida.');
     expect(repository.actualizarRegistro).not.toHaveBeenCalled();
+  });
+
+  it('conserva un estudio histórico inactivo que ya pertenecía a la requisición', async () => {
+    repository.findById.mockResolvedValue({
+      id: 42,
+      estudios: [{ estudio_id: 8 }],
+    });
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(8, 'zona', { activo: false, zonas_permitidas_ids: [] }),
+    ]);
+
+    await editar('42', {
+      mascotaId: 11,
+      doctorId: 7,
+      fechaSolicitud: FECHA_VALIDA,
+      usuarioId: 3,
+      estudios: [{ estudioId: 8, zonaAnatomicaId: 127 }],
+    });
+
+    expect(repository.actualizarRegistro).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ estudios: [{ estudioId: 8, zonaAnatomicaId: 127 }] }),
+    );
+  });
+
+  it('no permite inyectar otro estudio inactivo al editar una requisición', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([estudio(8, null, { activo: false })]);
+
+    await expect(
+      editar('42', {
+        mascotaId: 11,
+        doctorId: 7,
+        fechaSolicitud: FECHA_VALIDA,
+        usuarioId: 3,
+        estudios: [{ estudioId: 8 }],
+      }),
+    ).rejects.toThrow('Uno de los estudios seleccionados ya no está disponible en el catálogo.');
   });
 });
 
@@ -464,6 +571,14 @@ describe('laboratorio.service catálogo/doctores', () => {
       { id: 1, nombre: 'Ana', apellidos: 'Pérez' },
     ]);
     expect(await listarDoctoresActivos()).toEqual([{ id: 1, nombre: 'Ana', apellidos: 'Pérez' }]);
+    expect(doctoresRepository.findActivos).toHaveBeenCalledWith(null);
+  });
+
+  it('incluye al doctor histórico solicitado aunque ya no esté activo', async () => {
+    doctoresRepository.findActivos.mockResolvedValue([{ id: 9, activo: false }]);
+
+    expect(await listarDoctoresActivos(9)).toEqual([{ id: 9, activo: false }]);
+    expect(doctoresRepository.findActivos).toHaveBeenCalledWith(9);
   });
 
   it('catalogoParaFormulario incluye la whitelist de componentes de líquido', async () => {
@@ -472,6 +587,15 @@ describe('laboratorio.service catálogo/doctores', () => {
     const catalogo = await catalogoParaFormulario();
     expect(catalogo.componentesLiquido.length).toBeGreaterThan(0);
     expect(catalogo.zonasAnatomicas).toEqual(ZONAS);
+  });
+
+  it('solicita al repositorio los estudios históricos requeridos por una requisición', async () => {
+    repository.findCatalogo.mockResolvedValue([]);
+    repository.findZonasAnatomicas.mockResolvedValue(ZONAS);
+
+    await catalogoParaFormulario([8, 9]);
+
+    expect(repository.findCatalogo).toHaveBeenCalledWith([8, 9]);
   });
 });
 
@@ -848,6 +972,56 @@ describe('laboratorio.service.enviarResultados', () => {
     repository.registrarEnvio.mockResolvedValue();
   });
 
+  async function enviarConfirmado(registroId = '42', usuarioId = 7) {
+    const confirmacion = await prepararConfirmacionEnvio(registroId, usuarioId);
+    return enviarResultados(registroId, usuarioId, {
+      confirmacionToken: confirmacion.confirmacionToken,
+    });
+  }
+
+  it('prepara una confirmación corta con los destinatarios enmascarados', async () => {
+    const confirmacion = await prepararConfirmacionEnvio('42', 7);
+
+    expect(confirmacion).toEqual({
+      confirmacionToken: expect.stringMatching(/^\d+\.[a-f0-9]{64}$/),
+      esReenvio: false,
+      destinatarios: {
+        correo: 'an***@c***.com',
+        whatsapp: '******5678',
+      },
+    });
+  });
+
+  it('marca la confirmación como reenvío cuando la orden ya fue enviada', async () => {
+    repository.findById.mockResolvedValue({ ...REGISTRO, estado: 'enviado' });
+
+    await expect(prepararConfirmacionEnvio('42', 7)).resolves.toEqual(
+      expect.objectContaining({ esReenvio: true }),
+    );
+  });
+
+  it('no envía con un token alterado o ligado a otro usuario', async () => {
+    const confirmacion = await prepararConfirmacionEnvio('42', 7);
+
+    await expect(
+      enviarResultados('42', 8, { confirmacionToken: confirmacion.confirmacionToken }),
+    ).rejects.toThrow('Los destinatarios o archivos cambiaron');
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('no prepara el envío si el tutor no tiene ningún contacto registrado', async () => {
+    repository.findById.mockResolvedValue({
+      ...REGISTRO,
+      propietario_correo: null,
+      propietario_telefono: null,
+    });
+
+    await expect(prepararConfirmacionEnvio('42', 7)).rejects.toThrow(
+      'El tutor no tiene correo ni teléfono registrados',
+    );
+  });
+
   it('lanza 404 con un id inválido, sin llegar a intentar ningún canal', async () => {
     await expect(enviarResultados('no-es-numero', 1)).rejects.toThrow('Registro no encontrado.');
     expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
@@ -871,7 +1045,7 @@ describe('laboratorio.service.enviarResultados', () => {
   });
 
   it('con correo y teléfono, intenta ambos canales y registra medio "ambos"', async () => {
-    const resultado = await enviarResultados('42', 7);
+    const resultado = await enviarConfirmado();
 
     expect(envios.enviarPorCorreo).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -905,7 +1079,7 @@ describe('laboratorio.service.enviarResultados', () => {
   it('sin correo registrado, solo intenta WhatsApp y registra medio "whatsapp"', async () => {
     repository.findById.mockResolvedValue({ ...REGISTRO, propietario_correo: null });
 
-    await enviarResultados('42', 7);
+    await enviarConfirmado();
 
     expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
@@ -922,7 +1096,7 @@ describe('laboratorio.service.enviarResultados', () => {
   it('si un canal falla, el otro se registra igual (uno no bloquea al otro)', async () => {
     envios.enviarPorWhatsapp.mockResolvedValue({ ok: false, error: 'Meta rechazó el envío.' });
 
-    const resultado = await enviarResultados('42', 7);
+    const resultado = await enviarConfirmado();
 
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -945,7 +1119,7 @@ describe('laboratorio.service.enviarResultados', () => {
     envios.enviarPorCorreo.mockResolvedValue({ ok: false, error: 'SMTP caído.' });
     envios.enviarPorWhatsapp.mockResolvedValue({ ok: false, error: 'Meta caído.' });
 
-    const resultado = await enviarResultados('42', 7);
+    const resultado = await enviarConfirmado();
 
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -966,9 +1140,102 @@ describe('laboratorio.service.enviarResultados', () => {
   });
 
   it('deduplica archivo_id repetidos entre estudios (un solo archivo compartido)', async () => {
-    await enviarResultados('42', 7);
+    await enviarConfirmado();
 
     expect(repository.findArchivoById).toHaveBeenCalledTimes(1);
     expect(repository.findArchivoById).toHaveBeenCalledWith(10);
+  });
+});
+
+// US WA 007 (ampliación, pedido explícito del usuario): reenvío de
+// resultados disparado por el propio bot de WhatsApp — mismo armado de
+// archivos que enviarResultados, pero SIN pasar por registrarEnvio (exige
+// un usuario de staff que aquí no existe) ni cambiar ningún estado.
+describe('laboratorio.service.reenviarResultadosPorWhatsapp', () => {
+  const REGISTRO = {
+    id: 42,
+    mascota_nombre: 'Firulais',
+    propietario_nombre: 'Ana',
+    propietario_apellidos: 'Ruiz',
+    propietario_telefono: '5512345678',
+    estudios: [
+      { id: 1, archivo_id: 10 },
+      { id: 2, archivo_id: 10 },
+    ],
+  };
+  const ARCHIVO = { id: 10, nombre_original: 'resultados.pdf', ruta_almacenamiento: '42/x.pdf' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repository.findById.mockResolvedValue(REGISTRO);
+    repository.findArchivoById.mockResolvedValue(ARCHIVO);
+    archivos.rutaAbsolutaDeArchivo.mockReturnValue('/storage/laboratorio/42/x.pdf');
+    archivos.mimetypeDeArchivo.mockReturnValue('application/pdf');
+    envios.enviarPorWhatsapp.mockResolvedValue({ ok: true });
+  });
+
+  it('con un id inválido, regresa ok:false sin llegar a envios.enviarPorWhatsapp', async () => {
+    const resultado = await reenviarResultadosPorWhatsapp('no-es-numero', {
+      telefono: '5512345678',
+    });
+    expect(resultado).toEqual({ ok: false, error: 'Folio inválido.' });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('si el registro no existe, regresa ok:false', async () => {
+    repository.findById.mockResolvedValue(undefined);
+    const resultado = await reenviarResultadosPorWhatsapp('999', { telefono: '5512345678' });
+    expect(resultado).toEqual({ ok: false, error: 'Registro no encontrado.' });
+  });
+
+  it('si algún estudio no tiene archivo todavía, regresa ok:false sin enviar nada', async () => {
+    repository.findById.mockResolvedValue({ ...REGISTRO, estudios: [{ id: 1, archivo_id: null }] });
+    const resultado = await reenviarResultadosPorWhatsapp('42', { telefono: '5512345678' });
+    expect(resultado).toEqual({ ok: false, error: 'No hay archivos cargados para esta orden.' });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('con un registro sin ningún estudio, regresa ok:false (no "éxito" enviando 0 adjuntos)', async () => {
+    repository.findById.mockResolvedValue({ ...REGISTRO, estudios: [] });
+    const resultado = await reenviarResultadosPorWhatsapp('42', { telefono: '5512345678' });
+    expect(resultado).toEqual({ ok: false, error: 'No hay archivos cargados para esta orden.' });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('arma los archivos igual que enviarResultados y llama a envios.enviarPorWhatsapp con el teléfono y el prefijo recibidos', async () => {
+    const resultado = await reenviarResultadosPorWhatsapp('42', {
+      telefono: '5512345678',
+      claveIdempotenciaPrefijo: 'mensaje:99:lab:exito',
+    });
+
+    expect(resultado).toEqual({ ok: true });
+    expect(envios.enviarPorWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        telefono: '5512345678',
+        nombreTutor: 'Ana Ruiz',
+        nombreMascota: 'Firulais',
+        folioId: 42,
+        claveIdempotenciaPrefijo: 'mensaje:99:lab:exito',
+        archivos: [expect.objectContaining({ id: 10, nombreOriginal: 'resultados.pdf' })],
+      }),
+    );
+  });
+
+  it('rechaza un reenvío cuando el teléfono no corresponde al tutor del folio', async () => {
+    const resultado = await reenviarResultadosPorWhatsapp('42', {
+      telefono: '5599999999',
+      claveIdempotenciaPrefijo: 'mensaje:100:lab:exito',
+    });
+
+    expect(resultado).toEqual({
+      ok: false,
+      error: 'Los datos proporcionados no corresponden al tutor registrado.',
+    });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('nunca llama a repository.registrarEnvio (no hay usuario de staff que auditar)', async () => {
+    await reenviarResultadosPorWhatsapp('42', { telefono: '5512345678' });
+    expect(repository.registrarEnvio).not.toHaveBeenCalled();
   });
 });

@@ -124,11 +124,5 @@ function horasLabel(horas) {
   </div>
 <% } %>
 
-<%
-// Isla de datos JSON (nunca un <script> — HTMX lo borraría al hacer swap
-// de este panel, allowScriptTags:false): el <script> de metricas-laboratorio.ejs
-// (nunca se swapea) la lee en cada htmx:afterSwap para (re)construir las
-// gráficas de Chart.js — mismo patrón ya establecido en el proyecto (ver
-// #citaTutorData en cita-form.ejs).
-%>
+
 <div id="metricasLabData" hidden><%- JSON.stringify({ porDia, porEstado, topEstudios, topCategorias, topDoctores, mapaRecepcion, porEspecie, antiguedadAbiertas, enviosPorCanal }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>

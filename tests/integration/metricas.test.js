@@ -107,6 +107,18 @@ describe('Métricas de WhatsApp', () => {
     expect(res.text).toContain('id="metricasWhatsappData"');
     expect(res.text).toContain("document.getElementById('whatsappChartTasa')");
     expect(res.text).toContain("document.getElementById('whatsappMapaCalor')");
+    expect(res.text).toContain('Flujo conversacional');
+    expect(res.text).toContain('role="tablist" aria-label="Reportes de WhatsApp"');
+    expect(res.text).toContain('data-whatsapp-report-tab="salientes"');
+    expect(res.text).toContain('data-whatsapp-report-tab="conversacional"');
+    expect(res.text).toContain('id="whatsapp-reporte-conversacional"');
+    expect(res.text).toContain('data-whatsapp-report="conversacional"');
+    expect(res.text).toContain('aria-labelledby="metricas-conversacional-titulo"');
+    expect(res.text).toContain('Mensajes entrantes únicos');
+    expect(res.text).toContain('Emergencias confirmadas');
+    expect(res.text).toContain('1. Tendencia de volumen conversacional');
+    expect(res.text).toContain('8. Atención humana y alertas');
+    expect(res.text).toContain('id="whatsappConversacionalMapaCalor"');
     expect(res.text).toContain('href="metricas/whatsapp.html" class="submenu-link current"');
   });
 

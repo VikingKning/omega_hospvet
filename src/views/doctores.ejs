@@ -46,13 +46,6 @@
     </div>
   </div>
 
-  <%#
-    Modal de confirmación reutilizable para acciones destructivas de esta
-    vista (por ahora solo "dar de baja"). Vive fuera de #doctores-panel a
-    propósito: HTMX reemplaza ese contenedor en cada filtro/orden/página, y
-    si el modal viviera adentro se destruiría a medio uso en cuanto la
-    petición terminara.
-  %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -67,29 +60,14 @@
     </div>
   </div>
 
-  <%#
-    Modal de alta/edición (US-607): mismo formulario para las dos acciones,
-    el contenido real lo llena HTMX (partials/doctor-form.ejs) al hacer
-    clic en el botón de alta del toolbar o en el ícono de editar de una
-    fila — ver doctores-panel.ejs. Vive fuera de #doctores-panel por la
-    misma razón que el modal de confirmación (mismo patrón que
-    areaFormModalBackdrop en areas.ejs).
-  %>
   <div class="modal-backdrop" id="doctorFormModalBackdrop">
-    <div class="modal-card" id="doctorFormModalBody"></div>
+    <div class="modal-card modal-card-wide doctor-form-modal" id="doctorFormModalBody"></div>
   </div>
 
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  // Modal de alta/edición (US-607). El contenido de #doctorFormModalBody lo
-  // reemplaza HTMX en cada apertura/reintento, así que los botones de
-  // adentro (cerrar, cancelar, cerrar el mensaje de error) y el picker de
-  // especialidades se manejan por delegación en el contenedor — un
-  // addEventListener directo sobre esos elementos se perdería en cuanto
-  // HTMX los vuelva a crear. Mismo patrón que areaFormModalBody en
-  // areas.ejs.
   const doctorFormModalBackdrop = document.getElementById('doctorFormModalBackdrop');
   const doctorFormModalBody = document.getElementById('doctorFormModalBody');
 
@@ -107,14 +85,6 @@
     return div.innerHTML;
   }
 
-  // El picker de especialidades vive dentro de .modal-card, que tiene
-  // `overflow-y:auto` — un `.combobox-list` con `position:absolute` (el
-  // default de main.css) sigue contando para el área scrolleable de ese
-  // ancestro aunque se vea como un overlay, así que el modal completo
-  // ganaba un scrollbar innecesario solo para "alcanzar" la lista. Se
-  // resuelve pasándola a `position:fixed` (relativa al viewport, escapa
-  // cualquier overflow de sus ancestros) con coordenadas calculadas a
-  // partir de dónde quedó el trigger en pantalla.
   function positionComboboxList(trigger, list) {
     const rect = trigger.getBoundingClientRect();
     list.style.position = 'fixed';
@@ -124,25 +94,16 @@
     list.style.right = 'auto';
   }
 
-  // Estado del picker de especialidades: vive en JS, no en el DOM, para no
-  // depender de que HTMX re-ejecute scripts al hacer swap (ver el
-  // <script type="application/json"> inerte en doctor-form.ejs). Se
-  // reinicia en cada apertura/reintento del formulario, leyendo esa isla
-  // de datos.
   let doctorFormAreas = { disponibles: [], seleccionadas: [] };
+  let doctorFormSoloLectura = false;
   let refrescarAreaPickerClear = () => {};
 
   function renderAreaPicker() {
     const trigger = document.getElementById('areaPickerTrigger');
-    const valueInput = document.getElementById('areaPickerValue');
     const list = document.getElementById('areaPickerList');
-    if (!trigger || !valueInput || !list) return;
+    if (!trigger || !list) return 0;
     const yaAsignadas = new Set(doctorFormAreas.seleccionadas.map((area) => area.id));
     const opciones = doctorFormAreas.disponibles.filter((area) => !yaAsignadas.has(area.id));
-    // Mismo criterio que fEstudioList (laboratorio.ejs) y doctorList
-    // (usuarios.ejs) para "sin resultados": .combobox-empty, no un <li>
-    // seleccionable — evita que la lista se vea vacía/rota cuando un
-    // doctor ya tiene todas las áreas del catálogo asignadas.
     list.innerHTML = opciones.length
       ? opciones
           .map(
@@ -151,15 +112,12 @@
           )
           .join('')
       : '<li class="combobox-empty">No hay más especialidades disponibles.</li>';
-    // Repoblar la lista siempre resetea la selección — mismo comportamiento
-    // que el <select> anterior, que también perdía su .value al
-    // reconstruir sus <option> desde cero en cada agregar/quitar.
     trigger.value = '';
-    valueInput.value = '';
     refrescarAreaPickerClear();
+    return opciones.length;
   }
 
-  function renderDoctorAreas() {
+  function renderDoctorAreas({ scrollToEnd = false } = {}) {
     const body = document.getElementById('doctorAreasBody');
     const empty = document.getElementById('doctorAreasEmpty');
     if (!body || !empty) return;
@@ -169,25 +127,35 @@
         (area) => `
           <tr>
             <td>${escapeHtml(area.nombre)}<input type="hidden" name="areaIds" value="${area.id}"></td>
-            <td><button type="button" class="mini-remove" data-id="${area.id}" aria-label="Quitar ${escapeHtml(area.nombre)}">&times;</button></td>
+            <td>${
+              doctorFormSoloLectura
+                ? ''
+                : `<button type="button" class="mini-remove" data-id="${area.id}" aria-label="Quitar ${escapeHtml(area.nombre)}">&times;</button>`
+            }</td>
           </tr>
         `,
       )
       .join('');
+    if (scrollToEnd) {
+      const wrap = doctorFormModalBody.querySelector('.doctor-areas-table-wrap');
+      if (wrap) wrap.scrollTop = wrap.scrollHeight;
+    }
   }
 
   document.body.addEventListener('htmx:afterSwap', (event) => {
     if (event.detail.target !== doctorFormModalBody) return;
-    // Si el fragmento trae un <form> (carga inicial, o reintento tras un
-    // error de validación) el modal debe quedar/seguir abierto. La
-    // respuesta de éxito no trae form (solo el swap out-of-band de la
-    // tabla) — en ese caso no hay nada que abrir, el evento
-    // closeDoctorModal de abajo se encarga de cerrarlo.
     if (!doctorFormModalBody.querySelector('form')) return;
 
     const datosEl = document.getElementById('doctorFormAreasData');
     const datos = datosEl ? JSON.parse(datosEl.textContent) : { disponibles: [], seleccionadas: [] };
     doctorFormAreas = { disponibles: datos.disponibles, seleccionadas: datos.seleccionadas.slice() };
+    doctorFormSoloLectura = Boolean(datos.soloLectura);
+    const cedulaInput = doctorFormModalBody.querySelector('#doctorCedulaProfesional');
+    if (cedulaInput && !doctorFormSoloLectura) {
+      cedulaInput.addEventListener('input', () => {
+        cedulaInput.value = cedulaInput.value.replace(/\D/g, '').slice(0, 10);
+      });
+    }
     attachComboboxKeyboardNav(
       doctorFormModalBody.querySelector('#areaPickerTrigger'),
       doctorFormModalBody.querySelector('#areaPickerList'),
@@ -202,10 +170,6 @@
     openDoctorFormModal();
   });
 
-  // US-607 (segunda iteración): abre la lista del picker de especialidades
-  // al enfocar el trigger (mismo criterio que el combobox de Estatus en
-  // usuario-form.ejs — un input de solo lectura sí recibe foco por click o
-  // tab, aunque no se pueda escribir en él).
   doctorFormModalBody.addEventListener('focusin', (event) => {
     if (event.target.id !== 'areaPickerTrigger') return;
     const list = document.getElementById('areaPickerList');
@@ -223,28 +187,22 @@
     }
     const areaItem = event.target.closest('#areaPickerList .combobox-item');
     if (areaItem) {
-      // El combobox vive dentro de un <label> (Especialidades), y el <li>
-      // no es un control enfocable — sin preventDefault(), el navegador
-      // reenvía el click como si fuera sobre el control asociado del label
-      // (#areaPickerTrigger), reenfocándolo justo después de seleccionar.
-      // Eso dispara el listener de "focusin" de arriba y reabre la lista
-      // que este mismo click acaba de cerrar (mismo bug, mismo fix, que
-      // selectDoctor() en usuarios.ejs para "Doctor vinculado").
       event.preventDefault();
-      document.getElementById('areaPickerTrigger').value = areaItem.dataset.label;
-      document.getElementById('areaPickerValue').value = areaItem.dataset.id;
-      document.getElementById('areaPickerList').hidden = true;
-      refrescarAreaPickerClear();
-      return;
-    }
-    if (event.target.closest('#areaPickerAdd')) {
-      const id = Number(document.getElementById('areaPickerValue').value);
+      const id = Number(areaItem.dataset.id);
       if (!id) return;
       const area = doctorFormAreas.disponibles.find((a) => a.id === id);
       if (!area) return;
       doctorFormAreas.seleccionadas.push(area);
-      renderAreaPicker();
-      renderDoctorAreas();
+      const opcionesRestantes = renderAreaPicker();
+      renderDoctorAreas({ scrollToEnd: true });
+
+      const trigger = document.getElementById('areaPickerTrigger');
+      const list = document.getElementById('areaPickerList');
+      if (opcionesRestantes > 0 && trigger && list) {
+        positionComboboxList(trigger, list);
+        list.hidden = false;
+      }
+      return;
     }
     const removeBtn = event.target.closest('.mini-remove');
     if (removeBtn) {
@@ -266,8 +224,6 @@
     if (event.target === doctorFormModalBackdrop) closeDoctorFormModal();
   });
 
-  // HX-Trigger: closeDoctorModal (ver doctores.controller.js, renderExito())
-  // — htmx traduce ese header en este evento personalizado.
   document.body.addEventListener('closeDoctorModal', closeDoctorFormModal);
 </script>
 

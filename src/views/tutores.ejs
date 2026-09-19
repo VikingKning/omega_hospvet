@@ -46,14 +46,6 @@
     </div>
   </div>
 
-  <%#
-    Modal de confirmación para la baja (US-157) — nunca el confirm() nativo
-    del navegador (regla transversal del proyecto): htmx:confirm lo
-    intercepta más abajo. Vive fuera de #tutores-panel a propósito: HTMX
-    reemplaza ese contenedor en cada filtro/orden/página/baja, y si el
-    modal viviera adentro se destruiría a medio uso en cuanto la petición
-    terminara. Mismo patrón exacto que doctores.ejs/areas.ejs.
-  %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -71,10 +63,6 @@
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  // Cerrar el banner de "propietario no existe" (ver tutores.controller.js#
-  // editarForm) — delegado sobre document.body porque HTMX reemplaza
-  // #tutores-panel entero en cada filtro/orden/página, mismo criterio que
-  // usuarios.ejs/laboratorio.ejs.
   document.body.addEventListener('click', (event) => {
     if (event.target.closest('#tutoresBannerErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();

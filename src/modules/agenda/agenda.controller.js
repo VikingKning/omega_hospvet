@@ -3,13 +3,6 @@ const tutoresService = require('../tutores/tutores.service');
 const { generateCsrfToken } = require('../../config/csrf');
 const { findColor } = require('../areas/googleCalendarColors');
 
-// Tutor a precargar en cita-form.ejs (pedido explícito del usuario: tutor
-// primero, mascota después) — se deriva, en orden de preferencia: 1) del
-// propietario de la mascota ya elegida (edición, o re-render tras un
-// error con mascotaId ya en el body); 2) de citas.propietario_id (reserva
-// externa ya matcheada por teléfono pero sin mascota — así el staff solo
-// tiene que elegir la mascota, ver agenda.reservasExternas.js); 3) null,
-// el formulario abre sin tutor precargado (alta normal).
 async function resolverTutorParaFormulario({ mascotaSeleccionada, propietarioId }) {
   if (mascotaSeleccionada) {
     return tutoresService.resolverTutorPorId(mascotaSeleccionada.propietario_id);
@@ -20,10 +13,6 @@ async function resolverTutorParaFormulario({ mascotaSeleccionada, propietarioId 
   return null;
 }
 
-// Resuelve `:slug` contra un área real/activa UNA vez por request y la deja
-// en `req.area` — evita que cada una de las rutas de este módulo repita su
-// propio "buscar área, 404 si no existe" (mismo espíritu que
-// attachSidebarAreas, pero esta sí puede cortar la respuesta con un 404).
 async function attachArea(req, res, next) {
   try {
     const area = await service.resolverArea(req.params.slug);
@@ -37,9 +26,6 @@ async function attachArea(req, res, next) {
   }
 }
 
-// GET /agenda/:slug.html — página completa: resumen del día + el
-// contenedor donde el JS del cliente monta FullCalendar (feed real vía
-// GET /agenda/:slug/citas.json).
 async function pagina(req, res, next) {
   try {
     const [resumen, doctores] = await Promise.all([
@@ -63,9 +49,6 @@ async function pagina(req, res, next) {
 function citaAEvento(cita, color) {
   const inicio = new Date(cita.fecha_hora_inicio);
   const fin = new Date(inicio.getTime() + cita.duracion_minutos * 60000);
-  // Una reserva externa (agenda.reservasExternas.js) sin match completo
-  // puede no tener mascota todavía — el título lo deja claro en vez de
-  // mostrar "undefined".
   const mascotaLabel = cita.mascota_nombre ?? 'Reserva por completar';
   return {
     id: cita.id,
@@ -74,9 +57,6 @@ function citaAEvento(cita, color) {
     end: fin.toISOString(),
     backgroundColor: color.hex ?? undefined,
     borderColor: color.hex ?? undefined,
-    // Los colores de Google Calendar son fondos pastel/claros incluso los
-    // "oscuros" — texto blanco encima no pasa contraste mínimo, Google usa
-    // #1d1d1d para los 11 (ver googleCalendarColors.js).
     textColor: color.foreground ?? undefined,
     extendedProps: {
       doctorId: cita.doctor_id,
@@ -87,8 +67,6 @@ function citaAEvento(cita, color) {
   };
 }
 
-// GET /agenda/:slug/citas.json?start=&end() — feed que FullCalendar pide
-// automáticamente al navegar semana/día (opción `events: { url }`).
 async function eventos(req, res, next) {
   try {
     const citas = await service.listarEventos(req.area.id, {
@@ -103,11 +81,6 @@ async function eventos(req, res, next) {
   }
 }
 
-// GET /agenda/:slug/citas/ocupado.json?doctorId=&start=&end() — pedido
-// explícito del usuario: al filtrar el calendario por un doctor, pintar en
-// gris (sin detalle) sus horas ya ocupadas en OTRAS áreas — un doctor
-// puede atender varias, y una cita ahí lo bloquea igual (mismo criterio
-// cross-área que ya usa existeTraslape). Sin doctorId, siempre vacío.
 async function ocupado(req, res, next) {
   try {
     const bloques = await service.listarOcupado(req.area.id, {
@@ -132,12 +105,6 @@ async function ocupado(req, res, next) {
   }
 }
 
-// GET /agenda/:slug/citas/nueva — fragmento HTMX, formulario vacío. `inicio`
-// (query) precarga la fecha/hora si se abrió haciendo clic en un slot del
-// calendario. `doctorId` (query) preselecciona el doctor cuando el usuario
-// ya tenía un filtro de doctor activo en el calendario (pedido explícito) —
-// se valida contra el catálogo de ESTA área para no confiar ciegamente en
-// un query param (mismo criterio que cualquier id que llega del cliente).
 async function nuevoForm(req, res, next) {
   try {
     const doctores = await service.listarDoctoresDelArea(req.area.id);
@@ -165,11 +132,6 @@ async function nuevoForm(req, res, next) {
   }
 }
 
-// GET /agenda/:slug/citas/:id/editar — fragmento HTMX, formulario
-// precargado. Pedido explícito del usuario: una cita que ya pasó (por
-// fecha_hora_inicio, mismo criterio que "pasadas" en resumenDelDia) se abre
-// en solo lectura — se puede consultar pero no editar, para que nadie se
-// "agencie" citas ya ocurridas cambiando doctor/mascota/motivo después.
 async function editarForm(req, res, next) {
   try {
     const cita = await service.obtener(req.params.id);
@@ -206,20 +168,11 @@ async function editarForm(req, res, next) {
   }
 }
 
-// Tras alta/edición exitosa: a diferencia de áreas/plantillas (que
-// refrescan una tabla vía swap out-of-band), aquí no hay tabla que
-// swapear — el propio calendario ES la vista. El HX-Trigger le avisa al JS
-// del cliente que cierre el modal Y le pida a FullCalendar
-// `refetchEvents()` (ver agenda.ejs).
 function renderExito(req, res) {
   res.set('HX-Trigger', 'closeCitaModal');
   res.send('');
 }
 
-// US: alta — nace `confirmada` (ver agenda.service.js#crear). Un error de
-// validación/traslape/doctor-fuera-de-área no truena: re-renderiza el mismo
-// formulario con el mensaje, conservando doctor/mascota ya elegidos (mismo
-// criterio que usuarios.controller.js#crear con `resolverDoctor`).
 async function crear(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {
@@ -260,9 +213,6 @@ async function crear(req, res, next) {
   return renderExito(req, res);
 }
 
-// PUT /agenda/:slug/citas/:id — edición. Mismo manejo de error que crear(),
-// pero conservando la cita original en el formulario re-renderizado (sigue
-// en modo edición).
 async function editar(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {
@@ -270,10 +220,6 @@ async function editar(req, res, next) {
     if (!existing || existing.area_id !== req.area.id) {
       return res.status(404).send('Cita no encontrada');
     }
-    // Defensa en profundidad: el formulario ya se abre en solo lectura
-    // (sin botón Guardar) para una cita pasada — esto solo cubre un
-    // request directo o una cita que pasó de futura a pasada mientras el
-    // modal seguía abierto.
     if (new Date(existing.fecha_hora_inicio) < new Date()) {
       return res.status(403).send('No se puede editar una cita que ya pasó.');
     }
@@ -324,8 +270,6 @@ async function editar(req, res, next) {
   }
 }
 
-// DELETE /agenda/:slug/citas/:id — "eliminar" en la UI es cancelar (baja
-// lógica, nunca DELETE físico).
 async function cancelar(req, res, next) {
   try {
     const existing = await service.obtener(req.params.id);
@@ -339,15 +283,6 @@ async function cancelar(req, res, next) {
   }
 }
 
-// POST /agenda/:slug/citas/:id/confirmar — completa Y confirma en un solo
-// paso (pedido explícito del usuario: el botón "Confirmar cita" manda el
-// formulario completo con hx-include, no hace falta un "Guardar" aparte
-// antes — ver cita-form.ejs). Aplica los cambios del formulario (típico:
-// la mascota que el staff acaba de elegir) exactamente igual que editar()
-// — misma validación, mismo manejo de traslape/doctor-fuera-de-área — y
-// solo si eso funciona intenta la transición 'registrada' -> 'confirmada'
-// (agenda.service.js#confirmar). Un error de cualquiera de los dos pasos
-// re-renderiza el mismo formulario con el mensaje, igual que editar().
 async function confirmar(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {

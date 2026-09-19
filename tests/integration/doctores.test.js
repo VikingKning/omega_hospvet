@@ -432,6 +432,7 @@ describe('GET /doctores/nuevo y GET /doctores/:id/editar (US-607 — formulario)
       .insert({
         nombre: 'Formulario',
         apellidos: `Precarga ${SUFFIX}`,
+        cedula_profesional: '1234567',
         activo: false,
         creado_en: db.fn.now(),
       })
@@ -449,6 +450,15 @@ describe('GET /doctores/nuevo y GET /doctores/:id/editar (US-607 — formulario)
     expect(res.text).toContain('Nuevo doctor');
     expect(res.text).not.toContain('Editar doctor');
     expect(res.text).toContain('name="activo" value="true" checked');
+    expect(res.text).toContain('name="cedulaProfesional"');
+    expect(res.text).toContain('pattern="[0-9]{7,10}"');
+    expect(res.text).toContain('modal-form modal-form-columns doctor-form');
+    expect(res.text).toContain('Datos generales');
+    expect(res.text).toContain('doctor-field-title">Estatus');
+    expect(res.text).toContain('doctor-form-specialties');
+    expect(res.text).toContain('Agregar área');
+    expect(res.text).toContain('doctor-areas-table-wrap');
+    expect(res.text).not.toContain('id="areaPickerAdd"');
     expect(res.text).toContain('"seleccionadas":[]');
   });
 
@@ -461,6 +471,7 @@ describe('GET /doctores/nuevo y GET /doctores/:id/editar (US-607 — formulario)
     expect(res.text).toContain('Editar doctor');
     expect(res.text).toContain('value="Formulario"');
     expect(res.text).toContain(`value="Precarga ${SUFFIX}"`);
+    expect(res.text).toContain('value="1234567"');
     expect(res.text).toContain(`Dermatología Form ${SUFFIX}`); // en la tabla de especialidades
     // El doctor de este fixture está inactivo — el ícono sigue mostrando el
     // formulario (AC confirmado: editar debe alcanzar también a inactivos,
@@ -481,6 +492,41 @@ describe('GET /doctores/nuevo y GET /doctores/:id/editar (US-607 — formulario)
     const agent = await loginAs(SOLO_CREAR_USER);
 
     const res = await agent.get(`/doctores/${doctorId}/editar`);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+
+  // Pedido explícito del usuario: "Ver" (mismo criterio ya usado en
+  // plantillas_whatsapp/areas) — cualquiera con doctores.ver puede abrirlo,
+  // sin importar si también tiene doctores.editar.
+  it('AC: el "Ver" trae los mismos datos que "Editar" pero en modo solo-lectura, sin botón Guardar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get(`/doctores/${doctorId}/ver`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('value="Formulario"');
+    expect(res.text).toContain(`value="Precarga ${SUFFIX}"`);
+    expect(res.text).toContain('value="1234567"');
+    expect(res.text).toContain(`Dermatología Form ${SUFFIX}`);
+    expect(res.text).toContain('readonly');
+    expect(res.text).not.toContain('>Guardar<');
+    expect(res.text).not.toContain('>Quitar<'); // columna de "Quitar" vacía en solo-lectura
+  });
+
+  it('un usuario con SOLO doctores.ver (sin editar) sí puede abrir "Ver"', async () => {
+    const agent = await loginAs(SOLO_VER_USER);
+
+    const res = await agent.get(`/doctores/${doctorId}/ver`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('un usuario sin doctores.ver no puede abrir "Ver"', async () => {
+    const agent = await loginAs(SIN_PERMISOS_USER);
+
+    const res = await agent.get(`/doctores/${doctorId}/ver`);
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');
@@ -516,22 +562,29 @@ describe('POST /doctores y PUT /doctores/:id (US-607 — alta y edición)', () =
     areaDermaId = derma.id;
   });
 
-  async function crearDoctor(agent, { nombre, apellidos, activo = 'true', areaIds = [] }) {
+  async function crearDoctor(
+    agent,
+    { nombre, apellidos, cedulaProfesional = '', activo = 'true', areaIds = [] },
+  ) {
     const csrfToken = await getDoctoresCsrfToken(agent);
     return agent
       .post('/doctores')
       .type('form')
       .set('x-csrf-token', csrfToken)
-      .send({ nombre, apellidos, activo, areaIds });
+      .send({ nombre, apellidos, cedulaProfesional, activo, areaIds });
   }
 
-  async function editarDoctor(agent, id, { nombre, apellidos, activo = 'true', areaIds = [] }) {
+  async function editarDoctor(
+    agent,
+    id,
+    { nombre, apellidos, cedulaProfesional = '', activo = 'true', areaIds = [] },
+  ) {
     const csrfToken = await getDoctoresCsrfToken(agent);
     return agent
       .put(`/doctores/${id}`)
       .type('form')
       .set('x-csrf-token', csrfToken)
-      .send({ nombre, apellidos, activo, areaIds });
+      .send({ nombre, apellidos, cedulaProfesional, activo, areaIds });
   }
 
   it('AC: alta sin id inserta el doctor y una fila en doctor_area por cada área seleccionada', async () => {
@@ -541,6 +594,7 @@ describe('POST /doctores y PUT /doctores/:id (US-607 — alta y edición)', () =
     const res = await crearDoctor(agent, {
       nombre: 'Alta',
       apellidos,
+      cedulaProfesional: '0123456789',
       areaIds: [String(areaCardioId), String(areaDermaId)],
     });
 
@@ -551,6 +605,7 @@ describe('POST /doctores y PUT /doctores/:id (US-607 — alta y edición)', () =
     const doctor = await db('doctores').where({ apellidos }).first();
     expect(doctor).toBeDefined();
     expect(doctor.activo).toBe(true);
+    expect(doctor.cedula_profesional).toBe('0123456789');
     expect(doctor.creado_por).not.toBeNull();
 
     const areas = await db('doctor_area').where({ doctor_id: doctor.id }).pluck('area_id');
@@ -567,8 +622,28 @@ describe('POST /doctores y PUT /doctores/:id (US-607 — alta y edición)', () =
     expect(res.headers['hx-trigger']).toBe('closeDoctorModal');
 
     const doctor = await db('doctores').where({ apellidos }).first();
+    expect(doctor.cedula_profesional).toBeNull();
     const areas = await db('doctor_area').where({ doctor_id: doctor.id });
     expect(areas).toHaveLength(0);
+  });
+
+  it('rechaza una cédula menor a 7 dígitos, mayor a 10 o con caracteres no numéricos', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    for (const [indice, cedulaProfesional] of ['123456', '12345678901', '12345A7'].entries()) {
+      const apellidos = `CedulaInvalida${indice} ${SUFFIX}`;
+      const res = await crearDoctor(agent, {
+        nombre: 'Inválida',
+        apellidos,
+        cedulaProfesional,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain(
+        'La cédula profesional debe contener únicamente entre 7 y 10 números.',
+      );
+      expect(await db('doctores').where({ apellidos }).first()).toBeUndefined();
+    }
   });
 
   it('un nombre vacío no truena: re-renderiza el formulario con el error, sin cerrar el modal ni crear el registro', async () => {
@@ -595,6 +670,7 @@ describe('POST /doctores y PUT /doctores/:id (US-607 — alta y edición)', () =
     const res = await editarDoctor(agent, doctor.id, {
       nombre: 'Editado',
       apellidos,
+      cedulaProfesional: '7654321',
       areaIds: [String(areaDermaId)], // quita cardio, agrega derma
     });
 
@@ -603,6 +679,7 @@ describe('POST /doctores y PUT /doctores/:id (US-607 — alta y edición)', () =
 
     const actualizado = await db('doctores').where({ id: doctor.id }).first();
     expect(actualizado.nombre).toBe('Editado');
+    expect(actualizado.cedula_profesional).toBe('7654321');
     expect(actualizado.actualizado_por).not.toBeNull();
     expect(actualizado.actualizado_en).not.toBeNull();
 

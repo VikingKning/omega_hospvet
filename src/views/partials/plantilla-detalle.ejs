@@ -1,19 +1,13 @@
 <%
-// Detalle de solo lectura (ícono "Ver", gate plantillas.ver) — reusa el
-// mismo modal que alta/edición (#plantillaFormModalBody), por eso el
-// <form> de abajo no lleva hx-post/inputs con name: es solo el wrapper que
-// plantillas.ejs ya sabe detectar para abrir el modal (busca un <form>
-// dentro del contenedor tras el swap de HTMX), y los ids
-// plantillaFormClose/plantillaFormCancel ya tienen su delegación de clicks
-// puesta ahí — no hace falta JS nuevo.
-//
-// Pedido explícito del usuario: 2 columnas en vez de una lista vertical de
-// 6 campos apilados (.profile-form-row, mismo patrón ya usado en
-// perfil-form.ejs) — el modal es más ancho a propósito
-// (#plantillaFormModalBody trae .modal-card-wide, ver plantillas.ejs).
+const esRespuestaEmergencia = Boolean(plantilla.es_emergencia);
 %>
 <div class="modal-header">
-  <h2>Detalle de la plantilla</h2>
+  <h2 style="display:flex; align-items:center; gap:10px;">
+    Detalle de la plantilla
+    <span class="badge meta-category-badge <%= esRespuestaEmergencia ? 'is-emergencia' : 'is-informativa' %>">
+      <%= esRespuestaEmergencia ? 'Respuesta a Emergencia' : 'Respuesta Informativa' %>
+    </span>
+  </h2>
   <button class="modal-close-btn" type="button" id="plantillaFormClose" aria-label="Cerrar">&times;</button>
 </div>
 <form class="modal-form">
@@ -40,12 +34,6 @@
   <div class="profile-form-row">
     <%
       const esTextoLibre = plantilla.categoria_meta === 'TEXTO_LIBRE';
-      // Pedido explícito del usuario (2026-09-12): "No Requerido" tiene
-      // prioridad sobre cualquier otro estado para una plantilla de texto
-      // libre — nunca se manda a Meta, sin importar activo/inactivo o lo
-      // que aprobado_meta traiga guardado de un registro manual viejo.
-      // Para las demás, igual que en la tabla: inactiva no se manda a
-      // Meta, así que "Aprobado"/"En revisión" no aplica.
       const estadoMeta = esTextoLibre
         ? 'No Requerido'
         : !plantilla.activo
@@ -61,11 +49,6 @@
     <div class="plantilla-detalle-field">
       <span class="plantilla-detalle-label">Categoría Meta</span>
       <%
-        // Las 3 categorías reales que existen en la API de Meta para
-        // plantillas de WhatsApp, más 'TEXTO_LIBRE' (propia de este
-        // sistema, pedido explícito del usuario: la mayoría del catálogo
-        // son respuestas de texto libre que nunca se registran en Meta —
-        // ver plantillas_whatsapp.service.js#registrarEnMeta).
         const CATEGORIA_META_LABEL = {
           MARKETING: 'Marketing',
           UTILITY: 'Utility',

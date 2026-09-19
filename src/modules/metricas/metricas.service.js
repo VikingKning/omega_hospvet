@@ -32,14 +32,6 @@ function restarDias(fecha, dias) {
   return formatoFecha(new Date(fecha.getTime() - dias * 24 * 60 * 60 * 1000));
 }
 
-// Pedido explícito del usuario: rango en presets (7/30/90 días, botones del
-// toolbar) o fechas a mano (2 <input type="date">) — un preset, cuando
-// viene, GANA sobre cualquier desde/hasta que haya llegado junto (los
-// botones de preset no limpian esos inputs del lado del cliente, así que el
-// servidor decide la prioridad, no el HTML). Sin preset y con desde/hasta
-// ausentes o con formato inválido, cae al default (últimos 30 días,
-// incluyendo hoy) — mismo criterio de "sanear con defaults en vez de
-// rechazar con error" que list() en laboratorio.service.js/doctores.service.js.
 function normalizarRango({ desde: rawDesde, hasta: rawHasta, preset: rawPreset }) {
   const hoy = new Date();
   const preset = PRESETS_VALIDOS.includes(Number(rawPreset)) ? Number(rawPreset) : null;
@@ -53,16 +45,9 @@ function normalizarRango({ desde: rawDesde, hasta: rawHasta, preset: rawPreset }
   const desde = FECHA_REGEX.test(rawDesde) ? rawDesde : defaultDesde;
   const hasta = FECHA_REGEX.test(rawHasta) ? rawHasta : defaultHasta;
 
-  // Un rango invertido (desde > hasta, ej. tecleado a mano) se corrige
-  // intercambiando los extremos en vez de devolver una tabla vacía sin
-  // explicación — mismo espíritu "nunca truena con una entrada rara" que
-  // el resto de los filtros del sistema.
   return desde <= hasta ? { desde, hasta } : { desde: hasta, hasta: desde };
 }
 
-// Relleno de días sin ninguna orden con total:0 — sin esto, una gráfica de
-// tendencia "saltaría" fechas silenciosamente (ej. un fin de semana sin
-// órdenes desaparecería del eje X en vez de mostrarse en 0).
 function rellenarDias(rango, filas) {
   const totalesPorFecha = new Map(
     filas.map((f) => [formatoFecha(new Date(f.fecha)), Number(f.total)]),
@@ -163,10 +148,6 @@ async function obtenerMetricasLaboratorio(filtros) {
   const total = porEstado.reduce((suma, f) => suma + f.total, 0);
 
   const topDoctores = topDoctoresRaw.map((fila) => ({
-    // `nombre`/`apellidos` llegan NULL cuando doctor_id es NULL (leftJoin,
-    // ver metricas.repository.js#topDoctores) — nunca se descarta esa
-    // fila, se etiqueta explícitamente en vez de mezclarla en silencio con
-    // un doctor real.
     nombre: fila.nombre ? `${fila.nombre} ${fila.apellidos}` : 'Sin doctor asignado',
     total: Number(fila.total),
   }));

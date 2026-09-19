@@ -3,16 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<%#
-  Bug real reportado por el usuario: entrar a una URL rota de más de un
-  nivel (ej. /doctores/asdas) rendía esta página SIN estilos — el mismo
-  problema que ya resolvieron tutor-form.ejs/laboratorio-form.ejs/agenda.ejs
-  con <base href="/">, pero más agudo aquí: esta página es la ÚNICA que se
-  sirve en una URL completamente arbitraria (la que el usuario haya escrito
-  o roto), nunca una ruta fija — sin <base>, cualquier referencia relativa
-  (sus propios <link>/<a>, y las de partials/sidebar.ejs) resuelve contra
-  esa URL rota en vez de la raíz real del sitio.
-%>
+<%# Permite resolver assets y enlaces desde cualquier URL no encontrada. %>
 <base href="/">
 <title>Página no encontrada | Omega Hospital Veterinario</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">

@@ -1,3 +1,12 @@
+<div class="metricas-report-tabs" role="tablist" aria-label="Reportes de WhatsApp">
+  <button type="button" class="metricas-report-tab active" role="tab"
+          aria-selected="true" aria-controls="whatsapp-reporte-salientes"
+          data-whatsapp-report-tab="salientes">Envíos salientes</button>
+  <button type="button" class="metricas-report-tab" role="tab"
+          aria-selected="false" aria-controls="whatsapp-reporte-conversacional" tabindex="-1"
+          data-whatsapp-report-tab="conversacional">Flujo conversacional</button>
+</div>
+
 <form id="metricas-whatsapp-filters"
       hx-post="metricas/whatsapp.html" hx-target="#metricas-whatsapp-panel" hx-swap="innerHTML"
       hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
@@ -27,6 +36,11 @@
     </div>
   </div>
 </form>
+
+<section id="whatsapp-reporte-salientes" role="tabpanel" data-whatsapp-report="salientes">
+<div class="metricas-section-heading">
+  <div><h2>Envíos salientes</h2><p>Bitácora histórica de intentos registrados en envios_whatsapp.</p></div>
+</div>
 
 <div class="metricas-kpis metricas-kpis-whatsapp">
   <div class="metricas-kpi-card">
@@ -86,7 +100,7 @@
     <div class="metricas-chart-card metricas-chart-card-wide">
       <div class="metricas-chart-heading-row">
         <div>
-          <h3>Mapa de calor de mensajes</h3>
+          <h3>Mapa de calor de envíos salientes</h3>
           <p class="metricas-chart-description">Día de la semana por hora local del intento.</p>
         </div>
         <div class="toggle-group" aria-label="Dato mostrado en el mapa de calor">
@@ -107,5 +121,108 @@
     </div>
   </div>
 <% } %>
+</section>
 
-<div id="metricasWhatsappData" hidden><%- JSON.stringify({ tendencia, resultadoEnvios, mensajesPorPlantilla, erroresFrecuentes, porDiaSemana, porHora, plantillasConFallos, mapaCalor }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
+<section id="whatsapp-reporte-conversacional" class="metricas-section metricas-conversacional"
+         role="tabpanel" data-whatsapp-report="conversacional"
+         aria-labelledby="metricas-conversacional-titulo" hidden>
+  <div class="metricas-section-heading">
+    <div>
+      <h2 id="metricas-conversacional-titulo">Flujo conversacional</h2>
+      <p>Mensajes entrantes y decisiones del router · zona horaria <%= zonaHoraria %> · <%= conversacional.pipeline[0].total %> mensajes en router nuevo y <%= conversacional.pipeline[1].total %> en flujo anterior.</p>
+    </div>
+  </div>
+
+  <div class="metricas-kpis metricas-kpis-conversacional">
+    <div class="metricas-kpi-card"><span class="metricas-kpi-label">Mensajes entrantes únicos</span><span class="metricas-kpi-value"><%= conversacional.kpis.mensajesEntrantes %></span><span class="metricas-kpi-description">Wamids soportados, sin duplicados</span></div>
+    <div class="metricas-kpi-card"><span class="metricas-kpi-label">Grupos procesados</span><span class="metricas-kpi-value"><%= conversacional.kpis.gruposProcesados %></span><span class="metricas-kpi-description">Decisiones finales únicas</span></div>
+    <div class="metricas-kpi-card"><span class="metricas-kpi-label">Reducción por agrupación</span><span class="metricas-kpi-value"><%= conversacional.kpis.reduccionAgrupacion %>%</span><span class="metricas-kpi-description">Fragmentos convertidos en grupos</span></div>
+    <div class="metricas-kpi-card"><span class="metricas-kpi-label">Resolución sin Claude</span><span class="metricas-kpi-value"><%= conversacional.kpis.tasaSinClaude %>%</span><span class="metricas-kpi-description">Grupos con cero llamadas</span></div>
+    <div class="metricas-kpi-card"><span class="metricas-kpi-label">Llamadas a Claude</span><span class="metricas-kpi-value"><%= conversacional.kpis.llamadasClaude %></span><span class="metricas-kpi-description">Solicitudes HTTP reales</span></div>
+    <div class="metricas-kpi-card"><span class="metricas-kpi-label">Transferencias humanas</span><span class="metricas-kpi-value"><%= conversacional.kpis.transferenciasHumanas %></span><span class="metricas-kpi-description">Una por solicitud idempotente</span></div>
+    <div class="metricas-kpi-card"><span class="metricas-kpi-label">Emergencias confirmadas</span><span class="metricas-kpi-value"><%= conversacional.kpis.emergenciasConfirmadas %></span><span class="metricas-kpi-description">Decisión final, no señal preliminar</span></div>
+  </div>
+
+  <div class="metricas-charts">
+    <div class="metricas-chart-card metricas-chart-card-wide">
+      <h3>1. Tendencia de volumen conversacional</h3>
+      <p class="metricas-chart-description">Entrantes únicos, grupos y respuestas automáticas aceptadas por Meta.</p>
+      <canvas id="whatsappConversacionalTendencia"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>2. Relación de agrupación</h3>
+      <p class="metricas-chart-description"><%= conversacional.agrupacion.fragmentos %> fragmentos · <%= conversacional.agrupacion.grupos %> grupos</p>
+      <canvas id="whatsappConversacionalAgrupacion"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>3. Distribución por ruta</h3>
+      <canvas id="whatsappConversacionalRutas"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>4. Selecciones de menú</h3>
+      <div class="metricas-mini-table">
+        <% if (conversacional.menu.length === 0) { %><p>Sin selecciones en el periodo.</p><% } %>
+        <% conversacional.menu.forEach((fila) => { %><div><code><%= fila.identificador %></code><strong><%= fila.total %></strong></div><% }) %>
+      </div>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>5. Uso de Claude</h3>
+      <div class="metricas-stat-grid">
+        <span><strong><%= conversacional.claude.tokensEntrada %></strong> tokens entrada</span>
+        <span><strong><%= conversacional.claude.tokensSalida %></strong> tokens salida</span>
+        <span><strong><%= conversacional.claude.promedioTokensGrupo %></strong> promedio/grupo</span>
+        <span><strong><%= conversacional.claude.gruposCero %> / <%= conversacional.claude.gruposUna %> / <%= conversacional.claude.gruposDosOMas %></strong> grupos con 0 / 1 / 2+ llamadas</span>
+      </div>
+      <div class="metricas-mini-table" aria-label="Categorías devueltas por Claude">
+        <% if (conversacional.claude.categorias.length === 0) { %><p>Sin categorías devueltas en el periodo.</p><% } %>
+        <% conversacional.claude.categorias.forEach((fila) => { %><div><code><%= fila.etiqueta %></code><strong><%= fila.total %></strong></div><% }) %>
+      </div>
+      <canvas id="whatsappConversacionalClaude"></canvas>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>6. Descartes y reintentos</h3>
+      <div class="metricas-mini-table">
+        <div><span>Tipos no soportados</span><strong><%= conversacional.descartes.mensajesNoSoportados %></strong></div>
+        <div><span>Eventos de estado</span><strong><%= conversacional.descartes.eventosEstado %></strong></div>
+        <div><span>Duplicados de Meta</span><strong><%= conversacional.descartes.duplicadosMeta %></strong></div>
+        <div><span>Reintentos del router</span><strong><%= conversacional.descartes.reintentosRouter %></strong></div>
+        <div><span>Reintentos de envío</span><strong><%= conversacional.descartes.reintentosEnvio %></strong></div>
+      </div>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>7. Tiempos de procesamiento</h3>
+      <div class="metricas-stat-grid">
+        <span><strong><%= conversacional.tiempos.segundosFragmentoDecision %> s</strong> último fragmento → decisión</span>
+        <span><strong><%= conversacional.tiempos.segundosDecisionEnvio %> s</strong> decisión → resultado de envío</span>
+      </div>
+    </div>
+    <div class="metricas-chart-card">
+      <h3>8. Atención humana y alertas</h3>
+      <div class="metricas-stat-grid">
+        <span><strong><%= conversacional.atencion.pendientes %></strong> alertas pendientes</span>
+        <span><strong><%= conversacional.atencion.atendidas %></strong> alertas atendidas</span>
+        <span><strong><%= conversacional.atencion.promedioSegundosAtencion %> s</strong> promedio hasta atención</span>
+        <span><strong><%= conversacional.atencion.destinatariosSeleccionados %> / <%= conversacional.atencion.enviosWhatsappUnicos %></strong> destinatarios / teléfonos enviados</span>
+      </div>
+      <div class="metricas-mini-table" aria-label="Alertas por tipo y estado">
+        <% conversacional.atencion.alertas.forEach((fila) => { %><div><span><%= fila.tipo %> · <%= fila.estado %></span><strong><%= fila.total %></strong></div><% }) %>
+        <% conversacional.atencion.canales.forEach((fila) => { %><div><span><%= fila.canal %> · <%= fila.estado %></span><strong><%= fila.total %></strong></div><% }) %>
+      </div>
+      <canvas id="whatsappConversacionalAtencion"></canvas>
+    </div>
+    <div class="metricas-chart-card metricas-chart-card-wide">
+      <div class="metricas-chart-heading-row">
+        <div><h3>Mapa de calor conversacional</h3><p class="metricas-chart-description">Entrantes únicos por hora local; emergencias y Recepción son eventos confirmados.</p></div>
+        <div class="toggle-group" aria-label="Dato del mapa conversacional">
+          <button type="button" class="toggle-btn active" data-whatsapp-conversacional-mapa="total">Total</button>
+          <button type="button" class="toggle-btn" data-whatsapp-conversacional-mapa="emergencias">Emergencias</button>
+          <button type="button" class="toggle-btn" data-whatsapp-conversacional-mapa="recepcion">Recepción</button>
+        </div>
+      </div>
+      <div class="metricas-heatmap-scroll"><div id="whatsappConversacionalMapaCalor" class="metricas-heatmap" role="img" aria-label="Mapa de calor conversacional"></div></div>
+      <div class="metricas-heatmap-legend" aria-hidden="true"><span>Menor cantidad</span><% for (let nivel = 0; nivel <= 5; nivel += 1) { %><span class="metricas-heatmap-swatch metricas-heatmap-level-<%= nivel %>"></span><% } %><span>Mayor cantidad</span></div>
+    </div>
+  </div>
+</section>
+
+<div id="metricasWhatsappData" hidden><%- JSON.stringify({ tendencia, resultadoEnvios, mensajesPorPlantilla, erroresFrecuentes, porDiaSemana, porHora, plantillasConFallos, mapaCalor, conversacional }).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>

@@ -2,19 +2,7 @@ const logger = require('../config/logger');
 const hxRedirect = require('./hxRedirect');
 const attachSidebarAreas = require('./attachSidebarAreas');
 
-// Pedido explícito del usuario: una URL inexistente ya no responde un JSON
-// crudo ({error:'No encontrado'}) — eso solo tiene sentido para un cliente
-// programático (fetch/HTMX), nunca para alguien que navegó a mano a una
-// ruta que no existe. Sin sesión activa NUNCA se muestra la página 404 (ni
-// nada del sistema) — mismo criterio que requireAuth.js: siempre se manda a
-// login, para no revelar que la URL "casi" existe. `attachSidebarAreas` se
-// invoca a mano (no está en la cadena de app.use como en las páginas
-// normales) porque notFound es el único lugar de la app que renderiza una
-// página completa fuera de una ruta ya registrada.
 function notFound(req, res, next) {
-  // Nunca cachear esta respuesta: un navegador que la guardara podría
-  // seguir mostrándola (o una versión vieja, de antes de un fix futuro) al
-  // volver a la misma URL rota — mismo criterio que requireAuth.js.
   res.set('Cache-Control', 'no-store');
   if (!req.session.user) {
     return hxRedirect(req, res, '/');

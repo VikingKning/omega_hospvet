@@ -1,43 +1,19 @@
 <%
-// Agenda: mismo formulario para alta y edición — el modo se decide por si
-// `cita` viene o no (edición trae el registro completo, alta viene null).
-// Este partial se usa tanto para el primer render (GET .../citas/nueva o
-// .../citas/:id/editar) como para el re-render con error (POST/PUT
-// fallidos, ver agenda.controller.js) — por eso fechaHoraInicio/
-// duracionMinutos/doctorIdSeleccionado/mascotaSeleccionada viajan aparte de
-// `cita`: en un re-render por error son lo que el usuario acababa de
-// elegir, no necesariamente lo que ya está guardado.
-//
-// Los combobox de Mascota/Doctor y la combinación Fecha+Hora -> ISO se
-// resuelven con JS delegado en agenda.ejs (este fragmento nunca trae su
-// propio script — HTMX lo borraría al hacer swap, allowScriptTags:false).
 const esEdicion = Boolean(cita);
 const permissions = user?.permissions ?? [];
 const has = (code) => permissions.includes(code);
 const puedeCancelar = has(`agenda.${area.slug}.cancelar`);
-// Reserva externa (agenda.reservasExternas.js) sin match completo, ya
-// completada a mano por el staff — mismo permiso que editar (no se
-// inventa uno nuevo solo para esta acción, ver agenda.routes.js).
 const puedeConfirmar = has(`agenda.${area.slug}.editar`);
 const esConfirmable = esEdicion && cita.estado === 'registrada';
-// Pedido explícito del usuario: una cita que ya pasó no se puede editar
-// (evita "agenciarse" citas ya ocurridas cambiando doctor/mascota/motivo a
-// posteriori) — el formulario se abre en solo lectura en vez de no abrir
-// nada, para poder seguir viendo sus detalles. `soloLectura` viaja desde
-// agenda.controller.js (siempre false en alta/re-render por error).
 const esSoloLectura = Boolean(soloLectura);
 const disabledAttr = esSoloLectura ? 'disabled' : '';
+
+const etiquetaDoctor = area.slug === 'estetica' ? 'Estilista' : 'Doctor';
 
 const DURACIONES = [15, 30, 45, 60, 90];
 const doctorIdSel = String(doctorIdSeleccionado ?? '');
 const doctorSeleccionado = doctores.find((d) => String(d.id) === doctorIdSel);
 const doctorLabel = doctorSeleccionado ? `${doctorSeleccionado.nombre} ${doctorSeleccionado.apellidos}` : '';
-// Pedido explícito del usuario: el tutor se busca y se elige ANTES que la
-// mascota (mismo patrón que laboratorio-form.ejs) — así, cuando una reserva
-// externa de Google Calendar (agenda.reservasExternas.js) ya trae el
-// teléfono matcheado pero no la mascota, el staff solo tiene que elegir el
-// paciente. El nombre de la mascota ya no repite tutor/apellidos (ahora
-// viven en su propio campo, arriba).
 const hayTutor = Boolean(tutorSeleccionado);
 const tutorLabel = hayTutor ? `${tutorSeleccionado.nombre} ${tutorSeleccionado.apellidos}` : '';
 const tutorTelefonoLabel = hayTutor ? tutorSeleccionado.telefono : '';
@@ -90,12 +66,7 @@ const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
     </label>
   </div>
 
-  <%
-  // Isla de datos JSON (nunca un script — HTMX lo borraría al hacer swap
-  // del modal): las mascotas del tutor precargado, para que el JS de
-  // agenda.ejs pueda repoblar #citaMascotaList sin pedirlas de nuevo al
-  // servidor cada vez que se reabre el combobox.
-  %>
+
   <div id="citaTutorData" hidden><%- JSON.stringify(tutorSeleccionado).replace(/</g, String.fromCharCode(92, 117, 48, 48, 51, 99)) %></div>
 
   <div class="cita-form-row">
@@ -112,10 +83,10 @@ const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
     </label>
 
     <label>
-      Doctor
+      <%= etiquetaDoctor %>
       <div class="combobox" id="citaDoctorCombobox">
         <input type="text" id="citaDoctorInput" autocomplete="off" required <%= disabledAttr %>
-               placeholder="Buscar doctor..." value="<%= doctorLabel %>">
+               placeholder="Buscar <%= etiquetaDoctor.toLowerCase() %>..." value="<%= doctorLabel %>">
         <ul class="combobox-list" id="citaDoctorList" hidden></ul>
       </div>
       <input type="hidden" name="doctorId" id="citaDoctorId" value="<%= doctorIdSel %>">
@@ -158,16 +129,7 @@ const mascotaTriggerDisabledAttr = esSoloLectura || !hayTutor ? 'disabled' : '';
       </button>
     <% } %>
     <% if (esConfirmable && puedeConfirmar) { %>
-      <%
-        // "Confirmar cita" manda el form completo (hx-include) y hace
-        // guardar+confirmar en un solo paso del lado del servidor — pedido
-        // explícito del usuario: antes había que Guardar, volver a abrir la
-        // cita, y HASTA ENTONCES aparecía habilitado Confirmar, lo cual no
-        // tenía sentido para completar una reserva pendiente. El disabled
-        // inicial refleja el estado ya guardado (cita.mascota_id); el JS de
-        // agenda.ejs lo actualiza en vivo en cuanto se elige una mascota en
-        // el combobox de arriba, sin esperar a guardar primero.
-      %>
+
       <button type="button" class="btn-primary" id="citaFormConfirmar"
               <%= cita.mascota_id ? '' : 'disabled data-tooltip="Selecciona la mascota primero"' %>
               hx-post="agenda/<%= area.slug %>/citas/<%= cita.id %>/confirmar"

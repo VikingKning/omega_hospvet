@@ -181,6 +181,7 @@ describe('plantillas_whatsapp.service.crear (US-613)', () => {
       slug: 'confirmar-cita',
       texto_respuesta: 'Tu cita fue confirmada.',
       categoriaMeta: 'TEXTO_LIBRE',
+      esEmergencia: false,
       usuarioId: 1,
     });
   });
@@ -440,6 +441,7 @@ describe('plantillas_whatsapp.service.editar (US-613, ampliada: intención/slug 
     expect(repository.update).toHaveBeenCalledWith(5, {
       texto_respuesta: 'Nuevo texto',
       activo: true,
+      esEmergencia: false,
       usuarioId: 2,
     });
   });
@@ -455,6 +457,7 @@ describe('plantillas_whatsapp.service.editar (US-613, ampliada: intención/slug 
     expect(repository.update).toHaveBeenCalledWith(5, {
       texto_respuesta: '_*No respira:*_ cierra el hocico.',
       activo: true,
+      esEmergencia: false,
       usuarioId: 2,
     });
   });

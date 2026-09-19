@@ -44,16 +44,8 @@
     </div>
   </div>
 
-  <%#
-    Mismo token que ya viaja dentro del panel (hx-headers de #laboratorio-filters)
-    pero SIEMPRE presente, incluso cuando catalogoVacio muestra el estado
-    vacío en vez del toolbar (ese estado no trae ningún <form>) — sin esto,
-    no hay ninguna forma de obtener un token válido para una acción vía
-    fetch() mientras el catálogo está vacío.
-  %>
   <input type="hidden" id="laboratorioPageCsrfToken" value="<%= csrfToken %>">
 
-  <%# Modal de confirmación reutilizable (eliminar) — mismo patrón que doctores.ejs. %>
   <div class="modal-backdrop" id="confirmModalBackdrop">
     <div class="modal-card">
       <div class="modal-header">
@@ -72,9 +64,6 @@
 <script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script src="js/combobox.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  // ---- Combobox flotante genérico del toolbar de filtros (mismo patrón
-  // que usuarios.ejs/agenda.ejs — un "portal" a <body> para escapar el
-  // stacking context de `.main-content > *`). ----
   function openFloatingList(trigger, list) {
     if (!list._homeParent) list._homeParent = list.parentElement;
     document.body.appendChild(list);
@@ -93,29 +82,18 @@
     if (list._homeParent) list._homeParent.appendChild(list);
   }
 
-  // Red de seguridad: si un swap de HTMX ocurre mientras alguna lista sigue
-  // flotando en <body> (mismo motivo documentado en usuarios.ejs).
   document.body.addEventListener('htmx:beforeSwap', () => {
     document.querySelectorAll('.combobox-list').forEach((list) => {
       if (list.parentElement === document.body) list.remove();
     });
   });
 
-  // Cerrar el banner de "registro no existe" (ver laboratorio.controller.js#
-  // formularioDeRegistro) — delegado sobre document.body por el mismo
-  // motivo que el resto de los listeners de este archivo: HTMX reemplaza
-  // #laboratorio-panel entero en cada filtro/orden/página.
   document.body.addEventListener('click', (event) => {
     if (event.target.closest('#laboratorioBannerErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();
     }
   });
 
-  // ---- Filtros del toolbar (Estado / Tipo de estudio): mismo patrón que el
-  // combobox de "Estatus" en usuarios.ejs — cada <li> trae su propio
-  // hx-post, este listener solo abre/cierra la lista. Delegado sobre
-  // document.body porque HTMX reemplaza #laboratorio-panel entero en cada
-  // filtro/orden/página. ----
   function wireFiltroCombobox(triggerId, listId, comboboxId) {
     document.body.addEventListener('click', (event) => {
       const list = document.getElementById(listId);
@@ -135,16 +113,6 @@
   wireFiltroCombobox('estadoFiltroTrigger', 'estadoFiltroList', 'estadoFiltroCombobox');
   wireFiltroCombobox('categoriaFiltroTrigger', 'categoriaFiltroList', 'categoriaFiltroCombobox');
 
-  // Navegación con flechas + botón "x" (pedido explícito del usuario, ver
-  // public/js/combobox.js). A diferencia del filtro de doctor en agenda.ejs
-  // (vive fijo en la página), aquí HTMX reemplaza #laboratorio-panel ENTERO
-  // en cada filtro/orden/página/eliminación — el trigger, la lista y el
-  // botón "x" de la corrida anterior quedan huérfanos, así que hay que
-  // re-enganchar esto después de cada swap (mismo motivo que el modal de
-  // citas en agenda.ejs). Cada lista ya trae "Todos los estados"/"Todos los
-  // estudios" como primer <li> (con estado:""/categoriaId:"" en su
-  // hx-vals) — el botón "x" solo simula un click sintético sobre ese mismo
-  // item en vez de duplicar la lógica de "quitar filtro".
   function wireFiltroTeclado(triggerId, listId, comboboxId) {
     const trigger = document.getElementById(triggerId);
     const list = document.getElementById(listId);

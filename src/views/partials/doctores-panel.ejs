@@ -94,17 +94,12 @@ function initials(nombre, apellidos) {
                 <div class="person-cell">
                   <span class="avatar-circle"><%= initials(doctor.nombre, doctor.apellidos) %></span>
                   <div>
-                    <div class="person-cell-name"><%= doctor.nombre %> <%= doctor.apellidos %></div>
+                    <div class="person-cell-name"><%= doctor.nombre %> <%= doctor.apellidos %><% if (doctor.es_predeterminado) { %> <span class="status-badge" data-tooltip="Doctor predeterminado del sistema (fallback de Consultas) — no se puede editar ni dar de baja">Predeterminado</span><% } %></div>
                   </div>
                 </div>
               </td>
               <td>
                 <%
-                // Pedido de estilo: más de 3 áreas colapsa a una sola
-                // etiqueta "Varios" con tooltip (ver .area-tag-varios en
-                // main.css) — listar las 6-7 áreas de un doctor con todas
-                // asignadas desbordaba la celda y forzaba scroll horizontal
-                // en la tabla (.lab-table-wrap tiene overflow-x:auto).
                 const listaAreas = doctor.areas ? doctor.areas.split(', ') : [];
                 %>
                 <% if (listaAreas.length === 0) { %>
@@ -120,7 +115,16 @@ function initials(nombre, apellidos) {
               </td>
               <td class="text-right">
                 <div class="row-actions">
-                  <% if (has('doctores.editar')) { %>
+                  <% if (has('doctores.ver')) { %>
+                    <button class="row-action-btn" type="button" data-tooltip="Ver"
+                            aria-label="Ver doctor <%= doctor.nombre %> <%= doctor.apellidos %>"
+                            hx-get="doctores/<%= doctor.id %>/ver" hx-target="#doctorFormModalBody" hx-swap="innerHTML">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    </button>
+                  <% } %>
+                  <% if (has('doctores.editar') && !doctor.es_predeterminado) { %>
                     <button class="row-action-btn row-action-edit" type="button" data-tooltip="Editar"
                             aria-label="Editar doctor <%= doctor.nombre %> <%= doctor.apellidos %>"
                             hx-get="doctores/<%= doctor.id %>/editar" hx-target="#doctorFormModalBody" hx-swap="innerHTML">
@@ -129,7 +133,7 @@ function initials(nombre, apellidos) {
                       </svg>
                     </button>
                   <% } %>
-                  <% if (has('doctores.eliminar') && doctor.activo) { %>
+                  <% if (has('doctores.eliminar') && doctor.activo && !doctor.es_predeterminado) { %>
                     <button class="row-action-btn row-action-delete" type="button" data-tooltip="Eliminar"
                             aria-label="Dar de baja a <%= doctor.nombre %> <%= doctor.apellidos %>"
                             hx-delete="doctores/<%= doctor.id %>" hx-include="#doctores-filters"
@@ -151,13 +155,7 @@ function initials(nombre, apellidos) {
       <% } %>
 
       <div class="table-footer">
-        <%
-        // Pedido explícito del usuario: mismo formato en TODOS los módulos
-        // (antes cada tabla tenía su propio separador/singular a medias) —
-        // singular cuando el número es 1 (encontrados Y total, cada uno por
-        // su cuenta), plural en cualquier otro caso (0, 2, 50...), separador
-        // en-dash.
-        %>
+
         <span><%= doctores.length %> resultado<%= doctores.length === 1 ? '' : 's' %> – <%= total %> doctor<%= total === 1 ? '' : 'es' %> en total</span>
         <% if (totalPages > 1) { %>
           <nav class="pagination" aria-label="Paginación">

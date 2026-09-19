@@ -16,10 +16,6 @@ router.get(
   controller.list,
 );
 
-// Filtro/orden/paginación vía HTMX: nunca aparece en la URL ni en el
-// historial del navegador (motivo: privacidad de lo que se busca). El body
-// viaja igual de "sucio" que un query string, así que se protege con el
-// mismo CSRF que POST /login — no es un GET disfrazado.
 router.post(
   '/doctores.html',
   requireAuth,
@@ -29,8 +25,6 @@ router.post(
   controller.filter,
 );
 
-// US-608: baja lógica de un doctor, disparada por HTMX desde el ícono de
-// eliminar del listado (con confirmación previa vía hx-confirm).
 router.delete(
   '/doctores/:id',
   requireAuth,
@@ -40,12 +34,6 @@ router.delete(
   controller.desactivar,
 );
 
-// US-607: alta y edición, mismo formulario en un modal (mismo patrón que
-// areas.routes.js/US-610). Los GET solo arman el fragmento del formulario
-// (vacío o precargado); los POST/PUT hacen el alta/edición real. Cada ruta
-// exige el permiso específico de la acción (crear ≠ editar) — así un
-// usuario con uno solo de los dos nunca puede ejecutar el otro, aunque el
-// formulario sea visualmente el mismo.
 router.get(
   '/doctores/nuevo',
   requireAuth,
@@ -58,6 +46,7 @@ router.get(
   requirePermission('doctores.editar'),
   controller.editarForm,
 );
+router.get('/doctores/:id/ver', requireAuth, requirePermission('doctores.ver'), controller.verForm);
 router.post(
   '/doctores',
   requireAuth,

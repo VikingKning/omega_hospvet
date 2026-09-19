@@ -11,6 +11,52 @@ function preparar(overrides = {}) {
   repository.listarErrores.mockResolvedValue(overrides.errores ?? []);
   repository.contarPorDiaHora.mockResolvedValue(overrides.diaHora ?? []);
   repository.topPlantillasConFallos.mockResolvedValue(overrides.plantillasConFallos ?? []);
+  repository.obtenerResumenConversacional.mockResolvedValue(
+    overrides.resumenConversacional ?? {
+      mensajes_entrantes: '0',
+      fragmentos_procesables: '0',
+      grupos_procesados: '0',
+      grupos_sin_claude: '0',
+      llamadas_claude: '0',
+      transferencias_humanas: '0',
+      emergencias_confirmadas: '0',
+      pipeline_nuevo: '0',
+      pipeline_anterior: '0',
+    },
+  );
+  repository.contarTendenciaConversacional.mockResolvedValue(
+    overrides.tendenciaConversacional ?? [],
+  );
+  repository.obtenerAgrupacionConversacional.mockResolvedValue(
+    overrides.agrupacionConversacional ?? {
+      resumen: { grupos: '0', fragmentos: '0' },
+      distribucion: [],
+    },
+  );
+  repository.contarRutasConversacionales.mockResolvedValue(overrides.rutasConversacionales ?? []);
+  repository.contarSeleccionesMenu.mockResolvedValue(overrides.seleccionesMenu ?? []);
+  repository.obtenerUsoClaude.mockResolvedValue(
+    overrides.usoClaude ?? {
+      resumen: {
+        llamadas: '0',
+        tokens_entrada: '0',
+        tokens_salida: '0',
+        grupos_cero: '0',
+        grupos_una: '0',
+        grupos_dos_o_mas: '0',
+        unidades_con_claude: '0',
+      },
+      categorias: [],
+      resultados: [],
+    },
+  );
+  repository.obtenerDescartesYReintentos.mockResolvedValue(overrides.descartes ?? {});
+  repository.obtenerTiemposProcesamiento.mockResolvedValue(overrides.tiempos ?? {});
+  repository.obtenerAtencionYAlertas.mockResolvedValue(
+    overrides.atencion ?? { transferencias: [], alertas: [], canales: [], destinatarios: {} },
+  );
+  repository.contarMapaCalorConversacional.mockResolvedValue(overrides.mapaConversacional ?? []);
+  repository.ZONA_HORARIA = 'America/Mexico_City';
 }
 
 beforeEach(() => {
@@ -98,5 +144,36 @@ describe('metricas-whatsapp.service', () => {
       { desde: '2026-01-01', hasta: '2026-06-30' },
       'mes',
     );
+  });
+
+  it('calcula los siete KPIs conversacionales sin dividir entre cero', async () => {
+    preparar({
+      resumenConversacional: {
+        mensajes_entrantes: '5',
+        fragmentos_procesables: '5',
+        grupos_procesados: '2',
+        grupos_sin_claude: '1',
+        llamadas_claude: '1',
+        transferencias_humanas: '1',
+        emergencias_confirmadas: '1',
+        pipeline_nuevo: '5',
+        pipeline_anterior: '0',
+      },
+    });
+
+    const { conversacional } = await obtenerMetricasWhatsapp({
+      desde: '2026-09-01',
+      hasta: '2026-09-10',
+    });
+
+    expect(conversacional.kpis).toEqual({
+      mensajesEntrantes: 5,
+      gruposProcesados: 2,
+      reduccionAgrupacion: 60,
+      tasaSinClaude: 50,
+      llamadasClaude: 1,
+      transferenciasHumanas: 1,
+      emergenciasConfirmadas: 1,
+    });
   });
 });

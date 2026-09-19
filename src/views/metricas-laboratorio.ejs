@@ -3,14 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<%#
-  Esta página vive un nivel más profundo que la raíz (/metricas/laboratorio.html,
-  2 segmentos) en vez de uno solo como la mayoría (/laboratorio.html) —
-  mismo motivo/mismo fix que tutor-form.ejs/laboratorio-form.ejs/agenda.ejs:
-  sin <base>, cualquier referencia relativa (sus propios <link>/<script>, y
-  las de partials/sidebar.ejs) resolvería contra /metricas/ en vez de la
-  raíz real del sitio.
-%>
 <base href="/">
 <title>Métricas de Laboratorio | Omega Hospital Veterinario</title>
 <link rel="icon" type="image/png" href="assets/imgs/icon.png">
@@ -58,12 +50,6 @@
 <script nonce="<%= cspNonce %>">
   const metricasLabPanel = document.getElementById('metricas-laboratorio-panel');
 
-  // Cada gráfica se guarda para poder destruirla antes de reconstruirla —
-  // HTMX reemplaza el <canvas> entero en cada swap del panel (nuevo rango
-  // de fechas), así que el <canvas> viejo ya no existe, pero el objeto
-  // Chart de la corrida anterior seguiría con listeners activos si no se
-  // destruye explícitamente (recomendación oficial de Chart.js al reusar
-  // un <canvas> con el mismo id).
   const graficasLab = {};
 
   function destruirGraficasLab() {
@@ -74,9 +60,6 @@
 
   function construirGraficasLab() {
     destruirGraficasLab();
-    // Isla de datos JSON (ver partials/metricas-laboratorio-panel.ejs) — no
-    // existe cuando el rango no tiene ninguna orden (estado vacío en vez
-    // de las gráficas), nada que construir en ese caso.
     const dataEl = document.getElementById('metricasLabData');
     if (!dataEl) return;
     const datos = JSON.parse(dataEl.textContent);

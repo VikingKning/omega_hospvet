@@ -32,11 +32,6 @@ exports.seed = async function seed(knex) {
       .returning(['id']);
   }
 
-  // Se re-sincroniza SIEMPRE, no solo al crear: 01_permissions.js borra
-  // usuario_permisos cada vez que refresca el catálogo (por ejemplo, al
-  // renombrar o agregar un permiso), y sin esto el admin de arranque se
-  // quedaría silenciosamente sin acceso después de un `seed:run` normal en
-  // una base que ya tenía usuarios.
   const permisos = await knex('permissions').select('id');
   await knex('usuario_permisos').where({ usuario_id: admin.id }).del();
   await knex('usuario_permisos').insert(

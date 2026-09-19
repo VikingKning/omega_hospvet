@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const repository = require('./laboratorio.repository');
 const tutoresRepository = require('../tutores/tutores.repository');
 const tutoresService = require('../tutores/tutores.service');
@@ -5,10 +6,8 @@ const doctoresRepository = require('../doctores/doctores.repository');
 const archivos = require('./laboratorio.archivos');
 const envios = require('./laboratorio.envios');
 const env = require('../../config/env');
+const { enmascararTelefono, enmascararCorreo } = require('../../config/privacidad');
 
-// Mismo patrón de errores con `.status` que agenda.service.js/doctores.service.js
-// — el controller los atrapa para responder con el mensaje, en vez de un 500
-// genérico.
 class LaboratorioValidationError extends Error {
   constructor(message) {
     super(message);
@@ -20,19 +19,10 @@ const PAGE_SIZE = 10;
 const SORT_COLUMNS = ['fecha', 'mascota', 'estado'];
 const ESTADOS_VALIDOS = ['pendiente', 'cargado', 'enviado'];
 
-// Mismo criterio de tutores.service.js#stripTelefono (deliberadamente no
-// importado — módulos de dominio independientes, ver
-// project_selects_a_combobox/otros módulos con la misma copia): dígitos de
-// la búsqueda, para poder encontrar `propietarios.telefono` (guardado sin
-// guiones) sin importar cómo el usuario haya tecleado el número.
 function stripTelefono(telefono) {
   return (telefono ?? '').replace(/\D/g, '');
 }
 
-// Whitelist real de "componentes" para el campo_adicional='componentes_liquido'
-// (Análisis de líquidos corporales) — checklist fijo, no texto libre: mismo
-// criterio que DURACIONES_VALIDAS en agenda.service.js. Se expone también al
-// catálogo del formulario (catalogoParaFormulario) para pintar los checkboxes.
 const COMPONENTES_LIQUIDO = [
   { valor: 'color', etiqueta: 'Color' },
   { valor: 'aspecto', etiqueta: 'Aspecto / turbidez' },
@@ -47,13 +37,11 @@ const COMPONENTES_LIQUIDO = [
 ];
 const COMPONENTES_LIQUIDO_VALIDOS = COMPONENTES_LIQUIDO.map((c) => c.valor);
 
-// Whitelist real para el campo "Lateralidad" (campo_adicional='tejido_lateralidad')
-// — igual criterio que arriba, un <select> del cliente nunca es la fuente de
-// verdad de lo que es válido.
 const LATERALIDADES_VALIDAS = ['izquierdo', 'derecho', 'bilateral', 'no_aplica'];
 
 const OBSERVACIONES_MAX = 2000;
 const FECHA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const CONFIRMACION_ENVIO_VIGENCIA_MS = 5 * 60 * 1000;
 
 function parsePage(rawPage) {
   const page = Number.parseInt(rawPage, 10);
@@ -73,9 +61,6 @@ function parseId(rawId) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-// Fecha de solicitud: pedido explícito del usuario (mockup de pantalla
-// completa) — ya no la fija el servidor a CURRENT_DATE, la captura el
-// formulario (`<input type="date">`, por eso YYYY-MM-DD). Requerida.
 function validateFecha(rawValor) {
   const valor = (rawValor ?? '').trim();
   if (!FECHA_REGEX.test(valor)) {
@@ -86,9 +71,6 @@ function validateFecha(rawValor) {
   return valor;
 }
 
-// Observaciones (generales del registro, o de un estudio individual) —
-// texto libre opcional, mismo criterio de longitud máxima que el resto del
-// sistema (evitar abuso, no una regla de negocio real).
 function validateObservaciones(rawValor, etiqueta) {
   const valor = (rawValor ?? '').toString().trim();
   if (!valor) return null;
@@ -100,24 +82,18 @@ function validateObservaciones(rawValor, etiqueta) {
   return valor;
 }
 
-// Catálogo completo (categorías + ~600 estudios + zonas anatómicas +
-// componentes de líquido) para la isla JSON del formulario "Nuevo registro".
-async function catalogoParaFormulario() {
+async function catalogoParaFormulario(estudiosHistoricosIds = []) {
   const [categorias, zonasAnatomicas] = await Promise.all([
-    repository.findCatalogo(),
+    repository.findCatalogo(estudiosHistoricosIds),
     repository.findZonasAnatomicas(),
   ]);
   return { categorias, zonasAnatomicas, componentesLiquido: COMPONENTES_LIQUIDO };
 }
 
-// Catálogo chico (solo id/nombre) para el <select> "Tipo de estudio" del
-// toolbar de filtros.
 async function listCategorias() {
   return repository.findCategorias();
 }
 
-// Query params de un listado GET/POST: se sanean con valores por defecto en
-// vez de rechazarse con un error — mismo criterio que doctores.service.js#list.
 async function list({
   q,
   estado,
@@ -173,8 +149,8 @@ async function list({
   };
 }
 
-async function listarDoctoresActivos() {
-  return doctoresRepository.findActivos();
+async function listarDoctoresActivos(incluirDoctorId = null) {
+  return doctoresRepository.findActivos(incluirDoctorId);
 }
 
 function parseComponentesLiquido(raw) {
@@ -182,13 +158,16 @@ function parseComponentesLiquido(raw) {
   return [...new Set(valores.filter((v) => COMPONENTES_LIQUIDO_VALIDOS.includes(v)))];
 }
 
-// Valida un estudio del carrito contra el catálogo REAL (nunca lo que mandó
-// el cliente en `campoAdicional`) y arma la fila lista para
-// laboratorio.repository.js#crearRegistro. Corrige el bug real ya
-// encontrado en el mock: hoy se podía agregar "Radiografía" sin zona y el
-// carrito mostraba literalmente "undefined" — aquí simplemente se rechaza
-// el alta completa si algún estudio no trae su campo adicional obligatorio.
-async function validarEstudios(rawEstudios, zonasValidasIds) {
+function normalizarEspecie(especie) {
+  return (especie ?? '').trim().toLowerCase();
+}
+
+async function validarEstudios(
+  rawEstudios,
+  zonasValidasIds,
+  especieMascota,
+  estudiosInactivosPermitidosIds = new Set(),
+) {
   const lista = Array.isArray(rawEstudios) ? rawEstudios : [];
   if (lista.length === 0) {
     throw new LaboratorioValidationError('Agrega al menos un estudio antes de guardar.');
@@ -201,9 +180,20 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
   return lista.map((entrada) => {
     const estudioId = parseId(entrada.estudioId);
     const estudio = estudioId !== null ? catalogoPorId.get(estudioId) : undefined;
-    if (!estudio || !estudio.activo) {
+    const esEstudioHistorico = Boolean(
+      estudio && !estudio.activo && estudiosInactivosPermitidosIds.has(estudio.id),
+    );
+    if (!estudio || (!estudio.activo && !esEstudioHistorico)) {
       throw new LaboratorioValidationError(
         'Uno de los estudios seleccionados ya no está disponible en el catálogo.',
+      );
+    }
+    if (
+      estudio.especie &&
+      normalizarEspecie(estudio.especie) !== normalizarEspecie(especieMascota)
+    ) {
+      throw new LaboratorioValidationError(
+        `"${estudio.nombre}" no está disponible para la especie del paciente.`,
       );
     }
 
@@ -211,9 +201,16 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
 
     if (estudio.campo_adicional === 'zona') {
       const zonaAnatomicaId = parseId(entrada.zonaAnatomicaId);
-      if (zonaAnatomicaId === null || !zonasValidasIds.has(zonaAnatomicaId)) {
+      const zonasPermitidasIds = new Set(
+        (estudio.zonas_permitidas_ids ?? []).map((id) => Number(id)),
+      );
+      if (
+        zonaAnatomicaId === null ||
+        !zonasValidasIds.has(zonaAnatomicaId) ||
+        (!esEstudioHistorico && !zonasPermitidasIds.has(zonaAnatomicaId))
+      ) {
         throw new LaboratorioValidationError(
-          `"${estudio.nombre}" requiere seleccionar una zona anatómica.`,
+          `"${estudio.nombre}" requiere seleccionar una zona anatómica válida.`,
         );
       }
       fila.zonaAnatomicaId = zonaAnatomicaId;
@@ -225,7 +222,6 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
         );
       }
       fila.tipoMuestra = tipoMuestra;
-      fila.antibiograma = Boolean(entrada.antibiograma);
     } else if (estudio.campo_adicional === 'tejido_lateralidad') {
       const tejidoOrigen = (entrada.tejidoOrigen ?? '').trim();
       if (!tejidoOrigen) {
@@ -247,9 +243,18 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
       fila.componentesLiquido = componentesLiquido;
     }
 
-    // Pedido explícito del usuario (mockup de pantalla completa):
-    // "Observaciones del estudio" — texto libre opcional, independiente del
-    // campo adicional que le toque a este estudio en particular.
+    if (entrada.antibiograma && !estudio.permite_antibiograma && !esEstudioHistorico) {
+      throw new LaboratorioValidationError(
+        `"${estudio.nombre}" no permite solicitar antibiograma.`,
+      );
+    }
+    if (
+      estudio.permite_antibiograma ||
+      (esEstudioHistorico && entrada.antibiograma !== undefined && entrada.antibiograma !== null)
+    ) {
+      fila.antibiograma = Boolean(entrada.antibiograma);
+    }
+
     const observaciones = validateObservaciones(
       entrada.observaciones,
       `Observaciones de "${estudio.nombre}"`,
@@ -260,16 +265,16 @@ async function validarEstudios(rawEstudios, zonasValidasIds) {
   });
 }
 
-// Resuelve mascotaId/doctorId/fechaSolicitud/observaciones/estudios — común
-// a crear() y editar(), la única diferencia entre ambas es qué hace el
-// repository con el resultado (INSERT vs. UPDATE+reemplazar estudios).
-async function validarDatosRegistro({
-  mascotaId: rawMascotaId,
-  doctorId: rawDoctorId,
-  fechaSolicitud: rawFechaSolicitud,
-  observaciones: rawObservaciones,
-  estudios: rawEstudios,
-}) {
+async function validarDatosRegistro(
+  {
+    mascotaId: rawMascotaId,
+    doctorId: rawDoctorId,
+    fechaSolicitud: rawFechaSolicitud,
+    observaciones: rawObservaciones,
+    estudios: rawEstudios,
+  },
+  estudiosInactivosPermitidosIds = new Set(),
+) {
   const mascotaId = parseId(rawMascotaId);
   if (mascotaId === null) {
     throw new LaboratorioValidationError('Selecciona un paciente.');
@@ -289,64 +294,52 @@ async function validarDatosRegistro({
 
   const zonas = await repository.findZonasAnatomicas();
   const zonasValidasIds = new Set(zonas.map((z) => z.id));
-  const estudios = await validarEstudios(rawEstudios, zonasValidasIds);
+  const estudios = await validarEstudios(
+    rawEstudios,
+    zonasValidasIds,
+    mascota.tipo,
+    estudiosInactivosPermitidosIds,
+  );
 
   return { mascotaId, doctorId, fechaSolicitud, observaciones, estudios };
 }
 
-// Alta: una orden con uno o más estudios, en una sola transacción — nace
-// `pendiente` (mismo criterio que citas nace `confirmada`: el personal la
-// registra directamente, no hace falta un paso de confirmar lo que uno
-// mismo acaba de crear).
 async function crear({ usuarioId, ...datos }) {
   const validados = await validarDatosRegistro(datos);
   return repository.crearRegistro({ ...validados, usuarioId });
 }
 
-// Edición: mismas validaciones que crear(), pero reemplaza el registro
-// existente (repository.actualizarRegistro reemplaza los estudios por
-// completo, ver el comentario ahí). Un id inválido es un 404 real, no un
-// no-op silencioso (a diferencia de eliminar()) — editar algo que no existe
-// es un error de navegación, no un caso normal a tolerar.
 async function editar(rawId, { usuarioId, ...datos }) {
   const id = parseId(rawId);
   if (id === null) {
     throw new LaboratorioValidationError('Registro no encontrado.');
   }
-  const validados = await validarDatosRegistro(datos);
+  const registroActual = await repository.findById(id);
+  if (!registroActual) {
+    throw new LaboratorioValidationError('Registro no encontrado.');
+  }
+  const estudiosInactivosPermitidosIds = new Set(
+    registroActual.estudios.map((estudioActual) => estudioActual.estudio_id),
+  );
+  const validados = await validarDatosRegistro(datos, estudiosInactivosPermitidosIds);
   await repository.actualizarRegistro(id, { ...validados, usuarioId });
 }
 
-// Precarga la pantalla de edición/consulta (mismo espíritu que
-// tutores.service.js#obtenerParaEditar) — Especie/Sexo/Edad/Raza del
-// paciente viajan de solo lectura (ya se capturan en Tutores y Pacientes,
-// no se vuelven a pedir aquí).
 async function obtenerParaEditar(rawId) {
   const id = parseId(rawId);
   if (id === null) return undefined;
   const registro = await repository.findById(id);
   if (!registro) return undefined;
 
-  // El selector de "Paciente" necesita TODAS las mascotas del mismo tutor
-  // (no solo la ya ligada a este registro) por si se quiere cambiar por
-  // otra — mismo criterio que precargar "Doctor vinculado" con el catálogo
-  // completo, no solo la opción ya elegida.
   const pacientesDelTutor = await tutoresService.obtenerPacientesConEdad(registro.propietario_id);
 
   return { ...registro, pacientesDelTutor };
 }
 
-// "Nuevo registro": arranca de un tutor YA REGISTRADO por su teléfono
-// (pedido explícito del usuario) — delegado en tutores.service.js porque
-// `propietarios`/`mascotas` son sus tablas (mismo criterio que
-// listarDoctoresActivos delegando en doctoresRepository).
 async function resolverTutorPorTelefono(rawTelefono) {
   return tutoresService.resolverTutorActivoPorTelefono(rawTelefono);
 }
 
-// Combobox "buscar tutor por nombre" — pedido explícito del usuario, para
-// cuando no se sabe el teléfono. Delegado en tutores.service.js por el
-// mismo motivo que resolverTutorPorTelefono.
 async function buscarTutoresPorNombre(q) {
   return tutoresService.buscarActivosPorNombre(q);
 }
@@ -357,19 +350,10 @@ function errorRegistroNoEncontrado() {
   return err;
 }
 
-// Réplica exacta, en el servidor, del código que ya se muestra en la tabla
-// y en el formulario de laboratorio (`laboratorio-panel.ejs`/`laboratorio-
-// form.ejs`, 100% client-side, nunca persistido en BD) — para que el
-// mensaje de conflicto de abajo señale el mismo identificador que el
-// usuario ve en la UI.
 function formatearCodigoRegistro(id) {
   return `LAB-${String(id).padStart(3, '0')}`;
 }
 
-// Arma la frase de conflicto para UN archivo, según si la coincidencia
-// activa vive en este mismo registro (dentro de un lote de 2+, ver abajo)
-// o en otro (siempre bloquea, con el detalle del AC: registro/paciente/
-// doctor solicitante).
 function construirMensajeConflicto(match, registroActualId) {
   const codigo = formatearCodigoRegistro(match.registro_laboratorio_id);
   if (match.registro_laboratorio_id === registroActualId) {
@@ -379,25 +363,6 @@ function construirMensajeConflicto(match, registroActualId) {
   return `ya se encuentra asociado a otro registro de laboratorio (${codigo} — paciente ${match.paciente_nombre}, ${doctor})`;
 }
 
-// US-409 v2: detecta si algún archivo del lote ya está ACTIVO (estado
-// cargado/enviado — un archivo retirado es histórico, nunca bloquea) en
-// `archivos_laboratorio`, ANTES de fusionar/guardar nada. El hash se
-// calcula sobre cada archivo CRUDO tal cual llegó (nunca sobre el PDF ya
-// fusionado, que es contenido nuevo que no puede coincidir con nada
-// subido antes).
-//
-// - 1 solo archivo: sin match → sigue el flujo normal (null). Match en
-//   ESTE MISMO registro → no es un conflicto, es "el usuario ya lo tenía
-//   cargado" — se reutiliza la fila existente en vez de crear una nueva
-//   (se regresa `{ archivoIdExistente }`, el llamador decide qué hacer).
-//   Match en OTRO registro → bloqueo duro.
-// - 2+ archivos (se van a fusionar en un PDF nuevo): CUALQUIER match, sea
-//   del mismo registro o de otro, bloquea el LOTE COMPLETO — decisión
-//   explícita del usuario sobre la letra del AC (que solo describe sin
-//   ambigüedad el caso de 1 archivo): el resultado de fusionar siempre es
-//   contenido nuevo, así que "ya estaba cargado" no tiene un equivalente
-//   limpio ahí, y es más simple pedirle al usuario que quite el archivo
-//   repetido del lote y reintente.
 async function resolverConflictoDeHashes(registroId, files) {
   const hashesPorArchivo = files.map((file) => ({
     nombre: file.originalname,
@@ -433,13 +398,6 @@ async function resolverConflictoDeHashes(registroId, files) {
   return null;
 }
 
-// Carga de archivos de resultados (pedido explícito del usuario) — valida
-// que el registro/estudio exista (mismo criterio que el resto del módulo:
-// nunca se confía en un id que llega del cliente), delega el trabajo
-// pesado (fusionar/guardar en disco) en laboratorio.archivos.js, y
-// actualiza registro/estudio en la BD vía el repository. "Un archivo para
-// todos" pisa cualquier archivo individual que ya tuviera cada estudio —
-// representa el reporte combinado del laboratorio.
 async function subirArchivoParaTodos(rawRegistroId, files, usuarioId) {
   const registroId = parseId(rawRegistroId);
   if (registroId === null) throw errorRegistroNoEncontrado();
@@ -517,10 +475,6 @@ async function subirArchivoParaEstudio(rawRegistroId, rawEstudioId, files, usuar
   }
 }
 
-// Quitar un archivo ya cargado (pedido explícito del usuario: "por si se
-// equivocó el usuario", sin necesidad de reemplazarlo de inmediato por otro)
-// — mismas validaciones de pertenencia que subirArchivoPara*, delega el
-// desvincular + retirar (estado='retirado' + auditoría) en el repository.
 async function eliminarArchivoDeTodos(rawRegistroId, usuarioId) {
   const registroId = parseId(rawRegistroId);
   if (registroId === null) throw errorRegistroNoEncontrado();
@@ -543,8 +497,6 @@ async function eliminarArchivoDeEstudio(rawRegistroId, rawEstudioId, usuarioId) 
   await repository.revertirCargadoSiIncompleto(registroId);
 }
 
-// Descarga autenticada (laboratorio.controller.js#descargarArchivo) —
-// nunca por static serving directo, ver comentario del .gitignore.
 async function obtenerArchivoParaDescarga(rawArchivoId) {
   const id = parseId(rawArchivoId);
   if (id === null) return null;
@@ -556,24 +508,92 @@ async function obtenerArchivoParaDescarga(rawArchivoId) {
   };
 }
 
-// Envío real de resultados (pedido explícito del usuario: WhatsApp y/o
-// correo, según qué dato de contacto tenga el tutor — teléfono siempre
-// existe (propietarios.telefono NOT NULL), correo es opcional). Los 2
-// intentos corren en paralelo (Promise.allSettled: uno fallando nunca
-// bloquea al otro). La auditoría registra tanto éxitos como fallos; el estado
-// del archivo y de la orden solo cambia cuando al menos un canal tuvo éxito.
-async function enviarResultados(rawRegistroId, usuarioId) {
-  const registroId = parseId(rawRegistroId);
-  if (registroId === null) throw errorRegistroNoEncontrado();
-  const registro = await repository.findById(registroId);
-  if (!registro) throw errorRegistroNoEncontrado();
-
-  const faltaArchivo = registro.estudios.some((estudio) => !estudio.archivo_id);
-  if (faltaArchivo) {
+function validarRegistroListoParaEnvio(registro) {
+  if (registro.estudios.length === 0 || registro.estudios.some((estudio) => !estudio.archivo_id)) {
     throw new LaboratorioValidationError(
       'Todos los estudios deben tener un archivo cargado antes de enviar los resultados.',
     );
   }
+  if (!registro.propietario_correo && !registro.propietario_telefono) {
+    throw new LaboratorioValidationError(
+      'El tutor no tiene correo ni teléfono registrados para recibir los resultados.',
+    );
+  }
+}
+
+function datosFirmadosDeEnvio(registro, usuarioId, emitidoEn) {
+  const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))]
+    .sort((a, b) => a - b)
+    .join(',');
+  return [
+    'laboratorio-envio',
+    registro.id,
+    usuarioId,
+    emitidoEn,
+    registro.estado,
+    registro.propietario_correo ?? '',
+    stripTelefono(registro.propietario_telefono),
+    archivoIds,
+  ].join('|');
+}
+
+function crearTokenConfirmacionEnvio(registro, usuarioId, emitidoEn = Date.now()) {
+  const firma = crypto
+    .createHmac('sha256', env.sessionSecret)
+    .update(datosFirmadosDeEnvio(registro, usuarioId, emitidoEn))
+    .digest('hex');
+  return `${emitidoEn}.${firma}`;
+}
+
+function validarTokenConfirmacionEnvio(registro, usuarioId, token) {
+  const [emitidoTexto, firmaRecibida, extra] = String(token ?? '').split('.');
+  const emitidoEn = Number(emitidoTexto);
+  const vigente =
+    !extra &&
+    Number.isSafeInteger(emitidoEn) &&
+    emitidoEn <= Date.now() &&
+    Date.now() - emitidoEn <= CONFIRMACION_ENVIO_VIGENCIA_MS;
+  if (!vigente || !/^[a-f0-9]{64}$/.test(firmaRecibida ?? '')) {
+    throw new LaboratorioValidationError(
+      'La confirmación de destinatarios expiró. Revisa los datos e intenta nuevamente.',
+    );
+  }
+
+  const esperado = crearTokenConfirmacionEnvio(registro, usuarioId, emitidoEn).split('.')[1];
+  const firmaBuffer = Buffer.from(firmaRecibida, 'hex');
+  const esperadoBuffer = Buffer.from(esperado, 'hex');
+  if (!crypto.timingSafeEqual(firmaBuffer, esperadoBuffer)) {
+    throw new LaboratorioValidationError(
+      'Los destinatarios o archivos cambiaron. Revísalos y confirma nuevamente.',
+    );
+  }
+  return { emitidoEn, referencia: firmaRecibida.slice(0, 12) };
+}
+
+async function prepararConfirmacionEnvio(rawRegistroId, usuarioId) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+  validarRegistroListoParaEnvio(registro);
+
+  return {
+    confirmacionToken: crearTokenConfirmacionEnvio(registro, usuarioId),
+    esReenvio: registro.estado === 'enviado',
+    destinatarios: {
+      correo: enmascararCorreo(registro.propietario_correo),
+      whatsapp: enmascararTelefono(registro.propietario_telefono),
+    },
+  };
+}
+
+async function enviarResultados(rawRegistroId, usuarioId, { confirmacionToken } = {}) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+  validarRegistroListoParaEnvio(registro);
+  const confirmacion = validarTokenConfirmacionEnvio(registro, usuarioId, confirmacionToken);
 
   const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))];
   const filas = await Promise.all(archivoIds.map((id) => repository.findArchivoById(id)));
@@ -612,13 +632,11 @@ async function enviarResultados(rawRegistroId, usuarioId) {
           archivos: archivosParaEnviar,
           googleCalendarMeetingUrl: env.enlaces.calendarioCitas,
           googleMapsUrl: env.enlaces.ubicacionMaps,
+          claveIdempotenciaPrefijo: `laboratorio:${registro.id}:manual:${confirmacion.emitidoEn}:${confirmacion.referencia}`,
         })
       : Promise.resolve(null),
   ]);
 
-  // Promise.allSettled nunca rechaza, pero enviarPor* tampoco (siempre
-  // regresan {ok, error}) — este `?.` es solo defensa en profundidad, no
-  // se espera llegar nunca a la rama `rejected`.
   const correo = correoResultado.status === 'fulfilled' ? correoResultado.value : null;
   const whatsapp = whatsappResultado.status === 'fulfilled' ? whatsappResultado.value : null;
 
@@ -662,6 +680,46 @@ async function enviarResultados(rawRegistroId, usuarioId) {
   };
 }
 
+async function reenviarResultadosPorWhatsapp(
+  rawRegistroId,
+  { telefono, claveIdempotenciaPrefijo },
+) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) return { ok: false, error: 'Folio inválido.' };
+  const registro = await repository.findById(registroId);
+  if (!registro) return { ok: false, error: 'Registro no encontrado.' };
+
+  const telefonoSolicitante = stripTelefono(telefono).slice(-10);
+  const telefonoTutor = stripTelefono(registro.propietario_telefono).slice(-10);
+  if (telefonoSolicitante.length !== 10 || telefonoSolicitante !== telefonoTutor) {
+    return { ok: false, error: 'Los datos proporcionados no corresponden al tutor registrado.' };
+  }
+
+  const faltaArchivo =
+    registro.estudios.length === 0 || registro.estudios.some((estudio) => !estudio.archivo_id);
+  if (faltaArchivo) return { ok: false, error: 'No hay archivos cargados para esta orden.' };
+
+  const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))];
+  const filas = await Promise.all(archivoIds.map((id) => repository.findArchivoById(id)));
+  const archivosParaEnviar = filas.map((archivo) => ({
+    id: archivo.id,
+    nombreOriginal: archivo.nombre_original,
+    rutaAbsoluta: archivos.rutaAbsolutaDeArchivo(archivo.ruta_almacenamiento),
+    mimetype: archivos.mimetypeDeArchivo(archivo.nombre_original),
+  }));
+
+  return envios.enviarPorWhatsapp({
+    telefono,
+    nombreTutor: `${registro.propietario_nombre} ${registro.propietario_apellidos}`,
+    nombreMascota: registro.mascota_nombre,
+    folioId: registro.id,
+    archivos: archivosParaEnviar,
+    googleCalendarMeetingUrl: env.enlaces.calendarioCitas,
+    googleMapsUrl: env.enlaces.ubicacionMaps,
+    claveIdempotenciaPrefijo,
+  });
+}
+
 async function eliminar(rawId, usuarioId) {
   const id = parseId(rawId);
   if (id === null) return;
@@ -683,6 +741,8 @@ module.exports = {
   eliminarArchivoDeTodos,
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
+  prepararConfirmacionEnvio,
   enviarResultados,
+  reenviarResultadosPorWhatsapp,
   eliminar,
 };
