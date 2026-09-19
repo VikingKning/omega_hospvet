@@ -213,6 +213,153 @@ describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  // Bug real encontrado en producción/vivo (19-sep-2026): un botón
+  // interactivo huérfano (llega en un momento donde ninguna regla
+  // determinista lo reconoce, ej. un tap sobre un mensaje viejo) quedaba
+  // 'pendiente' con group_id null, igual que un mensaje de texto. Al
+  // agruparse junto con texto real, el grupo resultante quedaba marcado
+  // tieneRespuestaInteractiva=true, el router lo rechazaba (correctamente)
+  // pero SIN recuperación — el grupo se atoraba en pendiente_enrutamiento
+  // para siempre y formarGrupoParaConversacion lo reutilizaba en cada
+  // intento futuro, dejando CUALQUIER mensaje posterior de esa conversación
+  // (incluida una emergencia real) sin agrupar, sin clasificar y sin
+  // respuesta. El fix: excluir tipos interactivos de la selección de
+  // pendientes para texto — nunca deben entrar a un grupo de texto.
+  it('un botón interactivo huérfano nunca contamina el grupo de texto — la emergencia real sigue formando su propio grupo', async () => {
+    const telefonoOrigen = '5215500002999';
+    const telefonoNormalizado = '525500002999';
+    const botonHuerfano = await repository.registrarMensajeYConversacion({
+      whatsappMessageId: `${WAMID_PREFIX}boton-huerfano`,
+      telefonoOrigen,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado,
+      tipoMensaje: 'interactive_button_reply',
+      contenido: 'volver_menu',
+      mediaId: null,
+      mimeType: null,
+      tituloInteractivo: 'Volver al menú',
+      recibidoEn: new Date(Number(ahoraEpoch()) * 1000),
+    });
+    const filaBoton = await db('mensajes_whatsapp').where({ id: botonHuerfano.id }).first();
+    expect(filaBoton.group_id).toBeNull();
+    expect(filaBoton.estado_procesamiento).toBe('pendiente');
+
+    await postMensaje(
+      `${WAMID_PREFIX}emergencia-real`,
+      telefonoOrigen,
+      'Mi perro se está ahogando, necesito ayuda',
+      ahoraEpoch(1),
+    );
+    const [conversacion] = await buscarConversacion(telefonoNormalizado);
+    await vencerConversacion(conversacion.id);
+    const reclamadaId = await repository.reclamarConversacionVencida({ segundosRecuperacion: 120 });
+    expect(reclamadaId).toBe(conversacion.id);
+
+    const resultado = await repository.formarGrupoParaConversacion(conversacion.id);
+
+    expect(resultado.texto_consolidado).toBe('Mi perro se está ahogando, necesito ayuda');
+    expect(resultado.tieneRespuestaInteractiva).toBe(false);
+    expect(resultado.tieneTextoProcesable).toBe(true);
+
+    const filaBotonDespues = await db('mensajes_whatsapp').where({ id: botonHuerfano.id }).first();
+    expect(filaBotonDespues.group_id).toBeNull();
+    const mensajesDelGrupo = await db('mensajes_whatsapp').where({ group_id: resultado.groupId });
+    expect(mensajesDelGrupo).toHaveLength(1);
+    expect(mensajesDelGrupo[0].whatsapp_message_id).toBe(`${WAMID_PREFIX}emergencia-real`);
+  });
+
+  // Segunda mitad del mismo bug real (19-sep-2026): el fix de arriba evita
+  // que un botón CONTAMINE un grupo NUEVO, pero un grupo que ya había
+  // quedado contaminado ANTES del fix (estado='pendiente_enrutamiento' con
+  // group_id apuntando a un botón) se seguía reutilizando para siempre en
+  // la rama "existente" de formarGrupoParaConversacion — el router lo
+  // rechazaba una y otra vez sin recuperación, dejando cualquier mensaje
+  // real posterior sin agrupar ni responder indefinidamente (confirmado en
+  // vivo: 5 intentos fallidos acumulados sobre el mismo grupo). El fix:
+  // enrutarGrupo ahora libera el mensaje interactivo, descarta el grupo
+  // contaminado y reintenta UNA vez en el mismo ciclo.
+  it('un grupo ya contaminado con una respuesta interactiva se descarta y se reintenta en el mismo ciclo', async () => {
+    const telefonoOrigen = '5215500002997';
+    const telefonoNormalizado = '525500002997';
+    const botonContaminante = await repository.registrarMensajeYConversacion({
+      whatsappMessageId: `${WAMID_PREFIX}boton-contaminante`,
+      telefonoOrigen,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado,
+      tipoMensaje: 'interactive_list_reply',
+      contenido: 'MENU_RESULTADOS_LAB',
+      mediaId: null,
+      mimeType: null,
+      tituloInteractivo: 'Resultado de laboratorio',
+      recibidoEn: new Date(Number(ahoraEpoch()) * 1000),
+    });
+    const [conversacion] = await buscarConversacion(telefonoNormalizado);
+
+    // Reproduce a mano el estado YA contaminado (como quedaban los grupos
+    // formados antes del fix de la prueba anterior): un grupo
+    // 'pendiente_enrutamiento' cuyo texto_consolidado ya mezcla texto real
+    // CON el botón — exactamente como se encontró en vivo ("Hola.\n...\n
+    // continuar"), no un botón solo. Este detalle importa: una versión
+    // temprana de este mismo fix liberaba el botón pero marcaba el texto
+    // real que quedaba EN EL MISMO grupo como 'procesado' sin haberlo
+    // clasificado nunca — el tutor se quedaba sin respuesta en silencio.
+    const mensajeAtrapado = await repository.registrarMensajeYConversacion({
+      whatsappMessageId: `${WAMID_PREFIX}texto-atrapado`,
+      telefonoOrigen,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado,
+      tipoMensaje: 'text',
+      contenido: 'Mi perro tose mucho, qué puede ser?',
+      mediaId: null,
+      mimeType: null,
+      tituloInteractivo: null,
+      recibidoEn: new Date(Number(ahoraEpoch(1)) * 1000),
+    });
+    const [grupoContaminado] = await db('grupos_whatsapp')
+      .insert({
+        conversacion_id: conversacion.id,
+        texto_consolidado: 'Mi perro tose mucho, qué puede ser?\nMENU_RESULTADOS_LAB',
+        estado: 'pendiente_enrutamiento',
+        pipeline_asignado: repository.PIPELINE_NUEVO,
+      })
+      .returning('*');
+    await db('mensajes_whatsapp')
+      .whereIn('id', [botonContaminante.id, mensajeAtrapado.id])
+      .update({ group_id: grupoContaminado.group_id });
+    await vencerConversacion(conversacion.id);
+    const reclamadaId = await repository.reclamarConversacionVencida({ segundosRecuperacion: 120 });
+    expect(reclamadaId).toBe(conversacion.id);
+
+    const grupo = await repository.formarGrupoParaConversacion(conversacion.id);
+    expect(grupo.groupId).toBe(grupoContaminado.group_id); // reutiliza el contaminado, como en vivo.
+    expect(grupo.tieneRespuestaInteractiva).toBe(true);
+
+    const contexto = await repository.obtenerContextoDeConversacion(conversacion.id);
+    const resultado = await service.enrutarGrupo({
+      conversacionId: conversacion.id,
+      grupo,
+      contexto,
+    });
+
+    expect(resultado).toBe('clasificado_normal');
+
+    const grupoContaminadoDespues = await db('grupos_whatsapp')
+      .where({ group_id: grupoContaminado.group_id })
+      .first();
+    expect(grupoContaminadoDespues.estado).toBe('procesado');
+    expect(grupoContaminadoDespues.resultado_decision).toBe('grupo_contaminado_descartado');
+
+    const botonDespues = await db('mensajes_whatsapp').where({ id: botonContaminante.id }).first();
+    expect(botonDespues.group_id).toBeNull();
+
+    const grupoNuevo = await db('grupos_whatsapp')
+      .where({ conversacion_id: conversacion.id })
+      .whereNot({ group_id: grupoContaminado.group_id })
+      .first();
+    expect(grupoNuevo.texto_consolidado).toBe('Mi perro tose mucho, qué puede ser?');
+    expect(grupoNuevo.estado).toBe('procesado');
+  });
+
   it('cinco fragmentos dentro de una misma ventana forman un solo grupo (AC7/AC9)', async () => {
     const telefono = '5215500002001';
     for (const [i, texto] of ['uno', 'dos', 'tres', 'cuatro', 'cinco'].entries()) {

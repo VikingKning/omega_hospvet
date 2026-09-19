@@ -180,6 +180,7 @@ async function listarPendientes(usuarioId) {
     telefonoExterno: alerta.telefono_externo,
     conversacionId: alerta.conversacion_id,
     creadaEn: alerta.creado_en,
+    intencionClasificada: alerta.intencion_resuelta ?? null,
   }));
 }
 

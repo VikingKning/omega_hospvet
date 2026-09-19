@@ -1194,6 +1194,7 @@ async function formarGrupoParaConversacion(conversacionId) {
   const pendientes = await db('mensajes_whatsapp')
     .where({ conversacion_id: conversacionId, estado_procesamiento: 'pendiente' })
     .whereNull('group_id')
+    .whereNotIn('tipo_mensaje', ['interactive_list_reply', 'interactive_button_reply'])
     .orderBy([
       { column: 'recibido_en', order: 'asc' },
       { column: 'id', order: 'asc' },

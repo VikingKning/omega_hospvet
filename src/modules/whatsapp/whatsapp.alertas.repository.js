@@ -127,22 +127,24 @@ async function listarPendientesParaUsuario(usuarioId) {
   if (!usuario || usuario.estatus !== 'activo' || !usuario.notificaciones_alertas) return [];
 
   return db('alertas_atencion_whatsapp')
-    .where({ estado: 'pendiente' })
+    .leftJoin('grupos_whatsapp', 'grupos_whatsapp.group_id', 'alertas_atencion_whatsapp.grupo_id')
+    .where({ 'alertas_atencion_whatsapp.estado': 'pendiente' })
     .whereNot({ resolucion_destinatarios: 'pendiente' })
     .andWhere((builder) => {
       if (usuario.tipo_usuario === 'doctor') builder.where({ tipo_alerta: 'emergencia' });
       else if (usuario.tipo_usuario === 'recepcion') builder.where({ tipo_alerta: 'recepcion' });
       else if (usuario.tipo_usuario !== 'admin') builder.whereRaw('false');
     })
-    .orderBy('creado_en', 'asc')
+    .orderBy('alertas_atencion_whatsapp.creado_en', 'asc')
     .select(
-      'id',
-      'tipo_alerta',
-      'conversacion_id',
-      'telefono_externo',
-      'origen',
-      'resolucion_destinatarios',
-      'creado_en',
+      'alertas_atencion_whatsapp.id',
+      'alertas_atencion_whatsapp.tipo_alerta',
+      'alertas_atencion_whatsapp.conversacion_id',
+      'alertas_atencion_whatsapp.telefono_externo',
+      'alertas_atencion_whatsapp.origen',
+      'alertas_atencion_whatsapp.resolucion_destinatarios',
+      'alertas_atencion_whatsapp.creado_en',
+      'grupos_whatsapp.intencion_resuelta',
     );
 }
 

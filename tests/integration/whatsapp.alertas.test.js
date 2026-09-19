@@ -31,6 +31,7 @@ async function limpiarDatos() {
     await db('outbox_whatsapp').whereIn('intent_id', outboxIds.filter(Boolean)).del();
   }
   if (conversaciones.length) {
+    await db('grupos_whatsapp').whereIn('conversacion_id', conversaciones).del();
     await db('conversaciones_whatsapp').whereIn('id', conversaciones).del();
   }
   await db('usuarios').where('username', 'like', `${USER_PREFIX}%`).del();
@@ -352,4 +353,40 @@ describe('US WA 018 — portal, autorización vigente y atención concurrente', 
       });
     },
   );
+
+  it('expone la intención con la que se clasificó el grupo, para que el usuario identifique el motivo real', async () => {
+    const doctor = await crearUsuario('doctor');
+    const conversacion = await crearConversacion();
+    const [grupo] = await db('grupos_whatsapp')
+      .insert({
+        conversacion_id: conversacion.id,
+        texto_consolidado: 'mi perro se está ahogando en el agua',
+        estado: 'procesado',
+        intencion_resuelta: 'Urgencia por ahogamiento',
+      })
+      .returning('*');
+
+    const { alerta } = await service.solicitarAlerta({
+      claveIdempotencia: 'wa018:intencion:1',
+      tipoAlerta: 'emergencia',
+      conversacionId: conversacion.id,
+      grupoId: grupo.group_id,
+      telefonoExterno: conversacion.telefono_normalizado,
+      origen: 'emergencia_whatsapp',
+    });
+
+    await expect(service.listarPendientes(doctor.id)).resolves.toEqual([
+      expect.objectContaining({ id: alerta.id, intencionClasificada: 'Urgencia por ahogamiento' }),
+    ]);
+  });
+
+  it('no expone ninguna intención cuando la alerta no está ligada a un grupo clasificado', async () => {
+    const recepcion = await crearUsuario('recepcion');
+    const conversacion = await crearConversacion();
+    const { alerta } = await crearAlerta('recepcion', 'wa018:intencion:2', conversacion);
+
+    await expect(service.listarPendientes(recepcion.id)).resolves.toEqual([
+      expect.objectContaining({ id: alerta.id, intencionClasificada: null }),
+    ]);
+  });
 });

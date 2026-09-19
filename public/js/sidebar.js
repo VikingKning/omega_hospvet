@@ -196,7 +196,14 @@ document.querySelectorAll('.nav-toggle').forEach((toggle) => {
       boton.className = 'whatsapp-alerta-atender';
       boton.textContent = 'Atender';
       boton.addEventListener('click', () => atender(alerta.id, boton));
-      tarjeta.append(encabezado, mensaje, referencia, boton);
+      tarjeta.append(encabezado, mensaje);
+      if (alerta.intencionClasificada) {
+        const motivo = document.createElement('small');
+        motivo.className = 'whatsapp-alerta-motivo';
+        motivo.textContent = `Motivo: ${alerta.intencionClasificada}`;
+        tarjeta.append(motivo);
+      }
+      tarjeta.append(referencia, boton);
       lista.append(tarjeta);
     }
   }

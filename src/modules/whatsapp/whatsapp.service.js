@@ -800,7 +800,7 @@ async function enviarGuiaMedioNoInterpretable({ conversacionId, telefono, groupI
   return repository.confirmarGuiaMedioEnviada(conversacionId, groupId);
 }
 
-async function enrutarGrupo({ conversacionId, grupo, contexto }) {
+async function enrutarGrupo({ conversacionId, grupo, contexto, reintentos = 0 }) {
   const ruta = seleccionarRutaGrupo({ contexto, grupo });
 
   if (ruta === RUTAS_ENRUTAMIENTO.ATENCION_HUMANA) {
@@ -817,11 +817,59 @@ async function enrutarGrupo({ conversacionId, grupo, contexto }) {
   }
 
   if (ruta === RUTAS_ENRUTAMIENTO.RESPUESTA_INTERACTIVA) {
+    // Bug real encontrado en vivo (19-sep-2026): un botón/lista interactiva
+    // huérfana podía quedar 'pendiente' con group_id null (ningún estado
+    // determinista la reconoció al llegar) y colarse en un grupo de texto ya
+    // existente. formarGrupoParaConversacion (whatsapp.repository.js) ya
+    // evita que esto vuelva a pasar en grupos NUEVOS, pero un grupo que
+    // quedó contaminado ANTES de ese fix se reutilizaba para siempre
+    // (rama "existente" de esa misma función) sin que nada lo resolviera —
+    // cada mensaje real posterior de esa conversación (incluida una
+    // emergencia) se quedaba sin agrupar y sin respuesta indefinidamente.
+    // Aquí se repara en cuanto se detecta: se libera el mensaje interactivo
+    // del grupo (nunca debió agruparse), se descarta el grupo contaminado, y
+    // se reintenta UNA vez, en el mismo ciclo, para que los mensajes reales
+    // que quedaron atrás formen su propio grupo limpio de inmediato — sin
+    // esperar el ciclo de recuperación de huérfanos (2 minutos por default).
     logger.error(
       { conversacionId, groupId: grupo.groupId },
-      'Una respuesta interactiva alcanzó indebidamente el router de grupos.',
+      'Una respuesta interactiva alcanzó indebidamente el router de grupos; se descarta el grupo contaminado.',
     );
-    return 'respuesta_interactiva_pendiente_revision';
+    await db.transaction(async (trx) => {
+      // Libera las respuestas interactivas: nunca debieron agruparse, se
+      // marcan resueltas para no quedar dando vueltas para siempre.
+      await trx('mensajes_whatsapp')
+        .where({ group_id: grupo.groupId })
+        .whereIn('tipo_mensaje', ['interactive_list_reply', 'interactive_button_reply'])
+        .update({ group_id: null, estado_procesamiento: 'procesado', procesado_en: trx.fn.now() });
+      // Bug encontrado al probar el fix de arriba: si el texto real que
+      // venía en el MISMO grupo contaminado se dejaba con group_id
+      // apuntando al grupo descartado, marcarGrupoProcesado (abajo) lo
+      // marcaba 'procesado' sin haberlo clasificado NUNCA — el tutor se
+      // quedaba sin respuesta igual que con el bug original, solo que
+      // ahora en silencio "exitoso" en vez de atorado. Se libera aquí
+      // (group_id null, sigue 'pendiente') para que el reintento
+      // inmediato de abajo lo recoja en un grupo limpio de verdad.
+      await trx('mensajes_whatsapp')
+        .where({ group_id: grupo.groupId, estado_procesamiento: 'pendiente' })
+        .update({ group_id: null });
+      await repository.persistirDecisionDeterministaGrupo(trx, grupo.groupId, {
+        rutaEnrutamiento: ruta,
+        intencionResuelta: 'descartar_respuesta_interactiva',
+        resultadoDecision: 'grupo_contaminado_descartado',
+        respuestaDefinitiva: null,
+      });
+      await repository.marcarGrupoProcesado(grupo.groupId, trx);
+    });
+
+    if (reintentos === 0) {
+      const grupoNuevo = await repository.formarGrupoParaConversacion(conversacionId);
+      if (grupoNuevo) {
+        await repository.registrarIntentoEnrutamientoGrupo(grupoNuevo.groupId);
+        return enrutarGrupo({ conversacionId, grupo: grupoNuevo, contexto, reintentos: 1 });
+      }
+    }
+    return 'respuesta_interactiva_descartada';
   }
 
   if (ruta === RUTAS_ENRUTAMIENTO.COMANDO_MENU || ruta === RUTAS_ENRUTAMIENTO.SALUDO_PURO) {

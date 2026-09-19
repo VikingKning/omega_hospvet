@@ -43,7 +43,7 @@ describe('config/claude — timeout y catálogo cerrado (US WA 011)', () => {
     expect(opciones.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('envía texto minimizado y etiquetas anónimas, sin slugs ni respuestas internas', async () => {
+  it('envía texto minimizado y etiquetas anónimas, sin slugs ni datos personales del contenido de la plantilla', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: () =>
@@ -70,9 +70,14 @@ describe('config/claude — timeout y catálogo cerrado (US WA 011)', () => {
     expect(cuerpo.messages[0].content).toBe(
       'Soy [nombre], mi correo es [correo], teléfono [telefono] y [folio]',
     );
-    expect(cuerpo.system).toContain('opcion_1: orientar cuando olvidaron una dosis');
+    // El resumen del texto_respuesta SÍ viaja (necesario para que Claude
+    // distinga entre opciones parecidas — caso real 19-sep-2026), pero
+    // minimizado: el teléfono que traía la plantilla configurada se
+    // reemplaza igual que cualquier otro dato personal en el mensaje.
+    expect(cuerpo.system).toContain('opcion_1: se usaría para responder algo como');
+    expect(cuerpo.system).toContain('Texto privado con teléfono [telefono]');
+    expect(cuerpo.system).toContain('motivo: orientar cuando olvidaron una dosis');
     expect(cuerpo.system).not.toContain('dosis-olvidada-interna');
-    expect(cuerpo.system).not.toContain('Texto privado');
     expect(cuerpo.system).not.toContain('5511111111');
   });
 

@@ -35,15 +35,32 @@ function reglasComunes(etiquetasValidas) {
   ].join('\n');
 }
 
+// AC de precisión de clasificación (caso real, 19-sep-2026): con solo el
+// nombre corto de la intención, Claude no siempre conecta un mensaje
+// concreto ("se cayó en un pozo, no respira") con una plantilla específica
+// cuyo contenido real sí lo deja claro ("si aún está en el agua...",
+// "boca/nariz"). Se reincorpora un resumen del texto_respuesta configurado
+// — pasado por minimizarTextoParaClaude para no exponer teléfonos/correos/
+// nombres/enlaces reales del cuerpo de la plantilla (ej. el teléfono de la
+// clínica que aparece en varias respuestas de emergencia).
 function construirOpcionesAnonimas(candidatosReales, slugPorCategoria, nombresConocidos) {
-  const especificas = candidatosReales.map((candidato, indice) => ({
-    etiqueta: `opcion_${indice + 1}`,
-    slug: candidato.slug,
-    descripcion: minimizarTextoParaClaude(
+  const especificas = candidatosReales.map((candidato, indice) => {
+    const motivo = minimizarTextoParaClaude(
       String(candidato.intencion ?? '').replace(/[_-]+/g, ' '),
-      { nombresConocidos, maximoCaracteres: 240 },
-    ),
-  }));
+      { nombresConocidos, maximoCaracteres: 120 },
+    );
+    const resumenRespuesta = minimizarTextoParaClaude(candidato.texto_respuesta, {
+      nombresConocidos,
+      maximoCaracteres: 220,
+    });
+    return {
+      etiqueta: `opcion_${indice + 1}`,
+      slug: candidato.slug,
+      descripcion: resumenRespuesta
+        ? `se usaría para responder algo como "${resumenRespuesta}" (motivo: ${motivo || 'sin motivo registrado'})`
+        : motivo || 'motivo general',
+    };
+  });
   const genericas = CATEGORIAS.map((categoria, indice) => ({
     etiqueta: `categoria_${indice + 1}`,
     slug: slugPorCategoria[categoria],
@@ -69,9 +86,10 @@ function systemPromptUnificado(opciones) {
     '',
     'Regla de desempate: una opción específica de A) gana sobre una genérica de B) cuando de verdad describe el motivo real del mensaje, aunque el mensaje también encaje vagamente en una categoría genérica. Pero NUNCA fuerces una opción específica que no encaja bien solo por una palabra parecida (ej. que ambas mencionen "cita" o "medicamento"): si ninguna específica aplica de verdad, responde la etiqueta genérica correcta de B) en vez de adivinar una específica.',
     '',
-    'Dos aclaraciones que aplican a CUALQUIER opción específica, no solo a una en particular:',
+    'Tres aclaraciones que aplican a CUALQUIER opción específica, no solo a una en particular:',
     '- Si la descripción de una opción específica depende de haber recibido una foto/imagen/video, esa opción SOLO aplica si el mensaje del tutor menciona o deja claro que mandó ese medio.',
     '- La clínica atiende todo por WhatsApp: pedir que le llamen, hacer una llamada o una videollamada para que revisen a la mascota a distancia SÍ cuenta como pedir una consulta o revisión "por WhatsApp" o "remota", aunque el tutor no use esas palabras exactas.',
+    '- Si el mensaje describe una situación de peligro de vida (ahogamiento en agua —incluye pozo, alberca, río, tina, cubeta o cualquier lugar donde pudo haber agua, aunque el mensaje no diga la palabra "agua" explícitamente—, atragantamiento con un objeto, convulsión, sangrado que no cede, envenenamiento, etc.) y una opción específica trae instrucciones de primeros auxilios para ESE escenario exacto, esa opción SIEMPRE le gana a la genérica de emergencia: la genérica no da ninguna instrucción mientras llega ayuda y la específica sí. Esto aplica aunque el tutor ya haya resuelto parte de un paso que la plantilla describe (ej. si ya sacó a la mascota del agua o del pozo, la plantilla de ahogamiento sigue aplicando para el resto de las instrucciones) y aunque el mensaje también contenga una frase genérica de emergencia como "no respira" — esa frase por sí sola no descarta la opción específica, al contrario, es la señal de que sí aplica. Cuidado con no confundir un ahogamiento por agua con uno por atragantamiento con un objeto — son escenarios distintos con primeros auxilios distintos, aunque ambos usen la palabra "ahogamiento".',
     '',
     reglasComunes([
       ...opciones.especificas.map((opcion) => opcion.etiqueta),
