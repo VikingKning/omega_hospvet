@@ -29,7 +29,7 @@ describe('config/claude — timeout y catálogo cerrado (US WA 011)', () => {
       ok: true,
       json: () =>
         Promise.resolve({
-          content: [{ text: 'agendar-cita-default' }],
+          content: [{ text: 'categoria_3' }],
           usage: { input_tokens: 12, output_tokens: 2 },
         }),
     });
@@ -41,6 +41,39 @@ describe('config/claude — timeout y catálogo cerrado (US WA 011)', () => {
     });
     const [, opciones] = global.fetch.mock.calls[0];
     expect(opciones.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('envía texto minimizado y etiquetas anónimas, sin slugs ni respuestas internas', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          content: [{ text: 'opcion_1' }],
+          usage: { input_tokens: 10, output_tokens: 1 },
+        }),
+    });
+
+    await claude.clasificarMensaje(
+      'Soy Ana, mi correo es ana@correo.com, teléfono 5512345678 y folio LAB-005',
+      [
+        {
+          slug: 'dosis-olvidada-interna',
+          intencion: 'orientar cuando olvidaron una dosis',
+          texto_respuesta: 'Texto privado con teléfono 5511111111',
+        },
+      ],
+      SLUGS,
+      { nombresConocidos: ['Ana Ruiz'] },
+    );
+
+    const cuerpo = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(cuerpo.messages[0].content).toBe(
+      'Soy [nombre], mi correo es [correo], teléfono [telefono] y [folio]',
+    );
+    expect(cuerpo.system).toContain('opcion_1: orientar cuando olvidaron una dosis');
+    expect(cuerpo.system).not.toContain('dosis-olvidada-interna');
+    expect(cuerpo.system).not.toContain('Texto privado');
+    expect(cuerpo.system).not.toContain('5511111111');
   });
 
   it('normaliza el vencimiento como CLAUDE_TIMEOUT', async () => {

@@ -250,6 +250,7 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
         resultados_laboratorio: 'resultados-laboratorio-default',
         duda_medica: 'sin-coincidencia-default',
       }),
+      { nombresConocidos: undefined },
     );
   });
 
@@ -803,6 +804,7 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
       'mi perro no come',
       [],
       expect.any(Object),
+      { nombresConocidos: undefined },
     );
     expect(repository.confirmarMenuEnviado).not.toHaveBeenCalled();
     expect(repository.finalizarConversacionTrasGrupo).toHaveBeenCalledWith(
@@ -1154,6 +1156,60 @@ describe('whatsapp.service — selección de menú inválida (US WA 005 AC9)', (
 describe('whatsapp.service.enviarPasoLaboratorio — adjuntar resultados (US WA 007, ampliación)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('niega el envío a otro teléfono y cierra únicamente después de enviar el aviso', async () => {
+    outbox.registrarIntento.mockImplementation((datos) =>
+      Promise.resolve({ intent: { clave_idempotencia: datos.claveIdempotencia }, esNuevo: true }),
+    );
+    outbox.ejecutarIntento.mockResolvedValue({ enviado: true, wamid: 'wamid.privacidad' });
+    repository.confirmarAvisoPrivacidadLaboratorioEnviado.mockResolvedValue(true);
+
+    const resultado = await enviarPasoLaboratorio({
+      conversacionId: CONVERSACION_ID,
+      telefono: '525512345678',
+      mensajeId: 321,
+      labAccion: 'telefono_no_coincide',
+      labDatos: null,
+    });
+
+    expect(outbox.registrarIntento).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claveIdempotencia: 'mensaje:321:lab:telefono_no_coincide',
+        payloadFuncional: expect.objectContaining({
+          tipo: 'text',
+          texto: expect.stringContaining('número registrado del tutor'),
+        }),
+      }),
+    );
+    expect(repository.confirmarAvisoPrivacidadLaboratorioEnviado).toHaveBeenCalledWith({
+      conversacionId: CONVERSACION_ID,
+      mensajeId: 321,
+      ahora: expect.any(Date),
+    });
+    expect(resultado).toEqual(
+      expect.objectContaining({ enviado: true, conversacionCerrada: true }),
+    );
+  });
+
+  it('si falla el aviso de privacidad no cierra la conversación', async () => {
+    outbox.registrarIntento.mockImplementation((datos) =>
+      Promise.resolve({ intent: { clave_idempotencia: datos.claveIdempotencia }, esNuevo: true }),
+    );
+    outbox.ejecutarIntento.mockResolvedValue({ enviado: false, error: 'Meta rechazó' });
+
+    const resultado = await enviarPasoLaboratorio({
+      conversacionId: CONVERSACION_ID,
+      telefono: '525512345678',
+      mensajeId: 321,
+      labAccion: 'telefono_no_coincide',
+      labDatos: null,
+    });
+
+    expect(repository.confirmarAvisoPrivacidadLaboratorioEnviado).not.toHaveBeenCalled();
+    expect(resultado).toEqual(
+      expect.objectContaining({ enviado: false, conversacionCerrada: false }),
+    );
   });
 
   it('con estadoOrden "cargado" y el adjunto exitoso, NO manda el texto genérico', async () => {

@@ -3,14 +3,12 @@ const request = require('supertest');
 const app = require('../../src/app');
 const db = require('../../src/config/database');
 const { store: sessionStore } = require('../../src/config/session');
-const whatsappConfig = require('../../src/config/whatsapp');
 const claude = require('../../src/config/claude');
 const service = require('../../src/modules/whatsapp/whatsapp.alertas.service');
 const repository = require('../../src/modules/whatsapp/whatsapp.alertas.repository');
 
 const PHONE_NUMBER_ID = 'phone-integ-alertas-wa018';
 const USER_PREFIX = 'wa018.';
-const originalFetch = global.fetch;
 let secuencia = 0;
 let usuariosPreviosConAlertas = [];
 
@@ -53,19 +51,7 @@ beforeAll(async () => {
   }
 });
 
-beforeEach(() => {
-  global.fetch = jest.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve({ messages: [{ id: `wamid.wa018-${Date.now()}` }] }),
-  });
-  jest
-    .spyOn(whatsappConfig, 'messagesUrl')
-    .mockReturnValue('https://graph.facebook.com/fake/messages');
-  jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
-});
-
 afterEach(async () => {
-  global.fetch = originalFetch;
   jest.restoreAllMocks();
   await limpiarDatos();
 });
@@ -174,7 +160,7 @@ describe('US WA 018 — selección inicial, persistencia e idempotencia', () => 
     ]);
   });
 
-  it('selecciona únicamente doctores elegibles, no agrega admin y deduplica el teléfono', async () => {
+  it('selecciona doctores y administradores elegibles únicamente para portal y navegador', async () => {
     const telefonoCompartido = '7711634578';
     const doctor1 = await crearUsuario('doctor', { telefono: telefonoCompartido });
     const doctor2 = await crearUsuario('doctor', { telefono: telefonoCompartido });
@@ -195,21 +181,14 @@ describe('US WA 018 — selección inicial, persistencia e idempotencia', () => 
       doctor2.id,
       doctorSinTelefono.id,
       doctorTelefonoInvalido.id,
+      admin.id,
     ]);
-    expect(primera.destinatarios.some((fila) => fila.usuario_id === admin.id)).toBe(false);
     expect(spyClaude).not.toHaveBeenCalled();
 
     const intentos = await db('intentos_alerta_whatsapp').where({ alerta_id: primera.alerta.id });
-    expect(intentos.filter((fila) => fila.canal === 'portal')).toHaveLength(4);
-    expect(intentos.filter((fila) => fila.canal === 'navegador')).toHaveLength(4);
-    expect(
-      intentos.filter(
-        (fila) => fila.canal === 'whatsapp' && fila.destino_normalizado === '527711634578',
-      ),
-    ).toHaveLength(1);
-    expect(
-      intentos.filter((fila) => fila.canal === 'whatsapp' && fila.estado === 'no_aplicable'),
-    ).toHaveLength(2);
+    expect(intentos.filter((fila) => fila.canal === 'portal')).toHaveLength(5);
+    expect(intentos.filter((fila) => fila.canal === 'navegador')).toHaveLength(5);
+    expect(intentos.filter((fila) => fila.canal === 'whatsapp')).toHaveLength(0);
 
     await db('usuarios').where({ id: doctor1.id }).update({ notificaciones_alertas: false });
     const nuevoDoctor = await crearUsuario('doctor');
@@ -218,11 +197,11 @@ describe('US WA 018 — selección inicial, persistencia e idempotencia', () => 
     const seleccionPersistida = await db('destinatarios_alerta_whatsapp')
       .where({ alerta_id: primera.alerta.id })
       .pluck('usuario_id');
-    expect(seleccionPersistida).toHaveLength(4);
+    expect(seleccionPersistida).toHaveLength(5);
     expect(seleccionPersistida).not.toContain(nuevoDoctor.id);
     await expect(
       db('outbox_whatsapp').where('clave_idempotencia', 'like', `alerta:${primera.alerta.id}:%`),
-    ).resolves.toHaveLength(1);
+    ).resolves.toHaveLength(0);
   });
 
   it('usa administradores solo como respaldo y conserva pendiente una alerta sin destinatarios', async () => {
@@ -255,78 +234,24 @@ describe('US WA 018 — selección inicial, persistencia e idempotencia', () => 
 });
 
 describe('US WA 018 — canales y auditoría', () => {
-  it('envía por outbox una plantilla interna aprobable y registra el resultado independiente', async () => {
-    await crearUsuario('doctor', { telefono: '7711634578' });
+  it('registra exclusivamente los canales portal y navegador, sin outbox de WhatsApp', async () => {
+    const doctor = await crearUsuario('doctor', { telefono: '7711634578' });
+    const admin = await crearUsuario('admin');
     const conversacion = await crearConversacion();
     const { alerta } = await crearAlerta('emergencia', 'wa018:envio:1', conversacion);
 
-    const procesado = await service.procesarSiguienteEnvioWhatsapp();
-
-    expect(procesado.resultado).toBe('enviado');
-    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(body).toMatchObject({
-      to: '527711634578',
-      type: 'template',
-      template: { name: 'alerta_emergencia_personal_v1', language: { code: 'es_MX' } },
-    });
     const auditoria = await db('intentos_alerta_whatsapp').where({ alerta_id: alerta.id });
-    expect(auditoria.find((fila) => fila.canal === 'whatsapp')).toMatchObject({
-      estado: 'enviado',
-      numero_intento: 1,
-    });
-    expect(auditoria.filter((fila) => fila.canal === 'portal')).toHaveLength(1);
-    expect(auditoria.filter((fila) => fila.canal === 'navegador')).toHaveLength(1);
-  });
-
-  it('un fallo de WhatsApp no atiende la alerta ni sobrescribe los otros canales', async () => {
-    await crearUsuario('recepcion');
-    const conversacion = await crearConversacion();
-    const { alerta } = await crearAlerta('recepcion', 'wa018:envio-fallido:1', conversacion);
-    global.fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      json: () => Promise.resolve({ error: { message: 'Plantilla no disponible' } }),
-    });
-
-    await service.procesarSiguienteEnvioWhatsapp();
-
+    expect(auditoria.filter((fila) => fila.canal === 'portal')).toHaveLength(2);
+    expect(auditoria.filter((fila) => fila.canal === 'navegador')).toHaveLength(2);
+    expect(auditoria.filter((fila) => fila.canal === 'whatsapp')).toHaveLength(0);
     await expect(
-      db('alertas_atencion_whatsapp').where({ id: alerta.id }).first(),
-    ).resolves.toMatchObject({ estado: 'pendiente' });
-    const intentos = await db('intentos_alerta_whatsapp').where({ alerta_id: alerta.id });
-    expect(intentos.find((fila) => fila.canal === 'whatsapp')).toMatchObject({
-      estado: 'fallido',
-      numero_intento: 1,
-    });
-    expect(intentos.find((fila) => fila.canal === 'portal').estado).toBe('pendiente');
-    expect(intentos.find((fila) => fila.canal === 'navegador').estado).toBe('pendiente');
-  });
-
-  it('recupera un intento funcional abandonado sin duplicar el outbox', async () => {
-    await crearUsuario('doctor', { telefono: '7711634578' });
-    const conversacion = await crearConversacion();
-    const { alerta } = await crearAlerta('emergencia', 'wa018:envio-huerfano:1', conversacion);
-    const intento = await db('intentos_alerta_whatsapp')
-      .where({ alerta_id: alerta.id, canal: 'whatsapp' })
-      .first();
-    await db('intentos_alerta_whatsapp')
-      .where({ id: intento.id })
-      .update({
-        estado: 'enviando',
-        numero_intento: 1,
-        intentado_en: new Date(Date.now() - 10 * 60 * 1000),
-      });
-
-    await expect(service.procesarSiguienteEnvioWhatsapp()).resolves.toMatchObject({
-      id: intento.id,
-      resultado: 'enviado',
-    });
+      db('destinatarios_alerta_whatsapp').where({ alerta_id: alerta.id }).pluck('usuario_id'),
+    ).resolves.toEqual([doctor.id, admin.id]);
     await expect(
-      db('intentos_alerta_whatsapp').where({ id: intento.id }).first(),
-    ).resolves.toMatchObject({ estado: 'enviado', numero_intento: 2 });
-    await expect(
-      db('outbox_whatsapp').where({ clave_idempotencia: intento.clave_idempotencia }),
-    ).resolves.toHaveLength(1);
+      db('outbox_whatsapp')
+        .where({ origen_funcional: 'alerta_interna_personal' })
+        .andWhere('clave_idempotencia', 'like', `alerta:${alerta.id}:%`),
+    ).resolves.toHaveLength(0);
   });
 });
 
@@ -382,7 +307,6 @@ describe('US WA 018 — portal, autorización vigente y atención concurrente', 
     expect(conversacionDespues.atencion_humana_hasta).toEqual(
       conversacionAntes.atencion_humana_hasta,
     );
-    expect(global.fetch).not.toHaveBeenCalled();
     await expect(agent.get('/api/whatsapp/alertas')).resolves.toMatchObject({
       status: 200,
       body: { alertas: [] },
@@ -412,12 +336,16 @@ describe('US WA 018 — portal, autorización vigente y atención concurrente', 
   });
 
   it.each(['emergencia', 'recepcion'])(
-    'un admin de respaldo puede atender una alerta de %s',
+    'un admin con alertas activas puede atender una alerta de %s aunque exista destinatario principal',
     async (tipo) => {
       const admin = await crearUsuario('admin');
+      await crearUsuario(tipo === 'emergencia' ? 'doctor' : 'recepcion');
       const conversacion = await crearConversacion();
       const { alerta } = await crearAlerta(tipo, `wa018:admin:${tipo}`, conversacion);
 
+      await expect(service.listarPendientes(admin.id)).resolves.toEqual([
+        expect.objectContaining({ id: alerta.id, tipo }),
+      ]);
       await expect(service.atender(alerta.id, admin.id)).resolves.toMatchObject({
         estado: 'atendida',
         atendida_por: admin.id,

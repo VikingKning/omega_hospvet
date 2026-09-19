@@ -12,6 +12,20 @@ function folioNumero(id) {
   return String(id).padStart(3, '0');
 }
 
+const EXTENSION_POR_MIME = {
+  'application/pdf': '.pdf',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+};
+
+function nombreArchivoGenerico(archivo, indice) {
+  const extensionOriginal = path.extname(archivo.nombreOriginal ?? '').toLowerCase();
+  const extension = /^\.[a-z0-9]{1,8}$/.test(extensionOriginal)
+    ? extensionOriginal
+    : (EXTENSION_POR_MIME[archivo.mimetype] ?? '.bin');
+  return `Resultado_Omega_${String(indice + 1).padStart(2, '0')}${extension}`;
+}
+
 function saludoPorHora() {
   let hora = Number(
     new Intl.DateTimeFormat('en-US', {
@@ -38,12 +52,16 @@ async function enviarPorCorreo({
 }) {
   try {
     const transporter = email.getTransporter();
+    const archivosGenericos = archivos.map((archivo, indice) => ({
+      ...archivo,
+      nombreOriginal: nombreArchivoGenerico(archivo, indice),
+    }));
     const { subject, html, text } = correoResultados.construirCorreoResultados({
       nombreTutor,
       nombreMascota,
       fechaSolicitud,
       folioId,
-      archivos,
+      archivos: archivosGenericos,
       calendarioCitas,
       googleMapsUrl,
     });
@@ -55,16 +73,16 @@ async function enviarPorCorreo({
       html,
       attachments: [
         { filename: 'omega-logo.png', path: LOGO_PATH, cid: 'logo-omega' },
-        ...archivos.map((a) => ({ filename: a.nombreOriginal, path: a.rutaAbsoluta })),
+        ...archivosGenericos.map((a) => ({
+          filename: a.nombreOriginal,
+          path: a.rutaAbsoluta,
+        })),
       ],
     });
     return { ok: true };
   } catch (err) {
-    logger.error(
-      { err, destinatario },
-      'No se pudo enviar el correo de resultados de laboratorio.',
-    );
-    return { ok: false, error: err.message };
+    logger.error({ err }, 'No se pudo enviar el correo de resultados de laboratorio.');
+    return { ok: false, error: 'No se pudo completar el envío por correo.' };
   }
 }
 
@@ -81,13 +99,10 @@ async function enviarPorWhatsapp({
   try {
     const folio = folioNumero(folioId);
     const saludo = saludoPorHora();
-    for (const archivo of archivos) {
+    for (const [indice, archivo] of archivos.entries()) {
+      const nombreGenerico = nombreArchivoGenerico(archivo, indice);
       const buffer = await fs.readFile(archivo.rutaAbsoluta);
-      const mediaId = await whatsappEnvios.subirMedia(
-        buffer,
-        archivo.mimetype,
-        archivo.nombreOriginal,
-      );
+      const mediaId = await whatsappEnvios.subirMedia(buffer, archivo.mimetype, nombreGenerico);
       await whatsappEnvios.enviarPlantillaResultados({
         telefono,
         nombreTutor,
@@ -97,14 +112,14 @@ async function enviarPorWhatsapp({
         mapsUrl: googleMapsUrl,
         saludo,
         mediaId,
-        nombreArchivo: archivo.nombreOriginal,
+        nombreArchivo: nombreGenerico,
         claveIdempotencia: `${claveIdempotenciaPrefijo}:${archivo.id}`,
       });
     }
     return { ok: true };
   } catch (err) {
-    logger.error({ err, telefono }, 'No se pudo enviar el WhatsApp de resultados de laboratorio.');
-    return { ok: false, error: err.message };
+    logger.error({ err }, 'No se pudo enviar el WhatsApp de resultados de laboratorio.');
+    return { ok: false, error: 'No se pudo completar el envío por WhatsApp.' };
   }
 }
 

@@ -1,5 +1,4 @@
 const db = require('../../config/database');
-const env = require('../../config/env');
 
 async function crearAlerta(datos, trx) {
   const conexion = trx ?? db;
@@ -47,7 +46,7 @@ async function guardarResolucion(alertaId, resolucion, trx) {
   });
 }
 
-async function guardarDestinatarios(alertaId, usuarios, esRespaldoAdmin, normalizarTelefono, trx) {
+async function guardarDestinatarios(alertaId, usuarios, esRespaldoAdmin, trx) {
   if (usuarios.length === 0) return [];
   return trx('destinatarios_alerta_whatsapp')
     .insert(
@@ -56,8 +55,8 @@ async function guardarDestinatarios(alertaId, usuarios, esRespaldoAdmin, normali
         usuario_id: usuario.id,
         tipo_usuario: usuario.tipo_usuario,
         notificaciones_alertas: usuario.notificaciones_alertas,
-        telefono_normalizado: normalizarTelefono(usuario.telefono),
-        es_respaldo_admin: esRespaldoAdmin,
+        telefono_normalizado: null,
+        es_respaldo_admin: usuario.tipo_usuario === 'admin' && esRespaldoAdmin,
       })),
     )
     .onConflict(['alerta_id', 'usuario_id'])
@@ -107,84 +106,6 @@ async function registrarIntentoCanal(datos, trx) {
   );
 }
 
-async function vincularOutbox(intentoId, outboxId, trx) {
-  await trx('intentos_alerta_whatsapp').where({ id: intentoId }).update({
-    outbox_id: outboxId,
-    actualizado_en: trx.fn.now(),
-  });
-}
-
-async function reclamarEnvioWhatsapp() {
-  return db.transaction(async (trx) => {
-    const intento = await trx({ intento: 'intentos_alerta_whatsapp' })
-      .join({ alerta: 'alertas_atencion_whatsapp' }, 'alerta.id', 'intento.alerta_id')
-      .where('intento.canal', 'whatsapp')
-      .andWhere((builder) =>
-        builder
-          .whereIn('intento.estado', ['pendiente', 'fallido'])
-          .orWhere((abandonado) =>
-            abandonado
-              .where('intento.estado', 'enviando')
-              .andWhere(
-                'intento.intentado_en',
-                '<=',
-                trx.raw(
-                  `now() - interval '${Number(env.whatsapp.workerReclamoHuerfanoSegundos)} seconds'`,
-                ),
-              ),
-          ),
-      )
-      .where('alerta.estado', 'pendiente')
-      .whereNotNull('intento.outbox_id')
-      .where((builder) =>
-        builder
-          .whereNull('intento.proximo_intento_en')
-          .orWhere('intento.proximo_intento_en', '<=', trx.fn.now()),
-      )
-      .orderBy('intento.creado_en', 'asc')
-      .orderBy('intento.id', 'asc')
-      .forUpdate('intento')
-      .skipLocked()
-      .first(
-        'intento.id',
-        'intento.alerta_id',
-        'intento.clave_idempotencia',
-        'intento.numero_intento',
-        'intento.outbox_id',
-      );
-    if (!intento) return null;
-
-    const [reclamado] = await trx('intentos_alerta_whatsapp')
-      .where({ id: intento.id })
-      .update({
-        estado: 'enviando',
-        numero_intento: trx.raw('numero_intento + 1'),
-        intentado_en: trx.fn.now(),
-        actualizado_en: trx.fn.now(),
-      })
-      .returning('*');
-    return reclamado;
-  });
-}
-
-async function buscarOutbox(outboxId) {
-  return db('outbox_whatsapp').where({ intent_id: outboxId }).first();
-}
-
-async function marcarEnvioWhatsapp(intentoId, resultado, reintentoSegundos = 30) {
-  const cambios = {
-    estado: resultado.estado,
-    identificador_externo: resultado.identificadorExterno ?? null,
-    error_tecnico: resultado.errorTecnico ?? null,
-    proximo_intento_en:
-      resultado.estado === 'fallido'
-        ? db.raw(`now() + interval '${Number(reintentoSegundos)} seconds'`)
-        : null,
-    actualizado_en: db.fn.now(),
-  };
-  await db('intentos_alerta_whatsapp').where({ id: intentoId }).update(cambios);
-}
-
 async function usuarioActual(usuarioId, trx) {
   const conexion = trx ?? db;
   return conexion('usuarios')
@@ -198,7 +119,7 @@ function usuarioPuedeAtender(usuario, alerta) {
   }
   const tipoPrincipal = alerta.tipo_alerta === 'emergencia' ? 'doctor' : 'recepcion';
   if (usuario.tipo_usuario === tipoPrincipal) return true;
-  return usuario.tipo_usuario === 'admin' && alerta.resolucion_destinatarios === 'respaldo_admin';
+  return usuario.tipo_usuario === 'admin';
 }
 
 async function listarPendientesParaUsuario(usuarioId) {
@@ -211,9 +132,7 @@ async function listarPendientesParaUsuario(usuarioId) {
     .andWhere((builder) => {
       if (usuario.tipo_usuario === 'doctor') builder.where({ tipo_alerta: 'emergencia' });
       else if (usuario.tipo_usuario === 'recepcion') builder.where({ tipo_alerta: 'recepcion' });
-      else if (usuario.tipo_usuario === 'admin') {
-        builder.where({ resolucion_destinatarios: 'respaldo_admin' });
-      } else builder.whereRaw('false');
+      else if (usuario.tipo_usuario !== 'admin') builder.whereRaw('false');
     })
     .orderBy('creado_en', 'asc')
     .select(
@@ -339,10 +258,6 @@ module.exports = {
   buscarDestinatarios,
   buscarSiguientePendienteResolucion,
   registrarIntentoCanal,
-  vincularOutbox,
-  reclamarEnvioWhatsapp,
-  buscarOutbox,
-  marcarEnvioWhatsapp,
   listarPendientesParaUsuario,
   registrarVisualizacionPortal,
   registrarResultadoNavegador,

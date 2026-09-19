@@ -4,8 +4,6 @@ const env = require('../../config/env');
 const LAB_MISMO_TELEFONO_SI = 'LAB_MISMO_TELEFONO_SI';
 const LAB_MISMO_TELEFONO_NO = 'LAB_MISMO_TELEFONO_NO';
 
-const PG_INTEGER_MAX = 2147483647;
-
 function preguntaConfirmacionPayload() {
   return {
     type: 'button',
@@ -25,8 +23,8 @@ function textoPedirFolio() {
   return 'Por favor escríbenos el folio de tu orden (ejemplo: LAB-005).';
 }
 
-function textoPedirTelefonoYFolio() {
-  return 'Por favor escríbenos el teléfono registrado del tutor y el folio de tu orden (ejemplo: 5512345678 LAB-005).';
+function textoTelefonoNoRegistrado() {
+  return 'Por seguridad y protección de tus datos personales, los resultados de laboratorio solo pueden enviarse al número registrado del tutor. Por favor, escríbenos desde ese número o comunícate con Recepción para actualizar tus datos.';
 }
 
 function textoRechazoGenerico() {
@@ -50,29 +48,6 @@ function textoEstadoOrden(folioId, estadoOrden) {
 function extraerFolio(texto) {
   const id = laboratorioRepository.extraerIdBuscado(String(texto ?? '').trim());
   return id !== null && id > 0 ? id : null;
-}
-
-function extraerFolioLibre(texto) {
-  const fuente = String(texto ?? '');
-  const match = fuente.match(/\blab[-\s]*0*(\d+)\b/i);
-  if (!match) return null;
-  const id = Number(match[1]);
-  if (!Number.isSafeInteger(id) || id <= 0 || id > PG_INTEGER_MAX) return null;
-  const resto = fuente.slice(0, match.index) + fuente.slice(match.index + match[0].length);
-  return { id, resto };
-}
-
-function extraerTelefonoLibre(texto) {
-  const digitos = String(texto ?? '').replace(/\D/g, '');
-  return digitos.length === 10 ? digitos : null;
-}
-
-function extraerFolioYTelefono(texto) {
-  const folio = extraerFolioLibre(texto);
-  if (!folio) return null;
-  const telefonoDigits = extraerTelefonoLibre(folio.resto);
-  if (!telefonoDigits) return null;
-  return { folioId: folio.id, telefonoDigits };
 }
 
 function ultimosDiezDigitos(telefonoNormalizado) {
@@ -108,30 +83,28 @@ async function procesarPaso(trx, conversacion, { contenido, tipoMensaje, ahora }
     }
     if (tipoMensaje === 'interactive_button_reply' && contenido === LAB_MISMO_TELEFONO_NO) {
       return {
-        cambios: { paso_actual: 'esperando_telefono_y_folio' },
-        labAccion: 'pedir_telefono_folio',
+        cambios: { paso_actual: 'aviso_privacidad_pendiente' },
+        labAccion: 'telefono_no_coincide',
       };
     }
     return { cambios: {}, labAccion: 'confirmacion_ambigua' };
   }
 
   let folioId = null;
-  let telefonoDigits = null;
   if (conversacion.paso_actual === 'esperando_folio') {
     if (tipoMensaje === 'text' && contenido) folioId = extraerFolio(contenido);
-    telefonoDigits = ultimosDiezDigitos(conversacion.telefono_normalizado);
-  } else if (conversacion.paso_actual === 'esperando_telefono_y_folio') {
-    if (tipoMensaje === 'text' && contenido) {
-      const extraido = extraerFolioYTelefono(contenido);
-      if (extraido) {
-        folioId = extraido.folioId;
-        telefonoDigits = extraido.telefonoDigits;
-      }
-    }
+  } else if (
+    conversacion.paso_actual === 'aviso_privacidad_pendiente' ||
+    conversacion.paso_actual === 'esperando_telefono_y_folio'
+  ) {
+    // La segunda condición conserva de forma segura conversaciones iniciadas
+    // antes del cambio: ya no se procesan teléfonos ni folios alternativos.
+    return { cambios: {}, labAccion: 'telefono_no_coincide' };
   } else {
     return { cambios: {}, labAccion: null };
   }
 
+  const telefonoDigits = ultimosDiezDigitos(conversacion.telefono_normalizado);
   if (folioId === null || telefonoDigits === null || telefonoDigits.length !== 10) {
     return registrarIntentoFallido(conversacion, ahora);
   }
@@ -159,14 +132,11 @@ module.exports = {
   LAB_MISMO_TELEFONO_NO,
   preguntaConfirmacionPayload,
   textoPedirFolio,
-  textoPedirTelefonoYFolio,
+  textoTelefonoNoRegistrado,
   textoRechazoGenerico,
   textoLimiteIntentos,
   textoEstadoOrden,
   extraerFolio,
-  extraerFolioLibre,
-  extraerTelefonoLibre,
-  extraerFolioYTelefono,
   ultimosDiezDigitos,
   procesarPaso,
 };

@@ -129,10 +129,14 @@ async function procesarSiguienteMensajeFlujoAnterior() {
     let resultadoClaude = 'no_configurado';
     let llamadaReal = false;
     try {
+      const nombresConocidos = await repository.obtenerNombresConocidosPorTelefono(
+        mensaje.telefono_origen,
+      );
       const clasificacion = await claude.clasificarMensaje(
         mensaje.mensaje_recibido,
         plantillas,
         SLUG_POR_CATEGORIA_GENERICA,
+        { nombresConocidos },
       );
       slug = clasificacion.etiqueta;
       tokensEntrada = clasificacion.tokensEntrada ?? 0;
@@ -445,7 +449,7 @@ async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labA
 
   const textosPorAccion = {
     pedir_folio: laboratorioConsulta.textoPedirFolio(),
-    pedir_telefono_folio: laboratorioConsulta.textoPedirTelefonoYFolio(),
+    telefono_no_coincide: laboratorioConsulta.textoTelefonoNoRegistrado(),
     rechazo: laboratorioConsulta.textoRechazoGenerico(),
     limite_intentos: laboratorioConsulta.textoLimiteIntentos(),
     exito: labDatos
@@ -455,7 +459,7 @@ async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labA
   const texto = textosPorAccion[labAccion];
   if (!texto) return null;
 
-  return intentarEnvioMenu({
+  const resultado = await intentarEnvioMenu({
     claveIdempotencia: `${claveBase}:${labAccion}`,
     tipoEnvio: 'conversacional',
     origenFuncional: 'respuesta_automatica',
@@ -464,6 +468,22 @@ async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labA
     payloadFuncional: { tipo: 'text', destinatarioTelefono: telefono, texto },
     usaPlantilla: false,
   });
+
+  if (labAccion !== 'telefono_no_coincide') return resultado;
+  if (!resultado.enviado) {
+    logger.warn(
+      { conversacionId, mensajeId, resultado: 'envio_resultados_denegado' },
+      'No se pudo enviar el aviso de protección de datos; la conversación permanece abierta.',
+    );
+    return { ...resultado, conversacionCerrada: false };
+  }
+
+  const conversacionCerrada = await repository.confirmarAvisoPrivacidadLaboratorioEnviado({
+    conversacionId,
+    mensajeId,
+    ahora: new Date(),
+  });
+  return { ...resultado, conversacionCerrada };
 }
 
 async function enviarSeguimiento({ conversacionId, telefono, claveIdempotencia }) {
@@ -551,10 +571,12 @@ async function clasificarYResponderGrupo({
         let llamadasClaude = 0;
         let resultadoClaude = 'no_usado';
         try {
+          const nombresConocidos = await repository.obtenerNombresConocidosPorTelefono(telefono);
           const clasificacion = await claude.clasificarMensaje(
             textoConsolidado,
             plantillasActivas,
             SLUG_POR_CATEGORIA_GENERICA,
+            { nombresConocidos },
           );
           slug = clasificacion.etiqueta;
           tokensEntrada = clasificacion.tokensEntrada ?? 0;
@@ -934,7 +956,8 @@ async function reanudarFlujoPendiente({
     const accionPorPaso = {
       confirmando_telefono: 'iniciar',
       esperando_folio: 'pedir_folio',
-      esperando_telefono_folio: 'pedir_telefono_folio',
+      aviso_privacidad_pendiente: 'telefono_no_coincide',
+      esperando_telefono_y_folio: 'telefono_no_coincide',
     };
     const labAccion = accionPorPaso[pasoActual];
     if (!labAccion) return null;

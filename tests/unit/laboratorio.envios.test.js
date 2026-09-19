@@ -52,7 +52,7 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
         // reales del registro — ver laboratorio.envios.js#enviarPorCorreo.
         attachments: [
           expect.objectContaining({ cid: 'logo-omega' }),
-          { filename: 'resultados.pdf', path: '/storage/laboratorio/42/x.pdf' },
+          { filename: 'Resultado_Omega_01.pdf', path: '/storage/laboratorio/42/x.pdf' },
         ],
       }),
     );
@@ -73,8 +73,8 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
       expect.objectContaining({
         attachments: [
           expect.objectContaining({ cid: 'logo-omega' }),
-          { filename: 'resultados.pdf', path: '/storage/laboratorio/42/x.pdf' },
-          { filename: 'otro.jpg', path: '/x/otro.jpg' },
+          { filename: 'Resultado_Omega_01.pdf', path: '/storage/laboratorio/42/x.pdf' },
+          { filename: 'Resultado_Omega_02.jpg', path: '/x/otro.jpg' },
         ],
       }),
     );
@@ -92,7 +92,7 @@ describe('laboratorio.envios.enviarPorCorreo', () => {
       archivos: [ARCHIVO],
     });
 
-    expect(resultado).toEqual({ ok: false, error: 'Conexión SMTP rechazada.' });
+    expect(resultado).toEqual({ ok: false, error: 'No se pudo completar el envío por correo.' });
   });
 
   it('si el correo no está configurado (getTransporter lanza), regresa ok:false — nunca lanza', async () => {
@@ -136,7 +136,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
     expect(whatsappEnvios.subirMedia).toHaveBeenCalledWith(
       Buffer.from('contenido'),
       'application/pdf',
-      'resultados.pdf',
+      'Resultado_Omega_01.pdf',
     );
     expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -148,7 +148,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
         mapsUrl: 'https://maps.example/ubicacion',
         saludo: expect.stringMatching(/^(día|tarde|noche)$/),
         mediaId: 'media-id-1',
-        nombreArchivo: 'resultados.pdf',
+        nombreArchivo: 'Resultado_Omega_01.pdf',
       }),
     );
   });
@@ -176,7 +176,10 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       archivos: [ARCHIVO],
     });
 
-    expect(resultado).toEqual({ ok: false, error: 'Meta no aceptó el archivo.' });
+    expect(resultado).toEqual({
+      ok: false,
+      error: 'No se pudo completar el envío por WhatsApp.',
+    });
     expect(whatsappEnvios.enviarPlantillaResultados).not.toHaveBeenCalled();
   });
 
@@ -190,7 +193,10 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       archivos: [ARCHIVO],
     });
 
-    expect(resultado).toEqual({ ok: false, error: 'Meta rechazó el envío.' });
+    expect(resultado).toEqual({
+      ok: false,
+      error: 'No se pudo completar el envío por WhatsApp.',
+    });
   });
 
   // US WA 007 (ampliación): el bot de WhatsApp reenvía el mismo folio cada
@@ -240,7 +246,10 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       archivos: [ARCHIVO, otro, tercero],
     });
 
-    expect(resultado).toEqual({ ok: false, error: 'Falló en el segundo.' });
+    expect(resultado).toEqual({
+      ok: false,
+      error: 'No se pudo completar el envío por WhatsApp.',
+    });
     expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledTimes(2);
   });
 });

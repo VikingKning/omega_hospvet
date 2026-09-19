@@ -35,6 +35,12 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(
   pinoHttp({
     logger,
+    wrapSerializers: false,
+    serializers: {
+      req: (req) => ({ method: req.method, path: req.url?.split('?')[0] }),
+      res: (res) => ({ statusCode: res.statusCode }),
+      err: (err) => ({ type: err?.name, code: err?.code ?? null, status: err?.status ?? null }),
+    },
     customLogLevel: (req, res, err) => {
       if (err || res.statusCode >= 500) return 'error';
       if (res.statusCode >= 400) return 'warn';
@@ -112,7 +118,6 @@ app.get(['/', '/index.html'], (req, res) => {
 app.get('/main.html', requireAuth, attachSidebarAreas, (req, res) => {
   res.render('main', { user: req.session.user });
 });
-
 
 app.use('/', authRoutes);
 app.use('/', doctoresRoutes);

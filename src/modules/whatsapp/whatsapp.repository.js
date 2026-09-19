@@ -628,6 +628,53 @@ async function confirmarEnlaceAgendaEnviado(conversacionId, ahora) {
   });
 }
 
+async function confirmarAvisoPrivacidadLaboratorioEnviado({ conversacionId, mensajeId, ahora }) {
+  return db.transaction(async (trx) => {
+    const conversacion = await trx('conversaciones_whatsapp')
+      .where({ id: conversacionId })
+      .forUpdate()
+      .first('estado', 'flujo_actual', 'paso_actual');
+    if (!conversacion) return false;
+    if (conversacion.estado === 'cerrada') return true;
+    if (
+      conversacion.estado !== 'flujo_activo' ||
+      conversacion.flujo_actual !== 'consulta_laboratorio' ||
+      !['aviso_privacidad_pendiente', 'esperando_telefono_y_folio'].includes(
+        conversacion.paso_actual,
+      )
+    ) {
+      return false;
+    }
+
+    await trx('conversaciones_whatsapp').where({ id: conversacionId }).update({
+      estado: 'cerrada',
+      cerrado_en: ahora,
+      flujo_actual: null,
+      paso_actual: null,
+      intentos_validacion_lab: null,
+      procesar_despues_de: null,
+      recordatorio_programado_en: null,
+      recordatorio_enviado_en: null,
+      recordatorio_reclamado_en: null,
+      flujo_expira_en: null,
+      updated_at: ahora,
+    });
+    await trx('eventos_metricas_whatsapp')
+      .insert({
+        clave_evento: `laboratorio:envio_denegado:mensaje:${mensajeId}`,
+        tipo_evento: 'envio_resultados_denegado',
+        pipeline_asignado: PIPELINE_NUEVO,
+        mensaje_id: mensajeId,
+        conversacion_id: conversacionId,
+        resultado: 'proteccion_datos',
+        ocurrido_en: ahora,
+      })
+      .onConflict('clave_evento')
+      .ignore();
+    return true;
+  });
+}
+
 async function finalizarConversacionTrasGrupo(conversacionId, ahora) {
   return db.transaction(async (trx) => {
     const conversacion = await trx('conversaciones_whatsapp')
@@ -1584,10 +1631,33 @@ async function estaVentanaServicioVencida(conversacionId) {
   return Boolean(fila?.vencida);
 }
 
+async function obtenerNombresConocidosPorTelefono(telefono) {
+  const ultimosDiez = String(telefono ?? '')
+    .replace(/\D/g, '')
+    .slice(-10);
+  if (ultimosDiez.length !== 10) return [];
+
+  const filas = await db('propietarios as p')
+    .leftJoin('mascotas as m', function vincularMascotasActivas() {
+      this.on('m.propietario_id', '=', 'p.id').andOnVal('m.activo', '=', true);
+    })
+    .whereRaw("right(regexp_replace(coalesce(p.telefono, ''), '[^0-9]', '', 'g'), 10) = ?", [
+      ultimosDiez,
+    ])
+    .select('p.nombre', 'p.apellidos', 'm.nombre as mascota_nombre');
+
+  return [
+    ...new Set(
+      filas.flatMap((fila) => [fila.nombre, fila.apellidos, fila.mascota_nombre]).filter(Boolean),
+    ),
+  ];
+}
+
 module.exports = {
   registrarMensajeYConversacion,
   cerrarConversacion,
   confirmarEnlaceAgendaEnviado,
+  confirmarAvisoPrivacidadLaboratorioEnviado,
   finalizarConversacionTrasGrupo,
   confirmarMenuEnviado,
   confirmarGuiaMedioEnviada,
@@ -1626,6 +1696,7 @@ module.exports = {
   completarMensajeFlujoAnterior,
   liberarMensajeFlujoAnterior,
   registrarEventoMetrica,
+  obtenerNombresConocidosPorTelefono,
   PIPELINE_NUEVO,
   PIPELINE_ANTERIOR,
 };

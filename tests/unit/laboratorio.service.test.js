@@ -24,6 +24,7 @@ const {
   eliminarArchivoDeTodos,
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
+  prepararConfirmacionEnvio,
   enviarResultados,
   reenviarResultadosPorWhatsapp,
 } = require('../../src/modules/laboratorio/laboratorio.service');
@@ -971,6 +972,56 @@ describe('laboratorio.service.enviarResultados', () => {
     repository.registrarEnvio.mockResolvedValue();
   });
 
+  async function enviarConfirmado(registroId = '42', usuarioId = 7) {
+    const confirmacion = await prepararConfirmacionEnvio(registroId, usuarioId);
+    return enviarResultados(registroId, usuarioId, {
+      confirmacionToken: confirmacion.confirmacionToken,
+    });
+  }
+
+  it('prepara una confirmación corta con los destinatarios enmascarados', async () => {
+    const confirmacion = await prepararConfirmacionEnvio('42', 7);
+
+    expect(confirmacion).toEqual({
+      confirmacionToken: expect.stringMatching(/^\d+\.[a-f0-9]{64}$/),
+      esReenvio: false,
+      destinatarios: {
+        correo: 'an***@c***.com',
+        whatsapp: '******5678',
+      },
+    });
+  });
+
+  it('marca la confirmación como reenvío cuando la orden ya fue enviada', async () => {
+    repository.findById.mockResolvedValue({ ...REGISTRO, estado: 'enviado' });
+
+    await expect(prepararConfirmacionEnvio('42', 7)).resolves.toEqual(
+      expect.objectContaining({ esReenvio: true }),
+    );
+  });
+
+  it('no envía con un token alterado o ligado a otro usuario', async () => {
+    const confirmacion = await prepararConfirmacionEnvio('42', 7);
+
+    await expect(
+      enviarResultados('42', 8, { confirmacionToken: confirmacion.confirmacionToken }),
+    ).rejects.toThrow('Los destinatarios o archivos cambiaron');
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+  });
+
+  it('no prepara el envío si el tutor no tiene ningún contacto registrado', async () => {
+    repository.findById.mockResolvedValue({
+      ...REGISTRO,
+      propietario_correo: null,
+      propietario_telefono: null,
+    });
+
+    await expect(prepararConfirmacionEnvio('42', 7)).rejects.toThrow(
+      'El tutor no tiene correo ni teléfono registrados',
+    );
+  });
+
   it('lanza 404 con un id inválido, sin llegar a intentar ningún canal', async () => {
     await expect(enviarResultados('no-es-numero', 1)).rejects.toThrow('Registro no encontrado.');
     expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
@@ -994,7 +1045,7 @@ describe('laboratorio.service.enviarResultados', () => {
   });
 
   it('con correo y teléfono, intenta ambos canales y registra medio "ambos"', async () => {
-    const resultado = await enviarResultados('42', 7);
+    const resultado = await enviarConfirmado();
 
     expect(envios.enviarPorCorreo).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1028,7 +1079,7 @@ describe('laboratorio.service.enviarResultados', () => {
   it('sin correo registrado, solo intenta WhatsApp y registra medio "whatsapp"', async () => {
     repository.findById.mockResolvedValue({ ...REGISTRO, propietario_correo: null });
 
-    await enviarResultados('42', 7);
+    await enviarConfirmado();
 
     expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
@@ -1045,7 +1096,7 @@ describe('laboratorio.service.enviarResultados', () => {
   it('si un canal falla, el otro se registra igual (uno no bloquea al otro)', async () => {
     envios.enviarPorWhatsapp.mockResolvedValue({ ok: false, error: 'Meta rechazó el envío.' });
 
-    const resultado = await enviarResultados('42', 7);
+    const resultado = await enviarConfirmado();
 
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1068,7 +1119,7 @@ describe('laboratorio.service.enviarResultados', () => {
     envios.enviarPorCorreo.mockResolvedValue({ ok: false, error: 'SMTP caído.' });
     envios.enviarPorWhatsapp.mockResolvedValue({ ok: false, error: 'Meta caído.' });
 
-    const resultado = await enviarResultados('42', 7);
+    const resultado = await enviarConfirmado();
 
     expect(repository.registrarEnvio).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1089,7 +1140,7 @@ describe('laboratorio.service.enviarResultados', () => {
   });
 
   it('deduplica archivo_id repetidos entre estudios (un solo archivo compartido)', async () => {
-    await enviarResultados('42', 7);
+    await enviarConfirmado();
 
     expect(repository.findArchivoById).toHaveBeenCalledTimes(1);
     expect(repository.findArchivoById).toHaveBeenCalledWith(10);
@@ -1106,6 +1157,7 @@ describe('laboratorio.service.reenviarResultadosPorWhatsapp', () => {
     mascota_nombre: 'Firulais',
     propietario_nombre: 'Ana',
     propietario_apellidos: 'Ruiz',
+    propietario_telefono: '5512345678',
     estudios: [
       { id: 1, archivo_id: 10 },
       { id: 2, archivo_id: 10 },
@@ -1167,6 +1219,19 @@ describe('laboratorio.service.reenviarResultadosPorWhatsapp', () => {
         archivos: [expect.objectContaining({ id: 10, nombreOriginal: 'resultados.pdf' })],
       }),
     );
+  });
+
+  it('rechaza un reenvío cuando el teléfono no corresponde al tutor del folio', async () => {
+    const resultado = await reenviarResultadosPorWhatsapp('42', {
+      telefono: '5599999999',
+      claveIdempotenciaPrefijo: 'mensaje:100:lab:exito',
+    });
+
+    expect(resultado).toEqual({
+      ok: false,
+      error: 'Los datos proporcionados no corresponden al tutor registrado.',
+    });
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
   });
 
   it('nunca llama a repository.registrarEnvio (no hay usuario de staff que auditar)', async () => {

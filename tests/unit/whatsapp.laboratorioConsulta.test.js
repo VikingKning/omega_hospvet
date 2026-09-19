@@ -38,39 +38,6 @@ describe('whatsapp.laboratorioConsulta.extraerFolio (AC2/AC5/AC6)', () => {
   });
 });
 
-describe('whatsapp.laboratorioConsulta.extraerFolioYTelefono (AC3)', () => {
-  it('extrae folio y teléfono sin importar el orden', () => {
-    expect(lab.extraerFolioYTelefono('5512345678 LAB-005')).toEqual({
-      folioId: 5,
-      telefonoDigits: '5512345678',
-    });
-    expect(lab.extraerFolioYTelefono('LAB-005 5512345678')).toEqual({
-      folioId: 5,
-      telefonoDigits: '5512345678',
-    });
-  });
-
-  it('extrae ambos aunque estén incrustados en una oración', () => {
-    expect(lab.extraerFolioYTelefono('mi teléfono es 5512345678 y el folio es LAB005')).toEqual({
-      folioId: 5,
-      telefonoDigits: '5512345678',
-    });
-  });
-
-  it('rechaza si el teléfono no tiene exactamente 10 dígitos (prueba mínima: folio con texto adicional o fuera de rango)', () => {
-    expect(lab.extraerFolioYTelefono('12345 LAB-005')).toBeNull();
-    expect(lab.extraerFolioYTelefono('551234567890 LAB-005')).toBeNull();
-  });
-
-  it('rechaza si no hay folio en el texto', () => {
-    expect(lab.extraerFolioYTelefono('5512345678')).toBeNull();
-  });
-
-  it('rechaza un folio no positivo aunque el teléfono sea válido (AC6)', () => {
-    expect(lab.extraerFolioYTelefono('5512345678 LAB-0')).toBeNull();
-  });
-});
-
 describe('whatsapp.laboratorioConsulta — configuración controlada', () => {
   it('la pregunta de confirmación usa exactamente los 2 ids de la consideración técnica', () => {
     const payload = lab.preguntaConfirmacionPayload();
@@ -81,7 +48,8 @@ describe('whatsapp.laboratorioConsulta — configuración controlada', () => {
 
   it('los textos de cada paso no están vacíos', () => {
     expect(lab.textoPedirFolio().length).toBeGreaterThan(0);
-    expect(lab.textoPedirTelefonoYFolio().length).toBeGreaterThan(0);
+    expect(lab.textoTelefonoNoRegistrado()).toContain('número registrado del tutor');
+    expect(lab.textoTelefonoNoRegistrado()).not.toMatch(/folio|escríbenos el teléfono/i);
     expect(lab.textoRechazoGenerico().length).toBeGreaterThan(0);
     expect(lab.textoLimiteIntentos().length).toBeGreaterThan(0);
   });

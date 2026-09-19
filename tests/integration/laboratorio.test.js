@@ -770,21 +770,35 @@ describe('DELETE /laboratorio/:id/estudios/:estudioId/archivo', () => {
 // correo/WhatsApp de verdad (falla antes, en el 404) — mismo criterio que
 // el resto de este archivo: sin datos reales, la cobertura del envío en sí
 // vive en laboratorio.envios.test.js/laboratorio.service.test.js.
-describe('POST /laboratorio/:id/enviar', () => {
-  it('AC: laboratorio.enviar alcanza para llegar al controller (404 en id inexistente)', async () => {
+describe('POST /laboratorio/:id/preparar-envio y /enviar', () => {
+  it('AC: laboratorio.enviar permite preparar el envío (404 en id inexistente)', async () => {
+    const agent = await loginAs(SOLO_ENVIAR);
+    const csrfToken = await getLaboratorioCsrfToken(agent);
+
+    const res = await agent
+      .post('/laboratorio/999999/preparar-envio')
+      .set('x-csrf-token', csrfToken);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('rechaza el envío directo sin confirmación previa', async () => {
     const agent = await loginAs(SOLO_ENVIAR);
     const csrfToken = await getLaboratorioCsrfToken(agent);
 
     const res = await agent.post('/laboratorio/999999/enviar').set('x-csrf-token', csrfToken);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('confirmar los destinatarios');
   });
 
   it('tener laboratorio.cargar no alcanza — hace falta laboratorio.enviar', async () => {
     const agent = await loginAs(SOLO_CARGAR);
     const csrfToken = await getLaboratorioCsrfToken(agent);
 
-    const res = await agent.post('/laboratorio/999999/enviar').set('x-csrf-token', csrfToken);
+    const res = await agent
+      .post('/laboratorio/999999/preparar-envio')
+      .set('x-csrf-token', csrfToken);
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');

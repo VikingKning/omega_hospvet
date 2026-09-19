@@ -223,9 +223,40 @@ async function eliminarArchivoEstudio(req, res, next) {
   }
 }
 
+async function prepararEnvioResultados(req, res, next) {
+  try {
+    const confirmacion = await service.prepararConfirmacionEnvio(
+      req.params.id,
+      req.session.user.id,
+    );
+    req.session.confirmacionesEnvioLaboratorio = {
+      ...(req.session.confirmacionesEnvioLaboratorio ?? {}),
+      [req.params.id]: confirmacion.confirmacionToken,
+    };
+    res.json(confirmacion);
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return next(err);
+  }
+}
+
 async function enviarResultados(req, res, next) {
   try {
-    const resultado = await service.enviarResultados(req.params.id, req.session.user.id);
+    const confirmacionToken = req.body?.confirmacionToken;
+    const confirmaciones = req.session.confirmacionesEnvioLaboratorio ?? {};
+    if (!confirmacionToken || confirmaciones[req.params.id] !== confirmacionToken) {
+      return res.status(400).json({
+        error: 'Debes revisar y confirmar los destinatarios antes de enviar los resultados.',
+      });
+    }
+    delete confirmaciones[req.params.id];
+    req.session.confirmacionesEnvioLaboratorio = confirmaciones;
+
+    const resultado = await service.enviarResultados(req.params.id, req.session.user.id, {
+      confirmacionToken,
+    });
     res.json(resultado);
   } catch (err) {
     if (err.status) {
@@ -263,6 +294,7 @@ module.exports = {
   subirArchivoEstudio,
   eliminarArchivoRegistro,
   eliminarArchivoEstudio,
+  prepararEnvioResultados,
   enviarResultados,
   descargarArchivo,
 };

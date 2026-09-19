@@ -1,6 +1,5 @@
 const env = require('../config/env');
 const logger = require('../config/logger');
-const { isWhatsappConfigured } = require('../config/whatsapp');
 const service = require('../modules/whatsapp/whatsapp.alertas.service');
 
 let cicloEnCurso = false;
@@ -10,11 +9,6 @@ async function enviarAlertasPendientes() {
   do {
     resultado = await service.procesarSiguienteAlertaPendiente();
   } while (resultado !== null);
-  if (isWhatsappConfigured()) {
-    do {
-      resultado = await service.procesarSiguienteEnvioWhatsapp();
-    } while (resultado !== null);
-  }
 }
 
 function start() {

@@ -239,6 +239,7 @@ describe('whatsappAgrupacionJob / whatsapp.service — agrupación de mensajes (
       'uno\ndos\ntres\ncuatro\ncinco',
       expect.any(Array),
       expect.any(Object),
+      expect.objectContaining({ nombresConocidos: expect.any(Array) }),
     );
   });
 
@@ -650,6 +651,7 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
       'hola mi perro está convulsionando',
       expect.any(Array),
       expect.any(Object),
+      expect.objectContaining({ nombresConocidos: expect.any(Array) }),
     );
     expect(resultado.resultado).toBe('clasificado_normal');
     // Cierra la conversación tras responder (mismo criterio que "no_resuelto"

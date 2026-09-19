@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const repository = require('./laboratorio.repository');
 const tutoresRepository = require('../tutores/tutores.repository');
 const tutoresService = require('../tutores/tutores.service');
@@ -5,6 +6,7 @@ const doctoresRepository = require('../doctores/doctores.repository');
 const archivos = require('./laboratorio.archivos');
 const envios = require('./laboratorio.envios');
 const env = require('../../config/env');
+const { enmascararTelefono, enmascararCorreo } = require('../../config/privacidad');
 
 class LaboratorioValidationError extends Error {
   constructor(message) {
@@ -39,6 +41,7 @@ const LATERALIDADES_VALIDAS = ['izquierdo', 'derecho', 'bilateral', 'no_aplica']
 
 const OBSERVACIONES_MAX = 2000;
 const FECHA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const CONFIRMACION_ENVIO_VIGENCIA_MS = 5 * 60 * 1000;
 
 function parsePage(rawPage) {
   const page = Number.parseInt(rawPage, 10);
@@ -505,18 +508,92 @@ async function obtenerArchivoParaDescarga(rawArchivoId) {
   };
 }
 
-async function enviarResultados(rawRegistroId, usuarioId) {
-  const registroId = parseId(rawRegistroId);
-  if (registroId === null) throw errorRegistroNoEncontrado();
-  const registro = await repository.findById(registroId);
-  if (!registro) throw errorRegistroNoEncontrado();
-
-  const faltaArchivo = registro.estudios.some((estudio) => !estudio.archivo_id);
-  if (faltaArchivo) {
+function validarRegistroListoParaEnvio(registro) {
+  if (registro.estudios.length === 0 || registro.estudios.some((estudio) => !estudio.archivo_id)) {
     throw new LaboratorioValidationError(
       'Todos los estudios deben tener un archivo cargado antes de enviar los resultados.',
     );
   }
+  if (!registro.propietario_correo && !registro.propietario_telefono) {
+    throw new LaboratorioValidationError(
+      'El tutor no tiene correo ni teléfono registrados para recibir los resultados.',
+    );
+  }
+}
+
+function datosFirmadosDeEnvio(registro, usuarioId, emitidoEn) {
+  const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))]
+    .sort((a, b) => a - b)
+    .join(',');
+  return [
+    'laboratorio-envio',
+    registro.id,
+    usuarioId,
+    emitidoEn,
+    registro.estado,
+    registro.propietario_correo ?? '',
+    stripTelefono(registro.propietario_telefono),
+    archivoIds,
+  ].join('|');
+}
+
+function crearTokenConfirmacionEnvio(registro, usuarioId, emitidoEn = Date.now()) {
+  const firma = crypto
+    .createHmac('sha256', env.sessionSecret)
+    .update(datosFirmadosDeEnvio(registro, usuarioId, emitidoEn))
+    .digest('hex');
+  return `${emitidoEn}.${firma}`;
+}
+
+function validarTokenConfirmacionEnvio(registro, usuarioId, token) {
+  const [emitidoTexto, firmaRecibida, extra] = String(token ?? '').split('.');
+  const emitidoEn = Number(emitidoTexto);
+  const vigente =
+    !extra &&
+    Number.isSafeInteger(emitidoEn) &&
+    emitidoEn <= Date.now() &&
+    Date.now() - emitidoEn <= CONFIRMACION_ENVIO_VIGENCIA_MS;
+  if (!vigente || !/^[a-f0-9]{64}$/.test(firmaRecibida ?? '')) {
+    throw new LaboratorioValidationError(
+      'La confirmación de destinatarios expiró. Revisa los datos e intenta nuevamente.',
+    );
+  }
+
+  const esperado = crearTokenConfirmacionEnvio(registro, usuarioId, emitidoEn).split('.')[1];
+  const firmaBuffer = Buffer.from(firmaRecibida, 'hex');
+  const esperadoBuffer = Buffer.from(esperado, 'hex');
+  if (!crypto.timingSafeEqual(firmaBuffer, esperadoBuffer)) {
+    throw new LaboratorioValidationError(
+      'Los destinatarios o archivos cambiaron. Revísalos y confirma nuevamente.',
+    );
+  }
+  return { emitidoEn, referencia: firmaRecibida.slice(0, 12) };
+}
+
+async function prepararConfirmacionEnvio(rawRegistroId, usuarioId) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+  validarRegistroListoParaEnvio(registro);
+
+  return {
+    confirmacionToken: crearTokenConfirmacionEnvio(registro, usuarioId),
+    esReenvio: registro.estado === 'enviado',
+    destinatarios: {
+      correo: enmascararCorreo(registro.propietario_correo),
+      whatsapp: enmascararTelefono(registro.propietario_telefono),
+    },
+  };
+}
+
+async function enviarResultados(rawRegistroId, usuarioId, { confirmacionToken } = {}) {
+  const registroId = parseId(rawRegistroId);
+  if (registroId === null) throw errorRegistroNoEncontrado();
+  const registro = await repository.findById(registroId);
+  if (!registro) throw errorRegistroNoEncontrado();
+  validarRegistroListoParaEnvio(registro);
+  const confirmacion = validarTokenConfirmacionEnvio(registro, usuarioId, confirmacionToken);
 
   const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))];
   const filas = await Promise.all(archivoIds.map((id) => repository.findArchivoById(id)));
@@ -555,6 +632,7 @@ async function enviarResultados(rawRegistroId, usuarioId) {
           archivos: archivosParaEnviar,
           googleCalendarMeetingUrl: env.enlaces.calendarioCitas,
           googleMapsUrl: env.enlaces.ubicacionMaps,
+          claveIdempotenciaPrefijo: `laboratorio:${registro.id}:manual:${confirmacion.emitidoEn}:${confirmacion.referencia}`,
         })
       : Promise.resolve(null),
   ]);
@@ -611,6 +689,12 @@ async function reenviarResultadosPorWhatsapp(
   const registro = await repository.findById(registroId);
   if (!registro) return { ok: false, error: 'Registro no encontrado.' };
 
+  const telefonoSolicitante = stripTelefono(telefono).slice(-10);
+  const telefonoTutor = stripTelefono(registro.propietario_telefono).slice(-10);
+  if (telefonoSolicitante.length !== 10 || telefonoSolicitante !== telefonoTutor) {
+    return { ok: false, error: 'Los datos proporcionados no corresponden al tutor registrado.' };
+  }
+
   const faltaArchivo =
     registro.estudios.length === 0 || registro.estudios.some((estudio) => !estudio.archivo_id);
   if (faltaArchivo) return { ok: false, error: 'No hay archivos cargados para esta orden.' };
@@ -657,6 +741,7 @@ module.exports = {
   eliminarArchivoDeTodos,
   eliminarArchivoDeEstudio,
   obtenerArchivoParaDescarga,
+  prepararConfirmacionEnvio,
   enviarResultados,
   reenviarResultadosPorWhatsapp,
   eliminar,

@@ -1,18 +1,14 @@
 jest.mock('../../src/config/database');
 jest.mock('../../src/modules/whatsapp/whatsapp.alertas.repository');
-jest.mock('../../src/modules/whatsapp/whatsapp.outbox');
 jest.mock('../../src/modules/whatsapp/whatsapp.alertas.eventos');
 
 const db = require('../../src/config/database');
 const repository = require('../../src/modules/whatsapp/whatsapp.alertas.repository');
-const outbox = require('../../src/modules/whatsapp/whatsapp.outbox');
 const eventos = require('../../src/modules/whatsapp/whatsapp.alertas.eventos');
 const {
   registrarSolicitudAlerta,
   solicitarAlerta,
   procesarSiguienteAlertaPendiente,
-  normalizarTelefonoPersonal,
-  payloadWhatsapp,
   AlertaValidationError,
 } = require('../../src/modules/whatsapp/whatsapp.alertas.service');
 
@@ -22,26 +18,6 @@ beforeEach(() => {
 });
 
 describe('whatsapp.alertas.service — reglas deterministas WA018', () => {
-  it.each([
-    ['771-163-4578', '527711634578'],
-    ['527711634578', '527711634578'],
-    ['5217711634578', '527711634578'],
-    ['', null],
-    ['123', null],
-  ])('normaliza %p a %p', (entrada, esperada) => {
-    expect(normalizarTelefonoPersonal(entrada)).toBe(esperada);
-  });
-
-  it.each([
-    ['emergencia', 'alerta_emergencia_personal_v1'],
-    ['recepcion', 'alerta_recepcion_personal_v1'],
-  ])('construye una plantilla Meta separada para %s', (tipo, nombre) => {
-    const payload = payloadWhatsapp(tipo, '525500001111');
-    expect(payload.tipo).toBe('template');
-    expect(payload.plantilla).toMatchObject({ name: nombre, language: { code: 'es_MX' } });
-    expect(JSON.stringify(payload)).not.toMatch(/diagn[oó]stico|s[ií]ntoma/i);
-  });
-
   it('WA019 persiste primero sin consultar usuarios ni preparar canales', async () => {
     repository.crearAlerta.mockResolvedValue({
       alerta: { id: 9, tipo_alerta: 'recepcion', resolucion_destinatarios: 'pendiente' },
@@ -76,7 +52,6 @@ describe('whatsapp.alertas.service — reglas deterministas WA018', () => {
     );
     expect(repository.resolverUsuarios).not.toHaveBeenCalled();
     expect(repository.registrarIntentoCanal).not.toHaveBeenCalled();
-    expect(outbox.registrarIntento).not.toHaveBeenCalled();
   });
 
   it('el worker WA018 retoma una solicitud pendiente y publica después del commit', async () => {
@@ -103,7 +78,9 @@ describe('whatsapp.alertas.service — reglas deterministas WA018', () => {
       alerta: { id: 10, tipo_alerta: 'emergencia', telefono_externo: '525500001111' },
       esNueva: true,
     });
-    repository.resolverUsuarios.mockResolvedValue([{ id: 2, tipo_usuario: 'doctor' }]);
+    repository.resolverUsuarios
+      .mockResolvedValueOnce([{ id: 2, tipo_usuario: 'doctor' }])
+      .mockResolvedValueOnce([{ id: 3, tipo_usuario: 'admin' }]);
     repository.guardarDestinatarios.mockResolvedValue([]);
 
     await solicitarAlerta({
@@ -119,11 +96,20 @@ describe('whatsapp.alertas.service — reglas deterministas WA018', () => {
       repository.resolverUsuarios.mock.invocationCallOrder[0],
     );
     expect(repository.resolverUsuarios).toHaveBeenCalledWith('doctor', 'trx-fake');
-    expect(repository.resolverUsuarios).not.toHaveBeenCalledWith('admin', expect.anything());
+    expect(repository.resolverUsuarios).toHaveBeenCalledWith('admin', 'trx-fake');
     expect(repository.guardarResolucion).toHaveBeenCalledWith(10, 'principal', 'trx-fake');
+    expect(repository.guardarDestinatarios).toHaveBeenCalledWith(
+      10,
+      [
+        { id: 2, tipo_usuario: 'doctor' },
+        { id: 3, tipo_usuario: 'admin' },
+      ],
+      false,
+      'trx-fake',
+    );
   });
 
-  it('usa admin solamente cuando no existe el tipo principal', async () => {
+  it('marca al admin como respaldo cuando no existe el tipo principal', async () => {
     repository.crearAlerta.mockResolvedValue({
       alerta: { id: 11, tipo_alerta: 'recepcion' },
       esNueva: true,
@@ -159,7 +145,6 @@ describe('whatsapp.alertas.service — reglas deterministas WA018', () => {
 
     expect(resultado.esNueva).toBe(false);
     expect(repository.resolverUsuarios).not.toHaveBeenCalled();
-    expect(outbox.registrarIntento).not.toHaveBeenCalled();
   });
 
   it('rechaza tipos libres sin consultar usuarios ni Claude', async () => {

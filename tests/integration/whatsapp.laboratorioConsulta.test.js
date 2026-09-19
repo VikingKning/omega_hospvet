@@ -7,6 +7,7 @@ const env = require('../../src/config/env');
 const claude = require('../../src/config/claude');
 const whatsappConfig = require('../../src/config/whatsapp');
 const repository = require('../../src/modules/whatsapp/whatsapp.repository');
+const service = require('../../src/modules/whatsapp/whatsapp.service');
 const menu = require('../../src/modules/whatsapp/whatsapp.menu');
 const lab = require('../../src/modules/whatsapp/whatsapp.laboratorioConsulta');
 
@@ -42,6 +43,7 @@ afterAll(async () => {
     .whereIn('id', conversacionIds)
     .update({ grupo_medio_pendiente_id: null });
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
+  await db('eventos_metricas_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('mensajes_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('conversaciones_whatsapp').where('phone_number_id', PHONE_NUMBER_ID).del();
   await db.destroy();
@@ -169,28 +171,86 @@ describe('US WA 007 — mismo teléfono de origen (AC1/AC2, prueba mínima)', ()
   });
 });
 
-describe('US WA 007 — teléfono distinto del de origen (AC1/AC3, prueba mínima)', () => {
-  it('teléfono registrado + folio válidos, aunque el origen sea otro número, resuelve con éxito', async () => {
-    const telDigitsRegistrado = generarTelefonoDigits();
-    const orden = await crearOrden({ telefono: telDigitsRegistrado, estado: 'enviado' });
-    const telOrigen = `52${generarTelefonoDigits()}`; // número desde el que escribe, distinto al registrado.
+describe('US WA 007 — teléfono distinto del registrado (protección de datos)', () => {
+  it('no pide datos alternativos, envía el aviso, audita la negativa y cierra después del envío', async () => {
+    const spyClasificar = jest.spyOn(claude, 'clasificarMensaje');
+    const telOrigen = `52${generarTelefonoDigits()}`;
 
     const { conversacion } = await iniciarFlujo(telOrigen);
     const rNo = await enviarMensaje(conversacion.id, telOrigen, {
       tipoMensaje: 'interactive_button_reply',
       contenido: lab.LAB_MISMO_TELEFONO_NO,
     });
-    expect(rNo.labAccion).toBe('pedir_telefono_folio'); // AC3.
+    expect(rNo.labAccion).toBe('telefono_no_coincide');
+    expect(rNo.pasoActualResultante).toBe('aviso_privacidad_pendiente');
+    expect((await recargar(conversacion.id)).estado).toBe('flujo_activo');
 
-    const rDatos = await enviarMensaje(conversacion.id, telOrigen, {
-      tipoMensaje: 'text',
-      contenido: `${telDigitsRegistrado} ${folioTexto(orden.registro.id)}`,
+    const resultadoEnvio = await service.enviarPasoLaboratorio({
+      conversacionId: conversacion.id,
+      telefono: telOrigen,
+      mensajeId: rNo.id,
+      labAccion: rNo.labAccion,
+      labDatos: null,
     });
 
-    expect(rDatos.labAccion).toBe('exito');
-    expect(rDatos.labDatos.estadoOrden).toBe('enviado');
+    expect(resultadoEnvio).toEqual(
+      expect.objectContaining({ enviado: true, conversacionCerrada: true }),
+    );
+    const actualizada = await recargar(conversacion.id);
+    expect(actualizada).toEqual(
+      expect.objectContaining({ estado: 'cerrada', flujo_actual: null, paso_actual: null }),
+    );
+    const mensaje = await db('mensajes_whatsapp').where({ id: rNo.id }).first();
+    expect(mensaje.resultado_decision).toBe('telefono_no_coincide');
+    const evento = await db('eventos_metricas_whatsapp')
+      .where({ clave_evento: `laboratorio:envio_denegado:mensaje:${rNo.id}` })
+      .first();
+    expect(evento).toEqual(
+      expect.objectContaining({
+        tipo_evento: 'envio_resultados_denegado',
+        resultado: 'proteccion_datos',
+      }),
+    );
+    expect(spyClasificar).not.toHaveBeenCalled();
+  });
 
-    await limpiarOrden(orden);
+  it('si Meta rechaza el aviso conserva la conversación abierta para un reintento controlado', async () => {
+    const telOrigen = `52${generarTelefonoDigits()}`;
+    const { conversacion } = await iniciarFlujo(telOrigen);
+    const rNo = await enviarMensaje(conversacion.id, telOrigen, {
+      tipoMensaje: 'interactive_button_reply',
+      contenido: lab.LAB_MISMO_TELEFONO_NO,
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: { message: 'rechazado' } }),
+    });
+
+    const resultadoEnvio = await service.enviarPasoLaboratorio({
+      conversacionId: conversacion.id,
+      telefono: telOrigen,
+      mensajeId: rNo.id,
+      labAccion: rNo.labAccion,
+      labDatos: null,
+    });
+
+    expect(resultadoEnvio).toEqual(
+      expect.objectContaining({ enviado: false, conversacionCerrada: false }),
+    );
+    const actualizada = await recargar(conversacion.id);
+    expect(actualizada).toEqual(
+      expect.objectContaining({
+        estado: 'flujo_activo',
+        flujo_actual: 'consulta_laboratorio',
+        paso_actual: 'aviso_privacidad_pendiente',
+      }),
+    );
+    const eventos = await db('eventos_metricas_whatsapp')
+      .where({ conversacion_id: conversacion.id, tipo_evento: 'envio_resultados_denegado' })
+      .count('* as total')
+      .first();
+    expect(Number(eventos.total)).toBe(0);
   });
 });
 
@@ -348,17 +408,16 @@ describe('US WA 007 — idempotencia y ausencia de Claude (AC8/AC11)', () => {
     const telNormalizado = `52${generarTelefonoDigits()}`;
     const { conversacion } = await iniciarFlujo(telNormalizado);
 
-    await enviarMensaje(conversacion.id, telNormalizado, {
+    const rNo = await enviarMensaje(conversacion.id, telNormalizado, {
       tipoMensaje: 'interactive_button_reply',
       contenido: lab.LAB_MISMO_TELEFONO_NO,
     });
-    await enviarMensaje(conversacion.id, telNormalizado, {
-      tipoMensaje: 'text',
-      contenido: 'no es válido',
-    });
-    await enviarMensaje(conversacion.id, telNormalizado, {
-      tipoMensaje: 'text',
-      contenido: `000000000A ${folioTexto(orden.registro.id)}`,
+    await service.enviarPasoLaboratorio({
+      conversacionId: conversacion.id,
+      telefono: telNormalizado,
+      mensajeId: rNo.id,
+      labAccion: rNo.labAccion,
+      labDatos: null,
     });
 
     expect(spyClasificar).not.toHaveBeenCalled();

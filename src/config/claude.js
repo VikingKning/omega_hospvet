@@ -1,4 +1,5 @@
 const env = require('./env');
+const { minimizarTextoParaClaude } = require('./privacidad');
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -34,41 +35,47 @@ function reglasComunes(etiquetasValidas) {
   ].join('\n');
 }
 
-function resumenTextoRespuesta(texto, maxLen = 160) {
-  const limpio = (texto || '').replace(/\s+/g, ' ').trim();
-  return limpio.length > maxLen ? `${limpio.slice(0, maxLen)}…` : limpio;
+function construirOpcionesAnonimas(candidatosReales, slugPorCategoria, nombresConocidos) {
+  const especificas = candidatosReales.map((candidato, indice) => ({
+    etiqueta: `opcion_${indice + 1}`,
+    slug: candidato.slug,
+    descripcion: minimizarTextoParaClaude(
+      String(candidato.intencion ?? '').replace(/[_-]+/g, ' '),
+      { nombresConocidos, maximoCaracteres: 240 },
+    ),
+  }));
+  const genericas = CATEGORIAS.map((categoria, indice) => ({
+    etiqueta: `categoria_${indice + 1}`,
+    slug: slugPorCategoria[categoria],
+    descripcion: DESCRIPCION_CATEGORIA[categoria],
+  }));
+  return { especificas, genericas };
 }
 
-function systemPromptUnificado(candidatosReales, slugPorCategoria) {
+function systemPromptUnificado(opciones) {
   return [
     'Eres un clasificador de mensajes de WhatsApp de una clínica veterinaria.',
-    'Tu ÚNICO trabajo es decidir con cuál ÚNICO slug de esta lista se describe mejor el mensaje del tutor. Hay dos tipos de opción, compitiendo en igualdad de condiciones:',
+    'Tu ÚNICO trabajo es decidir con cuál ÚNICA etiqueta anónima de esta lista se describe mejor el mensaje del tutor. Hay dos tipos de opción, compitiendo en igualdad de condiciones:',
     '',
-    'A) ESPECÍFICAS — las configuró la clínica para un motivo exacto; tienen prioridad sobre las genéricas de abajo cuando de verdad describen el mensaje. El MOTIVO indicado junto a cada slug ya describe por qué la clínica la creó — es la pista más directa de cuándo aplica. El resumen de su respuesta es SOLO contexto adicional (a veces la respuesta declina o redirige la solicitud en vez de resolverla directamente, y aun así el slug sigue aplicando si el motivo del mensaje del tutor coincide):',
-    candidatosReales.length > 0
-      ? candidatosReales
-          .map(
-            (c) =>
-              `- ${c.slug}: se usaría para responder algo como "${resumenTextoRespuesta(c.texto_respuesta)}" (motivo: ${c.intencion})`,
-          )
+    'A) ESPECÍFICAS — las configuró la clínica para un motivo exacto; tienen prioridad sobre las genéricas de abajo cuando de verdad describen el mensaje. Cada descripción indica cuándo aplica la etiqueta:',
+    opciones.especificas.length > 0
+      ? opciones.especificas
+          .map((opcion) => `- ${opcion.etiqueta}: ${opcion.descripcion || 'motivo general'}`)
           .join('\n')
       : '(la clínica no tiene ninguna configurada todavía)',
     '',
     'B) GENÉRICAS — úsalas SOLO si ninguna opción específica de arriba aplica de verdad:',
-    `- ${slugPorCategoria.emergencia}: ${DESCRIPCION_CATEGORIA.emergencia}`,
-    `- ${slugPorCategoria.agendar_cita}: ${DESCRIPCION_CATEGORIA.agendar_cita}`,
-    `- ${slugPorCategoria.resultados_laboratorio}: ${DESCRIPCION_CATEGORIA.resultados_laboratorio}`,
-    `- ${slugPorCategoria.duda_medica}: ${DESCRIPCION_CATEGORIA.duda_medica}`,
+    ...opciones.genericas.map((opcion) => `- ${opcion.etiqueta}: ${opcion.descripcion}`),
     '',
-    'Regla de desempate: una opción específica de A) gana sobre una genérica de B) cuando de verdad describe el motivo real del mensaje, aunque el mensaje también encaje vagamente en una categoría genérica. Pero NUNCA fuerces una opción específica que no encaja bien solo por una palabra parecida (ej. que ambas mencionen "cita" o "medicamento"): si ninguna específica aplica de verdad, responde el slug genérico correcto de B) en vez de adivinar una específica.',
+    'Regla de desempate: una opción específica de A) gana sobre una genérica de B) cuando de verdad describe el motivo real del mensaje, aunque el mensaje también encaje vagamente en una categoría genérica. Pero NUNCA fuerces una opción específica que no encaja bien solo por una palabra parecida (ej. que ambas mencionen "cita" o "medicamento"): si ninguna específica aplica de verdad, responde la etiqueta genérica correcta de B) en vez de adivinar una específica.',
     '',
     'Dos aclaraciones que aplican a CUALQUIER opción específica, no solo a una en particular:',
-    '- Si la respuesta de una opción específica agradece o depende de haber recibido una foto/imagen/video (ej. empieza con "gracias por la foto"), esa opción SOLO aplica si el mensaje del tutor menciona o deja claro que mandó una foto/imagen/video. Si no mandó nada, esa opción no aplica aunque el tema se parezca — compara contra otra específica o una genérica.',
+    '- Si la descripción de una opción específica depende de haber recibido una foto/imagen/video, esa opción SOLO aplica si el mensaje del tutor menciona o deja claro que mandó ese medio.',
     '- La clínica atiende todo por WhatsApp: pedir que le llamen, hacer una llamada o una videollamada para que revisen a la mascota a distancia SÍ cuenta como pedir una consulta o revisión "por WhatsApp" o "remota", aunque el tutor no use esas palabras exactas.',
     '',
     reglasComunes([
-      ...candidatosReales.map((c) => c.slug),
-      ...CATEGORIAS.map((cat) => slugPorCategoria[cat]),
+      ...opciones.especificas.map((opcion) => opcion.etiqueta),
+      ...opciones.genericas.map((opcion) => opcion.etiqueta),
     ]),
   ].join('\n');
 }
@@ -142,11 +149,32 @@ async function clasificar(mensaje, systemPrompt, etiquetasValidas) {
   return respuesta;
 }
 
-async function clasificarMensaje(mensaje, candidatosReales, slugPorCategoria) {
-  return clasificar(mensaje, systemPromptUnificado(candidatosReales, slugPorCategoria), [
-    ...candidatosReales.map((c) => c.slug),
-    ...CATEGORIAS.map((cat) => slugPorCategoria[cat]),
+async function clasificarMensaje(
+  mensaje,
+  candidatosReales,
+  slugPorCategoria,
+  { nombresConocidos = [] } = {},
+) {
+  const opciones = construirOpcionesAnonimas(candidatosReales, slugPorCategoria, nombresConocidos);
+  const mapaEtiquetas = new Map(
+    [...opciones.especificas, ...opciones.genericas].map((opcion) => [
+      opcion.etiqueta,
+      opcion.slug,
+    ]),
+  );
+  const mensajeMinimizado = minimizarTextoParaClaude(mensaje, { nombresConocidos });
+  const clasificacion = await clasificar(mensajeMinimizado, systemPromptUnificado(opciones), [
+    ...mapaEtiquetas.keys(),
   ]);
+  const respuesta = {
+    ...clasificacion,
+    etiqueta: mapaEtiquetas.get(clasificacion.etiqueta) ?? null,
+  };
+  Object.defineProperty(respuesta, 'resultado', {
+    enumerable: false,
+    value: clasificacion.resultado,
+  });
+  return respuesta;
 }
 
 module.exports = {
@@ -155,4 +183,5 @@ module.exports = {
   CATEGORIAS,
   SIN_COINCIDENCIA,
   MODEL,
+  minimizarTextoParaClaude,
 };

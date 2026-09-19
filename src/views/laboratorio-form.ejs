@@ -383,6 +383,8 @@
         <p id="labEnviarModalMensaje"></p>
         <div class="lab-envio-resultado-lista" id="labEnviarModalCanales"></div>
         <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="labEnviarModalCancelar" hidden>Cancelar</button>
+          <button type="button" class="btn-primary" id="labEnviarModalConfirmar" hidden>Confirmar envío</button>
           <button type="button" class="btn-primary" id="labEnviarModalCerrar">Cerrar</button>
         </div>
       </div>
@@ -1354,6 +1356,10 @@
       const enviarModalTitulo = document.getElementById('labEnviarModalTitulo');
       const enviarModalMensaje = document.getElementById('labEnviarModalMensaje');
       const enviarModalCanales = document.getElementById('labEnviarModalCanales');
+      const enviarModalCancelar = document.getElementById('labEnviarModalCancelar');
+      const enviarModalConfirmar = document.getElementById('labEnviarModalConfirmar');
+      const enviarModalCerrar = document.getElementById('labEnviarModalCerrar');
+      let confirmacionTokenActual = null;
 
       const ICONO_EXITO =
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>';
@@ -1403,6 +1409,10 @@
       }
 
       function mostrarResultadoGenerico(titulo, mensaje) {
+        confirmacionTokenActual = null;
+        enviarModalCancelar.hidden = true;
+        enviarModalConfirmar.hidden = true;
+        enviarModalCerrar.hidden = false;
         enviarModalTitulo.textContent = titulo;
         enviarModalMensaje.textContent = mensaje;
         enviarModalCanales.innerHTML = '';
@@ -1410,19 +1420,83 @@
       }
 
       function mostrarResultadoPorCanal(titulo, filas) {
+        confirmacionTokenActual = null;
+        enviarModalCancelar.hidden = true;
+        enviarModalConfirmar.hidden = true;
+        enviarModalCerrar.hidden = false;
         enviarModalTitulo.textContent = titulo;
         enviarModalMensaje.textContent = '';
         renderCanalesEnvio(filas);
         enviarModal.classList.add('open');
       }
 
-      async function enviarResultados() {
+      function mostrarConfirmacionEnvio(data) {
+        confirmacionTokenActual = data.confirmacionToken;
+        enviarModalTitulo.textContent = data.esReenvio
+          ? 'Confirmar reenvío de resultados'
+          : 'Confirmar envío de resultados';
+        enviarModalMensaje.textContent = data.esReenvio
+          ? 'Estos resultados ya fueron enviados anteriormente. Confirma los destinatarios antes de reenviarlos.'
+          : 'Verifica que los siguientes datos correspondan al tutor antes de continuar.';
+        const canales = [];
+        if (data.destinatarios?.correo) canales.push(['Correo', data.destinatarios.correo]);
+        if (data.destinatarios?.whatsapp) canales.push(['WhatsApp', data.destinatarios.whatsapp]);
+        enviarModalCanales.innerHTML = canales
+          .map(
+            ([canal, destino]) => `
+              <div class="lab-envio-resultado-fila">
+                <span class="lab-envio-resultado-texto">
+                  <strong>${escapeHtml(canal)}</strong>
+                  <span>${escapeHtml(destino)}</span>
+                </span>
+              </div>`,
+          )
+          .join('');
+        enviarModalCancelar.hidden = false;
+        enviarModalConfirmar.hidden = false;
+        enviarModalConfirmar.textContent = data.esReenvio ? 'Confirmar reenvío' : 'Confirmar envío';
+        enviarModalCerrar.hidden = true;
+        enviarModal.classList.add('open');
+      }
+
+      async function prepararEnvioResultados() {
+        mostrarLoaderGlobal('Validando destinatarios');
+        try {
+          const res = await fetch(`laboratorio/${DATOS.registro.id}/preparar-envio`, {
+            method: 'POST',
+            headers: { 'x-csrf-token': csrfToken },
+          });
+          ocultarLoaderGlobal();
+          if (res.redirected) {
+            window.location.href = res.url;
+            return;
+          }
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            mostrarResultadoGenerico(
+              'No se puede preparar el envío',
+              data.error || 'Ocurrió un error inesperado.',
+            );
+            return;
+          }
+          mostrarConfirmacionEnvio(data);
+        } catch {
+          ocultarLoaderGlobal();
+          mostrarResultadoGenerico('No se pudo validar', 'No se pudo conectar con el servidor.');
+        }
+      }
+
+      async function enviarResultados(confirmacionToken) {
         mostrarLoaderGlobal('Enviando archivos por WhatsApp y/o email');
 
         try {
           const res = await fetch(`laboratorio/${DATOS.registro.id}/enviar`, {
             method: 'POST',
-            headers: { 'x-csrf-token': csrfToken },
+            headers: {
+              'content-type': 'application/json',
+              'x-csrf-token': csrfToken,
+            },
+            body: JSON.stringify({ confirmacionToken }),
           });
           ocultarLoaderGlobal();
           if (res.redirected) {
@@ -1453,16 +1527,32 @@
 
       enviarBtn.addEventListener('click', () => {
         if (enviarBtn.disabled) return;
-        enviarResultados();
+        prepararEnvioResultados();
       });
-      document.getElementById('labEnviarModalClose').addEventListener('click', () => {
+      enviarModalCancelar.addEventListener('click', () => {
+        confirmacionTokenActual = null;
         enviarModal.classList.remove('open');
       });
-      document.getElementById('labEnviarModalCerrar').addEventListener('click', () => {
+      enviarModalConfirmar.addEventListener('click', () => {
+        if (!confirmacionTokenActual) return;
+        const token = confirmacionTokenActual;
+        confirmacionTokenActual = null;
+        enviarModal.classList.remove('open');
+        enviarResultados(token);
+      });
+      document.getElementById('labEnviarModalClose').addEventListener('click', () => {
+        confirmacionTokenActual = null;
+        enviarModal.classList.remove('open');
+      });
+      enviarModalCerrar.addEventListener('click', () => {
+        confirmacionTokenActual = null;
         enviarModal.classList.remove('open');
       });
       enviarModal.addEventListener('click', (event) => {
-        if (event.target === enviarModal) enviarModal.classList.remove('open');
+        if (event.target === enviarModal) {
+          confirmacionTokenActual = null;
+          enviarModal.classList.remove('open');
+        }
       });
     }
 

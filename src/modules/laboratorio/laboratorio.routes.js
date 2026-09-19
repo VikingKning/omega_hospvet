@@ -162,6 +162,15 @@ router.delete(
 );
 
 router.post(
+  '/laboratorio/:id/preparar-envio',
+  requireAuth,
+  requirePermission('laboratorio.enviar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.prepararEnvioResultados,
+);
+
+router.post(
   '/laboratorio/:id/enviar',
   requireAuth,
   requirePermission('laboratorio.enviar'),

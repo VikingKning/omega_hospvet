@@ -240,13 +240,13 @@ ANTHROPIC_API_KEY=
 ANTHROPIC_TIMEOUT_MS=10000
 ```
 
-Las variables de WhatsApp habilitan el webhook, las respuestas, las alertas internas y el envío de resultados. `WHATSAPP_APP_ID` solo es necesario para registrar la plantilla de resultados con documento adjunto. Los intervalos controlan la agrupación, recuperación de workers interrumpidos, recordatorios y las cinco horas de atención humana; los valores mostrados son los predeterminados.
+Las variables de WhatsApp habilitan el webhook, las respuestas y el envío de resultados. Las alertas internas se presentan únicamente en el portal y, si el usuario lo autoriza, como notificaciones del navegador. `WHATSAPP_APP_ID` solo es necesario para registrar la plantilla de resultados con documento adjunto. Los intervalos controlan la agrupación, recuperación de workers interrumpidos, recordatorios y las cinco horas de atención humana; los valores mostrados son los predeterminados.
 
 `WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED` se evalúa únicamente al insertar un `whatsapp_message_id` nuevo. `true` asigna `conversacional_nuevo`; `false` asigna `flujo_anterior`, que clasifica cada mensaje de texto individualmente. La asignación queda persistida: reiniciar o cambiar la variable no mueve mensajes ni grupos existentes. `WHATSAPP_LEGACY_POLL_INTERVAL_SEGUNDOS` controla la recuperación del worker anterior. `OMEGA_TIMEZONE` define la fecha y hora local de todos los filtros del tablero; el valor operativo es `America/Mexico_City`.
 
 `ANTHROPIC_API_KEY` habilita el clasificador de mensajes entrantes. `ANTHROPIC_TIMEOUT_MS` limita cada llamada; si falta la clave, vence el tiempo o la respuesta no pertenece al catálogo cerrado, el grupo utiliza `sin-coincidencia-default` y no vuelve a clasificarse. Claude no se usa para comandos de menú, opciones interactivas, enlaces de agenda, consulta guiada de resultados, transferencias ni alertas, y nunca genera contenido médico libre.
 
-Los destinatarios de alertas internas se obtienen exclusivamente de `usuarios`: deben estar activos, tener `notificaciones_alertas=true` y el tipo correspondiente. No se deben configurar listas de teléfonos del personal en variables de entorno.
+Los destinatarios de alertas internas se obtienen exclusivamente de `usuarios`: deben estar activos y tener `notificaciones_alertas=true`. Los Doctores reciben emergencias, Recepción recibe sus solicitudes y los Administradores reciben ambos tipos en el portal. No se envían estas alertas al WhatsApp del personal ni se configuran listas de teléfonos internos.
 
 ### Correo — opcionales
 
@@ -514,11 +514,11 @@ La US WA 008 permanece en Fase 2. Las pruebas de esta fase conservan el envío a
 
 Los mensajes libres se consolidan durante `WHATSAPP_AGRUPACION_SEGUNDOS`. La descripción escrita después de elegir Emergencia usa `WHATSAPP_AGRUPACION_EMERGENCIA_SEGUNDOS`, de modo que el tutor pueda completar varios fragmentos. Una agrupación produce una sola respuesta definitiva; un texto de respaldo no se envía en paralelo con la respuesta resuelta.
 
-El outbox conserva el payload decidido antes de llamar a Meta y recupera intentos interrumpidos sin reconstruir el mensaje. Los mensajes conversacionales respetan la ventana de servicio; resultados y alertas internas usan plantillas aprobadas cuando pueden enviarse fuera de ella.
+El outbox conserva el payload decidido antes de llamar a Meta y recupera intentos interrumpidos sin reconstruir el mensaje. Los mensajes conversacionales respetan la ventana de servicio y los resultados utilizan plantillas aprobadas cuando deben enviarse fuera de ella.
 
 La atención humana comienza únicamente cuando Meta confirma el aviso de transferencia. Durante las cinco horas configuradas el bot permanece en silencio y los mensajes posteriores del tutor no producen alertas duplicadas. El vencimiento reactiva el bot, pero no atiende ni elimina una alerta interna pendiente.
 
-Las alertas de emergencia se dirigen a doctores elegibles y las solicitudes de Recepción a usuarios de tipo Recepción. Solo cuando no existe ningún destinatario principal se usan administradores como respaldo. La selección inicial queda fotografiada para auditoría; portal, navegador y WhatsApp registran sus intentos de manera independiente. El portal usa SSE, sondeo de recuperación y `BroadcastChannel` para mantener sincronizadas sus pestañas.
+Las alertas de emergencia se muestran a Doctores elegibles y las solicitudes de Recepción a usuarios de tipo Recepción. Los Administradores elegibles pueden ver y atender ambos tipos. La selección inicial queda fotografiada para auditoría y los canales portal y navegador registran sus intentos de manera independiente. El portal usa SSE, sondeo de recuperación y `BroadcastChannel` para mantener sincronizadas sus pestañas. Las alertas internas no generan mensajes de WhatsApp al personal.
 
 ### Despliegue y reversión del router conversacional
 
@@ -745,23 +745,6 @@ Después de ejecutarlo:
 
 Importante: el job periódico solo consulta aprobaciones; no reintenta un registro que falló. Editar el texto local de una plantilla ya registrada tampoco actualiza automáticamente la versión de Meta.
 
-#### Registrar plantillas internas de alertas
-
-Las alertas al personal usan dos plantillas `UTILITY` independientes, con contenido mínimo y sin diagnósticos ni texto clínico:
-
-- `alerta_emergencia_personal_v1`: conversación que requiere atención médica urgente.
-- `alerta_recepcion_personal_v1`: conversación que requiere atención de Recepción.
-
-Los destinatarios no proceden de este script ni de variables de entorno. Al crear cada alerta, el sistema consulta usuarios activos con `notificaciones_alertas=true`: Doctor para emergencia, Recepción para solicitudes del menú y Admin únicamente como respaldo si no hay usuarios principales.
-
-Con `WHATSAPP_TOKEN` y `WHATSAPP_BUSINESS_ACCOUNT_ID` configurados, registra ambas plantillas:
-
-```bash
-pnpm run whatsapp:registrar-plantillas-alertas
-```
-
-El comando imprime la respuesta de Meta. Deben quedar aprobadas antes de probar el canal WhatsApp de las alertas; mientras tanto, la alerta permanece disponible en el portal y el fallo de ese canal queda auditado sin afectar los demás.
-
 #### Registrar la plantilla de resultados con documento
 
 La notificación de resultados puede iniciar una conversación fuera de la ventana de atención y adjunta un archivo. Por ello necesita la plantilla `resultados_laboratorio_listos_v2`, categoría `UTILITY`, idioma `es_MX`, con encabezado `DOCUMENT`. El texto del cuerpo trae 6 variables (tutor, mascota, folio, link de agendar cita, link de ubicación y saludo según la hora) e incluye como texto plano los links de `GOOGLE_CALENDAR_MEETING_URL` y `GOOGLE_MAPS_URL` — configúralos antes de registrar o de enviar un resultado real.
@@ -801,8 +784,7 @@ Una plantilla ya `APPROVED` es inmutable en Meta (no se puede editar su texto): 
 - Configura el webhook con una URL HTTPS estable y vuelve a suscribir el campo `messages`.
 - Conserva el mismo `WHATSAPP_WEBHOOK_VERIFY_TOKEN` en Meta y el servidor, y actualiza `WHATSAPP_APP_SECRET` si cambia la app.
 - Confirma que `resultados_laboratorio_listos_v2` esté `APPROVED` para la cuenta productiva; la aprobación de la cuenta de prueba no se transfiere automáticamente a otra WABA.
-- Confirma que `alerta_emergencia_personal_v1` y `alerta_recepcion_personal_v1` estén aprobadas para la cuenta productiva.
-- Crea o revisa usuarios Doctor y Recepción activos con `notificaciones_alertas` habilitado; Admin solo funciona como respaldo cuando no hay destinatarios principales.
+- Crea o revisa usuarios Doctor, Recepción y Administrador activos con `notificaciones_alertas` habilitado; los Administradores reciben ambos tipos de alerta dentro del portal.
 - Reinicia con `pm2 restart omega-vet-adminsite --update-env` y realiza una prueba controlada de recepción y otra de envío de resultados.
 
 ### Claude API
@@ -832,7 +814,6 @@ Después de agregar o rotar `ANTHROPIC_API_KEY`, reinicia el proceso. Para una p
 | `pnpm run seed:test`                               | Ejecuta seeds con `.env.test`                               |
 | `pnpm run google:renovar-token`                    | Renueva el refresh token de Google Calendar                 |
 | `pnpm run whatsapp:registrar-plantillas`           | Registra en Meta las plantillas activas de texto            |
-| `pnpm run whatsapp:registrar-plantillas-alertas`   | Registra las plantillas internas de Emergencia y Recepción  |
 | `pnpm run whatsapp:estado-plantillas`              | Consulta el estado de aprobación en Meta                    |
 | `pnpm run whatsapp:registrar-plantilla-resultados` | Registra la plantilla de resultados con PDF                 |
 | `pnpm run lint`                                    | Ejecuta ESLint                                              |
