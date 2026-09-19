@@ -142,6 +142,10 @@ async function guardarEstudios(knex, categorias) {
 
 exports.up = async function up(knex) {
   const categorias = await obtenerCategorias(knex);
+  // En instalaciones nuevas los catálogos se cargan mediante seeds después de
+  // ejecutar todas las migraciones. No hay datos históricos que transformar.
+  if (categorias.size === 0) return;
+
   const imagenologiaId = categorias.get('Imagenología');
   const infecciosasGatoId = categorias.get('Enfermedades infecciosas - Gato');
   if (!imagenologiaId || !infecciosasGatoId) {

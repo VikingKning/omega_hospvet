@@ -194,6 +194,12 @@ exports.up = async function up(knex) {
     .onConflict('codigo')
     .merge({ nombre: 'Cuello' });
 
+  // En una instalación nueva, los seeds cargan directamente el catálogo en su
+  // forma definitiva después de las migraciones. El esquema anterior sí debe
+  // crearse, pero no existe información histórica que normalizar todavía.
+  const hayCategorias = await knex('catalogo_categorias_estudio').first('id');
+  if (!hayCategorias) return;
+
   await knex('catalogo_estudios')
     .where({ codigo: 'GATO_UROANALISIS_CISTOCENTESIS' })
     .update({ nombre: 'Uroanálisis completo' });
