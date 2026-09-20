@@ -19,6 +19,14 @@ function construirBody(payload) {
       interactive: payload.interactive,
     };
   }
+  if (payload.tipo === 'document') {
+    return {
+      messaging_product: 'whatsapp',
+      to: payload.destinatarioTelefono,
+      type: 'document',
+      document: payload.document,
+    };
+  }
   return {
     messaging_product: 'whatsapp',
     to: payload.destinatarioTelefono,

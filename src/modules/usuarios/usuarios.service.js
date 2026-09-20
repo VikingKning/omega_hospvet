@@ -296,7 +296,9 @@ const TAB_MENU_PRINCIPAL = {
 const TAB_CONFIGURACIONES = {
   id: 'configuraciones',
   titulo: 'Configuraciones',
-  secciones: [{ titulo: null, modulos: ['usuarios', 'doctores', 'areas', 'plantillas'] }],
+  secciones: [
+    { titulo: null, modulos: ['usuarios', 'doctores', 'areas', 'plantillas', 'configuracion'] },
+  ],
 };
 
 function construirTab(id, titulo, secciones, porModulo) {

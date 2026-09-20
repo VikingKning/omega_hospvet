@@ -5,6 +5,10 @@ const { TRANSICIONES, validarTransicion, ESTADOS_CON_SEGUIMIENTO } = require('./
 const menu = require('./whatsapp.menu');
 const laboratorioConsulta = require('./whatsapp.laboratorioConsulta');
 const atencionHumana = require('./whatsapp.atencionHumana.repository');
+const consentimiento = require('./whatsapp.consentimiento.repository');
+// Módulo de configuración, no de whatsapp: sin dependencias hacia whatsapp
+// (por eso es seguro requerirlo aquí sin crear un ciclo con outbox.js).
+const configuracionService = require('../configuracion/configuracion.service');
 
 const PIPELINE_NUEVO = 'conversacional_nuevo';
 const PIPELINE_ANTERIOR = 'flujo_anterior';
@@ -323,8 +327,105 @@ async function registrarMensajeYConversacion({
           ahora: recibidoEn,
         });
 
+    if (pipelineAsignado === PIPELINE_NUEVO) {
+      const resultadoConsentimiento = await procesarConsentimientoLfpdppp(trx, {
+        conversacion,
+        evento,
+      });
+      if (resultadoConsentimiento) return resultadoConsentimiento;
+    }
+
     return procesarMensajeSobreConversacion(trx, { conversacion, esNueva, evento });
   });
+}
+
+// LFPDPPP: gate de consentimiento antes de cualquier otro procesamiento.
+// Se resuelve aquí (nivel mensaje, antes de agrupar) y no en el router de
+// grupos — mismo criterio que atencion_humana un poco más arriba en esta
+// función: un mensaje que no debe procesarse normalmente nunca debe llegar
+// a formar parte de un grupo (ver Fixes #1/#2/#4 de esta misma sesión sobre
+// respuestas interactivas huérfanas contaminando grupos). Devuelve `null`
+// cuando el consentimiento ya está aceptado y el flujo normal debe seguir;
+// en cualquier otro caso devuelve el resultado final del mensaje.
+async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
+  // Sin aviso de privacidad configurado, la funcionalidad completa queda
+  // apagada — el flujo se comporta exactamente igual que antes de que
+  // existiera este gate.
+  const avisoConfigurado = await configuracionService.obtenerVersionVigenteParaEnvio();
+  if (!avisoConfigurado) return null;
+
+  const {
+    telefonoNormalizado,
+    tipoMensaje,
+    contenido,
+    whatsappMessageId,
+    telefonoOrigen,
+    recibidoEn,
+  } = evento;
+  const { estado, fila } = await consentimiento.evaluarEstado(telefonoNormalizado, trx);
+
+  if (estado === consentimiento.ESTADOS.ACEPTADO) return null;
+
+  if (
+    estado === consentimiento.ESTADOS.PENDIENTE_VIGENTE &&
+    consentimiento.esRespuestaBoton(tipoMensaje, contenido)
+  ) {
+    const acepto = contenido === consentimiento.BOTON_ACEPTO_ID;
+    await consentimiento.resolverPendiente({ id: fila.id, acepto, wamid: whatsappMessageId }, trx);
+    const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
+      whatsappMessageId,
+      telefonoOrigen,
+      tipoMensaje,
+      conversacionId: conversacion.id,
+      recibidoEn,
+      estadoProcesamiento: 'resuelto_lfpdppp',
+    });
+    return {
+      ...RESULTADO_ATENCION_HUMANA_BASE,
+      id,
+      esNuevo,
+      conversacionId: conversacion.id,
+      estadoResultante: conversacion.estado,
+      disparaAtencionHumanaConsentimiento: !acepto,
+    };
+  }
+
+  if (estado === consentimiento.ESTADOS.NECESITA_PREGUNTAR) {
+    const propietario = await trx('propietarios')
+      .where({ telefono: telefonoNormalizado.slice(-10) })
+      .first('id');
+    await consentimiento.insertarPendiente(
+      {
+        telefono: telefonoNormalizado,
+        propietarioId: propietario?.id ?? null,
+        avisoEnviadoEn: recibidoEn,
+      },
+      trx,
+    );
+  }
+
+  // NECESITA_PREGUNTAR, PENDIENTE_VIGENTE (mensaje que no es el botón) o
+  // RECHAZADO_RECIENTE: en los tres casos este mensaje entrante se ignora.
+  const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
+    whatsappMessageId,
+    telefonoOrigen,
+    tipoMensaje,
+    conversacionId: conversacion.id,
+    recibidoEn,
+    // varchar(30): 'ignorado_consentimiento_pendiente'/'_rechazado' no caben.
+    estadoProcesamiento:
+      estado === consentimiento.ESTADOS.RECHAZADO_RECIENTE
+        ? 'ignorado_lfpdppp_rechazo'
+        : 'ignorado_lfpdppp_pendiente',
+  });
+  return {
+    ...RESULTADO_ATENCION_HUMANA_BASE,
+    id,
+    esNuevo,
+    conversacionId: conversacion.id,
+    estadoResultante: conversacion.estado,
+    necesitaEnviarAvisoLfpdppp: estado === consentimiento.ESTADOS.NECESITA_PREGUNTAR,
+  };
 }
 
 const RESULTADO_ATENCION_HUMANA_BASE = {

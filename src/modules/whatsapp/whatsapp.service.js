@@ -13,6 +13,7 @@ const { RUTAS_ENRUTAMIENTO, seleccionarRutaGrupo } = require('./whatsapp.router'
 const laboratorioConsulta = require('./whatsapp.laboratorioConsulta');
 const laboratorioService = require('../laboratorio/laboratorio.service');
 const atencionHumanaService = require('./whatsapp.atencionHumana.service');
+const consentimientoService = require('./whatsapp.consentimiento.service');
 const emergenciasAlertasService = require('./whatsapp.emergenciasAlertas.service');
 
 const TELEFONO_CLINICA = '7711634578';
@@ -74,6 +75,56 @@ async function registrarEventoEntrante(evento) {
       claveIdempotencia: `recepcion:mensaje:${evento.whatsappMessageId}`,
       referenciasFuncionales: {
         groupId: resultado.groupId ?? null,
+        mensajeOrigenId: resultado.id,
+        whatsappMessageId: evento.whatsappMessageId,
+      },
+      destinatarioTelefono: telefonoNormalizado,
+    });
+  }
+  if (
+    pipelinePersistido === repository.PIPELINE_NUEVO &&
+    resultado.rutaResuelta === 'ver_aviso_privacidad'
+  ) {
+    const enviado = await consentimientoService.enviarAvisoInformativo({
+      conversacionId: resultado.conversacionId,
+      telefono: telefonoNormalizado,
+      claveIdempotenciaBase: `mensaje:${evento.whatsappMessageId}`,
+    });
+    if (!enviado.enviado) {
+      await intentarEnvioMenu({
+        claveIdempotencia: `mensaje:${evento.whatsappMessageId}:lfpdppp_aviso_info:respaldo`,
+        tipoEnvio: 'conversacional',
+        origenFuncional: 'respuesta_automatica',
+        conversacionId: resultado.conversacionId,
+        destinatarioTelefono: telefonoNormalizado,
+        payloadFuncional: {
+          tipo: 'text',
+          destinatarioTelefono: telefonoNormalizado,
+          texto: menu.textoAvisoPrivacidadNoDisponible(TELEFONO_CLINICA),
+        },
+        usaPlantilla: false,
+      });
+    }
+  }
+  if (pipelinePersistido === repository.PIPELINE_NUEVO && resultado.necesitaEnviarAvisoLfpdppp) {
+    await consentimientoService.enviarAvisoPrivacidad({
+      conversacionId: resultado.conversacionId,
+      telefono: telefonoNormalizado,
+      claveIdempotenciaBase: `mensaje:${evento.whatsappMessageId}`,
+    });
+  }
+  if (
+    pipelinePersistido === repository.PIPELINE_NUEVO &&
+    resultado.disparaAtencionHumanaConsentimiento
+  ) {
+    await atencionHumanaService.solicitarAtencionHumana({
+      conversacionId: resultado.conversacionId,
+      origen: 'consentimiento',
+      prioridad: 'normal',
+      origenAlerta: 'consentimiento',
+      claveIdempotencia: `consentimiento:mensaje:${evento.whatsappMessageId}`,
+      referenciasFuncionales: {
+        groupId: null,
         mensajeOrigenId: resultado.id,
         whatsappMessageId: evento.whatsappMessageId,
       },

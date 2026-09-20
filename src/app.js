@@ -23,6 +23,7 @@ const tutoresRoutes = require('./modules/tutores/tutores.routes');
 const agendaRoutes = require('./modules/agenda/agenda.routes');
 const laboratorioRoutes = require('./modules/laboratorio/laboratorio.routes');
 const metricasRoutes = require('./modules/metricas/metricas.routes');
+const configuracionRoutes = require('./modules/configuracion/configuracion.routes');
 const whatsappRoutes = require('./modules/whatsapp/whatsapp.routes');
 const whatsappAlertasRoutes = require('./modules/whatsapp/whatsapp.alertas.routes');
 
@@ -129,6 +130,7 @@ app.use('/', tutoresRoutes);
 app.use('/', agendaRoutes);
 app.use('/', laboratorioRoutes);
 app.use('/', metricasRoutes);
+app.use('/', configuracionRoutes);
 app.use('/', whatsappAlertasRoutes);
 app.use('/', whatsappRoutes);
 

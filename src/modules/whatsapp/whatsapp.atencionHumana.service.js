@@ -18,7 +18,7 @@ const TEXTO_TRANSFERENCIA_POR_TIPO = {
     'Recepción continuará con tu atención.',
 };
 
-const ORIGENES_VALIDOS = ['emergencia', 'recepcion'];
+const ORIGENES_VALIDOS = ['emergencia', 'recepcion', 'consentimiento'];
 
 class AtencionHumanaValidationError extends Error {
   constructor(message) {

@@ -112,9 +112,10 @@ describe('whatsapp.menu.seguimientoInteractivePayload', () => {
   });
 });
 
-// US WA 005 — menú con las 5 opciones exactas de AC1 y el mapeo id -> ruta.
+// US WA 005 — menú con las 6 opciones exactas de AC1 (5 + LFPDPPP) y el
+// mapeo id -> ruta.
 describe('whatsapp.menu — opciones del menú y resolución de ruta (US WA 005)', () => {
-  it('el menú tiene exactamente los 5 títulos de AC1, en orden', () => {
+  it('el menú tiene exactamente los 6 títulos de AC1, en orden', () => {
     const filas = menu.interactivePayload().action.sections[0].rows;
     expect(filas.map((f) => f.title)).toEqual([
       'Consulta Veterinaria',
@@ -122,10 +123,11 @@ describe('whatsapp.menu — opciones del menú y resolución de ruta (US WA 005)
       'Resultado de laboratorio',
       'Emergencia',
       'Recepción',
+      'Aviso de privacidad',
     ]);
   });
 
-  it('cada fila usa una de las 5 constantes MENU_* como id, nunca el título', () => {
+  it('cada fila usa una de las 6 constantes MENU_* como id, nunca el título', () => {
     const filas = menu.interactivePayload().action.sections[0].rows;
     const ids = filas.map((f) => f.id);
     expect(ids).toEqual([
@@ -134,6 +136,7 @@ describe('whatsapp.menu — opciones del menú y resolución de ruta (US WA 005)
       menu.MENU_RESULTADOS_LAB,
       menu.MENU_EMERGENCIA,
       menu.MENU_RECEPCION,
+      menu.MENU_AVISO_PRIVACIDAD,
     ]);
   });
 
@@ -143,6 +146,7 @@ describe('whatsapp.menu — opciones del menú y resolución de ruta (US WA 005)
     ['MENU_RESULTADOS_LAB', 'resultados_laboratorio'],
     ['MENU_EMERGENCIA', 'emergencia'],
     ['MENU_RECEPCION', 'recepcion'],
+    ['MENU_AVISO_PRIVACIDAD', 'ver_aviso_privacidad'],
   ])(
     'RUTA_POR_MENU_ID[%s] resuelve a "%s" (AC3-AC7, prueba mínima: cada id válido)',
     (clave, ruta) => {
@@ -150,9 +154,10 @@ describe('whatsapp.menu — opciones del menú y resolución de ruta (US WA 005)
     },
   );
 
-  it('esIdDeMenu reconoce los 5 ids válidos y rechaza cualquier otro (prueba mínima: id desconocido o manipulado)', () => {
+  it('esIdDeMenu reconoce los 6 ids válidos y rechaza cualquier otro (prueba mínima: id desconocido o manipulado)', () => {
     expect(menu.esIdDeMenu(menu.MENU_AGENDAR_CONSULTA)).toBe(true);
     expect(menu.esIdDeMenu(menu.MENU_RECEPCION)).toBe(true);
+    expect(menu.esIdDeMenu(menu.MENU_AVISO_PRIVACIDAD)).toBe(true);
     expect(menu.esIdDeMenu('MENU_INVENTADO')).toBe(false);
     expect(menu.esIdDeMenu('')).toBe(false);
     expect(menu.esIdDeMenu(undefined)).toBe(false);

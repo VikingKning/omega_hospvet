@@ -48,6 +48,8 @@ const permissions = [
   ['metricas_whatsapp', 'ver', 'Ver métricas de WhatsApp', 'metricas.whatsapp.ver'],
   ['metricas_laboratorio', 'ver', 'Ver métricas de laboratorio', 'metricas.laboratorios.ver'],
   ['metricas_agenda', 'ver', 'Ver métricas de agenda', 'metricas.agenda.ver'],
+
+  ['configuracion', 'editar', 'Editar la configuración general del sistema'],
 ];
 
 const AGENDA_CATEGORIAS = [

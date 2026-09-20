@@ -1,0 +1,74 @@
+<section class="profile-card profile-section">
+  <div class="profile-section-header">
+    <svg class="profile-section-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+    <span class="profile-section-title">Aviso de privacidad y tratamiento de datos personales</span>
+  </div>
+  <div class="profile-section-body">
+    <% if (mensaje) { %>
+      <div class="form-success-banner">
+        <span><%= mensaje %></span>
+      </div>
+    <% } %>
+    <% if (error) { %>
+      <div class="form-error-banner">
+        <span><%= error %></span>
+        <button type="button" class="modal-close-btn" id="configuracionFormErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
+      </div>
+    <% } %>
+
+    <% if (aviso.archivo) { %>
+      <p>
+        Archivo vigente: <strong><%= aviso.nombreOriginal || aviso.archivo %></strong>
+        (versión <strong><%= aviso.version %></strong>)
+      </p>
+      <p><a href="legal/<%= aviso.archivo %>" target="_blank" rel="noopener">Ver el archivo actual</a></p>
+    <% } else { %>
+      <p>
+        Todavía no se ha cargado un aviso de privacidad. Mientras no exista uno, WhatsApp no pedirá
+        consentimiento a los tutores y el flujo actual seguirá funcionando sin cambios.
+      </p>
+    <% } %>
+
+    <form class="modal-form" id="configuracionAvisoForm"
+          hx-post="configuracion/generales.html" hx-target="#configuracion-panel" hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
+      <label>
+        Archivo del aviso (PDF)
+        <input type="file" name="archivo" accept="application/pdf" required>
+      </label>
+      <label>
+        Versión del aviso (opcional)
+        <input type="text" name="version" maxlength="50" placeholder="Ej. 2026-09-19 o v1.0">
+      </label>
+      <div class="modal-actions">
+        <button type="submit" class="btn-primary">Guardar aviso</button>
+      </div>
+    </form>
+
+    <h4>Últimas versiones cargadas</h4>
+    <p>
+      Cada carga se conserva por separado — un tutor pudo haber aceptado una versión anterior, y ese
+      PDF sigue disponible como evidencia aunque ya no sea la vigente.
+    </p>
+    <div class="mini-table-wrap">
+      <table class="mini-table">
+        <thead>
+          <tr><th>Versión</th><th>Archivo</th><th>Cargado por</th><th>Fecha</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% versiones.forEach((v) => { %>
+            <tr>
+              <td><%= v.version %><%= v.nombre_archivo === aviso.archivo ? ' (vigente)' : '' %></td>
+              <td><%= v.nombre_original %></td>
+              <td><%= v.subido_por_nombre || 'N/D' %></td>
+              <td><%= new Date(v.creado_en).toLocaleString('es-MX') %></td>
+              <td><a href="legal/<%= v.nombre_archivo %>" target="_blank" rel="noopener">Ver</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+      <p class="mini-table-empty" <%= versiones.length ? 'hidden' : '' %>>Todavía no se ha cargado ningún aviso.</p>
+    </div>
+  </div>
+</section>

@@ -42,6 +42,7 @@ const MENU_AGENDAR_ESTETICA = 'MENU_AGENDAR_ESTETICA';
 const MENU_RESULTADOS_LAB = 'MENU_RESULTADOS_LAB';
 const MENU_EMERGENCIA = 'MENU_EMERGENCIA';
 const MENU_RECEPCION = 'MENU_RECEPCION';
+const MENU_AVISO_PRIVACIDAD = 'MENU_AVISO_PRIVACIDAD';
 
 const RUTA_POR_MENU_ID = {
   [MENU_AGENDAR_CONSULTA]: 'agendar_consulta',
@@ -49,6 +50,7 @@ const RUTA_POR_MENU_ID = {
   [MENU_RESULTADOS_LAB]: 'resultados_laboratorio',
   [MENU_EMERGENCIA]: 'emergencia',
   [MENU_RECEPCION]: 'recepcion',
+  [MENU_AVISO_PRIVACIDAD]: 'ver_aviso_privacidad',
 };
 
 function esIdDeMenu(id) {
@@ -85,6 +87,11 @@ const MENU_FILAS = [
     id: MENU_RECEPCION,
     title: 'Recepción',
     description: 'Hablar directamente con el personal de recepción',
+  },
+  {
+    id: MENU_AVISO_PRIVACIDAD,
+    title: 'Aviso de privacidad',
+    description: 'Ver el aviso de privacidad y tratamiento de datos personales',
   },
 ];
 
@@ -141,6 +148,13 @@ function textoRespaldoEmergencia(telefonoClinica) {
   );
 }
 
+function textoAvisoPrivacidadNoDisponible(telefonoClinica) {
+  return (
+    'Por el momento no tenemos un aviso de privacidad disponible para compartir por este medio. ' +
+    `Puedes solicitarlo directamente al ${telefonoClinica}.`
+  );
+}
+
 module.exports = {
   normalizarTexto,
   esSaludoPuro,
@@ -151,6 +165,7 @@ module.exports = {
   textoOpcionInvalida,
   textoSolicitudEmergencia,
   textoRespaldoEmergencia,
+  textoAvisoPrivacidadNoDisponible,
   RESPUESTA_CONTINUAR,
   RESPUESTA_VOLVER_MENU,
   seguimientoInteractivePayload,
@@ -159,6 +174,7 @@ module.exports = {
   MENU_RESULTADOS_LAB,
   MENU_EMERGENCIA,
   MENU_RECEPCION,
+  MENU_AVISO_PRIVACIDAD,
   RUTA_POR_MENU_ID,
   esIdDeMenu,
 };

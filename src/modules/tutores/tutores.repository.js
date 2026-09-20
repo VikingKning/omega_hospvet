@@ -1,4 +1,18 @@
 const db = require('../../config/database');
+const consentimientoLfpdppp = require('../whatsapp/whatsapp.consentimiento.repository');
+
+// LFPDPPP: dar de alta (o reactivar) un tutor desde el panel asume que
+// recepción ya recabó el consentimiento físico en ese momento — se registra
+// de una vez con acepto=true, canal='panel', para que si ese mismo teléfono
+// escribe por WhatsApp no se le pida el aviso de nuevo. `onConflict` no
+// aplica aquí (no hay unique en telefono de esta tabla), así que basta con
+// insertar una fila más; evaluarEstado() siempre lee la más reciente.
+async function registrarConsentimientoPorAltaPanel(telefono, propietarioId, trx) {
+  await consentimientoLfpdppp.insertarConsentimientoPanel(
+    { telefono: `52${telefono}`, propietarioId },
+    trx,
+  );
+}
 
 function baseQuery({ q, qDigits, activoTutores, activoPacientes }) {
   return db('propietarios as p').modify((builder) => {
@@ -123,6 +137,8 @@ async function crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId
       );
     }
 
+    await registrarConsentimientoPorAltaPanel(telefono, row.id, trx);
+
     return row.id;
   });
 }
@@ -242,6 +258,8 @@ async function reactivar({ id, nombre, apellidos, telefono, correo, pacientes, u
         });
       }
     }
+
+    await registrarConsentimientoPorAltaPanel(telefono, id, trx);
 
     return id;
   });

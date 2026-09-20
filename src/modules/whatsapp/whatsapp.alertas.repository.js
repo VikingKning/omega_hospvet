@@ -132,8 +132,9 @@ async function listarPendientesParaUsuario(usuarioId) {
     .whereNot({ resolucion_destinatarios: 'pendiente' })
     .andWhere((builder) => {
       if (usuario.tipo_usuario === 'doctor') builder.where({ tipo_alerta: 'emergencia' });
-      else if (usuario.tipo_usuario === 'recepcion') builder.where({ tipo_alerta: 'recepcion' });
-      else if (usuario.tipo_usuario !== 'admin') builder.whereRaw('false');
+      else if (usuario.tipo_usuario === 'recepcion') {
+        builder.whereIn('tipo_alerta', ['recepcion', 'consentimiento']);
+      } else if (usuario.tipo_usuario !== 'admin') builder.whereRaw('false');
     })
     .orderBy('alertas_atencion_whatsapp.creado_en', 'asc')
     .select(

@@ -5,6 +5,7 @@ const eventos = require('./whatsapp.alertas.eventos');
 const TIPO_USUARIO_PRINCIPAL = {
   emergencia: 'doctor',
   recepcion: 'recepcion',
+  consentimiento: 'recepcion',
 };
 
 const CONTENIDO_POR_TIPO = {
@@ -15,6 +16,10 @@ const CONTENIDO_POR_TIPO = {
   recepcion: {
     titulo: 'Atención de Recepción',
     mensaje: 'Una conversación de WhatsApp requiere atención de Recepción.',
+  },
+  consentimiento: {
+    titulo: 'Aviso de privacidad rechazado',
+    mensaje: 'Un tutor no aceptó el aviso de privacidad y tratamiento de datos personales.',
   },
 };
 
