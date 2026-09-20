@@ -21,6 +21,18 @@ async function mostrarForm(req, res, next) {
   }
 }
 
+async function verificarArchivoExistente(req, res, next) {
+  try {
+    const { existe } = await service.existeArchivoAviso({
+      nombreOriginal: req.query.nombreOriginal,
+      hash: req.query.hash,
+    });
+    res.json({ existe });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function guardarAviso(req, res, next) {
   const csrfToken = generateCsrfToken(req, res);
   try {
@@ -64,4 +76,4 @@ async function guardarAviso(req, res, next) {
   }
 }
 
-module.exports = { mostrarForm, guardarAviso };
+module.exports = { mostrarForm, verificarArchivoExistente, guardarAviso };

@@ -19,6 +19,12 @@ coverage/
 # depender de que nadie adivine la URL.
 storage/
 
+# Aviso de privacidad (LFPDPPP) subido desde Configuración General: se sirve
+# público a propósito vía express.static (WhatsApp/tutores lo consultan sin
+# login), pero el archivo en sí es contenido cargado por el admin, no código.
+public/legal/*
+!public/legal/.gitkeep
+
 # Sistema operativo
 .DS_Store
 

@@ -204,4 +204,5 @@ module.exports = {
   rutaAbsolutaDeArchivo,
   mimetypeDeArchivo,
   eliminarFisico,
+  convertirWordAPdf,
 };

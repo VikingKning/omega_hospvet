@@ -372,6 +372,20 @@ async function registrarEchoManual(
   };
 }
 
+// conversaciones_whatsapp.origen_atencion_humana no distingue el motivo real
+// (siempre queda 'solicitud_transferencia'/'iniciada_por_omega') — el único
+// lugar que sí conserva "esto empezó por un rechazo LFPDPPP" es el `origen`
+// de su propia solicitud. Se usa para que un rechazo de aviso de privacidad
+// no se trate como una atención humana genérica (sin el atajo de "escribe
+// 'menu' para recuperar al bot" ni el bypass total al vencer la ventana).
+async function tieneSolicitudPorConsentimiento(conversacionId, trx) {
+  const conexion = trx ?? db;
+  const fila = await conexion('solicitudes_atencion_humana')
+    .where({ conversacion_id: conversacionId, origen: 'consentimiento' })
+    .first('id');
+  return Boolean(fila);
+}
+
 module.exports = {
   solicitarAtencionHumana,
   reclamarSolicitudPendiente,
@@ -384,5 +398,6 @@ module.exports = {
   reactivarPorComandoDelTutor,
   cerrarPorVencimientoYCrearNueva,
   registrarEchoManual,
+  tieneSolicitudPorConsentimiento,
   ESTADOS_QUE_PERMITEN_ATENCION_HUMANA,
 };

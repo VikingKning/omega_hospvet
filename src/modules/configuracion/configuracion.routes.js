@@ -37,6 +37,13 @@ router.get(
   controller.mostrarForm,
 );
 
+router.get(
+  '/configuracion/generales/archivo-existente',
+  requireAuth,
+  requirePermission('configuracion.editar'),
+  controller.verificarArchivoExistente,
+);
+
 router.post(
   '/configuracion/generales.html',
   requireAuth,

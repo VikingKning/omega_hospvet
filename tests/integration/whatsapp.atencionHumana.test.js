@@ -693,6 +693,100 @@ describe('US WA 017 — reactivación por comando del tutor (AC11-AC14/AC18)', (
   });
 });
 
+// Un rechazo del aviso de privacidad (LFPDPPP) usa el MISMO mecanismo de
+// atención humana que un traslado a recepción, pero NO debe comportarse
+// igual: ni el atajo "escribe 'menu' para recuperar al bot" ni el bypass
+// total al vencer la ventana deben aplicar — mientras el rechazo siga
+// vigente (evaluarEstado, 24h) el bot sigue en silencio, y al volver a
+// escribir debe reaparecer el aviso de privacidad, nunca el menú principal.
+describe('LFPDPPP — un rechazo no es una atención humana genérica (bug reportado 2026-09-20)', () => {
+  const configuracionService = require('../../src/modules/configuracion/configuracion.service');
+
+  async function conversacionPorRechazoLfpdppp(telefono, { vencida = false } = {}) {
+    const ahora = new Date();
+    const conversacion = await crearConversacion(telefono, {
+      estado: 'atencion_humana',
+      atencion_humana_desde: ahora,
+      atencion_humana_hasta: vencida
+        ? new Date(ahora.getTime() - 1000)
+        : new Date(ahora.getTime() + 5 * 60 * 60 * 1000),
+      origen_atencion_humana: 'solicitud_transferencia',
+    });
+    await db('solicitudes_atencion_humana').insert({
+      conversacion_id: conversacion.id,
+      origen: 'consentimiento',
+      clave_idempotencia: `consentimiento:test:${conversacion.id}`,
+      solicitado_en: ahora,
+    });
+    await db('consentimiento_lfpdppp').insert({
+      telefono,
+      acepto: false,
+      canal: 'whatsapp',
+      creado_en: ahora,
+    });
+    return conversacion;
+  }
+
+  afterEach(async () => {
+    await db('consentimiento_lfpdppp').where('telefono', 'like', '52550002%').del();
+  });
+
+  it('escribir "menu" mientras el rechazo sigue vigente NO reactiva el bot ni muestra el menú', async () => {
+    jest
+      .spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio')
+      .mockResolvedValue({ archivo: 'aviso.pdf', version: 'v1.0', nombreArchivo: 'Aviso.pdf' });
+    const telefono = generarTelefono();
+    const vieja = await conversacionPorRechazoLfpdppp(telefono);
+
+    const resultado = await repository.registrarMensajeYConversacion({
+      whatsappMessageId: 'wamid.lfpdppp-menu-bloqueado',
+      telefonoOrigen: `521${telefono.slice(2)}`,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado: telefono,
+      tipoMensaje: 'text',
+      contenido: 'menu',
+      recibidoEn: new Date(),
+    });
+
+    expect(resultado.disparaMenuInmediato).toBeFalsy();
+    expect(resultado.conversacionId).toBe(vieja.id); // nunca crea una conversación nueva
+    const mensaje = await db('mensajes_whatsapp')
+      .where({ whatsapp_message_id: 'wamid.lfpdppp-menu-bloqueado' })
+      .first();
+    expect(mensaje.estado_procesamiento).not.toBe('comando_reactivacion_bot');
+    const conversacion = await recargarConversacion(vieja.id);
+    expect(conversacion.estado).toBe('atencion_humana'); // sigue igual, no pasa a esperando_menu
+  });
+
+  it('al vencer la ventana, el siguiente mensaje vuelve a pedir el aviso de privacidad — no sigue el flujo normal', async () => {
+    jest
+      .spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio')
+      .mockResolvedValue({ archivo: 'aviso.pdf', version: 'v1.0', nombreArchivo: 'Aviso.pdf' });
+    const telefono = generarTelefono();
+    const vieja = await conversacionPorRechazoLfpdppp(telefono, { vencida: true });
+
+    const resultado = await repository.registrarMensajeYConversacion({
+      whatsappMessageId: 'wamid.lfpdppp-vencida-sigue-bloqueado',
+      telefonoOrigen: `521${telefono.slice(2)}`,
+      phoneNumberId: PHONE_NUMBER_ID,
+      telefonoNormalizado: telefono,
+      tipoMensaje: 'text',
+      contenido: 'hola de nuevo',
+      recibidoEn: new Date(),
+    });
+
+    const nueva = await recargarConversacion(resultado.conversacionId);
+    expect(nueva.id).not.toBe(vieja.id); // la vieja sí se cierra por vencimiento
+    expect(nueva.estado).not.toBe('esperando_menu'); // NUNCA salta directo al menú
+    const mensaje = await db('mensajes_whatsapp')
+      .where({ whatsapp_message_id: 'wamid.lfpdppp-vencida-sigue-bloqueado' })
+      .first();
+    // Sigue rechazado hace <24h (evaluarEstado) => se ignora otra vez, no se
+    // clasifica ni se enruta como un mensaje normal.
+    expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_rechazo');
+  });
+});
+
 describe('US WA 017 — vencimiento detectado en el procesamiento entrante (AC15-AC18)', () => {
   it('AC15: el worker cierra una conversación cuyo atencion_humana_hasta ya venció', async () => {
     const telefono = generarTelefono();

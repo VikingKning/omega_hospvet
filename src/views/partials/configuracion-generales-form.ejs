@@ -1,12 +1,19 @@
-<section class="profile-card profile-section">
-  <div class="profile-section-header">
-    <svg class="profile-section-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-    <span class="profile-section-title">Aviso de privacidad y tratamiento de datos personales</span>
+<div class="tutor-form-heading" style="margin-bottom: 18px;">
+  <span class="tutor-form-heading-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+  </span>
+  <div class="tutor-form-heading-text">
+    <h2>Aviso de privacidad y tratamiento de datos personales</h2>
+    <p>Configura el aviso que WhatsApp envía a los tutores antes de continuar la conversación.</p>
   </div>
+</div>
+
+<section class="profile-card profile-section">
   <div class="profile-section-body">
     <% if (mensaje) { %>
       <div class="form-success-banner">
         <span><%= mensaje %></span>
+        <button type="button" class="modal-close-btn" id="configuracionFormSuccessDismiss" aria-label="Cerrar mensaje">&times;</button>
       </div>
     <% } %>
     <% if (error) { %>
@@ -16,14 +23,8 @@
       </div>
     <% } %>
 
-    <% if (aviso.archivo) { %>
-      <p>
-        Archivo vigente: <strong><%= aviso.nombreOriginal || aviso.archivo %></strong>
-        (versión <strong><%= aviso.version %></strong>)
-      </p>
-      <p><a href="legal/<%= aviso.archivo %>" target="_blank" rel="noopener">Ver el archivo actual</a></p>
-    <% } else { %>
-      <p>
+    <% if (!aviso.archivo) { %>
+      <p style="margin: 18px 0 28px;">
         Todavía no se ha cargado un aviso de privacidad. Mientras no exista uno, WhatsApp no pedirá
         consentimiento a los tutores y el flujo actual seguirá funcionando sin cambios.
       </p>
@@ -33,37 +34,73 @@
           hx-post="configuracion/generales.html" hx-target="#configuracion-panel" hx-swap="innerHTML"
           hx-encoding="multipart/form-data"
           hx-headers='{"x-csrf-token": "<%= csrfToken %>"}'>
-      <label>
-        Archivo del aviso (PDF)
-        <input type="file" name="archivo" accept="application/pdf" required>
-      </label>
-      <label>
-        Versión del aviso (opcional)
-        <input type="text" name="version" maxlength="50" placeholder="Ej. 2026-09-19 o v1.0">
-      </label>
-      <div class="modal-actions">
-        <button type="submit" class="btn-primary">Guardar aviso</button>
+      <div class="aviso-campos-row">
+        <label>
+          Archivo del aviso
+          <div class="aviso-dropzone" id="avisoDropzone">
+            <svg class="aviso-dropzone-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+            <div class="aviso-dropzone-text">
+              <div class="aviso-dropzone-title">Arrastra tu PDF o Word aquí o selecciónalo desde tu equipo</div>
+              <div class="aviso-dropzone-subtitle">PDF, DOC o DOCX (se guarda como PDF) · Máximo 10MB</div>
+              <div class="aviso-dropzone-archivo" id="avisoDropzoneArchivo" hidden></div>
+            </div>
+            <button type="button" class="btn-secondary" id="avisoSeleccionarBtn">Seleccionar archivo</button>
+            <input type="file" name="archivo" id="avisoArchivoInput" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required hidden>
+          </div>
+        </label>
+        <div class="aviso-version-col">
+          <label>
+            Versión del aviso
+            <input type="text" name="version" maxlength="50" placeholder="Ej. v1.0 (vacío = v.AAAAMMDD de hoy)">
+          </label>
+          <div class="modal-actions">
+            <button type="submit" class="btn-primary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right: 6px; vertical-align: -2px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              Guardar aviso
+            </button>
+          </div>
+        </div>
       </div>
     </form>
 
-    <h4>Últimas versiones cargadas</h4>
-    <p>
+    <div class="profile-section-header aviso-versiones-header">
+      <svg class="profile-section-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="profile-section-title">Últimas versiones cargadas</span>
+    </div>
+    <p class="aviso-versiones-intro">
       Cada carga se conserva por separado — un tutor pudo haber aceptado una versión anterior, y ese
       PDF sigue disponible como evidencia aunque ya no sea la vigente.
     </p>
     <div class="mini-table-wrap">
-      <table class="mini-table">
+      <table class="mini-table aviso-versions-table">
         <thead>
-          <tr><th>Versión</th><th>Archivo</th><th>Cargado por</th><th>Fecha</th><th></th></tr>
+          <tr><th>Versión</th><th>Archivo</th><th>Estado</th><th>Cargado por</th><th>Fecha</th><th></th></tr>
         </thead>
         <tbody>
           <% versiones.forEach((v) => { %>
             <tr>
-              <td><%= v.version %><%= v.nombre_archivo === aviso.archivo ? ' (vigente)' : '' %></td>
-              <td><%= v.nombre_original %></td>
+              <td><strong><%= v.version %></strong></td>
+              <td>
+                <div class="aviso-archivo-cell">
+                  <span class="aviso-file-badge">PDF</span>
+                  <span><%= v.nombre_original %></span>
+                </div>
+              </td>
+              <td>
+                <% if (v.version === aviso.version) { %>
+                  <span class="account-status-badge is-active">Vigente</span>
+                <% } else { %>
+                  <span class="account-status-badge">Obsoleta</span>
+                <% } %>
+              </td>
               <td><%= v.subido_por_nombre || 'N/D' %></td>
               <td><%= new Date(v.creado_en).toLocaleString('es-MX') %></td>
-              <td><a href="legal/<%= v.nombre_archivo %>" target="_blank" rel="noopener">Ver</a></td>
+              <td>
+                <a class="aviso-table-ver" href="legal/<%= v.nombre_archivo %>" target="_blank" rel="noopener">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  Ver
+                </a>
+              </td>
             </tr>
           <% }) %>
         </tbody>

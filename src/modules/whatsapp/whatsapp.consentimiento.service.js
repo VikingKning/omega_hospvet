@@ -8,8 +8,17 @@ async function subirAvisoVigenteAMeta() {
   const version = await configuracionService.obtenerVersionVigenteParaEnvio();
   if (!version) return null;
 
+  // Meta valida un media_id por ~30 días — se reutiliza el ya subido para
+  // esta versión en vez de volver a subir el mismo PDF en cada solicitud de
+  // consentimiento nueva (con muchos tutores nuevos simultáneos, subirlo
+  // una sola vez es lo que evita 50 subidas idénticas).
+  if (version.mediaId) {
+    return { mediaId: version.mediaId, nombreArchivo: version.nombreArchivo };
+  }
+
   const buffer = await configuracionService.leerArchivoAviso(version.archivo);
   const mediaId = await whatsappEnvios.subirMedia(buffer, 'application/pdf', version.nombreArchivo);
+  await configuracionService.actualizarMediaIdVersion(version.versionId, mediaId);
   return { mediaId, nombreArchivo: version.nombreArchivo };
 }
 

@@ -185,6 +185,22 @@ describe('LFPDPPP — gate de consentimiento (feature apagada)', () => {
 });
 
 describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
+  // insertarPendiente guarda version_aviso, y desde la migración 20260919000007
+  // esa columna tiene FK contra aviso_privacidad_versiones.version — aunque
+  // el servicio esté mockeado, la fila real debe existir para poder insertar.
+  beforeAll(async () => {
+    await db('aviso_privacidad_versiones').insert({
+      version: AVISO_MOCK.version,
+      nombre_archivo: AVISO_MOCK.archivo,
+      nombre_original: AVISO_MOCK.nombreArchivo,
+    });
+  });
+
+  afterAll(async () => {
+    await db('consentimiento_lfpdppp').where('version_aviso', AVISO_MOCK.version).del();
+    await db('aviso_privacidad_versiones').where({ nombre_archivo: AVISO_MOCK.archivo }).del();
+  });
+
   beforeEach(() => {
     jest
       .spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio')
@@ -205,7 +221,11 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
     expect(mensaje.group_id).toBeNull();
 
     const registro = await ultimoRegistroConsentimiento('525500880010');
-    expect(registro).toMatchObject({ acepto: null, canal: 'whatsapp' });
+    expect(registro).toMatchObject({
+      acepto: null,
+      canal: 'whatsapp',
+      version_aviso: AVISO_MOCK.version,
+    });
     expect(registro.aviso_enviado_en).not.toBeNull();
 
     // 1 llamada para subir el PDF a Meta (Media API) + 1 para mandar el mensaje.
@@ -307,51 +327,149 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
   });
 });
 
+describe('LFPDPPP — el media_id se cachea y no se resube en cada solicitud', () => {
+  const NOMBRE_ARCHIVO = 'aviso-privacidad-cache-test.pdf';
+
+  beforeEach(async () => {
+    jest
+      .spyOn(configuracionService, 'leerArchivoAviso')
+      .mockResolvedValue(Buffer.from('%PDF-1.4 fake'));
+    await db('configuracion_sistema')
+      .insert([
+        { clave: 'aviso_privacidad_archivo', valor: NOMBRE_ARCHIVO },
+        { clave: 'aviso_privacidad_version', valor: 'v-cache-test' },
+        { clave: 'aviso_privacidad_nombre', valor: 'Aviso Cache Test.pdf' },
+      ])
+      .onConflict('clave')
+      .merge(['valor']);
+    await db('aviso_privacidad_versiones').insert({
+      version: 'v-cache-test',
+      nombre_archivo: NOMBRE_ARCHIVO,
+      nombre_original: 'Aviso Cache Test.pdf',
+    });
+  });
+
+  afterEach(async () => {
+    // Los consentimientos creados por este test referencian esta versión
+    // (FK con ON DELETE RESTRICT, ver migración 20260919000007) — deben
+    // borrarse primero o el delete de aviso_privacidad_versiones falla.
+    await db('consentimiento_lfpdppp').where('telefono', 'like', '52550088003%').del();
+    await db('configuracion_sistema').where('clave', 'like', 'aviso_privacidad_%').del();
+    await db('aviso_privacidad_versiones').where({ nombre_archivo: NOMBRE_ARCHIVO }).del();
+  });
+
+  it('dos teléfonos nuevos distintos disparan una sola subida a Meta, no dos', async () => {
+    await postTexto(`${WAMID_PREFIX}cache-tel1`, '5215500880030', 'hola');
+    await postTexto(`${WAMID_PREFIX}cache-tel2`, '5215500880031', 'hola');
+
+    const llamadasAMedia = global.fetch.mock.calls.filter(([url]) =>
+      String(url).includes('/fake/media'),
+    );
+    expect(llamadasAMedia).toHaveLength(1);
+
+    const fila = await db('aviso_privacidad_versiones')
+      .where({ nombre_archivo: NOMBRE_ARCHIVO })
+      .first();
+    expect(fila.media_id).toMatch(/^media-fake-\d+$/);
+  });
+});
+
+describe('LFPDPPP — integridad referencial version_aviso -> aviso_privacidad_versiones', () => {
+  const TELEFONO = '5215500990099';
+  let versionId;
+
+  afterEach(async () => {
+    await db('consentimiento_lfpdppp').where({ telefono: TELEFONO }).del();
+    if (versionId) {
+      await db('aviso_privacidad_versiones')
+        .where({ id: versionId })
+        .del()
+        .catch(() => {});
+      versionId = null;
+    }
+  });
+
+  it('la base de datos rechaza borrar una versión mientras un consentimiento la referencie', async () => {
+    const [fila] = await db('aviso_privacidad_versiones')
+      .insert({
+        version: `v-integridad-${Date.now()}`,
+        nombre_archivo: `aviso-integridad-${crypto.randomUUID()}.pdf`,
+        nombre_original: 'aviso.pdf',
+      })
+      .returning('*');
+    versionId = fila.id;
+
+    await db('consentimiento_lfpdppp').insert({
+      telefono: TELEFONO,
+      acepto: true,
+      canal: 'whatsapp',
+      version_aviso: fila.version,
+    });
+
+    await expect(db('aviso_privacidad_versiones').where({ id: versionId }).del()).rejects.toThrow();
+  });
+});
+
 describe('LFPDPPP — "Ver aviso de privacidad" en el menú principal', () => {
   it('con aviso configurado, envía el PDF como documento informativo (sin botones de aceptar/rechazar)', async () => {
-    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+    const AVISO = {
       archivo: 'aviso-privacidad-test.pdf',
       version: '2026-09-19',
       nombreArchivo: 'Aviso de Privacidad Omega.pdf',
+    };
+    // Aceptar el aviso inserta version_aviso en consentimiento_lfpdppp, y
+    // esa columna tiene FK contra aviso_privacidad_versiones.version desde
+    // la migración 20260919000007 — hace falta la fila real aunque el
+    // servicio esté mockeado.
+    await db('aviso_privacidad_versiones').insert({
+      version: AVISO.version,
+      nombre_archivo: AVISO.archivo,
+      nombre_original: AVISO.nombreArchivo,
     });
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue(AVISO);
     jest
       .spyOn(configuracionService, 'leerArchivoAviso')
       .mockResolvedValue(Buffer.from('%PDF-1.4 fake'));
     const telefono = '5215500880020';
 
-    // Primero hay que aceptar el aviso para poder llegar al menú (si no,
-    // el gate se come hasta el comando "menu").
-    await postTexto(`${WAMID_PREFIX}menuaviso-0`, telefono, 'hola');
-    await postBoton(
-      `${WAMID_PREFIX}menuaviso-acepto`,
-      telefono,
-      'lfpdppp_acepto',
-      'Estoy de acuerdo',
-    );
-    await postTexto(`${WAMID_PREFIX}menuaviso-menu`, telefono, 'menu');
-    await esperarFireAndForget();
+    try {
+      // Primero hay que aceptar el aviso para poder llegar al menú (si no,
+      // el gate se come hasta el comando "menu").
+      await postTexto(`${WAMID_PREFIX}menuaviso-0`, telefono, 'hola');
+      await postBoton(
+        `${WAMID_PREFIX}menuaviso-acepto`,
+        telefono,
+        'lfpdppp_acepto',
+        'Estoy de acuerdo',
+      );
+      await postTexto(`${WAMID_PREFIX}menuaviso-menu`, telefono, 'menu');
+      await esperarFireAndForget();
 
-    global.fetch.mockClear();
-    const res = await postListReply(
-      `${WAMID_PREFIX}menuaviso-seleccion`,
-      telefono,
-      menu.MENU_AVISO_PRIVACIDAD,
-      'Aviso de privacidad',
-    );
+      global.fetch.mockClear();
+      const res = await postListReply(
+        `${WAMID_PREFIX}menuaviso-seleccion`,
+        telefono,
+        menu.MENU_AVISO_PRIVACIDAD,
+        'Aviso de privacidad',
+      );
 
-    expect(res.status).toBe(200);
-    // 1 llamada para subir el PDF a Meta + 1 para mandar el documento.
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    const [urlMedia] = global.fetch.mock.calls[0];
-    expect(urlMedia).toContain('/fake/media');
-    const [, opcionesDocumento] = global.fetch.mock.calls[1];
-    const cuerpoEnviado = JSON.parse(opcionesDocumento.body);
-    expect(cuerpoEnviado.type).toBe('document');
-    expect(cuerpoEnviado.document).toMatchObject({
-      id: expect.stringContaining('media-fake-'),
-      filename: 'Aviso de Privacidad Omega.pdf',
-    });
-    expect(cuerpoEnviado.interactive).toBeUndefined();
+      expect(res.status).toBe(200);
+      // 1 llamada para subir el PDF a Meta + 1 para mandar el documento.
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      const [urlMedia] = global.fetch.mock.calls[0];
+      expect(urlMedia).toContain('/fake/media');
+      const [, opcionesDocumento] = global.fetch.mock.calls[1];
+      const cuerpoEnviado = JSON.parse(opcionesDocumento.body);
+      expect(cuerpoEnviado.type).toBe('document');
+      expect(cuerpoEnviado.document).toMatchObject({
+        id: expect.stringContaining('media-fake-'),
+        filename: 'Aviso de Privacidad Omega.pdf',
+      });
+      expect(cuerpoEnviado.interactive).toBeUndefined();
+    } finally {
+      await db('consentimiento_lfpdppp').where('version_aviso', AVISO.version).del();
+      await db('aviso_privacidad_versiones').where({ nombre_archivo: AVISO.archivo }).del();
+    }
   });
 
   it('sin aviso configurado, manda un texto de respaldo en vez de fallar en silencio', async () => {

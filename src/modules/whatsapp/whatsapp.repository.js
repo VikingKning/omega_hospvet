@@ -399,6 +399,7 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
         telefono: telefonoNormalizado,
         propietarioId: propietario?.id ?? null,
         avisoEnviadoEn: recibidoEn,
+        versionAviso: avisoConfigurado.version,
       },
       trx,
     );
@@ -439,6 +440,16 @@ const RESULTADO_ATENCION_HUMANA_BASE = {
 };
 
 async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
+  // Un rechazo del aviso de privacidad NO es una atención humana genérica:
+  // ni "escribe 'menu' para recuperar al bot" ni "se venció la ventana,
+  // sigue normal" deben aplicar aquí — mientras el rechazo siga vigente
+  // (evaluarEstado, 24h) el bot debe seguir en silencio, y al re-preguntar
+  // debe ser el aviso de privacidad, no el menú principal.
+  const esPorConsentimiento = await atencionHumana.tieneSolicitudPorConsentimiento(
+    conversacion.id,
+    trx,
+  );
+
   const vencidaRow = await trx('conversaciones_whatsapp')
     .where({ id: conversacion.id })
     .first(trx.raw(`(atencion_humana_hasta <= now()) as vencida`));
@@ -449,6 +460,13 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
       phoneNumberId: evento.phoneNumberId,
       telefonoNormalizado: evento.telefonoNormalizado,
     });
+    if (esPorConsentimiento) {
+      const resultadoConsentimiento = await procesarConsentimientoLfpdppp(trx, {
+        conversacion: nueva,
+        evento,
+      });
+      if (resultadoConsentimiento) return resultadoConsentimiento;
+    }
     return procesarMensajeSobreConversacion(trx, {
       conversacion: nueva,
       esNueva: true,
@@ -457,6 +475,7 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
   }
 
   const esComandoReactivacion =
+    !esPorConsentimiento &&
     evento.tipoMensaje === 'text' &&
     Boolean(evento.contenido) &&
     menu.esComandoMenu(evento.contenido);

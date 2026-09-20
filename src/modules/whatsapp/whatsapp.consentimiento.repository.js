@@ -60,7 +60,7 @@ async function evaluarEstado(telefono, trx) {
     : { estado: ESTADOS.NECESITA_PREGUNTAR, fila: null };
 }
 
-async function insertarPendiente({ telefono, propietarioId, avisoEnviadoEn }, trx) {
+async function insertarPendiente({ telefono, propietarioId, avisoEnviadoEn, versionAviso }, trx) {
   const conexion = trx ?? db;
   const [fila] = await conexion('consentimiento_lfpdppp')
     .insert({
@@ -69,6 +69,7 @@ async function insertarPendiente({ telefono, propietarioId, avisoEnviadoEn }, tr
       acepto: null,
       canal: 'whatsapp',
       aviso_enviado_en: avisoEnviadoEn,
+      version_aviso: versionAviso ?? null,
     })
     .returning('*');
   return fila;

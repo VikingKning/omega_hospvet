@@ -3005,6 +3005,220 @@ body:has(.app)::after {
   color: var(--text-muted);
 }
 
+/* Configuración General — aviso de privacidad (LFPDPPP). Reusa el mismo
+   lenguaje visual que el resto del sistema (.profile-card, .mini-table,
+   .account-status-badge) en vez de inventar componentes nuevos. */
+.aviso-vigente-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 20px;
+  margin: 18px 0 28px;
+  background: var(--primary-light);
+  border: 1px solid rgba(46, 80, 144, 0.25);
+  border-radius: 10px;
+}
+
+.aviso-vigente-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+  margin-top: 2px;
+}
+
+.aviso-vigente-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
+.aviso-vigente-nombre-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.aviso-vigente-nombre {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.aviso-version-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(46, 80, 144, 0.12);
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.aviso-ver-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.aviso-ver-link:hover {
+  text-decoration: underline;
+}
+
+.aviso-dropzone {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 26px 24px;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  background: var(--bg-base);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.aviso-dropzone:hover,
+.aviso-dropzone.is-dragover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+.aviso-dropzone-icon {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.aviso-dropzone-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.aviso-dropzone-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.aviso-dropzone-subtitle {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.aviso-dropzone-archivo {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.aviso-field-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: normal;
+  margin-top: 2px;
+  display: block;
+}
+
+.aviso-file-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  border-radius: 4px;
+  background: rgba(240, 15, 53, 0.12);
+  color: var(--danger);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.aviso-archivo-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aviso-table-ver {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.aviso-table-ver:hover {
+  text-decoration: underline;
+}
+
+/* Más aire entre bloques — el formulario se sentía apretado con el
+   .modal-form genérico (gap 14px, pensado para modales compactos). */
+#configuracionAvisoForm {
+  gap: 26px;
+}
+
+/* El dropzone necesita más ancho que el campo de versión (icono+texto+
+   botón vs. un input corto) — a diferencia de .profile-form-row (1fr 1fr,
+   pensada para 2 campos del mismo tamaño), aquí es 2fr/1fr a propósito. */
+.aviso-campos-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .aviso-campos-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* "Guardar aviso" vive bajo el campo de versión (columna angosta) en vez de
+   quedar suelto abajo, lejos de ambos campos — .modal-actions por default
+   es flex-end pensado para un footer de modal a todo el ancho, aquí se
+   alinea al inicio de esta columna angosta. */
+.aviso-version-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.aviso-version-col .modal-actions {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.aviso-versiones-header {
+  margin-top: 36px;
+  margin-bottom: 14px;
+}
+
+.aviso-versiones-intro {
+  margin-bottom: 18px;
+}
+
+.aviso-versions-table th,
+.aviso-versions-table td {
+  padding: 14px 16px;
+}
+
 /* El formulario de doctores reserva siempre el espacio de cabecera más cinco
    filas. Desde la sexta especialidad, únicamente este bloque desplaza su
    contenido y el tamaño del modal permanece estable. */

@@ -47,13 +47,124 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="confirmModalBackdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Confirmar acción</h2>
+        <button class="modal-close-btn" type="button" id="confirmModalClose" aria-label="Cerrar">&times;</button>
+      </div>
+      <p id="confirmModalMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="confirmModalCancel">Cancelar</button>
+        <button type="button" class="btn-primary" id="confirmModalConfirm">Confirmar cambio</button>
+      </div>
+    </div>
+  </div>
+
 <script src="js/sidebar.js" nonce="<%= cspNonce %>"></script>
+<script src="js/confirmModal.js" nonce="<%= cspNonce %>"></script>
 <script nonce="<%= cspNonce %>">
-  document.getElementById('configuracion-panel').addEventListener('click', (event) => {
+  const configuracionPanel = document.getElementById('configuracion-panel');
+
+  function mostrarArchivoSeleccionado(archivo) {
+    const el = document.getElementById('avisoDropzoneArchivo');
+    if (!el) return;
+    if (archivo) {
+      el.textContent = `Archivo seleccionado: ${archivo.name}`;
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
+  }
+
+  configuracionPanel.addEventListener('click', (event) => {
     if (event.target.closest('#configuracionFormErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();
+      return;
+    }
+    if (event.target.closest('#configuracionFormSuccessDismiss')) {
+      event.target.closest('.form-success-banner')?.remove();
+      return;
+    }
+    // Excluir el propio <input> evita un loop: al hacer input.click() desde
+    // aquí, ese click sintético también burbujea hasta este mismo listener.
+    if (event.target.closest('#avisoDropzone') && event.target.id !== 'avisoArchivoInput') {
+      document.getElementById('avisoArchivoInput')?.click();
     }
   });
+
+  configuracionPanel.addEventListener('change', (event) => {
+    if (event.target.id === 'avisoArchivoInput') {
+      mostrarArchivoSeleccionado(event.target.files?.[0]);
+    }
+  });
+
+  configuracionPanel.addEventListener('dragover', (event) => {
+    const zona = event.target.closest('#avisoDropzone');
+    if (!zona) return;
+    event.preventDefault();
+    zona.classList.add('is-dragover');
+  });
+
+  configuracionPanel.addEventListener('dragleave', (event) => {
+    event.target.closest('#avisoDropzone')?.classList.remove('is-dragover');
+  });
+
+  configuracionPanel.addEventListener('drop', (event) => {
+    const zona = event.target.closest('#avisoDropzone');
+    if (!zona) return;
+    event.preventDefault();
+    zona.classList.remove('is-dragover');
+    const archivo = event.dataTransfer.files?.[0];
+    if (!archivo) return;
+    document.getElementById('avisoArchivoInput').files = event.dataTransfer.files;
+    mostrarArchivoSeleccionado(archivo);
+  });
+
+  // Antes de enviar de verdad, se pregunta al servidor si ESE archivo (mismo
+  // nombre + mismo contenido, sin importar qué versión se le vaya a poner)
+  // ya está registrado. Se usa el gancho htmx:confirm (mismo mecanismo de
+  // confirmModal.js) en vez de interceptar el 'submit' a mano: htmx
+  // conserva el <input type="file"> intacto y, al confirmar, reenvía la
+  // misma petición ya construida (issueRequest) sin volver a serializar el
+  // formulario.
+  configuracionPanel.addEventListener('htmx:confirm', (event) => {
+    if (event.target.id !== 'configuracionAvisoForm') return;
+    event.preventDefault();
+    verificarArchivoAntesDeGuardarAviso(event.target, event.detail);
+  });
+
+  async function calcularSha256(archivo) {
+    const buffer = await archivo.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  async function verificarArchivoAntesDeGuardarAviso(form, detail) {
+    const archivo = form.querySelector('#avisoArchivoInput')?.files?.[0];
+    let existe = false;
+    try {
+      if (archivo) {
+        const hash = await calcularSha256(archivo);
+        const params = new URLSearchParams({ nombreOriginal: archivo.name, hash });
+        const res = await fetch(`configuracion/generales/archivo-existente?${params.toString()}`);
+        if (res.ok) existe = (await res.json()).existe;
+      }
+    } catch {
+      existe = false;
+    }
+    if (!existe) {
+      detail.issueRequest(true);
+      return;
+    }
+    const confirmado = await openConfirmModal(
+      'Se encontró un archivo con el mismo nombre y contenido guardado anteriormente. ¿Desea proceder?',
+      'Confirmar cambio',
+    );
+    if (confirmado) detail.issueRequest(true);
+  }
 </script>
 
 </body>
