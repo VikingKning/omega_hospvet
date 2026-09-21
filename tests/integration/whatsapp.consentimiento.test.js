@@ -537,14 +537,26 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
   // servicio de configuración esté mockeado.
   beforeAll(async () => {
     await db('aviso_privacidad_versiones').insert([
-      { version: 'v1.0', nombre_archivo: 'aviso-reconsent-v1.pdf', nombre_original: 'v1.pdf' },
-      { version: 'v2.0', nombre_archivo: 'aviso-reconsent-v2.pdf', nombre_original: 'v2.pdf' },
+      {
+        version: 'lfpdppp-switch-v1.0',
+        nombre_archivo: 'aviso-reconsent-v1.pdf',
+        nombre_original: 'v1.pdf',
+      },
+      {
+        version: 'lfpdppp-switch-v2.0',
+        nombre_archivo: 'aviso-reconsent-v2.pdf',
+        nombre_original: 'v2.pdf',
+      },
     ]);
   });
 
   afterAll(async () => {
-    await db('consentimiento_lfpdppp').whereIn('version_aviso', ['v1.0', 'v2.0']).del();
-    await db('aviso_privacidad_versiones').whereIn('version', ['v1.0', 'v2.0']).del();
+    await db('consentimiento_lfpdppp')
+      .whereIn('version_aviso', ['lfpdppp-switch-v1.0', 'lfpdppp-switch-v2.0'])
+      .del();
+    await db('aviso_privacidad_versiones')
+      .whereIn('version', ['lfpdppp-switch-v1.0', 'lfpdppp-switch-v2.0'])
+      .del();
   });
 
   async function insertarAceptoPrevio(telefono, versionAceptada) {
@@ -558,10 +570,10 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
 
   it('un acepto de una versión vieja sigue contando si la vigente NO requiere reconsentimiento', async () => {
     const telefono = '5215500880050';
-    await insertarAceptoPrevio('525500880050', 'v1.0');
+    await insertarAceptoPrevio('525500880050', 'lfpdppp-switch-v1.0');
     jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
       ...AVISO_MOCK,
-      version: 'v2.0',
+      version: 'lfpdppp-switch-v2.0',
       requiereReconsentimiento: false,
     });
 
@@ -576,10 +588,10 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
 
   it('con el switch activo, un acepto de una versión vieja se ignora y se reenvía el aviso', async () => {
     const telefono = '5215500880051';
-    await insertarAceptoPrevio('525500880051', 'v1.0');
+    await insertarAceptoPrevio('525500880051', 'lfpdppp-switch-v1.0');
     jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
       ...AVISO_MOCK,
-      version: 'v2.0',
+      version: 'lfpdppp-switch-v2.0',
       requiereReconsentimiento: true,
     });
     jest
@@ -597,18 +609,18 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
       .where('telefono', '525500880051')
       .orderBy('creado_en', 'asc');
     expect(filas).toHaveLength(2);
-    expect(filas[0]).toMatchObject({ acepto: true, version_aviso: 'v1.0' });
-    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'v2.0' });
+    expect(filas[0]).toMatchObject({ acepto: true, version_aviso: 'lfpdppp-switch-v1.0' });
+    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'lfpdppp-switch-v2.0' });
     // Sí se reenvió el aviso (media + mensaje interactivo).
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('con el switch activo, quien ya aceptó justo la versión vigente no se le vuelve a preguntar', async () => {
     const telefono = '5215500880052';
-    await insertarAceptoPrevio('525500880052', 'v2.0');
+    await insertarAceptoPrevio('525500880052', 'lfpdppp-switch-v2.0');
     jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
       ...AVISO_MOCK,
-      version: 'v2.0',
+      version: 'lfpdppp-switch-v2.0',
       requiereReconsentimiento: true,
     });
 
@@ -628,12 +640,12 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
   // que ya ni siquiera era la vigente — el bot dejó de contestarle.
   it('si el admin revierte a una versión ya aceptada, el tutor deja de estar atorado en la re-pregunta abandonada', async () => {
     const telefono = '5215500880053';
-    await insertarAceptoPrevio('525500880053', 'v1.0');
+    await insertarAceptoPrevio('525500880053', 'lfpdppp-switch-v1.0');
 
     // El admin sube (por error) una versión que requiere reconsentimiento.
     jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValueOnce({
       ...AVISO_MOCK,
-      version: 'v2.0',
+      version: 'lfpdppp-switch-v2.0',
       requiereReconsentimiento: true,
     });
     jest
@@ -647,7 +659,7 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
     // había aceptado), sin que el tutor haya respondido nunca al aviso de v2.0.
     configuracionService.obtenerVersionVigenteParaEnvio.mockResolvedValue({
       ...AVISO_MOCK,
-      version: 'v1.0',
+      version: 'lfpdppp-switch-v1.0',
       requiereReconsentimiento: false,
     });
 
@@ -675,7 +687,7 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
     // Primera versión que requiere reconsentimiento: dispara una pendiente.
     jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValueOnce({
       ...AVISO_MOCK,
-      version: 'v1.0',
+      version: 'lfpdppp-switch-v1.0',
       requiereReconsentimiento: true,
     });
     await postTexto(`${WAMID_PREFIX}reconsent-doble-0`, telefono, 'hola');
@@ -686,7 +698,7 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
     // respondió a la primera.
     configuracionService.obtenerVersionVigenteParaEnvio.mockResolvedValue({
       ...AVISO_MOCK,
-      version: 'v2.0',
+      version: 'lfpdppp-switch-v2.0',
       requiereReconsentimiento: true,
     });
     const res = await postTexto(`${WAMID_PREFIX}reconsent-doble-1`, telefono, 'hola otra vez');
@@ -698,8 +710,8 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
       .where('telefono', '525500880054')
       .orderBy('creado_en', 'asc');
     expect(filas).toHaveLength(2);
-    expect(filas[0]).toMatchObject({ acepto: null, version_aviso: 'v1.0' }); // abandonada, intacta
-    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'v2.0' }); // la que de verdad se está pidiendo
+    expect(filas[0]).toMatchObject({ acepto: null, version_aviso: 'lfpdppp-switch-v1.0' }); // abandonada, intacta
+    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'lfpdppp-switch-v2.0' }); // la que de verdad se está pidiendo
     // Sí se reenvió el aviso otra vez (media + mensaje interactivo) para v2.0.
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
@@ -717,7 +729,7 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
 
     jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValueOnce({
       ...AVISO_MOCK,
-      version: 'v1.0',
+      version: 'lfpdppp-switch-v1.0',
       requiereReconsentimiento: true,
     });
     await postTexto(`${WAMID_PREFIX}reconsent-primera-0`, telefono, 'hola');
@@ -726,7 +738,7 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
 
     configuracionService.obtenerVersionVigenteParaEnvio.mockResolvedValue({
       ...AVISO_MOCK,
-      version: 'v2.0',
+      version: 'lfpdppp-switch-v2.0',
       requiereReconsentimiento: false,
     });
     const res = await postTexto(`${WAMID_PREFIX}reconsent-primera-1`, telefono, 'hola otra vez');
@@ -739,7 +751,7 @@ describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', ()
       .where('telefono', '525500880055')
       .orderBy('creado_en', 'asc');
     expect(filas).toHaveLength(2);
-    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'v2.0' });
+    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'lfpdppp-switch-v2.0' });
   });
 });
 

@@ -70,5 +70,11 @@ jobs:
           pnpm run seed:test
 
       # jest.config.js ya carga .env.test vía setupFiles (tests/setup-env.js).
+      # --runInBand (test:ci): varios archivos comparten tablas globales
+      # reales (configuracion_sistema, aviso_privacidad_versiones) sin poder
+      # namespacearlas por test — con workers en paralelo, dos test files
+      # pisándose esas filas al mismo tiempo produce fallas intermitentes
+      # (visto en vivo 2026-09-21). En local queda "pnpm test" (paralelo,
+      # más rápido) para el ciclo de desarrollo normal.
       - name: Tests
-        run: pnpm test
+        run: pnpm run test:ci
