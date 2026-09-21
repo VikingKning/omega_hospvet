@@ -15,6 +15,7 @@ const app = require('../../src/app');
 const db = require('../../src/config/database');
 const { store: sessionStore } = require('../../src/config/session');
 const configuracionRepository = require('../../src/modules/configuracion/configuracion.repository');
+const configuracionService = require('../../src/modules/configuracion/configuracion.service');
 const laboratorioArchivos = require('../../src/modules/laboratorio/laboratorio.archivos');
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
@@ -46,14 +47,15 @@ async function getConfiguracionCsrfToken(agent) {
 
 async function subirAviso(
   agent,
-  { version, filename, contenido, contentType = 'application/pdf' },
+  { version, filename, contenido, contentType = 'application/pdf', reenviar },
 ) {
   const csrfToken = await getConfiguracionCsrfToken(agent);
-  return agent
+  const req = agent
     .post('/configuracion/generales.html')
     .set('x-csrf-token', csrfToken)
-    .field('version', version ?? '')
-    .attach('archivo', Buffer.from(contenido), { filename, contentType });
+    .field('version', version ?? '');
+  if (reenviar) req.field('reenviar', 'true');
+  return req.attach('archivo', Buffer.from(contenido), { filename, contentType });
 }
 
 async function archivoVigente() {
@@ -397,5 +399,66 @@ describe('POST /configuracion/generales.html', () => {
     expect(res.text).not.toContain('v1.pdf'); // la más vieja, ya fuera del top 5
     const versiones = await db('aviso_privacidad_versiones').select('id');
     expect(versiones).toHaveLength(6); // en BD sí se conservan todas
+  });
+
+  it('por default una versión nueva NO requiere reconsentimiento', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    await subirAviso(agent, { version: 'v1.0', filename: 'v1.pdf', contenido: '%PDF-1.4 uno' });
+
+    const fila = await db('aviso_privacidad_versiones').where({ version: 'v1.0' }).first();
+    expect(fila.requiere_reconsentimiento).toBe(false);
+  });
+
+  it('el switch "Reenviar a todos" marca la versión vigente como que requiere reconsentimiento', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    await subirAviso(agent, {
+      version: 'v1.0',
+      filename: 'v1.pdf',
+      contenido: '%PDF-1.4 uno',
+      reenviar: true,
+    });
+
+    const fila = await db('aviso_privacidad_versiones').where({ version: 'v1.0' }).first();
+    expect(fila.requiere_reconsentimiento).toBe(true);
+  });
+
+  it('reactivar un archivo ya registrado (mismo nombre+contenido) también respeta el switch de reenviar', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await subirAviso(agent, { version: 'v1.0', filename: 'v1.pdf', contenido: '%PDF-1.4 uno' });
+
+    await subirAviso(agent, {
+      version: 'v2.0',
+      filename: 'v1.pdf',
+      contenido: '%PDF-1.4 uno',
+      reenviar: true,
+    });
+
+    const filaV1 = await db('aviso_privacidad_versiones').where({ version: 'v1.0' }).first();
+    const filaV2 = await db('aviso_privacidad_versiones').where({ version: 'v2.0' }).first();
+    expect(filaV1.requiere_reconsentimiento).toBe(false); // no se tocó
+    expect(filaV2.requiere_reconsentimiento).toBe(true); // el registro nuevo sí
+  });
+
+  // Bug real reportado 2026-09-21: dos versiones (v1.0 sin reenviar, v2.0
+  // con reenviar) terminan compartiendo el MISMO archivo físico (ver test
+  // anterior) — obtenerVersionVigenteParaEnvio buscaba esa fila por
+  // nombre_archivo, que ya no es único, y podía devolver la vieja (v1.0,
+  // requiere_reconsentimiento:false) en vez de la vigente (v2.0, true).
+  it('obtenerVersionVigenteParaEnvio no se confunde cuando dos versiones comparten el mismo archivo', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await subirAviso(agent, { version: 'v1.0', filename: 'v1.pdf', contenido: '%PDF-1.4 uno' });
+    await subirAviso(agent, {
+      version: 'v2.0',
+      filename: 'v1.pdf',
+      contenido: '%PDF-1.4 uno',
+      reenviar: true,
+    });
+
+    const vigente = await configuracionService.obtenerVersionVigenteParaEnvio();
+
+    expect(vigente.version).toBe('v2.0');
+    expect(vigente.requiereReconsentimiento).toBe(true);
   });
 });

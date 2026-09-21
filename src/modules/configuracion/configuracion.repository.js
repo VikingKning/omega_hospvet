@@ -23,7 +23,7 @@ async function guardarValores(valores, usuarioId, trx) {
 }
 
 async function insertarVersionAviso(
-  { version, nombreArchivo, nombreOriginal, hashContenido, usuarioId },
+  { version, nombreArchivo, nombreOriginal, hashContenido, requiereReconsentimiento, usuarioId },
   trx,
 ) {
   const conexion = trx ?? db;
@@ -33,6 +33,7 @@ async function insertarVersionAviso(
       nombre_archivo: nombreArchivo,
       nombre_original: nombreOriginal,
       hash_contenido: hashContenido,
+      requiere_reconsentimiento: Boolean(requiereReconsentimiento),
       subido_por: usuarioId,
     })
     .returning('*');
@@ -54,10 +55,6 @@ async function listarUltimasVersionesAviso(limite) {
     );
 }
 
-async function obtenerVersionPorNombreArchivo(nombreArchivo) {
-  return db('aviso_privacidad_versiones').where({ nombre_archivo: nombreArchivo }).first();
-}
-
 async function obtenerVersionPorVersion(version) {
   return db('aviso_privacidad_versiones').where({ version }).orderBy('creado_en', 'desc').first();
 }
@@ -69,11 +66,15 @@ async function obtenerVersionPorNombreYHash(nombreOriginal, hashContenido) {
     .first();
 }
 
-async function reactivarVersion(id, usuarioId, trx) {
+async function reactivarVersion(id, usuarioId, requiereReconsentimiento, trx) {
   const conexion = trx ?? db;
   const [fila] = await conexion('aviso_privacidad_versiones')
     .where({ id })
-    .update({ creado_en: conexion.fn.now(), subido_por: usuarioId })
+    .update({
+      creado_en: conexion.fn.now(),
+      subido_por: usuarioId,
+      requiere_reconsentimiento: Boolean(requiereReconsentimiento),
+    })
     .returning('*');
   return fila;
 }
@@ -87,7 +88,6 @@ module.exports = {
   guardarValores,
   insertarVersionAviso,
   listarUltimasVersionesAviso,
-  obtenerVersionPorNombreArchivo,
   obtenerVersionPorVersion,
   obtenerVersionPorNombreYHash,
   reactivarVersion,

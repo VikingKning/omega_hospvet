@@ -691,6 +691,62 @@ describe('US WA 017 — reactivación por comando del tutor (AC11-AC14/AC18)', (
     expect(mensajeIgnorado.conversacion_id).not.toBe(resultado.conversacionId);
     expect(mensajeIgnorado.group_id).toBeNull();
   });
+
+  // Bug real reportado 2026-09-21: el tutor cae en atención humana por una
+  // EMERGENCIA real (no por LFPDPPP). Mientras sigue ahí, el admin sube una
+  // versión nueva del aviso que requiere reconsentimiento. El tutor escribe
+  // "menu" para recuperar al bot y, en vez de que el gate lo interceptara,
+  // se le mostraba el menú directo — saltándose el aviso.
+  it('"menu" durante atención humana por emergencia real revisa el gate de LFPDPPP antes de mostrar el menú', async () => {
+    const configuracionService = require('../../src/modules/configuracion/configuracion.service');
+    const VERSION = 'v-emergencia-menu-test';
+    await db('aviso_privacidad_versiones').insert({
+      version: VERSION,
+      nombre_archivo: 'aviso-emergencia-menu-test.pdf',
+      nombre_original: 'Aviso.pdf',
+    });
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+      archivo: 'aviso.pdf',
+      version: VERSION,
+      nombreArchivo: 'Aviso.pdf',
+      requiereReconsentimiento: true,
+    });
+
+    try {
+      const telefono = generarTelefono();
+      const vieja = await conversacionEnAtencionHumana(telefono);
+
+      const resultado = await repository.registrarMensajeYConversacion({
+        whatsappMessageId: 'wamid.ah-emergencia-menu-sin-aceptar',
+        telefonoOrigen: `521${telefono.slice(2)}`,
+        phoneNumberId: PHONE_NUMBER_ID,
+        telefonoNormalizado: telefono,
+        tipoMensaje: 'text',
+        contenido: 'menu',
+        recibidoEn: new Date(),
+      });
+
+      // Nunca salta directo al menú: el gate lo intercepta primero.
+      expect(resultado.disparaMenuInmediato).toBeFalsy();
+      const mensaje = await db('mensajes_whatsapp')
+        .where({ whatsapp_message_id: 'wamid.ah-emergencia-menu-sin-aceptar' })
+        .first();
+      expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
+      // La vieja sí se cierra (el tutor pidió salir de atención humana),
+      // con la misma etiqueta que cualquier reactivación por comando.
+      const viejaActualizada = await recargarConversacion(vieja.id);
+      expect(viejaActualizada.estado).toBe('cerrada');
+      expect(viejaActualizada.motivo_cierre).toBe('solicitud_tutor');
+      const pendiente = await db('consentimiento_lfpdppp')
+        .where({ telefono, version_aviso: VERSION })
+        .first();
+      expect(pendiente).toBeTruthy();
+    } finally {
+      jest.restoreAllMocks();
+      await db('consentimiento_lfpdppp').where('version_aviso', VERSION).del();
+      await db('aviso_privacidad_versiones').where('version', VERSION).del();
+    }
+  });
 });
 
 // Un rechazo del aviso de privacidad (LFPDPPP) usa el MISMO mecanismo de
@@ -701,6 +757,25 @@ describe('US WA 017 — reactivación por comando del tutor (AC11-AC14/AC18)', (
 // escribir debe reaparecer el aviso de privacidad, nunca el menú principal.
 describe('LFPDPPP — un rechazo no es una atención humana genérica (bug reportado 2026-09-20)', () => {
   const configuracionService = require('../../src/modules/configuracion/configuracion.service');
+  const AVISO_VERSION = 'v1.0-atencionhumana-test';
+
+  // version_aviso tiene FK contra aviso_privacidad_versiones.version (ver
+  // migración 20260919000007) y evaluarEstado ahora solo considera filas de
+  // consentimiento_lfpdppp que coincidan con la versión vigente (ver
+  // migración/fix 2026-09-20) — hace falta una fila real y que el rechazo
+  // manual de abajo la referencie explícitamente.
+  beforeAll(async () => {
+    await db('aviso_privacidad_versiones').insert({
+      version: AVISO_VERSION,
+      nombre_archivo: 'aviso-atencionhumana-test.pdf',
+      nombre_original: 'Aviso.pdf',
+    });
+  });
+
+  afterAll(async () => {
+    await db('consentimiento_lfpdppp').where('version_aviso', AVISO_VERSION).del();
+    await db('aviso_privacidad_versiones').where('version', AVISO_VERSION).del();
+  });
 
   async function conversacionPorRechazoLfpdppp(telefono, { vencida = false } = {}) {
     const ahora = new Date();
@@ -722,6 +797,7 @@ describe('LFPDPPP — un rechazo no es una atención humana genérica (bug repor
       telefono,
       acepto: false,
       canal: 'whatsapp',
+      version_aviso: AVISO_VERSION,
       creado_en: ahora,
     });
     return conversacion;
@@ -732,9 +808,11 @@ describe('LFPDPPP — un rechazo no es una atención humana genérica (bug repor
   });
 
   it('escribir "menu" mientras el rechazo sigue vigente NO reactiva el bot ni muestra el menú', async () => {
-    jest
-      .spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio')
-      .mockResolvedValue({ archivo: 'aviso.pdf', version: 'v1.0', nombreArchivo: 'Aviso.pdf' });
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+      archivo: 'aviso.pdf',
+      version: AVISO_VERSION,
+      nombreArchivo: 'Aviso.pdf',
+    });
     const telefono = generarTelefono();
     const vieja = await conversacionPorRechazoLfpdppp(telefono);
 
@@ -749,19 +827,27 @@ describe('LFPDPPP — un rechazo no es una atención humana genérica (bug repor
     });
 
     expect(resultado.disparaMenuInmediato).toBeFalsy();
-    expect(resultado.conversacionId).toBe(vieja.id); // nunca crea una conversación nueva
     const mensaje = await db('mensajes_whatsapp')
       .where({ whatsapp_message_id: 'wamid.lfpdppp-menu-bloqueado' })
       .first();
     expect(mensaje.estado_procesamiento).not.toBe('comando_reactivacion_bot');
-    const conversacion = await recargarConversacion(vieja.id);
-    expect(conversacion.estado).toBe('atencion_humana'); // sigue igual, no pasa a esperando_menu
+    expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_rechazo');
+    // La conversación vieja (atencion_humana) se cierra siempre — el gate
+    // de LFPDPPP, no el temporizador de atención humana, decide si el bot
+    // sigue en silencio (pedido explícito del usuario, 2026-09-21).
+    const viejaActualizada = await recargarConversacion(vieja.id);
+    expect(viejaActualizada.estado).toBe('cerrada');
+    const nueva = await recargarConversacion(resultado.conversacionId);
+    expect(nueva.id).not.toBe(vieja.id);
+    expect(nueva.estado).not.toBe('esperando_menu');
   });
 
   it('al vencer la ventana, el siguiente mensaje vuelve a pedir el aviso de privacidad — no sigue el flujo normal', async () => {
-    jest
-      .spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio')
-      .mockResolvedValue({ archivo: 'aviso.pdf', version: 'v1.0', nombreArchivo: 'Aviso.pdf' });
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+      archivo: 'aviso.pdf',
+      version: AVISO_VERSION,
+      nombreArchivo: 'Aviso.pdf',
+    });
     const telefono = generarTelefono();
     const vieja = await conversacionPorRechazoLfpdppp(telefono, { vencida: true });
 
@@ -784,6 +870,71 @@ describe('LFPDPPP — un rechazo no es una atención humana genérica (bug repor
     // Sigue rechazado hace <24h (evaluarEstado) => se ignora otra vez, no se
     // clasifica ni se enruta como un mensaje normal.
     expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_rechazo');
+  });
+
+  // Bug real reportado 2026-09-21: el tutor rechazó la v4 (entra a
+  // atención humana, ventana de 5h). El admin sube una v6 distinta que SÍ
+  // requiere reconsentimiento, TODAVÍA dentro de esa ventana de 5h. El
+  // tutor escribe "menu" antes de que la ventana venza — debía volver a
+  // pedirle el aviso (la vigente cambió), pero se quedaba atorado en
+  // silencio hasta que la ventana de atención humana venciera por su
+  // cuenta, sin importar que la versión ya fuera otra.
+  it('si la vigente cambia mientras la ventana de atención humana sigue activa, se vuelve a preguntar de inmediato', async () => {
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+      archivo: 'aviso.pdf',
+      version: AVISO_VERSION,
+      nombreArchivo: 'Aviso.pdf',
+    });
+    const telefono = generarTelefono();
+    // Ventana de atención humana TODAVÍA vigente (no vencida).
+    const vieja = await conversacionPorRechazoLfpdppp(telefono, { vencida: false });
+
+    // El admin sube una versión NUEVA (distinta) que también requiere
+    // reconsentimiento — simulando que cambió mientras el tutor seguía
+    // "castigado" por el rechazo de la anterior. version_aviso tiene FK
+    // contra aviso_privacidad_versiones.version, así que hace falta la
+    // fila real para esta prueba en particular.
+    const OTRA_VERSION = `${AVISO_VERSION}-nueva`;
+    await db('aviso_privacidad_versiones').insert({
+      version: OTRA_VERSION,
+      nombre_archivo: 'aviso-atencionhumana-test-nueva.pdf',
+      nombre_original: 'Aviso.pdf',
+    });
+    configuracionService.obtenerVersionVigenteParaEnvio.mockResolvedValue({
+      archivo: 'aviso.pdf',
+      version: OTRA_VERSION,
+      nombreArchivo: 'Aviso.pdf',
+    });
+
+    try {
+      const resultado = await repository.registrarMensajeYConversacion({
+        whatsappMessageId: 'wamid.lfpdppp-version-cambio-en-atencion-humana',
+        telefonoOrigen: `521${telefono.slice(2)}`,
+        phoneNumberId: PHONE_NUMBER_ID,
+        telefonoNormalizado: telefono,
+        tipoMensaje: 'text',
+        contenido: 'menu',
+        recibidoEn: new Date(),
+      });
+
+      // Se cierra la vieja (el gate ya no depende del temporizador de
+      // atención humana) y el mensaje dispara una re-pregunta nueva, no el
+      // menú ni un silencio indefinido.
+      const viejaActualizada = await recargarConversacion(vieja.id);
+      expect(viejaActualizada.estado).toBe('cerrada');
+      expect(resultado.disparaMenuInmediato).toBeFalsy();
+      const mensaje = await db('mensajes_whatsapp')
+        .where({ whatsapp_message_id: 'wamid.lfpdppp-version-cambio-en-atencion-humana' })
+        .first();
+      expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
+      const nuevoPendiente = await db('consentimiento_lfpdppp')
+        .where({ telefono, version_aviso: OTRA_VERSION })
+        .first();
+      expect(nuevoPendiente).toMatchObject({ acepto: null });
+    } finally {
+      await db('consentimiento_lfpdppp').where('version_aviso', OTRA_VERSION).del();
+      await db('aviso_privacidad_versiones').where('version', OTRA_VERSION).del();
+    }
   });
 });
 

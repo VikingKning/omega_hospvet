@@ -155,6 +155,14 @@ function textoAvisoPrivacidadNoDisponible(telefonoClinica) {
   );
 }
 
+function textoAvisoPrivacidadEnvioFallido(telefonoClinica) {
+  return (
+    'Tuvimos un problema técnico al enviarte el aviso de privacidad que necesitas aceptar para continuar. ' +
+    'Vuelve a escribirnos en unos minutos para intentarlo de nuevo; ' +
+    `si el problema persiste, contáctanos al ${telefonoClinica}.`
+  );
+}
+
 module.exports = {
   normalizarTexto,
   esSaludoPuro,
@@ -166,6 +174,7 @@ module.exports = {
   textoSolicitudEmergencia,
   textoRespaldoEmergencia,
   textoAvisoPrivacidadNoDisponible,
+  textoAvisoPrivacidadEnvioFallido,
   RESPUESTA_CONTINUAR,
   RESPUESTA_VOLVER_MENU,
   seguimientoInteractivePayload,

@@ -53,6 +53,22 @@
             Versión del aviso
             <input type="text" name="version" maxlength="50" placeholder="Ej. v1.0 (vacío = v.AAAAMMDD de hoy)">
           </label>
+          <div class="aviso-reenviar-field">
+            <label class="switch-field">
+              Reenviar a todos
+              <span class="switch">
+                <input type="checkbox" name="reenviar" value="true" id="avisoReenviarInput">
+                <span class="switch-track"></span>
+              </span>
+              <span class="switch-state-on">Sí</span>
+              <span class="switch-state-off">No</span>
+            </label>
+            <p class="aviso-field-hint">
+              Actívalo solo si esta versión cambia condiciones o finalidades (no un simple ajuste de
+              formato): todos los tutores, incluso quienes ya habían aceptado, deberán aceptarla de
+              nuevo en su próximo mensaje. Los registros de aceptación anteriores no se pierden.
+            </p>
+          </div>
           <div class="modal-actions">
             <button type="submit" class="btn-primary">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right: 6px; vertical-align: -2px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>

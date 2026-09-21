@@ -107,11 +107,26 @@ async function registrarEventoEntrante(evento) {
     }
   }
   if (pipelinePersistido === repository.PIPELINE_NUEVO && resultado.necesitaEnviarAvisoLfpdppp) {
-    await consentimientoService.enviarAvisoPrivacidad({
+    const enviado = await consentimientoService.enviarAvisoPrivacidad({
       conversacionId: resultado.conversacionId,
       telefono: telefonoNormalizado,
       claveIdempotenciaBase: `mensaje:${evento.whatsappMessageId}`,
     });
+    if (!enviado.enviado && enviado.motivo !== 'sin_configurar') {
+      await intentarEnvioMenu({
+        claveIdempotencia: `mensaje:${evento.whatsappMessageId}:lfpdppp_aviso:respaldo`,
+        tipoEnvio: 'conversacional',
+        origenFuncional: 'respuesta_automatica',
+        conversacionId: resultado.conversacionId,
+        destinatarioTelefono: telefonoNormalizado,
+        payloadFuncional: {
+          tipo: 'text',
+          destinatarioTelefono: telefonoNormalizado,
+          texto: menu.textoAvisoPrivacidadEnvioFallido(TELEFONO_CLINICA),
+        },
+        usaPlantilla: false,
+      });
+    }
   }
   if (
     pipelinePersistido === repository.PIPELINE_NUEVO &&

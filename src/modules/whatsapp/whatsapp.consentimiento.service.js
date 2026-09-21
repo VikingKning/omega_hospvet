@@ -13,13 +13,17 @@ async function subirAvisoVigenteAMeta() {
   // consentimiento nueva (con muchos tutores nuevos simultáneos, subirlo
   // una sola vez es lo que evita 50 subidas idénticas).
   if (version.mediaId) {
-    return { mediaId: version.mediaId, nombreArchivo: version.nombreArchivo };
+    return {
+      mediaId: version.mediaId,
+      nombreArchivo: version.nombreArchivo,
+      version: version.version,
+    };
   }
 
   const buffer = await configuracionService.leerArchivoAviso(version.archivo);
   const mediaId = await whatsappEnvios.subirMedia(buffer, 'application/pdf', version.nombreArchivo);
   await configuracionService.actualizarMediaIdVersion(version.versionId, mediaId);
-  return { mediaId, nombreArchivo: version.nombreArchivo };
+  return { mediaId, nombreArchivo: version.nombreArchivo, version: version.version };
 }
 
 async function enviarIntento(datosIntento, conversacionId, descripcionError) {
@@ -68,7 +72,9 @@ async function enviarAvisoPrivacidad({ conversacionId, telefono, claveIdempotenc
           document: { id: subida.mediaId, filename: subida.nombreArchivo },
         },
         body: {
-          text: 'Para continuar, ¿aceptas el aviso de privacidad y tratamiento de datos personales adjunto?',
+          text:
+            `Para continuar, es necesario que aceptes la última versión (${subida.version}) ` +
+            'del aviso de privacidad y tratamiento de datos personales adjunto. ¿Aceptas?',
         },
         action: {
           buttons: [

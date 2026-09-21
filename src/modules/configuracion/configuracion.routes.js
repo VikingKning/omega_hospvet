@@ -11,7 +11,7 @@ const router = express.Router();
 
 const uploadAviso = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 3 },
 });
 
 const MULTER_ERROR_MESSAGES = {

@@ -33,16 +33,23 @@ function esRespuestaBoton(tipoMensaje, contenido) {
   );
 }
 
-async function buscarUltimoRegistro(telefono, trx) {
+async function buscarUltimoRegistroDeVersion(telefono, version, trx) {
   const conexion = trx ?? db;
   return conexion('consentimiento_lfpdppp')
-    .where({ telefono })
+    .where({ telefono, version_aviso: version })
     .orderBy('creado_en', 'desc')
     .first();
 }
 
-async function evaluarEstado(telefono, trx) {
-  const fila = await buscarUltimoRegistro(telefono, trx);
+async function buscarUltimoAcepto(telefono, trx) {
+  const conexion = trx ?? db;
+  return conexion('consentimiento_lfpdppp')
+    .where({ telefono, acepto: true })
+    .orderBy('creado_en', 'desc')
+    .first();
+}
+
+function evaluarFilaDeVersion(fila) {
   if (!fila) return { estado: ESTADOS.NECESITA_PREGUNTAR, fila: null };
   if (fila.acepto === true) return { estado: ESTADOS.ACEPTADO, fila };
 
@@ -60,7 +67,38 @@ async function evaluarEstado(telefono, trx) {
     : { estado: ESTADOS.NECESITA_PREGUNTAR, fila: null };
 }
 
-async function insertarPendiente({ telefono, propietarioId, avisoEnviadoEn, versionAviso }, trx) {
+// `versionVigente` viene de configuracion.service#obtenerVersionVigenteParaEnvio.
+// El estado depende SIEMPRE de la versión vigente actual, nunca de una
+// versión anterior ya reemplazada: en cuanto el admin sube un archivo
+// nuevo — lo marque o no como "requiere reconsentimiento" — cualquier
+// pendiente o rechazo de la versión anterior queda sin efecto (pedido
+// explícito del usuario, 2026-09-20: "una vez que suba el archivo nuevo...
+// debe eliminar el estado anterior y configurar el actual, requiera o no
+// reconfirmación"). Solo un ACEPTO se conserva entre versiones, y solo
+// cuando la vigente no exige reconsentimiento — por default, aceptar una
+// versión vieja sigue contando para siempre (un PDF que solo corrige
+// formato no debería re-pedir consentimiento). Las filas nunca se borran
+// ni se modifican por esto — solo dejan de decidir el estado actual.
+async function evaluarEstado(telefono, versionVigente, trx) {
+  if (!versionVigente) return { estado: ESTADOS.NECESITA_PREGUNTAR, fila: null };
+
+  if (!versionVigente.requiereReconsentimiento) {
+    const aceptoPrevio = await buscarUltimoAcepto(telefono, trx);
+    if (aceptoPrevio) return { estado: ESTADOS.ACEPTADO, fila: aceptoPrevio };
+  }
+
+  const filaDeEstaVersion = await buscarUltimoRegistroDeVersion(
+    telefono,
+    versionVigente.version,
+    trx,
+  );
+  return evaluarFilaDeVersion(filaDeEstaVersion);
+}
+
+async function insertarPendiente(
+  { telefono, propietarioId, avisoEnviadoEn, versionAviso, mensajePendienteId },
+  trx,
+) {
   const conexion = trx ?? db;
   const [fila] = await conexion('consentimiento_lfpdppp')
     .insert({
@@ -70,6 +108,7 @@ async function insertarPendiente({ telefono, propietarioId, avisoEnviadoEn, vers
       canal: 'whatsapp',
       aviso_enviado_en: avisoEnviadoEn,
       version_aviso: versionAviso ?? null,
+      mensaje_pendiente_id: mensajePendienteId ?? null,
     })
     .returning('*');
   return fila;
@@ -100,7 +139,6 @@ module.exports = {
   BOTON_RECHAZO_ID,
   esRespuestaBoton,
   evaluarEstado,
-  buscarUltimoRegistro,
   insertarPendiente,
   resolverPendiente,
   insertarConsentimientoPanel,

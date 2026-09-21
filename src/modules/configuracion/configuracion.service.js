@@ -85,7 +85,14 @@ async function existeArchivoAviso({ nombreOriginal, hash }) {
   return { existe: Boolean(fila) };
 }
 
-async function guardarAvisoPrivacidad({ buffer, nombreOriginal, mimeType, version, usuarioId }) {
+async function guardarAvisoPrivacidad({
+  buffer,
+  nombreOriginal,
+  mimeType,
+  version,
+  reenviar,
+  usuarioId,
+}) {
   if (!TIPOS_PERMITIDOS.has(mimeType)) {
     throw new ConfiguracionValidationError(
       'El aviso de privacidad debe ser un PDF o un documento de Word (.doc/.docx).',
@@ -112,7 +119,7 @@ async function guardarAvisoPrivacidad({ buffer, nombreOriginal, mimeType, versio
   if (coincidencia) {
     await db.transaction(async (trx) => {
       if (coincidencia.version === versionFinal) {
-        await repository.reactivarVersion(coincidencia.id, usuarioId, trx);
+        await repository.reactivarVersion(coincidencia.id, usuarioId, Boolean(reenviar), trx);
       } else {
         await repository.insertarVersionAviso(
           {
@@ -120,6 +127,7 @@ async function guardarAvisoPrivacidad({ buffer, nombreOriginal, mimeType, versio
             nombreArchivo: coincidencia.nombre_archivo,
             nombreOriginal,
             hashContenido,
+            requiereReconsentimiento: reenviar,
             usuarioId,
           },
           trx,
@@ -157,7 +165,14 @@ async function guardarAvisoPrivacidad({ buffer, nombreOriginal, mimeType, versio
 
   await db.transaction(async (trx) => {
     await repository.insertarVersionAviso(
-      { version: versionFinal, nombreArchivo, nombreOriginal, hashContenido, usuarioId },
+      {
+        version: versionFinal,
+        nombreArchivo,
+        nombreOriginal,
+        hashContenido,
+        requiereReconsentimiento: reenviar,
+        usuarioId,
+      },
       trx,
     );
     await repository.guardarValores(
@@ -182,13 +197,20 @@ async function guardarAvisoPrivacidad({ buffer, nombreOriginal, mimeType, versio
 async function obtenerVersionVigenteParaEnvio() {
   const { archivo, version, nombreOriginal } = await obtenerAvisoPrivacidad();
   if (!archivo) return null;
-  const fila = await repository.obtenerVersionPorNombreArchivo(archivo);
+  // Por versión, NUNCA por nombre_archivo: desde que varias filas pueden
+  // compartir el mismo archivo físico (reutilización por contenido, ver
+  // migración 20260919000009), buscar solo por nombre_archivo es ambiguo y
+  // puede devolver una fila vieja con requiere_reconsentimiento/media_id
+  // equivocados — bug real visto en vivo 2026-09-21. `version` sigue
+  // siendo única (migración 20260919000007).
+  const fila = await repository.obtenerVersionPorVersion(version);
   return {
     versionId: fila?.id ?? null,
     mediaId: fila?.media_id ?? null,
     archivo,
     version,
     nombreArchivo: nombreOriginal || archivo,
+    requiereReconsentimiento: fila?.requiere_reconsentimiento ?? false,
   };
 }
 

@@ -48,6 +48,7 @@ async function guardarAviso(req, res, next) {
       nombreOriginal: Buffer.from(req.file.originalname, 'latin1').toString('utf8'),
       mimeType: req.file.mimetype,
       version: req.body.version,
+      reenviar: req.body.reenviar === 'true',
       usuarioId: req.session.user.id,
     });
     const versiones = await service.listarUltimasVersionesAviso();

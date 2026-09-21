@@ -362,7 +362,11 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
     telefonoOrigen,
     recibidoEn,
   } = evento;
-  const { estado, fila } = await consentimiento.evaluarEstado(telefonoNormalizado, trx);
+  const { estado, fila } = await consentimiento.evaluarEstado(
+    telefonoNormalizado,
+    avisoConfigurado,
+    trx,
+  );
 
   if (estado === consentimiento.ESTADOS.ACEPTADO) return null;
 
@@ -380,6 +384,37 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
       recibidoEn,
       estadoProcesamiento: 'resuelto_lfpdppp',
     });
+
+    // Al aceptar, se retoma tal cual lo que el tutor había escrito antes de
+    // que el aviso lo interceptara — para que no tenga que volver a
+    // escribirlo (pedido explícito del usuario, 2026-09-21). Se procesa
+    // como un mensaje genuinamente nuevo sobre la conversación actual
+    // (mismo mecanismo que cualquier mensaje entrante real): si era "menu"
+    // dispara el menú de inmediato, si no, entra a la ventana normal de
+    // agrupación. Filas de antes de este cambio (o de alta por panel) no
+    // tienen nada que retomar — se comportan como hasta ahora.
+    if (acepto && fila.mensaje_pendiente_id) {
+      const mensajeOriginal = await trx('mensajes_whatsapp')
+        .where({ id: fila.mensaje_pendiente_id })
+        .first();
+      if (mensajeOriginal) {
+        return procesarMensajeSobreConversacion(trx, {
+          conversacion,
+          esNueva: true,
+          evento: {
+            whatsappMessageId: `${mensajeOriginal.whatsapp_message_id}:lfpdppp_continuacion`,
+            telefonoOrigen: mensajeOriginal.telefono_origen,
+            tipoMensaje: mensajeOriginal.tipo_mensaje,
+            contenido: mensajeOriginal.mensaje_recibido,
+            mediaId: mensajeOriginal.media_id,
+            mimeType: mensajeOriginal.mime_type,
+            recibidoEn,
+            pipelineAsignado: PIPELINE_NUEVO,
+          },
+        });
+      }
+    }
+
     return {
       ...RESULTADO_ATENCION_HUMANA_BASE,
       id,
@@ -394,38 +429,71 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
     const propietario = await trx('propietarios')
       .where({ telefono: telefonoNormalizado.slice(-10) })
       .first('id');
+    // Este SÍ guarda el contenido real (a diferencia del resto de mensajes
+    // ignorados) — es lo único que permite retomarlo si el tutor acepta.
+    const mensajeRetenido = await atencionHumana.crearMensajeIgnorado(trx, {
+      whatsappMessageId,
+      telefonoOrigen,
+      tipoMensaje,
+      conversacionId: conversacion.id,
+      recibidoEn,
+      estadoProcesamiento: 'ignorado_lfpdppp_pendiente',
+      mensajeRecibido: contenido ?? null,
+      mediaId: evento.mediaId ?? null,
+      mimeType: evento.mimeType ?? null,
+    });
     await consentimiento.insertarPendiente(
       {
         telefono: telefonoNormalizado,
         propietarioId: propietario?.id ?? null,
         avisoEnviadoEn: recibidoEn,
         versionAviso: avisoConfigurado.version,
+        mensajePendienteId: mensajeRetenido.id,
       },
       trx,
     );
+    return {
+      ...RESULTADO_ATENCION_HUMANA_BASE,
+      id: mensajeRetenido.id,
+      esNuevo: mensajeRetenido.esNuevo,
+      conversacionId: conversacion.id,
+      estadoResultante: conversacion.estado,
+      necesitaEnviarAvisoLfpdppp: true,
+    };
   }
 
-  // NECESITA_PREGUNTAR, PENDIENTE_VIGENTE (mensaje que no es el botón) o
-  // RECHAZADO_RECIENTE: en los tres casos este mensaje entrante se ignora.
+  // PENDIENTE_VIGENTE (mensaje que no es el botón): puede ser que el tutor
+  // simplemente no ha contestado, o que borró/ignoró el aviso, o que el
+  // envío original ni siquiera llegó (falla de Media API/token de Meta, ya
+  // vista en producción). No hay forma barata de distinguir esos casos, así
+  // que se reenvía el aviso completo en cada mensaje de espera (pedido
+  // explícito del usuario, 2026-09-21: mejor insistir que dejarlo varado en
+  // silencio) — con una clave de idempotencia propia por mensaje entrante,
+  // para que sí sea un envío nuevo aunque el intento original ya haya
+  // quedado "enviado" en outbox_whatsapp.
+  //
+  // RECHAZADO_RECIENTE es distinto: el tutor ya tomó una decisión (rechazar)
+  // para la versión vigente, así que no tiene sentido volver a insistir con
+  // el mismo aviso.
   const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
     whatsappMessageId,
     telefonoOrigen,
     tipoMensaje,
     conversacionId: conversacion.id,
     recibidoEn,
-    // varchar(30): 'ignorado_consentimiento_pendiente'/'_rechazado' no caben.
     estadoProcesamiento:
       estado === consentimiento.ESTADOS.RECHAZADO_RECIENTE
         ? 'ignorado_lfpdppp_rechazo'
         : 'ignorado_lfpdppp_pendiente',
   });
+
   return {
     ...RESULTADO_ATENCION_HUMANA_BASE,
     id,
     esNuevo,
     conversacionId: conversacion.id,
     estadoResultante: conversacion.estado,
-    necesitaEnviarAvisoLfpdppp: estado === consentimiento.ESTADOS.NECESITA_PREGUNTAR,
+    necesitaEnviarAvisoLfpdppp: estado === consentimiento.ESTADOS.PENDIENTE_VIGENTE,
   };
 }
 
@@ -441,14 +509,39 @@ const RESULTADO_ATENCION_HUMANA_BASE = {
 
 async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
   // Un rechazo del aviso de privacidad NO es una atención humana genérica:
-  // ni "escribe 'menu' para recuperar al bot" ni "se venció la ventana,
-  // sigue normal" deben aplicar aquí — mientras el rechazo siga vigente
-  // (evaluarEstado, 24h) el bot debe seguir en silencio, y al re-preguntar
-  // debe ser el aviso de privacidad, no el menú principal.
+  // ni "escribe 'menu' para recuperar al bot" ni la ventana de 5h de
+  // atención humana deciden nada aquí — SIEMPRE se reevalúa contra el gate
+  // de LFPDPPP (evaluarEstado ya sabe si sigue rechazado reciente para la
+  // MISMA versión vigente, o si hay que volver a preguntar porque la
+  // vigente cambió mientras tanto — pedido explícito del usuario,
+  // 2026-09-20/21: la versión vigente manda, no un temporizador genérico
+  // pensado para transferencias a personal). Se cierra y se abre una
+  // conversación nueva en cualquier caso (venza o no la ventana de 5h),
+  // para no dejarla atorada en estado atencion_humana esperando un
+  // vencimiento que ya dejó de ser relevante.
   const esPorConsentimiento = await atencionHumana.tieneSolicitudPorConsentimiento(
     conversacion.id,
     trx,
   );
+
+  if (esPorConsentimiento) {
+    const nueva = await atencionHumana.cerrarPorVencimientoYCrearNueva(trx, conversacion, {
+      ahora: evento.recibidoEn,
+      phoneNumberId: evento.phoneNumberId,
+      telefonoNormalizado: evento.telefonoNormalizado,
+    });
+    const conversacionActual = nueva ?? conversacion;
+    const resultadoConsentimiento = await procesarConsentimientoLfpdppp(trx, {
+      conversacion: conversacionActual,
+      evento,
+    });
+    if (resultadoConsentimiento) return resultadoConsentimiento;
+    return procesarMensajeSobreConversacion(trx, {
+      conversacion: conversacionActual,
+      esNueva: true,
+      evento,
+    });
+  }
 
   const vencidaRow = await trx('conversaciones_whatsapp')
     .where({ id: conversacion.id })
@@ -460,13 +553,6 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
       phoneNumberId: evento.phoneNumberId,
       telefonoNormalizado: evento.telefonoNormalizado,
     });
-    if (esPorConsentimiento) {
-      const resultadoConsentimiento = await procesarConsentimientoLfpdppp(trx, {
-        conversacion: nueva,
-        evento,
-      });
-      if (resultadoConsentimiento) return resultadoConsentimiento;
-    }
     return procesarMensajeSobreConversacion(trx, {
       conversacion: nueva,
       esNueva: true,
@@ -475,12 +561,60 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
   }
 
   const esComandoReactivacion =
-    !esPorConsentimiento &&
     evento.tipoMensaje === 'text' &&
     Boolean(evento.contenido) &&
     menu.esComandoMenu(evento.contenido);
 
   if (esComandoReactivacion) {
+    // Guarda de idempotencia (reintento de webhook de Meta) sin comprometerse
+    // todavía a una clasificación: qué fila crear depende de si el gate de
+    // LFPDPPP intercepta o no (ver abajo), así que primero solo se
+    // comprueba si este wamid ya se procesó.
+    const yaExiste = await trx('mensajes_whatsapp')
+      .where({ whatsapp_message_id: evento.whatsappMessageId })
+      .first('id');
+    if (yaExiste) {
+      return {
+        ...RESULTADO_ATENCION_HUMANA_BASE,
+        id: null,
+        esNuevo: false,
+        conversacionId: conversacion.id,
+        estadoResultante: conversacion.estado,
+      };
+    }
+
+    // "menu" no debe saltarse el aviso de privacidad: si la versión vigente
+    // cambió mientras el tutor estaba en atención humana por una emergencia
+    // real (no por LFPDPPP), reactivar no debe mostrar el menú directo —
+    // primero hay que volver a preguntar (pedido explícito del usuario,
+    // 2026-09-21: "menu" mostraba el menú en vez del aviso). Chequeo de solo
+    // lectura, sin tocar nada todavía, para decidir cuál de los dos caminos
+    // tomar abajo.
+    const avisoConfigurado = await configuracionService.obtenerVersionVigenteParaEnvio();
+    const estadoConsentimiento = avisoConfigurado
+      ? (await consentimiento.evaluarEstado(evento.telefonoNormalizado, avisoConfigurado, trx))
+          .estado
+      : null;
+    const gateIntercepta =
+      Boolean(avisoConfigurado) && estadoConsentimiento !== consentimiento.ESTADOS.ACEPTADO;
+
+    if (gateIntercepta) {
+      // Se sale de atención humana igual que en la reactivación normal
+      // (motivo_cierre='solicitud_tutor', fue el tutor quien pidió salir),
+      // pero a un estado neutral desde el que el gate decide qué sigue en
+      // vez de saltar directo al menú.
+      const nueva = await atencionHumana.cerrarPorVencimientoYCrearNueva(trx, conversacion, {
+        ahora: evento.recibidoEn,
+        phoneNumberId: evento.phoneNumberId,
+        telefonoNormalizado: evento.telefonoNormalizado,
+        motivoCierre: 'solicitud_tutor',
+      });
+      return procesarConsentimientoLfpdppp(trx, {
+        conversacion: nueva ?? conversacion,
+        evento,
+      });
+    }
+
     const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
       whatsappMessageId: evento.whatsappMessageId,
       telefonoOrigen: evento.telefonoOrigen,
@@ -489,15 +623,6 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
       recibidoEn: evento.recibidoEn,
       estadoProcesamiento: 'comando_reactivacion_bot',
     });
-    if (!esNuevo) {
-      return {
-        ...RESULTADO_ATENCION_HUMANA_BASE,
-        id,
-        esNuevo,
-        conversacionId: conversacion.id,
-        estadoResultante: conversacion.estado,
-      };
-    }
 
     const nueva = await atencionHumana.reactivarPorComandoDelTutor(trx, conversacion, {
       ahora: evento.recibidoEn,
@@ -507,7 +632,7 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
     return {
       ...RESULTADO_ATENCION_HUMANA_BASE,
       id,
-      esNuevo: true,
+      esNuevo,
       conversacionId: nueva ? nueva.id : conversacion.id,
       disparaMenuInmediato: Boolean(nueva),
       estadoResultante: nueva ? 'esperando_menu' : conversacion.estado,

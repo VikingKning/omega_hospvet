@@ -143,6 +143,22 @@
   }
 
   async function verificarArchivoAntesDeGuardarAviso(form, detail) {
+    // "Reenviar a todos" fuerza que TODOS los tutores —incluso los que ya
+    // habían aceptado— vuelvan a aceptar en su siguiente mensaje. Es una
+    // acción de alto impacto (bloquea el bot para gente que ya estaba al
+    // corriente) y sin retroceso fácil una vez que empiezan a llegar
+    // mensajes, así que pide confirmación explícita SIEMPRE que esté
+    // marcado, sin importar si el archivo ya existía o no (evitó por poco
+    // un incidente real el 2026-09-20: se subió por error un documento que
+    // no era el aviso, con este switch activo).
+    if (form.querySelector('#avisoReenviarInput')?.checked) {
+      const confirmaReenvio = await openConfirmModal(
+        'Vas a exigir que TODOS los tutores acepten de nuevo el aviso de privacidad en su próximo mensaje, incluso quienes ya lo habían aceptado antes. Verifica que el archivo seleccionado sea el correcto. ¿Confirmas que quieres continuar?',
+        'Sí, reenviar a todos',
+      );
+      if (!confirmaReenvio) return;
+    }
+
     const archivo = form.querySelector('#avisoArchivoInput')?.files?.[0];
     let existe = false;
     try {

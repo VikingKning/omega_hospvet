@@ -78,10 +78,15 @@ afterAll(async () => {
   await db('destinatarios_alerta_whatsapp').whereIn('alerta_id', alertaIds).del();
   await db('alertas_atencion_whatsapp').whereIn('id', alertaIds).del();
   await db('solicitudes_atencion_humana').whereIn('conversacion_id', conversacionIds).del();
-  await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
-  await db('consentimiento_lfpdppp').where('telefono', 'like', '5255008800%').del();
+  // mensajes_whatsapp y grupos_whatsapp deben borrarse ANTES que
+  // outbox_whatsapp: grupos_whatsapp.intento_envio_id referencia
+  // outbox_whatsapp, así que borrarlo primero rompería esa FK (se vio
+  // pasar en vivo 2026-09-21, con el worker de agrupación formando un
+  // grupo real para el mensaje que se retoma al aceptar el aviso).
   await db('mensajes_whatsapp').where('whatsapp_message_id', 'like', `${WAMID_PREFIX}%`).del();
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
+  await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
+  await db('consentimiento_lfpdppp').where('telefono', 'like', '5255008800%').del();
   await db('conversaciones_whatsapp').where('phone_number_id', PHONE_NUMBER_ID).del();
   await db.destroy();
 });
@@ -241,7 +246,7 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
     });
   });
 
-  it('un segundo mensaje mientras está pendiente se ignora y NO reenvía el aviso (ni sube el PDF de nuevo)', async () => {
+  it('un segundo mensaje mientras está pendiente reenvía el aviso completo de nuevo (el tutor pudo haberlo borrado o ignorado)', async () => {
     const telefono = '5215500880011';
     await postTexto(`${WAMID_PREFIX}pendiente-1`, telefono, 'hola');
     expect(global.fetch).toHaveBeenCalledTimes(2);
@@ -249,9 +254,61 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
     const res = await postTexto(`${WAMID_PREFIX}pendiente-2`, telefono, 'sigo esperando');
 
     expect(res.status).toBe(200);
-    expect(global.fetch).toHaveBeenCalledTimes(2); // no se volvió a mandar ni a subir
+    // Se reenvía completo con una clave propia (ligada al mensaje de espera
+    // actual, no al original) — pedido explícito del usuario, 2026-09-21:
+    // mejor insistir que dejarlo varado en silencio si borró o ignoró el
+    // aviso anterior.
+    expect(global.fetch).toHaveBeenCalledTimes(4);
+    const intentoReenviado = await db('outbox_whatsapp')
+      .where({ clave_idempotencia: `mensaje:${WAMID_PREFIX}pendiente-2:lfpdppp_aviso` })
+      .first();
+    expect(intentoReenviado).toMatchObject({ estado: 'enviado' });
     const mensaje = await ultimoMensaje(`${WAMID_PREFIX}pendiente-2`);
     expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
+  });
+
+  it('si el envío original nunca llegó a Meta (falla al subir el PDF), el siguiente mensaje reenvía y sí llega', async () => {
+    const telefono = '5215500880099';
+    let primeraSubidaFalla = true;
+    global.fetch = jest.fn().mockImplementation(async (url) => {
+      if (String(url).includes('/fake/media')) {
+        if (primeraSubidaFalla) {
+          primeraSubidaFalla = false;
+          return {
+            ok: false,
+            status: 401,
+            json: () => Promise.resolve({ error: { message: 'Authentication Error' } }),
+          };
+        }
+        contadorMediaFake += 1;
+        return { ok: true, json: () => Promise.resolve({ id: `media-fake-${contadorMediaFake}` }) };
+      }
+      contadorWamidFake += 1;
+      return {
+        ok: true,
+        json: () =>
+          Promise.resolve({ messages: [{ id: `wamid.lfpdppp-fake-${contadorWamidFake}` }] }),
+      };
+    });
+
+    const res1 = await postTexto(`${WAMID_PREFIX}reintento-1`, telefono, 'hola');
+    expect(res1.status).toBe(200);
+
+    // La subida truena antes de registrar el intento: no queda ningún
+    // rastro en outbox_whatsapp, a diferencia de un envío que sí se
+    // intenta y falla.
+    const sinRastro = await db('outbox_whatsapp')
+      .where({ clave_idempotencia: `${WAMID_PREFIX}reintento-1:lfpdppp_aviso` })
+      .first();
+    expect(sinRastro).toBeUndefined();
+
+    const res2 = await postTexto(`${WAMID_PREFIX}reintento-2`, telefono, 'sigo esperando');
+    expect(res2.status).toBe(200);
+
+    const intentoReintentado = await db('outbox_whatsapp')
+      .where({ clave_idempotencia: `mensaje:${WAMID_PREFIX}reintento-2:lfpdppp_aviso` })
+      .first();
+    expect(intentoReintentado).toMatchObject({ estado: 'enviado' });
   });
 
   it('al aceptar el aviso, se resuelve la fila y los mensajes posteriores fluyen normal', async () => {
@@ -275,6 +332,56 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
     expect(resTexto.status).toBe(200);
     const mensajeReal = await ultimoMensaje(`${WAMID_PREFIX}acepta-real`);
     expect(mensajeReal.estado_procesamiento).not.toMatch(/lfpdppp/);
+  });
+
+  it('al aceptar, retoma el mensaje original que disparó la pregunta, sin que el tutor lo tenga que reescribir', async () => {
+    const telefono = '5215500880016';
+    await postTexto(`${WAMID_PREFIX}retoma-0`, telefono, 'mi perro no quiere comer');
+
+    const resBoton = await postBoton(
+      `${WAMID_PREFIX}retoma-acepto`,
+      telefono,
+      'lfpdppp_acepto',
+      'Estoy de acuerdo',
+    );
+    expect(resBoton.status).toBe(200);
+
+    // Se retoma con un id derivado del original, como un mensaje pendiente
+    // normal — no se le pide nada de nuevo al tutor.
+    const retomado = await ultimoMensaje(`${WAMID_PREFIX}retoma-0:lfpdppp_continuacion`);
+    expect(retomado).toMatchObject({
+      tipo_mensaje: 'text',
+      mensaje_recibido: 'mi perro no quiere comer',
+      estado_procesamiento: 'pendiente',
+      group_id: null,
+    });
+    // No se clasifica de inmediato — sigue la ventana normal de
+    // agrupación, igual que cualquier mensaje nuevo real.
+    expect(claude.clasificarMensaje).not.toHaveBeenCalled();
+  });
+
+  it('si el mensaje original era un comando de menú, al aceptar se muestra el menú principal de inmediato', async () => {
+    const telefono = '5215500880017';
+    await postTexto(`${WAMID_PREFIX}retomamenu-0`, telefono, 'menu');
+
+    global.fetch.mockClear();
+    const resBoton = await postBoton(
+      `${WAMID_PREFIX}retomamenu-acepto`,
+      telefono,
+      'lfpdppp_acepto',
+      'Estoy de acuerdo',
+    );
+    expect(resBoton.status).toBe(200);
+    await esperarFireAndForget();
+
+    const [conversacion] = await buscarConversacion('525500880017');
+    expect(conversacion.estado).toBe('esperando_menu');
+    // El menú interactivo real se manda solo, sin que el tutor tenga que
+    // volver a escribir "menu".
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [, opciones] = global.fetch.mock.calls[0];
+    const cuerpo = JSON.parse(opciones.body);
+    expect(cuerpo.interactive?.type).toBe('list');
   });
 
   it('al rechazar el aviso, se resuelve la fila y se solicita atención humana', async () => {
@@ -327,6 +434,224 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
   });
 });
 
+// Switch "Reenviar a todos" (2026-09-20): por default, un acepto viejo
+// sigue contando para siempre aunque suba una versión nueva (un PDF que
+// solo corrige formato no debería re-pedir consentimiento). Cuando el
+// admin marca la versión vigente como que SÍ requiere reconsentimiento
+// (cambio material), cualquiera cuyo último acepto no sea justo de esa
+// versión debe volver a preguntarse — sin borrar el registro viejo.
+describe('LFPDPPP — switch "Reenviar a todos" (requiere_reconsentimiento)', () => {
+  // version_aviso tiene FK contra aviso_privacidad_versiones.version (ver
+  // migración 20260919000007) — hacen falta filas reales aunque el
+  // servicio de configuración esté mockeado.
+  beforeAll(async () => {
+    await db('aviso_privacidad_versiones').insert([
+      { version: 'v1.0', nombre_archivo: 'aviso-reconsent-v1.pdf', nombre_original: 'v1.pdf' },
+      { version: 'v2.0', nombre_archivo: 'aviso-reconsent-v2.pdf', nombre_original: 'v2.pdf' },
+    ]);
+  });
+
+  afterAll(async () => {
+    await db('consentimiento_lfpdppp').whereIn('version_aviso', ['v1.0', 'v2.0']).del();
+    await db('aviso_privacidad_versiones').whereIn('version', ['v1.0', 'v2.0']).del();
+  });
+
+  async function insertarAceptoPrevio(telefono, versionAceptada) {
+    await db('consentimiento_lfpdppp').insert({
+      telefono,
+      acepto: true,
+      canal: 'whatsapp',
+      version_aviso: versionAceptada,
+    });
+  }
+
+  it('un acepto de una versión vieja sigue contando si la vigente NO requiere reconsentimiento', async () => {
+    const telefono = '5215500880050';
+    await insertarAceptoPrevio('525500880050', 'v1.0');
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+      ...AVISO_MOCK,
+      version: 'v2.0',
+      requiereReconsentimiento: false,
+    });
+
+    const res = await postTexto(`${WAMID_PREFIX}reconsent-no-1`, telefono, 'hola de nuevo');
+
+    expect(res.status).toBe(200);
+    const mensaje = await ultimoMensaje(`${WAMID_PREFIX}reconsent-no-1`);
+    expect(mensaje.estado_procesamiento).not.toMatch(/lfpdppp/);
+    const filas = await db('consentimiento_lfpdppp').where('telefono', '525500880050');
+    expect(filas).toHaveLength(1); // no se insertó nada nuevo
+  });
+
+  it('con el switch activo, un acepto de una versión vieja se ignora y se reenvía el aviso', async () => {
+    const telefono = '5215500880051';
+    await insertarAceptoPrevio('525500880051', 'v1.0');
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+      ...AVISO_MOCK,
+      version: 'v2.0',
+      requiereReconsentimiento: true,
+    });
+    jest
+      .spyOn(configuracionService, 'leerArchivoAviso')
+      .mockResolvedValue(Buffer.from('%PDF-1.4 fake'));
+
+    const res = await postTexto(`${WAMID_PREFIX}reconsent-si-1`, telefono, 'hola de nuevo');
+
+    expect(res.status).toBe(200);
+    const mensaje = await ultimoMensaje(`${WAMID_PREFIX}reconsent-si-1`);
+    expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
+    // El acepto viejo de v1.0 sigue intacto; se agrega una fila nueva
+    // "pendiente" para la v2.0, en vez de borrar o modificar la anterior.
+    const filas = await db('consentimiento_lfpdppp')
+      .where('telefono', '525500880051')
+      .orderBy('creado_en', 'asc');
+    expect(filas).toHaveLength(2);
+    expect(filas[0]).toMatchObject({ acepto: true, version_aviso: 'v1.0' });
+    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'v2.0' });
+    // Sí se reenvió el aviso (media + mensaje interactivo).
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('con el switch activo, quien ya aceptó justo la versión vigente no se le vuelve a preguntar', async () => {
+    const telefono = '5215500880052';
+    await insertarAceptoPrevio('525500880052', 'v2.0');
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValue({
+      ...AVISO_MOCK,
+      version: 'v2.0',
+      requiereReconsentimiento: true,
+    });
+
+    const res = await postTexto(`${WAMID_PREFIX}reconsent-igual-1`, telefono, 'hola de nuevo');
+
+    expect(res.status).toBe(200);
+    const mensaje = await ultimoMensaje(`${WAMID_PREFIX}reconsent-igual-1`);
+    expect(mensaje.estado_procesamiento).not.toMatch(/lfpdppp/);
+    const filas = await db('consentimiento_lfpdppp').where('telefono', '525500880052');
+    expect(filas).toHaveLength(1);
+  });
+
+  // Bug real reportado 2026-09-20: el admin subió por error un archivo con
+  // "Reenviar a todos" activo (disparando una re-pregunta pendiente), y
+  // luego revirtió la versión vigente a una que el tutor ya había aceptado
+  // antes. El tutor se quedó "atorado" esperando respuesta a una versión
+  // que ya ni siquiera era la vigente — el bot dejó de contestarle.
+  it('si el admin revierte a una versión ya aceptada, el tutor deja de estar atorado en la re-pregunta abandonada', async () => {
+    const telefono = '5215500880053';
+    await insertarAceptoPrevio('525500880053', 'v1.0');
+
+    // El admin sube (por error) una versión que requiere reconsentimiento.
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValueOnce({
+      ...AVISO_MOCK,
+      version: 'v2.0',
+      requiereReconsentimiento: true,
+    });
+    jest
+      .spyOn(configuracionService, 'leerArchivoAviso')
+      .mockResolvedValue(Buffer.from('%PDF-1.4 fake'));
+    await postTexto(`${WAMID_PREFIX}reconsent-revert-0`, telefono, 'hola');
+    const pendiente = await ultimoMensaje(`${WAMID_PREFIX}reconsent-revert-0`);
+    expect(pendiente.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente'); // se disparó la re-pregunta
+
+    // El admin se da cuenta del error y revierte a v1.0 (la que ya se
+    // había aceptado), sin que el tutor haya respondido nunca al aviso de v2.0.
+    configuracionService.obtenerVersionVigenteParaEnvio.mockResolvedValue({
+      ...AVISO_MOCK,
+      version: 'v1.0',
+      requiereReconsentimiento: false,
+    });
+
+    const res = await postTexto(`${WAMID_PREFIX}reconsent-revert-1`, telefono, 'sigo aquí');
+
+    expect(res.status).toBe(200);
+    const mensaje = await ultimoMensaje(`${WAMID_PREFIX}reconsent-revert-1`);
+    expect(mensaje.estado_procesamiento).not.toMatch(/lfpdppp/); // ya no se ignora
+    // No se insertó una tercera fila: la v2.0 pendiente sigue como evidencia,
+    // pero la vigente respondida (v1.0) es la que decide.
+    const filas = await db('consentimiento_lfpdppp').where('telefono', '525500880053');
+    expect(filas).toHaveLength(2);
+  });
+
+  // Aclaración explícita del usuario, 2026-09-20: si DOS versiones seguidas
+  // requieren reconsentimiento, solo importa la respuesta a la ÚLTIMA — un
+  // pendiente sin resolver de la versión anterior queda abandonado, no
+  // bloquea la re-pregunta de la nueva.
+  it('si dos versiones seguidas requieren reconsentimiento, solo se pregunta por la última', async () => {
+    const telefono = '5215500880054';
+    jest
+      .spyOn(configuracionService, 'leerArchivoAviso')
+      .mockResolvedValue(Buffer.from('%PDF-1.4 fake'));
+
+    // Primera versión que requiere reconsentimiento: dispara una pendiente.
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValueOnce({
+      ...AVISO_MOCK,
+      version: 'v1.0',
+      requiereReconsentimiento: true,
+    });
+    await postTexto(`${WAMID_PREFIX}reconsent-doble-0`, telefono, 'hola');
+    const primeraPendiente = await ultimoMensaje(`${WAMID_PREFIX}reconsent-doble-0`);
+    expect(primeraPendiente.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
+
+    // Segunda versión, TAMBIÉN requiere reconsentimiento — el tutor nunca
+    // respondió a la primera.
+    configuracionService.obtenerVersionVigenteParaEnvio.mockResolvedValue({
+      ...AVISO_MOCK,
+      version: 'v2.0',
+      requiereReconsentimiento: true,
+    });
+    const res = await postTexto(`${WAMID_PREFIX}reconsent-doble-1`, telefono, 'hola otra vez');
+
+    expect(res.status).toBe(200);
+    const mensaje = await ultimoMensaje(`${WAMID_PREFIX}reconsent-doble-1`);
+    expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente'); // nueva re-pregunta, no la vieja
+    const filas = await db('consentimiento_lfpdppp')
+      .where('telefono', '525500880054')
+      .orderBy('creado_en', 'asc');
+    expect(filas).toHaveLength(2);
+    expect(filas[0]).toMatchObject({ acepto: null, version_aviso: 'v1.0' }); // abandonada, intacta
+    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'v2.0' }); // la que de verdad se está pidiendo
+    // Sí se reenvió el aviso otra vez (media + mensaje interactivo) para v2.0.
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  // Mismo caso que el de "revierte a una versión ya aceptada", pero sin
+  // ningún acepto previo en el historial: el tutor nunca ha aceptado nada,
+  // se quedó pendiente de una versión que requería reconsentimiento, y el
+  // admin sube otra que YA NO lo requiere. Debe tratarse como si fuera la
+  // primera vez (re-pregunta normal), no seguir esperando la vieja.
+  it('sin ningún acepto previo, si la nueva versión ya no requiere reconsentimiento se reinicia como primera vez', async () => {
+    const telefono = '5215500880055';
+    jest
+      .spyOn(configuracionService, 'leerArchivoAviso')
+      .mockResolvedValue(Buffer.from('%PDF-1.4 fake'));
+
+    jest.spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio').mockResolvedValueOnce({
+      ...AVISO_MOCK,
+      version: 'v1.0',
+      requiereReconsentimiento: true,
+    });
+    await postTexto(`${WAMID_PREFIX}reconsent-primera-0`, telefono, 'hola');
+    const primeraPendiente = await ultimoMensaje(`${WAMID_PREFIX}reconsent-primera-0`);
+    expect(primeraPendiente.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
+
+    configuracionService.obtenerVersionVigenteParaEnvio.mockResolvedValue({
+      ...AVISO_MOCK,
+      version: 'v2.0',
+      requiereReconsentimiento: false,
+    });
+    const res = await postTexto(`${WAMID_PREFIX}reconsent-primera-1`, telefono, 'hola otra vez');
+
+    expect(res.status).toBe(200);
+    const mensaje = await ultimoMensaje(`${WAMID_PREFIX}reconsent-primera-1`);
+    // Se reinicia: nueva re-pregunta para v2.0, no sigue atorado en v1.0.
+    expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
+    const filas = await db('consentimiento_lfpdppp')
+      .where('telefono', '525500880055')
+      .orderBy('creado_en', 'asc');
+    expect(filas).toHaveLength(2);
+    expect(filas[1]).toMatchObject({ acepto: null, version_aviso: 'v2.0' });
+  });
+});
+
 describe('LFPDPPP — el media_id se cachea y no se resube en cada solicitud', () => {
   const NOMBRE_ARCHIVO = 'aviso-privacidad-cache-test.pdf';
 
@@ -342,18 +667,27 @@ describe('LFPDPPP — el media_id se cachea y no se resube en cada solicitud', (
       ])
       .onConflict('clave')
       .merge(['valor']);
-    await db('aviso_privacidad_versiones').insert({
-      version: 'v-cache-test',
-      nombre_archivo: NOMBRE_ARCHIVO,
-      nombre_original: 'Aviso Cache Test.pdf',
-    });
+    // onConflict('version') en vez de un insert liso: si un run anterior
+    // dejó esta fila a medio limpiar (afterEach interrumpido), un insert
+    // liso chocaría con aviso_privacidad_versiones_version_unique y
+    // tumbaría TODA la suite en cascada — se vio pasar en vivo 2026-09-20.
+    await db('aviso_privacidad_versiones')
+      .insert({
+        version: 'v-cache-test',
+        nombre_archivo: NOMBRE_ARCHIVO,
+        nombre_original: 'Aviso Cache Test.pdf',
+      })
+      .onConflict('version')
+      .merge(['nombre_archivo', 'nombre_original', 'media_id']);
   });
 
   afterEach(async () => {
-    // Los consentimientos creados por este test referencian esta versión
-    // (FK con ON DELETE RESTRICT, ver migración 20260919000007) — deben
-    // borrarse primero o el delete de aviso_privacidad_versiones falla.
-    await db('consentimiento_lfpdppp').where('telefono', 'like', '52550088003%').del();
+    // Por version_aviso (no por prefijo de teléfono): cualquier fila que
+    // referencie esta versión debe borrarse primero o el delete de
+    // aviso_privacidad_versiones falla (FK con ON DELETE RESTRICT, ver
+    // migración 20260919000007) — un teléfono de OTRO test tocando esta
+    // misma versión por accidente ya dejó la suite entera en cascada.
+    await db('consentimiento_lfpdppp').where('version_aviso', 'v-cache-test').del();
     await db('configuracion_sistema').where('clave', 'like', 'aviso_privacidad_%').del();
     await db('aviso_privacidad_versiones').where({ nombre_archivo: NOMBRE_ARCHIVO }).del();
   });
@@ -442,6 +776,20 @@ describe('LFPDPPP — "Ver aviso de privacidad" en el menú principal', () => {
         'lfpdppp_acepto',
         'Estoy de acuerdo',
       );
+
+      // Al aceptar, el "hola" original se retoma como un mensaje pendiente
+      // normal (ver procesarConsentimientoLfpdppp) — en producción el
+      // worker de agrupación (cada pocos segundos) ya lo habría agrupado
+      // mucho antes de que el tutor alcance a escribir otra cosa. Se marca
+      // como ya resuelto en vez de invocar el worker real (que es GLOBAL,
+      // sin filtrar por conversación — arriesgaría atrapar la vencida de
+      // OTRA prueba de este archivo), para que no quede una fila
+      // "pendiente" huérfana confundiendo al siguiente comando "menu"
+      // (confirmarMenuEnviado también mira esa columna).
+      await db('mensajes_whatsapp')
+        .where('whatsapp_message_id', `${WAMID_PREFIX}menuaviso-0:lfpdppp_continuacion`)
+        .update({ estado_procesamiento: 'procesado' });
+
       await postTexto(`${WAMID_PREFIX}menuaviso-menu`, telefono, 'menu');
       await esperarFireAndForget();
 

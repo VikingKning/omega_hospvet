@@ -188,6 +188,15 @@ async function crearMensajeIgnorado(
     conversacionId,
     recibidoEn,
     estadoProcesamiento,
+    // Por default el contenido NUNCA se guarda para un mensaje que el bot
+    // ignoró (mismo criterio ya probado: AC13, "solo metadatos"). El único
+    // caso que sí lo necesita es LFPDPPP necesita_preguntar — para poder
+    // retomarlo tal cual si el tutor acepta (ver
+    // whatsapp.repository.js#procesarConsentimientoLfpdppp) — y lo pasa
+    // explícitamente.
+    mensajeRecibido = null,
+    mediaId = null,
+    mimeType = null,
   },
 ) {
   const [row] = await trx('mensajes_whatsapp')
@@ -198,9 +207,9 @@ async function crearMensajeIgnorado(
       conversacion_id: conversacionId,
       direccion: 'entrante',
       estado_procesamiento: estadoProcesamiento,
-      mensaje_recibido: null,
-      media_id: null,
-      mime_type: null,
+      mensaje_recibido: mensajeRecibido,
+      media_id: mediaId,
+      mime_type: mimeType,
       categoria_clasificacion: null,
       tokens_entrada: 0,
       tokens_salida: 0,
@@ -253,7 +262,7 @@ async function reactivarPorComandoDelTutor(
 async function cerrarPorVencimientoYCrearNueva(
   trx,
   conversacionVieja,
-  { ahora, phoneNumberId, telefonoNormalizado },
+  { ahora, phoneNumberId, telefonoNormalizado, motivoCierre = 'vencimiento_atencion_humana' },
 ) {
   await trx('conversaciones_whatsapp')
     .where({ id: conversacionVieja.id })
@@ -261,7 +270,7 @@ async function cerrarPorVencimientoYCrearNueva(
     .update({
       estado: 'cerrada',
       cerrado_en: ahora,
-      motivo_cierre: 'vencimiento_atencion_humana',
+      motivo_cierre: motivoCierre,
       updated_at: ahora,
     });
 
