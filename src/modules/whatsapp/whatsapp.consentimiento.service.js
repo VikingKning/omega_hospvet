@@ -126,7 +126,8 @@ async function enviarAvisoInformativo({ conversacionId, telefono, claveIdempoten
       document: {
         id: subida.mediaId,
         filename: subida.nombreArchivo,
-        caption: 'Compartimos el documento de Aviso de privacidad y tratamiento de datos personales vigente.',
+        caption:
+          'Compartimos el documento de Aviso de privacidad y tratamiento de datos personales vigente.',
       },
     },
     usaPlantilla: false,
