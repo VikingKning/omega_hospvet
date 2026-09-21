@@ -95,10 +95,7 @@ async function evaluarEstado(telefono, versionVigente, trx) {
   return evaluarFilaDeVersion(filaDeEstaVersion);
 }
 
-async function insertarPendiente(
-  { telefono, propietarioId, avisoEnviadoEn, versionAviso, mensajePendienteId },
-  trx,
-) {
+async function insertarPendiente({ telefono, propietarioId, avisoEnviadoEn, versionAviso }, trx) {
   const conexion = trx ?? db;
   const [fila] = await conexion('consentimiento_lfpdppp')
     .insert({
@@ -108,7 +105,6 @@ async function insertarPendiente(
       canal: 'whatsapp',
       aviso_enviado_en: avisoEnviadoEn,
       version_aviso: versionAviso ?? null,
-      mensaje_pendiente_id: mensajePendienteId ?? null,
     })
     .returning('*');
   return fila;

@@ -190,13 +190,16 @@ async function crearMensajeIgnorado(
     estadoProcesamiento,
     // Por default el contenido NUNCA se guarda para un mensaje que el bot
     // ignoró (mismo criterio ya probado: AC13, "solo metadatos"). El único
-    // caso que sí lo necesita es LFPDPPP necesita_preguntar — para poder
-    // retomarlo tal cual si el tutor acepta (ver
+    // caso que sí lo necesita es LFPDPPP mientras el tutor sigue pendiente
+    // de aceptar/rechazar — para poder retomarlo tal cual si acepta (ver
     // whatsapp.repository.js#procesarConsentimientoLfpdppp) — y lo pasa
-    // explícitamente.
+    // explícitamente junto con consentimientoPendienteId, que vincula el
+    // mensaje al episodio de consentimiento (permite juntar varios
+    // fragmentos y también borrarlos físicamente si rechaza).
     mensajeRecibido = null,
     mediaId = null,
     mimeType = null,
+    consentimientoPendienteId = null,
   },
 ) {
   const [row] = await trx('mensajes_whatsapp')
@@ -210,6 +213,7 @@ async function crearMensajeIgnorado(
       mensaje_recibido: mensajeRecibido,
       media_id: mediaId,
       mime_type: mimeType,
+      consentimiento_pendiente_id: consentimientoPendienteId,
       categoria_clasificacion: null,
       tokens_entrada: 0,
       tokens_salida: 0,

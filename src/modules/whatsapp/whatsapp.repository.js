@@ -347,6 +347,51 @@ async function registrarMensajeYConversacion({
 // respuestas interactivas huérfanas contaminando grupos). Devuelve `null`
 // cuando el consentimiento ya está aceptado y el flujo normal debe seguir;
 // en cualquier otro caso devuelve el resultado final del mensaje.
+// Junta los fragmentos retenidos de un episodio de consentimiento (bug real
+// visto en vivo 2026-09-21: el tutor escribe por partes mientras el gate lo
+// intercepta) en un solo evento "retomado". Con un solo fragmento se
+// preserva su tipo tal cual (texto o media); con varios, se prioriza
+// consolidar el texto (mismo criterio de join('\n') que
+// formarGrupoParaConversacion) porque es el caso real reportado — un mensaje
+// de media no se puede fusionar con otros, así que ese caso raro (ninguno
+// trae texto) simplemente retoma el último tal cual.
+function construirEventoRetomado(mensajesRetenidos) {
+  if (mensajesRetenidos.length === 0) return null;
+
+  const ultimo = mensajesRetenidos[mensajesRetenidos.length - 1];
+  if (mensajesRetenidos.length === 1) {
+    return {
+      whatsappMessageId: `${ultimo.whatsapp_message_id}:lfpdppp_continuacion`,
+      telefonoOrigen: ultimo.telefono_origen,
+      tipoMensaje: ultimo.tipo_mensaje,
+      contenido: ultimo.mensaje_recibido,
+      mediaId: ultimo.media_id,
+      mimeType: ultimo.mime_type,
+    };
+  }
+
+  const conTexto = mensajesRetenidos.filter((m) => m.mensaje_recibido);
+  if (conTexto.length === 0) {
+    return {
+      whatsappMessageId: `${ultimo.whatsapp_message_id}:lfpdppp_continuacion`,
+      telefonoOrigen: ultimo.telefono_origen,
+      tipoMensaje: ultimo.tipo_mensaje,
+      contenido: ultimo.mensaje_recibido,
+      mediaId: ultimo.media_id,
+      mimeType: ultimo.mime_type,
+    };
+  }
+
+  return {
+    whatsappMessageId: `${ultimo.whatsapp_message_id}:lfpdppp_continuacion`,
+    telefonoOrigen: ultimo.telefono_origen,
+    tipoMensaje: 'text',
+    contenido: conTexto.map((m) => m.mensaje_recibido).join('\n'),
+    mediaId: null,
+    mimeType: null,
+  };
+}
+
 async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
   // Sin aviso de privacidad configurado, la funcionalidad completa queda
   // apagada — el flujo se comporta exactamente igual que antes de que
@@ -368,7 +413,35 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
     trx,
   );
 
-  if (estado === consentimiento.ESTADOS.ACEPTADO) return null;
+  if (estado === consentimiento.ESTADOS.ACEPTADO) {
+    // Tap "suelto" de Estoy de acuerdo/No estoy de acuerdo sobre una copia
+    // vieja del aviso (el tutor escribió por partes, cada fragmento reenvía
+    // el aviso completo, y a veces toca el botón en más de una copia) —
+    // bug real visto en vivo 2026-09-21: sin este chequeo, ese tap caía al
+    // flujo normal como una respuesta interactiva no reconocida
+    // ("Esa opción ya no está disponible" o una respuesta genérica de
+    // Claude), confuso para el tutor que ya había aceptado. Se reconoce y
+    // se responde amigable en vez de dejarlo caer.
+    if (consentimiento.esRespuestaBoton(tipoMensaje, contenido)) {
+      const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
+        whatsappMessageId,
+        telefonoOrigen,
+        tipoMensaje,
+        conversacionId: conversacion.id,
+        recibidoEn,
+        estadoProcesamiento: 'ignorado_lfpdppp_ya_resuelto',
+      });
+      return {
+        ...RESULTADO_ATENCION_HUMANA_BASE,
+        id,
+        esNuevo,
+        conversacionId: conversacion.id,
+        estadoResultante: conversacion.estado,
+        avisoLfpdpppYaResuelto: true,
+      };
+    }
+    return null;
+  }
 
   if (
     estado === consentimiento.ESTADOS.PENDIENTE_VIGENTE &&
@@ -376,6 +449,15 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
   ) {
     const acepto = contenido === consentimiento.BOTON_ACEPTO_ID;
     await consentimiento.resolverPendiente({ id: fila.id, acepto, wamid: whatsappMessageId }, trx);
+
+    if (!acepto) {
+      // Borrado físico: no se guarda información de tutores que NO
+      // aceptaron el aviso de privacidad (pedido explícito del usuario,
+      // 2026-09-21) — se elimina el contenido real de todos los fragmentos
+      // retenidos de este episodio, no solo se marca/ignora.
+      await trx('mensajes_whatsapp').where({ consentimiento_pendiente_id: fila.id }).del();
+    }
+
     const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
       whatsappMessageId,
       telefonoOrigen,
@@ -387,30 +469,40 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
 
     // Al aceptar, se retoma tal cual lo que el tutor había escrito antes de
     // que el aviso lo interceptara — para que no tenga que volver a
-    // escribirlo (pedido explícito del usuario, 2026-09-21). Se procesa
-    // como un mensaje genuinamente nuevo sobre la conversación actual
-    // (mismo mecanismo que cualquier mensaje entrante real): si era "menu"
-    // dispara el menú de inmediato, si no, entra a la ventana normal de
-    // agrupación. Filas de antes de este cambio (o de alta por panel) no
-    // tienen nada que retomar — se comportan como hasta ahora.
-    if (acepto && fila.mensaje_pendiente_id) {
-      const mensajeOriginal = await trx('mensajes_whatsapp')
-        .where({ id: fila.mensaje_pendiente_id })
-        .first();
-      if (mensajeOriginal) {
+    // escribirlo (pedido explícito del usuario, 2026-09-21). Si escribió
+    // por partes mientras seguía pendiente, TODOS los fragmentos retenidos
+    // se juntan en un solo mensaje consolidado (mismo criterio que la
+    // agrupación normal, ver formarGrupoParaConversacion) y se procesan
+    // como un mensaje genuinamente nuevo sobre la conversación actual: si
+    // el resultado es "menu" dispara el menú de inmediato, si no, entra a
+    // la ventana normal de agrupación. Filas de antes de este cambio (o de
+    // alta por panel) no tienen nada que retomar — se comportan como hasta
+    // ahora.
+    if (acepto) {
+      const mensajesRetenidos = await trx('mensajes_whatsapp')
+        .where({ consentimiento_pendiente_id: fila.id })
+        .orderBy('recibido_en', 'asc');
+      const eventoRetomado = construirEventoRetomado(mensajesRetenidos);
+      if (eventoRetomado) {
+        // Se retoma sobre una conversación YA EXISTENTE (la que disparó el
+        // gate), no una recién creada — a diferencia de un mensaje
+        // genuinamente nuevo, su temporizador de agrupación
+        // (procesar_despues_de) nunca se armó mientras estuvo pendiente del
+        // aviso (esos mensajes nunca llegan a aplicarReglasDeInteraccion,
+        // que es lo único que lo arma). Sin esto, un mensaje retomado que no
+        // es un comando de menú se queda "pendiente" para siempre — bug real
+        // visto en vivo 2026-09-21: una mordedura de víbora nunca recibió
+        // respuesta. Se rearma igual que una conversación nueva; el propio
+        // trabajador de agrupación acepta tanto 'acumulando' como
+        // 'esperando_menu' con este campo vencido, así que no hace falta
+        // tocar el estado.
+        await trx('conversaciones_whatsapp')
+          .where({ id: conversacion.id })
+          .update({ procesar_despues_de: proximoProcesamiento(trx, DEBOUNCE_ACUMULANDO_MS) });
         return procesarMensajeSobreConversacion(trx, {
           conversacion,
           esNueva: true,
-          evento: {
-            whatsappMessageId: `${mensajeOriginal.whatsapp_message_id}:lfpdppp_continuacion`,
-            telefonoOrigen: mensajeOriginal.telefono_origen,
-            tipoMensaje: mensajeOriginal.tipo_mensaje,
-            contenido: mensajeOriginal.mensaje_recibido,
-            mediaId: mensajeOriginal.media_id,
-            mimeType: mensajeOriginal.mime_type,
-            recibidoEn,
-            pipelineAsignado: PIPELINE_NUEVO,
-          },
+          evento: { ...eventoRetomado, recibidoEn, pipelineAsignado: PIPELINE_NUEVO },
         });
       }
     }
@@ -429,6 +521,15 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
     const propietario = await trx('propietarios')
       .where({ telefono: telefonoNormalizado.slice(-10) })
       .first('id');
+    const pendiente = await consentimiento.insertarPendiente(
+      {
+        telefono: telefonoNormalizado,
+        propietarioId: propietario?.id ?? null,
+        avisoEnviadoEn: recibidoEn,
+        versionAviso: avisoConfigurado.version,
+      },
+      trx,
+    );
     // Este SÍ guarda el contenido real (a diferencia del resto de mensajes
     // ignorados) — es lo único que permite retomarlo si el tutor acepta.
     const mensajeRetenido = await atencionHumana.crearMensajeIgnorado(trx, {
@@ -441,17 +542,8 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
       mensajeRecibido: contenido ?? null,
       mediaId: evento.mediaId ?? null,
       mimeType: evento.mimeType ?? null,
+      consentimientoPendienteId: pendiente.id,
     });
-    await consentimiento.insertarPendiente(
-      {
-        telefono: telefonoNormalizado,
-        propietarioId: propietario?.id ?? null,
-        avisoEnviadoEn: recibidoEn,
-        versionAviso: avisoConfigurado.version,
-        mensajePendienteId: mensajeRetenido.id,
-      },
-      trx,
-    );
     return {
       ...RESULTADO_ATENCION_HUMANA_BASE,
       id: mensajeRetenido.id,
@@ -472,9 +564,16 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
   // para que sí sea un envío nuevo aunque el intento original ya haya
   // quedado "enviado" en outbox_whatsapp.
   //
+  // También se retiene el contenido real (bug real visto en vivo
+  // 2026-09-21: si el tutor escribe por partes mientras sigue pendiente,
+  // antes solo el primer fragmento sobrevivía para retomarlo al aceptar —
+  // ver construirEventoRetomado más arriba), vinculado al mismo episodio
+  // (fila.id) para poder juntarlo con los demás.
+  //
   // RECHAZADO_RECIENTE es distinto: el tutor ya tomó una decisión (rechazar)
   // para la versión vigente, así que no tiene sentido volver a insistir con
-  // el mismo aviso.
+  // el mismo aviso NI retener nada nuevo.
+  const retenerContenido = estado === consentimiento.ESTADOS.PENDIENTE_VIGENTE;
   const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
     whatsappMessageId,
     telefonoOrigen,
@@ -485,6 +584,10 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
       estado === consentimiento.ESTADOS.RECHAZADO_RECIENTE
         ? 'ignorado_lfpdppp_rechazo'
         : 'ignorado_lfpdppp_pendiente',
+    mensajeRecibido: retenerContenido ? (contenido ?? null) : null,
+    mediaId: retenerContenido ? (evento.mediaId ?? null) : null,
+    mimeType: retenerContenido ? (evento.mimeType ?? null) : null,
+    consentimientoPendienteId: retenerContenido ? fila.id : null,
   });
 
   return {

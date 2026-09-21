@@ -128,6 +128,21 @@ async function registrarEventoEntrante(evento) {
       });
     }
   }
+  if (pipelinePersistido === repository.PIPELINE_NUEVO && resultado.avisoLfpdpppYaResuelto) {
+    await intentarEnvioMenu({
+      claveIdempotencia: `mensaje:${evento.whatsappMessageId}:lfpdppp_ya_resuelto`,
+      tipoEnvio: 'conversacional',
+      origenFuncional: 'respuesta_automatica',
+      conversacionId: resultado.conversacionId,
+      destinatarioTelefono: telefonoNormalizado,
+      payloadFuncional: {
+        tipo: 'text',
+        destinatarioTelefono: telefonoNormalizado,
+        texto: menu.textoAvisoPrivacidadYaAceptado(),
+      },
+      usaPlantilla: false,
+    });
+  }
   if (
     pipelinePersistido === repository.PIPELINE_NUEVO &&
     resultado.disparaAtencionHumanaConsentimiento

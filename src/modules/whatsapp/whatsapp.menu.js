@@ -163,6 +163,10 @@ function textoAvisoPrivacidadEnvioFallido(telefonoClinica) {
   );
 }
 
+function textoAvisoPrivacidadYaAceptado() {
+  return 'Ya habías aceptado el aviso de privacidad, gracias.';
+}
+
 module.exports = {
   normalizarTexto,
   esSaludoPuro,
@@ -175,6 +179,7 @@ module.exports = {
   textoRespaldoEmergencia,
   textoAvisoPrivacidadNoDisponible,
   textoAvisoPrivacidadEnvioFallido,
+  textoAvisoPrivacidadYaAceptado,
   RESPUESTA_CONTINUAR,
   RESPUESTA_VOLVER_MENU,
   seguimientoInteractivePayload,

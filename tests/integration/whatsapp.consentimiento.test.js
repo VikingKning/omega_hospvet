@@ -358,6 +358,89 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
     // No se clasifica de inmediato — sigue la ventana normal de
     // agrupación, igual que cualquier mensaje nuevo real.
     expect(claude.clasificarMensaje).not.toHaveBeenCalled();
+    // Bug real visto en vivo 2026-09-21: sin rearmar procesar_despues_de, el
+    // mensaje quedaba "pendiente" para siempre — el trabajador de
+    // agrupación nunca lo hubiera recogido. Debe quedar armado para que sí
+    // lo recoja más adelante.
+    const conversacion = await db('conversaciones_whatsapp')
+      .where({ id: retomado.conversacion_id })
+      .first('procesar_despues_de');
+    expect(conversacion.procesar_despues_de).not.toBeNull();
+  });
+
+  it('si el tutor escribe por partes mientras sigue pendiente, al aceptar se retoman TODOS los fragmentos juntos (bug real 2026-09-21)', async () => {
+    const telefono = '5215500880018';
+    await postTexto(
+      `${WAMID_PREFIX}fragmento-1`,
+      telefono,
+      'buenas tardes, tengo un detalle con mi perro',
+    );
+    await postTexto(`${WAMID_PREFIX}fragmento-2`, telefono, 'en la pata');
+    await postTexto(`${WAMID_PREFIX}fragmento-3`, telefono, 'y quisiera ver si me pueden ayudar');
+
+    // Los fragmentos 2 y 3 SÍ deben conservar su contenido ahora (antes se
+    // perdían: solo el primer fragmento se retenía).
+    const mensaje2 = await ultimoMensaje(`${WAMID_PREFIX}fragmento-2`);
+    expect(mensaje2.mensaje_recibido).toBe('en la pata');
+    const mensaje3 = await ultimoMensaje(`${WAMID_PREFIX}fragmento-3`);
+    expect(mensaje3.mensaje_recibido).toBe('y quisiera ver si me pueden ayudar');
+
+    const resBoton = await postBoton(
+      `${WAMID_PREFIX}fragmentos-acepto`,
+      telefono,
+      'lfpdppp_acepto',
+      'Estoy de acuerdo',
+    );
+    expect(resBoton.status).toBe(200);
+
+    // El evento retomado se deriva del ÚLTIMO fragmento (el que sí llegó a
+    // ser respondido con el botón), con el texto de los 3 unido por salto de
+    // línea — igual que formarGrupoParaConversacion agruparía los mismos 3
+    // mensajes si nunca hubiera existido el gate de por medio.
+    const retomado = await ultimoMensaje(`${WAMID_PREFIX}fragmento-3:lfpdppp_continuacion`);
+    expect(retomado).toMatchObject({
+      tipo_mensaje: 'text',
+      mensaje_recibido:
+        'buenas tardes, tengo un detalle con mi perro\nen la pata\ny quisiera ver si me pueden ayudar',
+      estado_procesamiento: 'pendiente',
+      group_id: null,
+    });
+    expect(claude.clasificarMensaje).not.toHaveBeenCalled();
+  });
+
+  it('un segundo tap de "Estoy de acuerdo" sobre una copia vieja del aviso ya no cae al flujo normal (bug real 2026-09-21)', async () => {
+    const telefono = '5215500880019';
+    await postTexto(`${WAMID_PREFIX}dobletap-0`, telefono, 'hola');
+
+    const resBoton1 = await postBoton(
+      `${WAMID_PREFIX}dobletap-acepto1`,
+      telefono,
+      'lfpdppp_acepto',
+      'Estoy de acuerdo',
+    );
+    expect(resBoton1.status).toBe(200);
+
+    global.fetch.mockClear();
+    const resBoton2 = await postBoton(
+      `${WAMID_PREFIX}dobletap-acepto2`,
+      telefono,
+      'lfpdppp_acepto',
+      'Estoy de acuerdo',
+    );
+    expect(resBoton2.status).toBe(200);
+
+    const mensaje2 = await ultimoMensaje(`${WAMID_PREFIX}dobletap-acepto2`);
+    expect(mensaje2.estado_procesamiento).toBe('ignorado_lfpdppp_ya_resuelto');
+
+    // Antes caía al flujo normal como una respuesta interactiva no
+    // reconocida ("Esa opción ya no está disponible" o una respuesta
+    // genérica de Claude) — ahora se reconoce el tap suelto y se responde
+    // amigable, sin clasificar nada.
+    expect(claude.clasificarMensaje).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [, opciones] = global.fetch.mock.calls[0];
+    const cuerpo = JSON.parse(opciones.body);
+    expect(cuerpo.text?.body).toBe('Ya habías aceptado el aviso de privacidad, gracias.');
   });
 
   it('si el mensaje original era un comando de menú, al aceptar se muestra el menú principal de inmediato', async () => {
@@ -398,6 +481,14 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
 
     const registro = await ultimoRegistroConsentimiento('525500880013');
     expect(registro).toMatchObject({ acepto: false });
+
+    // Borrado físico: no se guarda información de quien no aceptó (pedido
+    // explícito del usuario, 2026-09-21) — el fragmento retenido para
+    // reproceso ya no debe existir en absoluto, no solo estar marcado.
+    const mensajeRetenido = await db('mensajes_whatsapp')
+      .where({ whatsapp_message_id: `${WAMID_PREFIX}rechaza-0` })
+      .first();
+    expect(mensajeRetenido).toBeUndefined();
 
     const [conversacion] = await buscarConversacion('525500880013');
     const solicitud = await db('solicitudes_atencion_humana')
