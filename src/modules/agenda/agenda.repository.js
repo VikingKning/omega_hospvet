@@ -211,16 +211,14 @@ async function findByGoogleEventId(googleEventId) {
   return db('citas').where({ google_event_id: googleEventId }).first();
 }
 
-async function obtenerOCrearDoctorConsultasPredeterminado() {
-  let doctor = await db('doctores')
-    .where({ nombre: 'Consultas Omega', apellidos: 'Generico', es_predeterminado: true })
-    .first();
+async function obtenerOCrearDoctorPredeterminado({ nombre, apellidos, areaSlug }) {
+  let doctor = await db('doctores').where({ nombre, apellidos, es_predeterminado: true }).first();
 
   if (!doctor) {
     const [row] = await db('doctores')
       .insert({
-        nombre: 'Consultas Omega',
-        apellidos: 'Generico',
+        nombre,
+        apellidos,
         activo: true,
         es_predeterminado: true,
         creado_en: db.fn.now(),
@@ -229,7 +227,7 @@ async function obtenerOCrearDoctorConsultasPredeterminado() {
     doctor = { id: row.id };
   }
 
-  const area = await db('areas').where({ slug: 'consultas' }).first();
+  const area = await db('areas').where({ slug: areaSlug }).first();
   if (area) {
     const yaVinculado = await db('doctor_area')
       .where({ doctor_id: doctor.id, area_id: area.id })
@@ -296,7 +294,7 @@ module.exports = {
   update,
   cancelar,
   findByGoogleEventId,
-  obtenerOCrearDoctorConsultasPredeterminado,
+  obtenerOCrearDoctorPredeterminado,
   crearDesdeReservaExterna,
   confirmar,
 };

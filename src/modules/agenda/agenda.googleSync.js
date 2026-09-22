@@ -51,22 +51,79 @@ async function pushCita(citaId) {
 
     const evento = eventoDesdeCita(cita);
     if (cita.google_event_id) {
-      await calendar.events.update({
-        calendarId,
-        eventId: cita.google_event_id,
-        requestBody: evento,
-      });
-      await repository.marcarSincronizado(citaId, cita.google_event_id);
-    } else {
-      const { data } = await calendar.events.insert({ calendarId, requestBody: evento });
-      await repository.marcarSincronizado(citaId, data.id);
+      try {
+        await calendar.events.update({
+          calendarId,
+          eventId: cita.google_event_id,
+          requestBody: evento,
+        });
+        await repository.marcarSincronizado(citaId, cita.google_event_id);
+        return;
+      } catch (err) {
+        // El id guardado puede no pertenecer a ESTE calendario — pasa con
+        // una reserva externa importada desde otro calendario que el token
+        // también puede ver (pedido explícito del usuario, 2026-09-22: se
+        // recogen reservas sin importar en qué calendario aterricen). Se
+        // crea el evento propio aquí, como si fuera de alta.
+        if (!esErrorEventoInexistente(err)) throw err;
+      }
     }
+
+    const { data } = await calendar.events.insert({ calendarId, requestBody: evento });
+    await repository.marcarSincronizado(citaId, data.id);
   } catch (err) {
     logger.error(
       { err, citaId },
       'No se pudo sincronizar la cita con Google Calendar; se reintentará en el siguiente ciclo.',
     );
   }
+}
+
+// Trae TODOS los eventos futuros de un calendario, siguiendo nextPageToken
+// (Google entrega máximo 250 por página y no los junta sola).
+async function listarEventosFuturos(calendar, calendarId, ahora) {
+  const items = [];
+  let pageToken;
+  do {
+    const { data } = await calendar.events.list({
+      calendarId,
+      timeMin: ahora.toISOString(),
+      singleEvents: true,
+      showDeleted: false,
+      pageToken,
+    });
+    items.push(...(data.items ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return items;
+}
+
+// Reservas externas (páginas de reservas de Google) pueden aterrizar en
+// CUALQUIER calendario que el token de la clínica también pueda ver — no
+// solo el principal (pedido explícito del usuario, 2026-09-22: no depender
+// de un calendario fijo). Se revisan aparte, nunca se mezclan con la
+// reconciliación por citaId de sincronizar(), que sigue siendo solo del
+// calendario principal.
+async function importarReservasDeCalendariosAdicionales(calendar, ahora) {
+  const citasImportadas = [];
+  try {
+    const { data } = await calendar.calendarList.list();
+    const otrosCalendarios = (data.items ?? [])
+      .map((c) => c.id)
+      .filter((id) => id && id !== env.google.calendarId);
+
+    for (const calendarId of otrosCalendarios) {
+      const eventos = await listarEventosFuturos(calendar, calendarId, ahora);
+      for (const evento of eventos) {
+        if (evento.extendedProperties?.private?.citaId) continue;
+        const nuevaCitaId = await importarReserva(evento);
+        if (nuevaCitaId) citasImportadas.push(nuevaCitaId);
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'No se pudieron revisar calendarios adicionales para reservas externas.');
+  }
+  return citasImportadas;
 }
 
 async function sincronizar() {
@@ -84,16 +141,17 @@ async function sincronizar() {
 
   try {
     const calendar = getCalendarClient();
-    const { data } = await calendar.events.list({
-      calendarId: env.google.calendarId,
-      timeMin: ahora.toISOString(),
-      singleEvents: true,
-      showDeleted: false,
-    });
+    // Google trae como máximo 250 eventos por página y NO las junta sola —
+    // sin seguir nextPageToken, un calendario con más de 250 citas futuras
+    // (nada raro para 8 áreas compartiendo uno solo, sin timeMax) deja
+    // eventos reales fuera del mapa de abajo, y se interpretan como
+    // cancelados en Google cuando siguen perfectamente vigentes (bug real
+    // reportado 2026-09-22).
+    const items = await listarEventosFuturos(calendar, env.google.calendarId, ahora);
 
     const eventosPorCitaId = new Map();
     const citasImportadasEsteCiclo = new Set();
-    for (const evento of data.items ?? []) {
+    for (const evento of items) {
       const citaId = evento.extendedProperties?.private?.citaId;
       if (citaId) {
         eventosPorCitaId.set(Number(citaId), evento);
@@ -104,6 +162,15 @@ async function sincronizar() {
         citasImportadasEsteCiclo.add(nuevaCitaId);
         await pushCita(nuevaCitaId);
       }
+    }
+
+    const importadasDeOtrosCalendarios = await importarReservasDeCalendariosAdicionales(
+      calendar,
+      ahora,
+    );
+    for (const nuevaCitaId of importadasDeOtrosCalendarios) {
+      citasImportadasEsteCiclo.add(nuevaCitaId);
+      await pushCita(nuevaCitaId);
     }
 
     const sincronizadas = await repository.findSincronizadasFuturas(ahora);

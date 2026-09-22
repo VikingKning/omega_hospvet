@@ -7,7 +7,9 @@ const areasRepository = require('../../src/modules/areas/areas.repository');
 const tutoresRepository = require('../../src/modules/tutores/tutores.repository');
 const {
   esReservaDeConsultas,
+  esReservaDeEstetica,
   extraerDatosReserva,
+  extraerDatosReservaEstetica,
   resolverReserva,
   importarReserva,
 } = require('../../src/modules/agenda/agenda.reservasExternas');
@@ -210,6 +212,60 @@ describe('agenda.reservasExternas.esReservaDeConsultas / extraerDatosReserva', (
   });
 });
 
+// Bug real reportado 2026-09-22: la página de reservas de Estética/Grooming
+// nunca se importaba — no existía ninguna señal para reconocerla. Texto TAL
+// CUAL lo devuelve la API real (evento real ya reservado, vía events.list()
+// contra el calendario donde en realidad vive esa página de reservas).
+const TITULO_ESTETICA = 'Citas Estetica Omega (J. Ivan Trujillo M.)';
+const DESCRIPCION_HTML_ESTETICA_REAL =
+  '<b>Programada por</b>\nJ. Ivan Trujillo M.\nleoivan.moreno@gmail.com\n5529000090\n' +
+  '<br><b>Nombre de la mascota</b>\nNissa\n' +
+  '<br><b>Peso (kg)</b>\n6 \n' +
+  '<br><b>Raza</b>\nMestizo\n' +
+  '<br><p>🐾 ¡Estamos felices de recibirte!</p>' +
+  '<p>Agenda aquí la cita de estética de tu compañero de cuatro patas de forma rápida y sencilla. ' +
+  'Selecciona el día y horario que mejor te funcione para consentirlo y mantenerlo limpio, cómodo y muy guapo. ✨</p>' +
+  '<p><strong>Omega</strong><br>Hospital Veterinario &amp; Estética</p>';
+
+describe('agenda.reservasExternas.esReservaDeEstetica / extraerDatosReservaEstetica', () => {
+  it('reconoce un evento real de la página de reservas de Estética', () => {
+    expect(esReservaDeEstetica(TITULO_ESTETICA, DESCRIPCION_HTML_ESTETICA_REAL)).toBe(true);
+  });
+
+  it('extrae teléfono/mascota/tutor/correo/peso/raza del HTML real', () => {
+    expect(extraerDatosReservaEstetica(TITULO_ESTETICA, DESCRIPCION_HTML_ESTETICA_REAL)).toEqual({
+      telefono: '5529000090',
+      nombreMascota: 'Nissa',
+      nombreTutor: 'J. Ivan Trujillo M.',
+      correo: 'leoivan.moreno@gmail.com',
+      peso: '6',
+      raza: 'Mestizo',
+    });
+  });
+
+  it('el título de Consultas no se reconoce como reserva de Estética, y viceversa', () => {
+    expect(esReservaDeEstetica(TITULO, DESCRIPCION_HTML_ESTETICA_REAL)).toBe(false);
+    expect(esReservaDeConsultas(TITULO_ESTETICA, DESCRIPCION_HTML_REAL)).toBe(false);
+    expect(extraerDatosReserva(TITULO_ESTETICA, DESCRIPCION_HTML_ESTETICA_REAL)).toBeNull();
+    expect(extraerDatosReservaEstetica(TITULO, DESCRIPCION_HTML_ESTETICA_REAL)).toBeNull();
+  });
+
+  it('sin peso/raza contestados, quedan null y el resto se extrae bien', () => {
+    const sinPesoRaza =
+      '<b>Programada por</b>\nJ. Ivan Trujillo M.\nleoivan.moreno@gmail.com\n5529000090\n' +
+      '<br><b>Nombre de la mascota</b>\nNissa\n' +
+      '<br><p>Agenda aquí la cita de estética de tu compañero de cuatro patas de forma rápida y sencilla.</p>';
+    expect(extraerDatosReservaEstetica(TITULO_ESTETICA, sinPesoRaza)).toEqual({
+      telefono: '5529000090',
+      nombreMascota: 'Nissa',
+      nombreTutor: 'J. Ivan Trujillo M.',
+      correo: 'leoivan.moreno@gmail.com',
+      peso: null,
+      raza: null,
+    });
+  });
+});
+
 describe('agenda.reservasExternas.resolverReserva', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -290,7 +346,7 @@ describe('agenda.reservasExternas.importarReserva', () => {
     jest.clearAllMocks();
     repository.findByGoogleEventId.mockResolvedValue(undefined);
     areasRepository.findBySlug.mockResolvedValue({ id: 22, slug: 'consultas' });
-    repository.obtenerOCrearDoctorConsultasPredeterminado.mockResolvedValue({ id: 87 });
+    repository.obtenerOCrearDoctorPredeterminado.mockResolvedValue({ id: 87 });
     tutoresRepository.findByTelefono.mockResolvedValue(undefined);
     repository.crearDesdeReservaExterna.mockResolvedValue(999);
   });
@@ -389,5 +445,34 @@ describe('agenda.reservasExternas.importarReserva', () => {
     repository.crearDesdeReservaExterna.mockRejectedValue(new Error('db down'));
 
     await expect(importarReserva(EVENTO)).resolves.toBeNull();
+  });
+
+  // Bug real reportado 2026-09-22: extiende el mismo importarReserva a la
+  // página de reservas de Estética/Grooming.
+  it('una reserva de Estética se importa con el área/doctor predeterminados propios, y el motivo incluye raza/peso', async () => {
+    areasRepository.findBySlug.mockResolvedValue({ id: 70, slug: 'estetica' });
+    repository.obtenerOCrearDoctorPredeterminado.mockResolvedValue({ id: 55 });
+
+    const id = await importarReserva({
+      id: 'evt-estetica-1',
+      summary: TITULO_ESTETICA,
+      description: DESCRIPCION_HTML_ESTETICA_REAL,
+      start: { dateTime: '2026-09-22T15:20:00.000Z' },
+      end: { dateTime: '2026-09-22T16:50:00.000Z' },
+    });
+
+    expect(id).toBe(999);
+    expect(areasRepository.findBySlug).toHaveBeenCalledWith('estetica');
+    expect(repository.obtenerOCrearDoctorPredeterminado).toHaveBeenCalledWith({
+      nombre: 'Estética Omega',
+      apellidos: 'Generico',
+      areaSlug: 'estetica',
+    });
+    expect(repository.crearDesdeReservaExterna).toHaveBeenCalledWith(
+      expect.objectContaining({ areaId: 70, doctorId: 55, duracionMinutos: 90 }),
+    );
+    const [args] = repository.crearDesdeReservaExterna.mock.calls[0];
+    expect(args.motivo).toContain('Raza indicada: Mestizo');
+    expect(args.motivo).toContain('Peso indicado: 6 kg');
   });
 });

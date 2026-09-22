@@ -35,6 +35,9 @@ function fakeCalendar() {
       delete: jest.fn().mockResolvedValue({}),
       list: jest.fn().mockResolvedValue({ data: { items: [] } }),
     },
+    calendarList: {
+      list: jest.fn().mockResolvedValue({ data: { items: [] } }),
+    },
   };
 }
 
@@ -84,6 +87,50 @@ describe('agenda.googleSync.pushCita', () => {
     );
     expect(calendar.events.insert).not.toHaveBeenCalled();
     expect(repository.marcarSincronizado).toHaveBeenCalledWith(1, 'evt-existente');
+  });
+
+  // Bug real reportado 2026-09-22: una reserva externa importada desde OTRO
+  // calendario guarda el id del evento de ESE calendario — al intentar
+  // actualizarlo en el calendario principal, Google responde 404 (no existe
+  // ahí). En vez de quedarse fallando por siempre, se crea el evento propio
+  // en el calendario correcto, autocurándose.
+  it('si el google_event_id guardado no existe en el calendario principal (404), crea uno nuevo ahí en vez de quedarse fallando', async () => {
+    repository.findByIdParaSync.mockResolvedValue({
+      ...CITA_NUEVA,
+      google_event_id: 'evt-de-otro-calendario',
+    });
+    const calendar = fakeCalendar();
+    calendar.events.update.mockRejectedValue({ code: 404 });
+    getCalendarClient.mockReturnValue(calendar);
+
+    await pushCita(1);
+
+    expect(calendar.events.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        calendarId: 'test-calendar-id',
+        eventId: 'evt-de-otro-calendario',
+      }),
+    );
+    expect(calendar.events.insert).toHaveBeenCalledWith({
+      calendarId: 'test-calendar-id',
+      requestBody: expect.objectContaining({ summary: 'Nissa — LoAng, Jimmy' }),
+    });
+    expect(repository.marcarSincronizado).toHaveBeenCalledWith(1, 'google-evt-1');
+  });
+
+  it('un error real (no 404/410) al actualizar SÍ se propaga como fallo (no crea uno nuevo por accidente)', async () => {
+    repository.findByIdParaSync.mockResolvedValue({
+      ...CITA_NUEVA,
+      google_event_id: 'evt-existente',
+    });
+    const calendar = fakeCalendar();
+    calendar.events.update.mockRejectedValue(new Error('network down'));
+    getCalendarClient.mockReturnValue(calendar);
+
+    await expect(pushCita(1)).resolves.toBeUndefined();
+
+    expect(calendar.events.insert).not.toHaveBeenCalled();
+    expect(repository.marcarSincronizado).not.toHaveBeenCalled();
   });
 
   it('una cita cancelada con google_event_id borra el evento (delete)', async () => {
@@ -215,6 +262,37 @@ describe('agenda.googleSync.sincronizar', () => {
     await sincronizar();
 
     expect(repository.aplicarCancelacionDesdeGoogle).toHaveBeenCalledWith(5);
+  });
+
+  it('un evento en la SEGUNDA página de Google no se trata como cancelado (bug real 2026-09-22)', async () => {
+    repository.findSincronizadasFuturas.mockResolvedValue([CITA_SINCRONIZADA]);
+    const calendar = fakeCalendar();
+    calendar.events.list
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ status: 'confirmed', extendedProperties: { private: { citaId: '999' } } }],
+          nextPageToken: 'pagina-2',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [
+            {
+              status: 'confirmed',
+              extendedProperties: { private: { citaId: '5' } },
+              start: { dateTime: '2026-09-01T15:00:00.000Z' },
+              end: { dateTime: '2026-09-01T15:30:00.000Z' },
+            },
+          ],
+        },
+      });
+    getCalendarClient.mockReturnValue(calendar);
+
+    await sincronizar();
+
+    expect(calendar.events.list).toHaveBeenCalledTimes(2);
+    expect(calendar.events.list.mock.calls[1][0]).toMatchObject({ pageToken: 'pagina-2' });
+    expect(repository.aplicarCancelacionDesdeGoogle).not.toHaveBeenCalled();
   });
 
   it('si el horario del evento en Google cambió, reagenda de este lado', async () => {
@@ -361,5 +439,78 @@ describe('agenda.googleSync.sincronizar', () => {
 
     expect(importarReserva).toHaveBeenCalledWith(eventoAjeno);
     expect(repository.findByIdParaSync).not.toHaveBeenCalled();
+  });
+
+  // Pedido explícito del usuario, 2026-09-22: una página de reservas de
+  // Google puede aterrizar en CUALQUIER calendario que el token de la
+  // clínica también pueda ver (ej. el calendario personal de quien la creó)
+  // — no solo el principal. Se revisan también esos otros calendarios.
+  describe('reservas en calendarios adicionales', () => {
+    it('una reserva encontrada en OTRO calendario visible se importa y se empuja igual que una del principal', async () => {
+      const eventoOtroCalendario = {
+        id: 'evt-otro-cal-1',
+        description: 'Nombre de la Mascota\nNissa',
+      };
+      const calendar = fakeCalendar();
+      calendar.calendarList.list.mockResolvedValue({
+        data: { items: [{ id: 'test-calendar-id' }, { id: 'otro@gmail.com' }] },
+      });
+      calendar.events.list.mockImplementation(({ calendarId }) =>
+        calendarId === 'otro@gmail.com'
+          ? Promise.resolve({ data: { items: [eventoOtroCalendario] } })
+          : Promise.resolve({ data: { items: [] } }),
+      );
+      getCalendarClient.mockReturnValue(calendar);
+      importarReserva.mockResolvedValue(77);
+      repository.findByIdParaSync.mockResolvedValue(CITA_NUEVA);
+
+      await sincronizar();
+
+      expect(importarReserva).toHaveBeenCalledWith(eventoOtroCalendario);
+      expect(repository.findByIdParaSync).toHaveBeenCalledWith(77); // pushCita(77)
+    });
+
+    it('el calendario principal nunca se vuelve a revisar como "adicional" (no se duplica)', async () => {
+      const calendar = fakeCalendar();
+      calendar.calendarList.list.mockResolvedValue({
+        data: { items: [{ id: 'test-calendar-id' }] },
+      });
+      getCalendarClient.mockReturnValue(calendar);
+
+      await sincronizar();
+
+      // Solo la llamada del calendario principal (dentro de sincronizar) —
+      // ninguna adicional, porque el único id de la lista ES el principal.
+      expect(calendar.events.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('un evento CON citaId en un calendario adicional se ignora (no es una reserva externa, es propio)', async () => {
+      const eventoPropio = {
+        id: 'evt-propio-en-otro-cal',
+        extendedProperties: { private: { citaId: '5' } },
+      };
+      const calendar = fakeCalendar();
+      calendar.calendarList.list.mockResolvedValue({
+        data: { items: [{ id: 'otro@gmail.com' }] },
+      });
+      calendar.events.list.mockImplementation(({ calendarId }) =>
+        calendarId === 'otro@gmail.com'
+          ? Promise.resolve({ data: { items: [eventoPropio] } })
+          : Promise.resolve({ data: { items: [] } }),
+      );
+      getCalendarClient.mockReturnValue(calendar);
+
+      await sincronizar();
+
+      expect(importarReserva).not.toHaveBeenCalled();
+    });
+
+    it('si calendarList.list() falla, no truena todo el ciclo (se loguea y sigue)', async () => {
+      const calendar = fakeCalendar();
+      calendar.calendarList.list.mockRejectedValue(new Error('sin permiso'));
+      getCalendarClient.mockReturnValue(calendar);
+
+      await expect(sincronizar()).resolves.toBeUndefined();
+    });
   });
 });
