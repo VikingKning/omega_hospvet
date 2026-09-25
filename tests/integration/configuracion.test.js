@@ -17,6 +17,9 @@ const { store: sessionStore } = require('../../src/config/session');
 const configuracionRepository = require('../../src/modules/configuracion/configuracion.repository');
 const configuracionService = require('../../src/modules/configuracion/configuracion.service');
 const laboratorioArchivos = require('../../src/modules/laboratorio/laboratorio.archivos');
+const {
+  LISTA_CLAVES_FUNCIONES,
+} = require('../../src/modules/configuracion/configuracion-funciones');
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -91,6 +94,12 @@ async function limpiarUsuarioSinPermisos() {
 
 async function cleanup() {
   await db('configuracion_sistema').where('clave', 'like', 'aviso_privacidad_%').del();
+  await db('configuracion_funciones_auditoria').del();
+  await db('configuracion_funciones').whereIn('clave', LISTA_CLAVES_FUNCIONES).update({
+    habilitado: true,
+    actualizado_por: null,
+    actualizado_en: db.fn.now(),
+  });
   await limpiarArchivosVersionesDePrueba();
 }
 
@@ -131,7 +140,110 @@ describe('GET /configuracion/generales.html', () => {
     const res = await agent.get('/configuracion/generales.html');
 
     expect(res.status).toBe(200);
+    expect(res.text).toContain('Canales y automatizaciones');
+    expect(res.text).toContain('Envío de resultados por WhatsApp');
+    expect(res.text).toContain('Envío de resultados por correo');
+    expect(res.text).toContain('Respuestas automáticas');
+    expect(res.text).toContain('Citas de Consultas');
+    expect(res.text).toContain('Citas de Estética');
+    expect(res.text).toContain('Aviso de privacidad y tratamiento de datos personales');
+    expect(res.text.match(/class="toggle-group configuracion-option-toggle"/g)).toHaveLength(6);
+    expect(res.text).toContain('data-value="habilitado"');
+    expect(res.text).toContain('data-value="deshabilitado"');
     expect(res.text).toContain('Todavía no se ha cargado un aviso de privacidad');
+  });
+
+  it('refleja en pantalla el valor persistido de cada función', async () => {
+    await db('configuracion_funciones')
+      .where({ clave: 'laboratorio_envio_correo' })
+      .update({ habilitado: false });
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await agent.get('/configuracion/generales.html');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(
+      /data-config-clave="laboratorio_envio_correo"[\s\S]*?data-value="deshabilitado" aria-pressed="true"/,
+    );
+  });
+});
+
+describe('PATCH /configuracion/generales/funciones/:clave', () => {
+  it('persiste el cambio inmediatamente y registra usuario, valor anterior y nuevo', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getConfiguracionCsrfToken(agent);
+
+    const res = await agent
+      .patch('/configuracion/generales/funciones/laboratorio_envio_whatsapp')
+      .set('x-csrf-token', csrfToken)
+      .send({ habilitado: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ clave: 'laboratorio_envio_whatsapp', habilitado: false });
+    const funcion = await db('configuracion_funciones')
+      .where({ clave: 'laboratorio_envio_whatsapp' })
+      .first();
+    expect(funcion.habilitado).toBe(false);
+    expect(funcion.actualizado_por).not.toBeNull();
+
+    const auditoria = await db('configuracion_funciones_auditoria')
+      .where({ clave: 'laboratorio_envio_whatsapp' })
+      .first();
+    expect(auditoria).toEqual(
+      expect.objectContaining({
+        valor_anterior: true,
+        valor_nuevo: false,
+        cambiado_por: funcion.actualizado_por,
+      }),
+    );
+    expect(auditoria.cambiado_en).toBeTruthy();
+  });
+
+  it('no crea una auditoría artificial cuando se elige el valor que ya estaba guardado', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getConfiguracionCsrfToken(agent);
+
+    const res = await agent
+      .patch('/configuracion/generales/funciones/laboratorio_envio_correo')
+      .set('x-csrf-token', csrfToken)
+      .send({ habilitado: true });
+
+    expect(res.status).toBe(200);
+    expect(await db('configuracion_funciones_auditoria').count('* as total').first()).toEqual({
+      total: '0',
+    });
+  });
+
+  it('rechaza claves inexistentes y valores que no sean booleanos', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const csrfToken = await getConfiguracionCsrfToken(agent);
+
+    const claveInvalida = await agent
+      .patch('/configuracion/generales/funciones/no_existe')
+      .set('x-csrf-token', csrfToken)
+      .send({ habilitado: false });
+    const valorInvalido = await agent
+      .patch('/configuracion/generales/funciones/laboratorio_envio_correo')
+      .set('x-csrf-token', csrfToken)
+      .send({ habilitado: 'false' });
+
+    expect(claveInvalida.status).toBe(400);
+    expect(valorInvalido.status).toBe(400);
+  });
+
+  it('exige permiso de configuración y protección CSRF', async () => {
+    const sinPermiso = await loginAs(SIN_PERMISOS_USER);
+    const redireccion = await sinPermiso
+      .patch('/configuracion/generales/funciones/laboratorio_envio_correo')
+      .send({ habilitado: false });
+    expect(redireccion.status).toBe(302);
+    expect(redireccion.headers.location).toBe('/main.html');
+
+    const admin = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const sinCsrf = await admin
+      .patch('/configuracion/generales/funciones/laboratorio_envio_correo')
+      .send({ habilitado: false });
+    expect(sinCsrf.status).toBe(403);
   });
 });
 

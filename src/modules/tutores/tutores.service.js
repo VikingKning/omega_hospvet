@@ -22,6 +22,7 @@ const TIPO_PACIENTE_MAX = 20;
 const RAZA_PACIENTE_MAX = 100;
 const SEXO_PACIENTE_VALORES = ['Macho', 'Hembra'];
 const EDAD_PACIENTE_MAX = 40;
+const NHC_MAX = 99999999;
 const FORMATO_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TELEFONO_REGEX = /^(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})$/;
 
@@ -116,6 +117,21 @@ function validateEdad(rawValor, etiqueta) {
   return edad;
 }
 
+function validateNhc(rawValor, etiqueta) {
+  const valor = (rawValor ?? '').toString().trim();
+  if (!valor) return null;
+  if (!/^\d{1,8}$/.test(valor)) {
+    throw new TutorValidationError(
+      `El campo ${etiqueta} debe contener únicamente un número de hasta 8 dígitos.`,
+    );
+  }
+  const nhc = Number(valor);
+  if (!Number.isInteger(nhc) || nhc < 0 || nhc > NHC_MAX) {
+    throw new TutorValidationError(`El campo ${etiqueta} no es válido.`);
+  }
+  return nhc;
+}
+
 function edadAAnioNacimiento(edad) {
   if (edad === null) return null;
   return new Date().getFullYear() - edad;
@@ -128,7 +144,13 @@ function edadDesdeAnioNacimiento(anioNacimiento) {
 
 function parsePacientes(rawPacientes) {
   const valores = Array.isArray(rawPacientes) ? rawPacientes : [];
+  const nhcCapturados = new Set();
   return valores.map((paciente, index) => {
+    const nhc = validateNhc(paciente?.nhc, `NHC del paciente ${index + 1}`);
+    if (nhc !== null && nhcCapturados.has(nhc)) {
+      throw new TutorValidationError(`El NHC ${nhc} está repetido entre los pacientes capturados.`);
+    }
+    if (nhc !== null) nhcCapturados.add(nhc);
     const nombre = validateTexto(
       paciente?.nombre,
       `Nombre del paciente ${index + 1}`,
@@ -148,7 +170,16 @@ function parsePacientes(rawPacientes) {
     const edad = validateEdad(paciente?.edad, `Edad del paciente ${index + 1}`);
     const id = parseId(paciente?.id);
     const activo = id === null ? true : paciente?.activo !== false;
-    return { id, nombre, tipo, raza, sexo, anioNacimiento: edadAAnioNacimiento(edad), activo };
+    return {
+      id,
+      nhc,
+      nombre,
+      tipo,
+      raza,
+      sexo,
+      anioNacimiento: edadAAnioNacimiento(edad),
+      activo,
+    };
   });
 }
 
@@ -175,11 +206,28 @@ function tutorCoincide(tutor, qLower, qDigits) {
 }
 
 function mascotaCoincide(mascota, qLower) {
+  const nhcBuscado = /^\d{1,8}$/.test(qLower) ? Number(qLower) : null;
   return (
+    (nhcBuscado !== null && mascota.nhc === nhcBuscado) ||
     includes(mascota.nombre, qLower) ||
     includes(mascota.tipo, qLower) ||
     includes(mascota.raza, qLower)
   );
+}
+
+function esErrorNhcDuplicado(err) {
+  return err?.code === '23505' && err?.constraint === 'mascotas_nhc_unique';
+}
+
+async function persistirConNhcUnico(operacion) {
+  try {
+    return await operacion();
+  } catch (err) {
+    if (esErrorNhcDuplicado(err)) {
+      throw new TutorValidationError('El NHC ya está asignado a otro paciente.');
+    }
+    throw err;
+  }
 }
 
 async function list({
@@ -287,18 +335,22 @@ async function crear({
         telefono: formatTelefono(existente.telefono),
       });
     }
-    return repository.reactivar({
-      id: existente.id,
-      nombre,
-      apellidos,
-      telefono,
-      correo,
-      pacientes,
-      usuarioId,
-    });
+    return persistirConNhcUnico(() =>
+      repository.reactivar({
+        id: existente.id,
+        nombre,
+        apellidos,
+        telefono,
+        correo,
+        pacientes,
+        usuarioId,
+      }),
+    );
   }
 
-  return repository.crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId });
+  return persistirConNhcUnico(() =>
+    repository.crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId }),
+  );
 }
 
 function normalizeActivoOpcional(rawActivo) {
@@ -328,16 +380,18 @@ async function editar({
     throw new TutorValidationError('El teléfono ya se encuentra registrado.');
   }
 
-  await repository.editar({
-    id,
-    nombre,
-    apellidos,
-    telefono,
-    correo,
-    activo,
-    pacientes,
-    usuarioId,
-  });
+  await persistirConNhcUnico(() =>
+    repository.editar({
+      id,
+      nombre,
+      apellidos,
+      telefono,
+      correo,
+      activo,
+      pacientes,
+      usuarioId,
+    }),
+  );
   return id;
 }
 
@@ -360,6 +414,16 @@ async function resolverMascota(rawId) {
   const id = Number.parseInt(rawId, 10);
   if (!Number.isInteger(id) || id <= 0) return null;
   return (await repository.findMascotaById(id)) ?? null;
+}
+
+async function resolverPacienteActivoPorNhc(rawNhc) {
+  const nhc = validateNhc(rawNhc, 'NHC');
+  if (nhc === null) return null;
+  const paciente = await repository.findMascotaActivaByNhc(nhc);
+  if (!paciente) return null;
+  const tutor = await resolverTutorPorId(paciente.propietario_id);
+  if (!tutor) return null;
+  return { tutor, pacienteId: paciente.id };
 }
 
 async function verificarTelefono(rawTelefono) {
@@ -449,6 +513,7 @@ module.exports = {
   buscarPorTelefono,
   buscarMascotas,
   resolverMascota,
+  resolverPacienteActivoPorNhc,
   verificarTelefono,
   resolverTutorActivoPorTelefono,
   resolverTutorPorId,

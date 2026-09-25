@@ -33,13 +33,15 @@ exports.seed = async function seed(knex) {
   }
 
   const permisos = await knex('permissions').select('id');
-  await knex('usuario_permisos').where({ usuario_id: admin.id }).del();
-  await knex('usuario_permisos').insert(
-    permisos.map((p) => ({
-      usuario_id: admin.id,
-      permission_id: p.id,
-      otorgado_por: admin.id,
-      otorgado_en: ahora,
-    })),
-  );
+  await knex('usuario_permisos')
+    .insert(
+      permisos.map((p) => ({
+        usuario_id: admin.id,
+        permission_id: p.id,
+        otorgado_por: admin.id,
+        otorgado_en: ahora,
+      })),
+    )
+    .onConflict(['usuario_id', 'permission_id'])
+    .ignore();
 };

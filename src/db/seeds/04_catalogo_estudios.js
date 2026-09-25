@@ -7,10 +7,99 @@ function normalizar(texto) {
     .replace(/^_+|_+$/g, '');
 }
 
+// Códigos que ya fueron publicados por las migraciones de normalización.
+// Mantenerlos aquí evita que una instalación limpia y una actualización de
+// una base anterior terminen con códigos distintos para el mismo estudio.
+const CODIGOS_CANONICOS = new Map([
+  ['Coagulación y hemostasia::Fibrinógeno::', 'FIBRINOGENO_2'],
+  ['Endocrinología::Cortisol/creatinina urinaria::', 'CORTISOL_CREATININA_URINARIA_2'],
+  ['Parasitología::Giardia — PCR::', 'GIARDIA_PCR_2'],
+  ['Parasitología::Cryptosporidium — PCR::', 'CRYPTOSPORIDIUM_PCR_2'],
+  ['Citología::Citología cutánea::', 'CITOLOGIA_CUTANEA_2'],
+  ['Citología::Citología ótica::', 'CITOLOGIA_OTICA_2'],
+  ['Sistema respiratorio::Radiografía torácica::', 'RADIOGRAFIA_TORACICA_2'],
+  ['Oftalmología::Ultrasonido ocular::', 'ULTRASONIDO_OCULAR_2'],
+  [
+    'Inmunología y autoinmunes::Anticuerpos contra receptor de acetilcolina::',
+    'ANTICUERPOS_CONTRA_RECEPTOR_DE_ACETILCOLINA_2',
+  ],
+  [
+    'Banco de sangre / Medicina transfusional::Panel de donador sanguíneo canino::Perro',
+    'PANEL_DE_DONADOR_SANGUINEO_CANINO_2',
+  ],
+  [
+    'Banco de sangre / Medicina transfusional::Panel de donador sanguíneo felino::Gato',
+    'PANEL_DE_DONADOR_SANGUINEO_FELINO_2',
+  ],
+  [
+    'Análisis de líquidos corporales::Análisis de líquido sinovial::',
+    'ANALISIS_DE_LIQUIDO_SINOVIAL_2',
+  ],
+  [
+    'Análisis de líquidos corporales::Análisis de líquido cefalorraquídeo::',
+    'ANALISIS_DE_LIQUIDO_CEFALORRAQUIDEO_2',
+  ],
+  ['Perfiles clínicos / Paneles::Panel respiratorio canino::Perro', 'PANEL_RESPIRATORIO_CANINO_2'],
+  ['Perfiles clínicos / Paneles::Panel respiratorio felino::Gato', 'PANEL_RESPIRATORIO_FELINO_2'],
+  ['Procedimientos diagnósticos::Gastroscopia::', 'GASTROSCOPIA_2'],
+  ['Procedimientos diagnósticos::Colonoscopia::', 'COLONOSCOPIA_2'],
+  ['Procedimientos diagnósticos::Rinoscopia::', 'RINOSCOPIA_2'],
+  ['Procedimientos diagnósticos::Broncoscopia::', 'BRONCOSCOPIA_2'],
+  ['Procedimientos diagnósticos::Otoscopia::', 'OTOSCOPIA_2'],
+  ['Procedimientos diagnósticos::Videootoscopia::', 'VIDEOOTOSCOPIA_2'],
+  ['Procedimientos diagnósticos::Artroscopia::', 'ARTROSCOPIA_2'],
+  ['Procedimientos diagnósticos::Biopsia de médula ósea::', 'BIOPSIA_DE_MEDULA_OSEA_2'],
+  ['Procedimientos diagnósticos::Artrocentesis::', 'ARTROCENTESIS_2'],
+  ['Química sanguínea / Bioquímica::Perfil bioquímico básico (6 elementos)::', 'PERFIL_BASICO'],
+  ['Química sanguínea / Bioquímica::Perfil bioquímico general (12 elementos)::', 'PERFIL_GENERAL'],
+  [
+    'Química sanguínea / Bioquímica::Perfil bioquímico completo (24 elementos)::',
+    'PERFIL_INTEGRAL',
+  ],
+  ['Perfiles clínicos / Paneles::Función renal::Perro', 'PERRO_FUNCION_RENAL'],
+  ['Perfiles clínicos / Paneles::Perfil metabólico::Perro', 'PERRO_PERFIL_METABOLICO'],
+  ['Química sanguínea / Bioquímica::ALKP / Fosfatasa alcalina::Perro', 'PERRO_ALKP'],
+  ['Química sanguínea / Bioquímica::ALKP / Fosfatasa alcalina::Gato', 'GATO_ALKP'],
+  ['Uroanálisis::Uroanálisis completo::Perro', 'PERRO_UROANALISIS_COMPLETO'],
+  ['Uroanálisis::Uroanálisis completo::Gato', 'GATO_UROANALISIS_CISTOCENTESIS'],
+  ['Parasitología::Coprológico por flotación::Perro', 'PERRO_COPROLOGICO_FLOTACION'],
+  ['Parasitología::Coprológico funcional / digestivo::Perro', 'PERRO_COPROLOGICO_FUNCIONAL'],
+  ['Parasitología::Coprológico por flotación::Gato', 'GATO_COPROLOGICO_FLOTACION'],
+  ['Parasitología::Coprológico por extensión directa::Gato', 'GATO_COPROLOGICO_EXTENSION_DIRECTA'],
+  ['Citología::Citología de piel::Perro', 'PERRO_CITOLOGIA_PIEL'],
+  ['Citología::Punción con aguja fina (PAF)::Perro', 'PERRO_PAF'],
+  ['Hematología::Frotis sanguíneo felino::Gato', 'GATO_FROTIS_SANGUINEO'],
+  ['Cardiología::Cardiopet proBNP felino::Gato', 'GATO_CARDIOPET_PROBNP'],
+  ['Citología::Citología de raspado de oreja::Gato', 'GATO_CITOLOGIA_RASPADO_OREJA'],
+  ['Citología::Punción con aguja fina (PAF) de masas hepáticas::Gato', 'GATO_PAF_MASAS_HEPATICAS'],
+  [
+    'Citología::Punción con aguja fina (PAF) de nódulos tiroideos::Gato',
+    'GATO_PAF_NODULOS_TIROIDEOS',
+  ],
+  ['Perfiles clínicos / Paneles::Perfil respiratorio felino::Gato', 'GATO_PERFIL_RESPIRATORIO'],
+  ['Enfermedades infecciosas - Gato::PCR para ViLeF/VIF (FeLV/FIV)::Gato', 'GATO_PCR_VILEF_VIF'],
+  ['Enfermedades infecciosas - Gato::PCR para hemoplasmas::Gato', 'GATO_PCR_HEMOPLASMAS'],
+  ['Imagenología::Ultrasonido::', 'IMAGENOLOGIA_ULTRASONIDO'],
+  [
+    'Enfermedades infecciosas - Gato::Prueba rápida ViLeF/VIF (FeLV/FIV)::Gato',
+    'PRUEBA_COMBINADA_FELV_FIV',
+  ],
+  ['Imagenología::Radiografía de contraste::', 'RADIOGRAFIA_CON_CONTRASTE'],
+  ['Electrolitos, minerales y ácido-base::Hierro sérico::', 'HIERRO'],
+  ['Electrolitos, minerales y ácido-base::Cobre sérico::', 'COBRE'],
+  ['Electrolitos, minerales y ácido-base::Zinc sérico::', 'ZINC'],
+  ['Uroanálisis::Glucosa urinaria::', 'GLUCOSA_2'],
+  ['Toxicología::Hierro — análisis toxicológico::', 'HIERRO_2'],
+  ['Toxicología::Cobre — análisis toxicológico::', 'COBRE_2'],
+  ['Toxicología::Zinc — análisis toxicológico::', 'ZINC_2'],
+]);
+
 function crearGeneradorCodigo() {
   const usados = new Set();
-  return function generarCodigo(nombre) {
-    const base = normalizar(nombre).slice(0, 46);
+  return function generarCodigo(categoria, nombre, especie) {
+    const clave = `${categoria}::${nombre}::${especie ?? ''}`;
+    const codigoCanonico = CODIGOS_CANONICOS.get(clave);
+    const base = codigoCanonico ?? normalizar(nombre).slice(0, 46);
     let codigo = base;
     let sufijo = 2;
     while (usados.has(codigo)) {
@@ -110,6 +199,9 @@ const estudiosPorCategoria = {
     ['Creatina quinasa / CK / CPK'],
     ['LDH'],
     ['Aldolasa'],
+    ['Perfil bioquímico básico (6 elementos)'],
+    ['Perfil bioquímico general (12 elementos)'],
+    ['Perfil bioquímico completo (24 elementos)'],
   ],
   'Electrolitos, minerales y ácido-base': [
     ['Sodio'],
@@ -828,9 +920,6 @@ const estudiosPorCategoria = {
     ['Perfil respiratorio felino', null, 'Gato'],
     ['Perfil preoperatorio básico'],
     ['Perfil preoperatorio completo'],
-    ['Perfil básico'],
-    ['Perfil general'],
-    ['Perfil integral'],
     ['Perfil geriátrico'],
     ['Perfil pediátrico'],
     ['Perfil renal'],
@@ -948,14 +1037,10 @@ function permiteAntibiograma(nombre) {
   return /^(cultivo|urocultivo|hemocultivo)/i.test(nombre) && !/(micológico|hongos)/i.test(nombre);
 }
 
-exports.seed = async function seed(knex) {
-  await knex('catalogo_estudios').del();
-
-  const categorias = await knex('catalogo_categorias_estudio').select('id', 'nombre');
-  const categoriaIdPorNombre = Object.fromEntries(categorias.map((c) => [c.nombre, c.id]));
+function construirFilas(categoriaIdPorNombre) {
   const generarCodigo = crearGeneradorCodigo();
 
-  const rows = Object.entries(estudiosPorCategoria).flatMap(([categoriaNombre, estudios]) => {
+  return Object.entries(estudiosPorCategoria).flatMap(([categoriaNombre, estudios]) => {
     const categoriaId = categoriaIdPorNombre[categoriaNombre];
     if (!categoriaId) {
       throw new Error(
@@ -968,14 +1053,36 @@ exports.seed = async function seed(knex) {
         const campoCanonico = campoAdicionalCanonico(nombre, campoAdicional);
         return {
           categoria_id: categoriaId,
-          codigo: generarCodigo(nombre),
+          codigo: generarCodigo(categoriaNombre, nombre, especie),
           nombre,
           campo_adicional: campoCanonico,
           especie: especie ?? null,
           permite_antibiograma: permiteAntibiograma(nombre),
+          activo: true,
         };
       });
   });
+}
 
-  await knex('catalogo_estudios').insert(rows);
+exports.seed = async function seed(knex) {
+  const categorias = await knex('catalogo_categorias_estudio').select('id', 'nombre');
+  const categoriaIdPorNombre = Object.fromEntries(categorias.map((c) => [c.nombre, c.id]));
+  const rows = construirFilas(categoriaIdPorNombre);
+
+  await knex('catalogo_estudios')
+    .insert(rows)
+    .onConflict('codigo')
+    .merge([
+      'categoria_id',
+      'nombre',
+      'campo_adicional',
+      'especie',
+      'permite_antibiograma',
+      'activo',
+    ]);
 };
+
+exports.ESTUDIOS_POR_CATEGORIA = estudiosPorCategoria;
+exports.ESTUDIOS_NO_CANONICOS = estudiosNoCanonicos;
+exports.CODIGOS_CANONICOS = CODIGOS_CANONICOS;
+exports.construirFilas = construirFilas;

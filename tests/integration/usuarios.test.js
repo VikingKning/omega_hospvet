@@ -1466,7 +1466,7 @@ describe('US-604 (segunda/tercera iteración) — tabs, agenda por categoría, f
     return row.id;
   }
 
-  it('AC: el formulario muestra 3 tabs (Menú Principal/Agendas/Configuraciones) y el tab Agendas trae las categorías fijas de agenda', async () => {
+  it('AC: el formulario muestra 3 tabs (Menú Principal/Agendas/Configuraciones) y el tab Agendas trae las áreas predeterminadas', async () => {
     const agent = await loginAs(CON_PERMISOS_USER);
 
     const res = await agent.get('/usuarios/nuevo');
@@ -1474,7 +1474,8 @@ describe('US-604 (segunda/tercera iteración) — tabs, agenda por categoría, f
     expect(res.text).toContain('Menú Principal');
     expect(res.text).toContain('Agendas');
     expect(res.text).toContain('Configuraciones');
-    expect(res.text).toContain('Cardiología'); // etiqueta de agenda_cardiologia, no de un módulo estático viejo
+    expect(res.text).toContain('Consultas');
+    expect(res.text).toContain('Estética');
   });
 
   it('AC: el apartado de Usuarios ya NO muestra checkboxes separados de Permisos/Restablecer contraseña', async () => {

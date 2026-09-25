@@ -99,6 +99,12 @@ describe('GET /webhooks/whatsapp (handshake)', () => {
 });
 
 describe('POST /webhooks/whatsapp (recepción de mensajes)', () => {
+  afterEach(async () => {
+    await db('configuracion_funciones')
+      .where({ clave: 'whatsapp_respuestas_automaticas' })
+      .update({ habilitado: true });
+  });
+
   it('sin firma, responde 401', async () => {
     const res = await request(app)
       .post('/webhooks/whatsapp')
@@ -156,6 +162,31 @@ describe('POST /webhooks/whatsapp (recepción de mensajes)', () => {
     expect(res.status).toBe(401);
     const filas = await db('mensajes_whatsapp').where({ whatsapp_message_id: wamid });
     expect(filas).toHaveLength(0);
+  });
+
+  it('con respuestas automáticas deshabilitadas confirma el webhook sin registrar el mensaje', async () => {
+    await db('configuracion_funciones')
+      .where({ clave: 'whatsapp_respuestas_automaticas' })
+      .update({ habilitado: false });
+    const wamid = `${WAMID_PREFIX}bot-deshabilitado`;
+    const rawBody = JSON.stringify(
+      payloadTexto(wamid, '5215500000099', 'este mensaje debe ignorarse'),
+    );
+
+    const res = await request(app)
+      .post('/webhooks/whatsapp')
+      .type('json')
+      .set('X-Hub-Signature-256', firmar(rawBody))
+      .send(rawBody);
+
+    expect(res.status).toBe(200);
+    const mensajes = await db('mensajes_whatsapp').where({ whatsapp_message_id: wamid });
+    const conversaciones = await db('conversaciones_whatsapp').where({
+      phone_number_id: PHONE_NUMBER_ID,
+      telefono_normalizado: '525500000099',
+    });
+    expect(mensajes).toHaveLength(0);
+    expect(conversaciones).toHaveLength(0);
   });
 
   it('un mensaje nuevo con wamid válido crea una fila en mensajes_whatsapp', async () => {

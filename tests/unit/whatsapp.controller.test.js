@@ -10,11 +10,13 @@ jest.mock('../../src/modules/whatsapp/whatsapp.service');
 jest.mock('../../src/modules/whatsapp/whatsapp.outbox');
 jest.mock('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 jest.mock('../../src/modules/whatsapp/whatsapp.alertas.service');
+jest.mock('../../src/modules/configuracion/configuracion.service');
 const whatsappConfig = require('../../src/config/whatsapp');
 const service = require('../../src/modules/whatsapp/whatsapp.service');
 const outbox = require('../../src/modules/whatsapp/whatsapp.outbox');
 const atencionHumanaService = require('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 const alertasService = require('../../src/modules/whatsapp/whatsapp.alertas.service');
+const configuracionService = require('../../src/modules/configuracion/configuracion.service');
 const controller = require('../../src/modules/whatsapp/whatsapp.controller');
 
 function makeReq(body) {
@@ -76,6 +78,12 @@ beforeEach(() => {
   outbox.registrarEstadoMeta.mockResolvedValue();
   atencionHumanaService.registrarEchoManual.mockResolvedValue({ id: 1 });
   alertasService.esRespuestaAAlertaInterna.mockResolvedValue(false);
+  configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+    respuestasAutomaticas: true,
+    citasConsultas: true,
+    citasEstetica: true,
+    avisoPrivacidad: true,
+  });
 });
 
 describe('whatsapp.controller.extraerEventosEntrantes — qué se extrae de cada tipo de mensaje', () => {
@@ -381,6 +389,32 @@ describe('whatsapp.controller.extraerEventosEcoEntrantes — US WA 017 (AC25/AC3
 });
 
 describe('whatsapp.controller.recibir — solo persiste, sin disparar nada en segundo plano (US WA 003 AC4/AC9)', () => {
+  it('con respuestas automáticas deshabilitadas responde 200 sin registrar ni procesar nada', async () => {
+    configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+      respuestasAutomaticas: false,
+      citasConsultas: true,
+      citasEstetica: true,
+      avisoPrivacidad: true,
+    });
+    const req = makeReq(
+      payloadConMensaje({
+        id: 'wamid.ignorado',
+        from: '5215500000000',
+        timestamp: '1700000000',
+        type: 'text',
+        text: { body: 'hola' },
+      }),
+    );
+    const res = makeRes();
+
+    await controller.recibir(req, res);
+
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
+    expect(service.registrarEventoEntrante).not.toHaveBeenCalled();
+    expect(outbox.registrarEstadoMeta).not.toHaveBeenCalled();
+    expect(atencionHumanaService.registrarEchoManual).not.toHaveBeenCalled();
+  });
+
   it('un mensaje nuevo con contenido se persiste sin disparar ningún procesamiento', async () => {
     const req = makeReq(
       payloadConMensaje({

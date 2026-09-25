@@ -16,6 +16,7 @@ const {
   editar,
   buscarPorTelefono,
   buscarMascotas,
+  resolverPacienteActivoPorNhc,
   verificarTelefono,
   resolverTutorPorId,
   TutorValidationError,
@@ -40,6 +41,7 @@ const TUTOR = {
 const MASCOTA_A = {
   id: 10,
   propietario_id: 1,
+  nhc: 123456,
   nombre: 'Firulais',
   tipo: 'Perro',
   raza: 'Labrador',
@@ -50,6 +52,7 @@ const MASCOTA_A = {
 const MASCOTA_B = {
   id: 11,
   propietario_id: 1,
+  nhc: null,
   nombre: 'Michi',
   tipo: 'Gato',
   raza: 'Siamés',
@@ -130,6 +133,11 @@ describe('tutores.service.list', () => {
 
     const porRaza = await list({ q: 'labrador' });
     expect(porRaza.tutores[0].pacientes).toEqual([MASCOTA_A]);
+  });
+
+  it('una búsqueda de NHC con ceros iniciales muestra únicamente al paciente correspondiente', async () => {
+    const result = await list({ q: '00123456' });
+    expect(result.tutores[0].pacientes).toEqual([MASCOTA_A]);
   });
 
   it('AC7: un tutor sin pacientes que cumplan el filtro/búsqueda queda con un arreglo vacío', async () => {
@@ -394,6 +402,54 @@ describe('tutores.service.crear (US-156 AC7-AC13)', () => {
     );
   });
 
+  it('NHC es opcional y se guarda como null cuando no se captura', async () => {
+    await crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais' }] });
+    expect(repository.crear).toHaveBeenCalledWith(
+      expect.objectContaining({ pacientes: [expect.objectContaining({ nhc: null })] }),
+    );
+  });
+
+  it('normaliza un NHC con ceros iniciales al entero equivalente', async () => {
+    await crear({
+      ...DATOS_VALIDOS,
+      pacientes: [{ nombre: 'Firulais', nhc: '00123456' }],
+    });
+    expect(repository.crear).toHaveBeenCalledWith(
+      expect.objectContaining({ pacientes: [expect.objectContaining({ nhc: 123456 })] }),
+    );
+  });
+
+  it.each(['123456789', '12A45678', '-1', '1.5'])('rechaza el NHC inválido %s', async (nhc) => {
+    await expect(
+      crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', nhc }] }),
+    ).rejects.toThrow(TutorValidationError);
+  });
+
+  it('rechaza dos pacientes con el mismo NHC normalizado dentro del formulario', async () => {
+    await expect(
+      crear({
+        ...DATOS_VALIDOS,
+        pacientes: [
+          { nombre: 'Firulais', nhc: '00123456' },
+          { nombre: 'Michi', nhc: '123456' },
+        ],
+      }),
+    ).rejects.toThrow('El NHC 123456 está repetido');
+  });
+
+  it('convierte la restricción única de PostgreSQL en un error de negocio entendible', async () => {
+    repository.crear.mockRejectedValue(
+      Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'mascotas_nhc_unique',
+      }),
+    );
+
+    await expect(
+      crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', nhc: '12345678' }] }),
+    ).rejects.toThrow('El NHC ya está asignado a otro paciente.');
+  });
+
   it('rechaza un sexo fuera de la whitelist real (Macho/Hembra)', async () => {
     await expect(
       crear({ ...DATOS_VALIDOS, pacientes: [{ nombre: 'Firulais', sexo: 'Otro' }] }),
@@ -622,6 +678,33 @@ describe('tutores.service.buscarMascotas (pedido del usuario: buscar por mascota
     repository.searchMascotas.mockResolvedValue([MASCOTA]);
     const result = await buscarMascotas('Guillermo');
     expect(result).toEqual([MASCOTA]);
+  });
+});
+
+describe('tutores.service.resolverPacienteActivoPorNhc', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('normaliza ceros, obtiene al tutor y conserva el paciente seleccionado', async () => {
+    repository.findMascotaActivaByNhc.mockResolvedValue(MASCOTA_A);
+    repository.findById.mockResolvedValue(TUTOR);
+    repository.findMascotasByPropietarioId.mockResolvedValue([MASCOTA_A]);
+
+    const result = await resolverPacienteActivoPorNhc('00123456');
+
+    expect(repository.findMascotaActivaByNhc).toHaveBeenCalledWith(123456);
+    expect(result).toEqual({
+      pacienteId: MASCOTA_A.id,
+      tutor: expect.objectContaining({
+        id: TUTOR.id,
+        pacientes: [expect.objectContaining({ id: MASCOTA_A.id, nhc: 123456 })],
+      }),
+    });
+  });
+
+  it('devuelve null si no existe un paciente activo con ese NHC', async () => {
+    repository.findMascotaActivaByNhc.mockResolvedValue(undefined);
+    await expect(resolverPacienteActivoPorNhc('12345678')).resolves.toBeNull();
+    expect(repository.findById).not.toHaveBeenCalled();
   });
 });
 

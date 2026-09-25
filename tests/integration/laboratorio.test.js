@@ -152,6 +152,19 @@ describe('GET /laboratorio/nuevo', () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('labFormData');
+    expect(res.text).toContain('id="labPacienteNhc"');
+    expect(res.text).toContain('id="labTelefonoLimpiarBtn"');
+    expect(res.text).toContain('id="labTelefonoBuscarBtn"');
+    expect(res.text).toContain('id="labNhcLimpiarBtn"');
+    expect(res.text).toContain('id="labNhcBuscarBtn"');
+    expect(res.text.match(/<button[^>]*id="labTelefonoLimpiarBtn"[^>]*>/)[0]).not.toContain(
+      'hidden',
+    );
+    expect(res.text.match(/<button[^>]*id="labNhcLimpiarBtn"[^>]*>/)[0]).not.toContain('hidden');
+    expect(res.text).toContain('id="labToast"');
+    expect(res.text).not.toContain('id="labPacienteNhcError"');
+    expect(res.text).not.toContain('id="labTelefonoError"');
+    expect(res.text).toContain("labPacienteNhcInput.addEventListener('blur'");
     expect(res.text).toContain('id="labDoctorCedula"');
     expect(res.text).toContain('id="labPrintDoctorCedula"');
     const match = res.text.match(/<div id="labFormData" hidden>(.*?)<\/div>/s);
@@ -498,6 +511,86 @@ describe('POST /laboratorio/buscar-tutor', () => {
     const agent = await loginAs(SOLO_VER);
 
     const res = await agent.post('/laboratorio/buscar-tutor').send({ telefono: '0000000000' });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/main.html');
+  });
+});
+
+describe('POST /laboratorio/buscar-paciente-nhc', () => {
+  it('normaliza ceros iniciales y devuelve tutor y paciente cuando ambos están activos', async () => {
+    const [{ id: propietarioId }] = await db('propietarios')
+      .insert({
+        nombre: 'Tutor NHC',
+        apellidos: SUFFIX,
+        telefono: '5598987601',
+        correo: 'tutor.nhc@omega.test',
+        activo: true,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+    const [{ id: mascotaId }] = await db('mascotas')
+      .insert({
+        propietario_id: propietarioId,
+        nhc: 7654321,
+        nombre: 'Paciente NHC',
+        tipo: 'Gato',
+        raza: 'Criollo',
+        sexo: 'Hembra',
+        activo: true,
+        creado_en: db.fn.now(),
+      })
+      .returning('id');
+
+    try {
+      const agent = await loginAs(SOLO_CREAR);
+      const formulario = await agent.get('/laboratorio/nuevo');
+      const match = formulario.text.match(/<div id="labFormData" hidden>(.*?)<\/div>/s);
+      const { csrfToken } = JSON.parse(match[1].replace(/\\u003c/g, '<'));
+
+      const res = await agent
+        .post('/laboratorio/buscar-paciente-nhc')
+        .set('x-csrf-token', csrfToken)
+        .send({ nhc: '07654321' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        existe: true,
+        pacienteId: mascotaId,
+        tutor: expect.objectContaining({
+          id: propietarioId,
+          nombre: 'Tutor NHC',
+          telefono: '55-9898-7601',
+          pacientes: [
+            expect.objectContaining({ id: mascotaId, nhc: 7654321, nombre: 'Paciente NHC' }),
+          ],
+        }),
+      });
+    } finally {
+      await db('mascotas').where({ id: mascotaId }).del();
+      await db('propietarios').where({ id: propietarioId }).del();
+    }
+  });
+
+  it('devuelve existe:false cuando el NHC no está registrado', async () => {
+    const agent = await loginAs(SOLO_CREAR);
+    const formulario = await agent.get('/laboratorio/nuevo');
+    const match = formulario.text.match(/<div id="labFormData" hidden>(.*?)<\/div>/s);
+    const { csrfToken } = JSON.parse(match[1].replace(/\\u003c/g, '<'));
+
+    const res = await agent
+      .post('/laboratorio/buscar-paciente-nhc')
+      .set('x-csrf-token', csrfToken)
+      .send({ nhc: '87654321' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ existe: false });
+  });
+
+  it('requiere laboratorio.crear', async () => {
+    const agent = await loginAs(SOLO_VER);
+
+    const res = await agent.post('/laboratorio/buscar-paciente-nhc').send({ nhc: '7654321' });
 
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('/main.html');

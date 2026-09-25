@@ -8,6 +8,7 @@ const repository = require('./configuracion.repository');
 // Sin destructurar: así los tests pueden mockear
 // laboratorioArchivos.convertirWordAPdf sin tocar LibreOffice de verdad.
 const laboratorioArchivos = require('../laboratorio/laboratorio.archivos');
+const { CLAVES_FUNCIONES, LISTA_CLAVES_FUNCIONES } = require('./configuracion-funciones');
 
 class ConfiguracionValidationError extends Error {
   constructor(message) {
@@ -223,6 +224,43 @@ async function leerArchivoAviso(nombreArchivo) {
   return fs.readFile(path.join(DIRECTORIO_LEGAL, nombreArchivo));
 }
 
+async function obtenerFunciones() {
+  const filas = await repository.listarFunciones();
+  return Object.fromEntries(filas.map((fila) => [fila.clave, Boolean(fila.habilitado)]));
+}
+
+async function actualizarFuncion({ clave, habilitado, usuarioId }) {
+  if (!LISTA_CLAVES_FUNCIONES.includes(clave)) {
+    throw new ConfiguracionValidationError('La función indicada no existe.');
+  }
+  if (typeof habilitado !== 'boolean') {
+    throw new ConfiguracionValidationError('El valor de la función debe ser verdadero o falso.');
+  }
+
+  const funcion = await repository.actualizarFuncion(clave, habilitado, usuarioId);
+  if (!funcion) {
+    throw new ConfiguracionValidationError('La función indicada no está configurada.');
+  }
+  return { clave: funcion.clave, habilitado: Boolean(funcion.habilitado) };
+}
+
+async function obtenerConfiguracionEnvioLaboratorio() {
+  const funciones = await obtenerFunciones();
+  const whatsapp = funciones[CLAVES_FUNCIONES.LABORATORIO_ENVIO_WHATSAPP] === true;
+  const correo = funciones[CLAVES_FUNCIONES.LABORATORIO_ENVIO_CORREO] === true;
+  return { whatsapp, correo, habilitado: whatsapp || correo };
+}
+
+async function obtenerConfiguracionWhatsapp() {
+  const funciones = await obtenerFunciones();
+  return {
+    respuestasAutomaticas: funciones[CLAVES_FUNCIONES.WHATSAPP_RESPUESTAS_AUTOMATICAS] === true,
+    citasConsultas: funciones[CLAVES_FUNCIONES.WHATSAPP_CITAS_CONSULTAS] === true,
+    citasEstetica: funciones[CLAVES_FUNCIONES.WHATSAPP_CITAS_ESTETICA] === true,
+    avisoPrivacidad: funciones[CLAVES_FUNCIONES.WHATSAPP_AVISO_PRIVACIDAD] === true,
+  };
+}
+
 module.exports = {
   ConfiguracionValidationError,
   obtenerAvisoPrivacidad,
@@ -232,4 +270,9 @@ module.exports = {
   actualizarMediaIdVersion,
   leerArchivoAviso,
   listarUltimasVersionesAviso,
+  obtenerFunciones,
+  actualizarFuncion,
+  obtenerConfiguracionEnvioLaboratorio,
+  obtenerConfiguracionWhatsapp,
+  CLAVES_FUNCIONES,
 };

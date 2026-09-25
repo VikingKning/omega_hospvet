@@ -9,7 +9,7 @@ class DoctorValidationError extends Error {
 
 class DoctorPredeterminadoError extends Error {
   constructor() {
-    super('Este es el doctor predeterminado de Consultas y no se puede editar ni dar de baja.');
+    super('Este es un doctor predeterminado del sistema y no se puede editar ni dar de baja.');
     this.status = 400;
   }
 }

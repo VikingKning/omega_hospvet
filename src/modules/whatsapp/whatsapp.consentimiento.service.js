@@ -44,6 +44,10 @@ async function enviarIntento(datosIntento, conversacionId, descripcionError) {
 }
 
 async function enviarAvisoPrivacidad({ conversacionId, telefono, claveIdempotenciaBase }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas || !funcionesWhatsapp.avisoPrivacidad) {
+    return { enviado: false, motivo: 'funcion_deshabilitada' };
+  }
   let subida;
   try {
     subida = await subirAvisoVigenteAMeta();
@@ -102,6 +106,10 @@ async function enviarAvisoPrivacidad({ conversacionId, telefono, claveIdempotenc
 // consentimiento (o la funcionalidad está apagada), así que es solo una
 // consulta de transparencia (derechos ARCO), no una nueva solicitud.
 async function enviarAvisoInformativo({ conversacionId, telefono, claveIdempotenciaBase }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas || !funcionesWhatsapp.avisoPrivacidad) {
+    return { enviado: false, motivo: 'funcion_deshabilitada' };
+  }
   let subida;
   try {
     subida = await subirAvisoVigenteAMeta();

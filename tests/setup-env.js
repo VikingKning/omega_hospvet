@@ -5,6 +5,19 @@
 // otro proyecto en vez de las de .env.test.
 require('dotenv').config({ path: '.env.test', override: true, quiet: true });
 
+// Permite ejecutar la suite contra un PostgreSQL efímero en otro puerto
+// sin editar ni versionar credenciales distintas en .env.test. CI no define
+// estas variables y conserva exactamente la configuración habitual.
+if (process.env.OMEGA_TEST_DB_HOST_OVERRIDE) {
+  process.env.DB_HOST = process.env.OMEGA_TEST_DB_HOST_OVERRIDE;
+}
+if (process.env.OMEGA_TEST_DB_PORT_OVERRIDE) {
+  process.env.DB_PORT = process.env.OMEGA_TEST_DB_PORT_OVERRIDE;
+}
+if (process.env.OMEGA_TEST_DB_PASSWORD_OVERRIDE) {
+  process.env.DB_PASSWORD = process.env.OMEGA_TEST_DB_PASSWORD_OVERRIDE;
+}
+
 // passwordPolicy.js#checkPasswordPwned llama a la API real de Have I Been
 // Pwned. Sin este stub, cualquier flujo de integración que establezca una
 // contraseña (alta de usuario, US-110, cambio obligatorio tras reseteo)

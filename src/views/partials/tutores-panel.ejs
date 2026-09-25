@@ -46,7 +46,7 @@ const bannerError = typeof error === 'undefined' ? null : error;
       <div class="lab-toolbar-filters">
         <div class="lab-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input type="text" id="tutores-search" name="q" value="<%= q %>" placeholder="Buscar por tutor, teléfono, correo o paciente...">
+          <input type="text" id="tutores-search" name="q" value="<%= q %>" placeholder="Buscar por tutor, teléfono, correo, NHC o paciente...">
           <span class="lab-search-spinner htmx-indicator" aria-hidden="true"></span>
         </div>
         <div class="filter-group">
@@ -114,11 +114,12 @@ const bannerError = typeof error === 'undefined' ? null : error;
                     <summary><%= tutor.pacientes.length %> paciente<%= tutor.pacientes.length === 1 ? '' : 's' %></summary>
                     <table class="pacientes-mini-table">
                       <thead>
-                        <tr><th>Tipo</th><th>Nombre</th><th>Raza</th><th>Estado</th></tr>
+                        <tr><th>NHC</th><th>Tipo</th><th>Nombre</th><th>Raza</th><th>Estado</th></tr>
                       </thead>
                       <tbody>
                         <% tutor.pacientes.forEach((mascota) => { %>
                           <tr>
+                            <td><%= mascota.nhc ?? '—' %></td>
                             <td><%= mascota.tipo || '—' %></td>
                             <td><%= mascota.nombre %></td>
                             <td><%= mascota.raza || '—' %></td>

@@ -3,6 +3,7 @@ const service = require('./whatsapp.service');
 const outbox = require('./whatsapp.outbox');
 const atencionHumanaService = require('./whatsapp.atencionHumana.service');
 const alertasService = require('./whatsapp.alertas.service');
+const configuracionService = require('../configuracion/configuracion.service');
 
 function verificar(req, res) {
   const modo = req.query['hub.mode'];
@@ -141,6 +142,17 @@ async function recibir(req, res) {
     return res.sendStatus(401);
   }
 
+  let funcionesWhatsapp;
+  try {
+    funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  } catch (err) {
+    req.log.error({ err }, 'No se pudo consultar la configuración de WhatsApp.');
+    return res.sendStatus(503);
+  }
+  if (!funcionesWhatsapp.respuestasAutomaticas) {
+    return res.sendStatus(200);
+  }
+
   const eventos = extraerEventosEntrantes(req.body);
   const estados = extraerEstadosEntrantes(req.body);
 
@@ -152,7 +164,10 @@ async function recibir(req, res) {
       ) {
         continue;
       }
-      const resultado = await service.registrarEventoEntrante(evento);
+      const resultado = await service.registrarEventoEntrante({
+        ...evento,
+        funcionesWhatsapp,
+      });
       if (resultado?.pipelineAsignado === 'flujo_anterior') {
         if (resultado.esNuevo) {
           service.procesarSiguienteMensajeFlujoAnterior().catch((err) =>

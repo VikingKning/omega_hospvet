@@ -4,12 +4,17 @@ const fs = require('fs');
 
 async function pagina(req, res, next) {
   try {
-    const data = await service.list({});
-    const categorias = await service.listCategorias();
+    const [data, categorias] = await Promise.all([service.list({}), service.listCategorias()]);
     const csrfToken = generateCsrfToken(req, res);
     const error =
       req.query.error === 'no-encontrado' ? `El registro "${req.query.id}" no existe.` : null;
-    res.render('laboratorio', { ...data, categorias, user: req.session.user, csrfToken, error });
+    res.render('laboratorio', {
+      ...data,
+      categorias,
+      user: req.session.user,
+      csrfToken,
+      error,
+    });
   } catch (err) {
     next(err);
   }
@@ -17,8 +22,10 @@ async function pagina(req, res, next) {
 
 async function filter(req, res, next) {
   try {
-    const data = await service.list(req.body);
-    const categorias = await service.listCategorias();
+    const [data, categorias] = await Promise.all([
+      service.list(req.body),
+      service.listCategorias(),
+    ]);
     const csrfToken = generateCsrfToken(req, res);
     res.render('partials/laboratorio-panel', {
       ...data,
@@ -34,8 +41,10 @@ async function filter(req, res, next) {
 async function eliminar(req, res, next) {
   try {
     await service.eliminar(req.params.id, req.session.user.id);
-    const data = await service.list({ ...req.query, ...req.body });
-    const categorias = await service.listCategorias();
+    const [data, categorias] = await Promise.all([
+      service.list({ ...req.query, ...req.body }),
+      service.listCategorias(),
+    ]);
     const csrfToken = generateCsrfToken(req, res);
     res.render('partials/laboratorio-panel', {
       ...data,
@@ -50,9 +59,10 @@ async function eliminar(req, res, next) {
 
 async function nuevoForm(req, res, next) {
   try {
-    const [catalogo, doctores] = await Promise.all([
+    const [catalogo, doctores, configuracionEnvio] = await Promise.all([
       service.catalogoParaFormulario(),
       service.listarDoctoresActivos(),
+      service.obtenerConfiguracionEnvioResultados(),
     ]);
     const csrfToken = generateCsrfToken(req, res);
     res.render('laboratorio-form', {
@@ -62,6 +72,7 @@ async function nuevoForm(req, res, next) {
       modoCargarArchivos: false,
       catalogo,
       doctores,
+      configuracionEnvio,
       csrfToken,
       user: req.session.user,
     });
@@ -78,9 +89,10 @@ async function formularioDeRegistro(req, res, next, { forzarSoloLectura, modoCar
         `/laboratorio.html?error=no-encontrado&id=${encodeURIComponent(req.params.id)}`,
       );
     }
-    const [catalogo, doctores] = await Promise.all([
+    const [catalogo, doctores, configuracionEnvio] = await Promise.all([
       service.catalogoParaFormulario(registro.estudios.map((estudio) => estudio.estudio_id)),
       service.listarDoctoresActivos(registro.doctor_id),
+      service.obtenerConfiguracionEnvioResultados(),
     ]);
     const permissions = req.session.user.permissions ?? [];
     const csrfToken = generateCsrfToken(req, res);
@@ -91,6 +103,7 @@ async function formularioDeRegistro(req, res, next, { forzarSoloLectura, modoCar
       modoCargarArchivos: Boolean(modoCargarArchivos),
       catalogo,
       doctores,
+      configuracionEnvio,
       csrfToken,
       user: req.session.user,
     });
@@ -125,6 +138,18 @@ async function buscarTutor(req, res, next) {
     const tutor = await service.resolverTutorPorTelefono(req.body.telefono);
     res.json(tutor ? { existe: true, tutor } : { existe: false });
   } catch (err) {
+    next(err);
+  }
+}
+
+async function buscarPacientePorNhc(req, res, next) {
+  try {
+    const resultado = await service.resolverPacientePorNhc(req.body.nhc);
+    res.json(resultado ? { existe: true, ...resultado } : { existe: false });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
     next(err);
   }
 }
@@ -287,6 +312,7 @@ module.exports = {
   verForm,
   cargarForm,
   buscarTutor,
+  buscarPacientePorNhc,
   buscarTutorPorNombre,
   crear,
   editar,

@@ -35,7 +35,10 @@ const categorias = [
 ];
 
 exports.seed = async function seed(knex) {
-  await knex('catalogo_estudios').del();
-  await knex('catalogo_categorias_estudio').del();
-  await knex('catalogo_categorias_estudio').insert(categorias.map((nombre) => ({ nombre })));
+  await knex('catalogo_categorias_estudio')
+    .insert(categorias.map((nombre) => ({ nombre, activo: true })))
+    .onConflict('nombre')
+    .merge({ activo: true });
 };
+
+exports.CATEGORIAS = categorias;

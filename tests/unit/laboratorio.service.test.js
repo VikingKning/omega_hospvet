@@ -4,12 +4,14 @@ jest.mock('../../src/modules/laboratorio/laboratorio.envios');
 jest.mock('../../src/modules/tutores/tutores.repository');
 jest.mock('../../src/modules/tutores/tutores.service');
 jest.mock('../../src/modules/doctores/doctores.repository');
+jest.mock('../../src/modules/configuracion/configuracion.service');
 const repository = require('../../src/modules/laboratorio/laboratorio.repository');
 const archivos = require('../../src/modules/laboratorio/laboratorio.archivos');
 const envios = require('../../src/modules/laboratorio/laboratorio.envios');
 const tutoresRepository = require('../../src/modules/tutores/tutores.repository');
 const tutoresService = require('../../src/modules/tutores/tutores.service');
 const doctoresRepository = require('../../src/modules/doctores/doctores.repository');
+const configuracionService = require('../../src/modules/configuracion/configuracion.service');
 const {
   list,
   crear,
@@ -19,6 +21,7 @@ const {
   eliminar,
   listarDoctoresActivos,
   catalogoParaFormulario,
+  resolverPacientePorNhc,
   subirArchivoParaTodos,
   subirArchivoParaEstudio,
   eliminarArchivoDeTodos,
@@ -35,6 +38,26 @@ const ZONAS = [
   { id: 128, codigo: 'torax', nombre: 'Tórax' },
 ];
 const FECHA_VALIDA = '2026-08-27';
+
+beforeEach(() => {
+  configuracionService.obtenerConfiguracionEnvioLaboratorio.mockResolvedValue({
+    whatsapp: true,
+    correo: true,
+    habilitado: true,
+  });
+});
+
+describe('laboratorio.service.resolverPacientePorNhc', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('delega la resolución al módulo de tutores sin alterar el valor capturado', async () => {
+    const resultadoEsperado = { tutor: { id: 6 }, pacienteId: 11 };
+    tutoresService.resolverPacienteActivoPorNhc.mockResolvedValue(resultadoEsperado);
+
+    await expect(resolverPacientePorNhc('00123456')).resolves.toBe(resultadoEsperado);
+    expect(tutoresService.resolverPacienteActivoPorNhc).toHaveBeenCalledWith('00123456');
+  });
+});
 
 function estudio(id, campoAdicional, overrides = {}) {
   return {
@@ -644,6 +667,21 @@ describe('laboratorio.service.subirArchivoParaTodos', () => {
     });
   });
 
+  it('permite cargar archivos aunque ambos canales de envío estén deshabilitados', async () => {
+    configuracionService.obtenerConfiguracionEnvioLaboratorio.mockResolvedValue({
+      whatsapp: false,
+      correo: false,
+      habilitado: false,
+    });
+
+    await expect(subirArchivoParaTodos('7', [{ originalname: 'a.pdf' }], 9)).resolves.toEqual({
+      archivoId: 55,
+      reutilizado: false,
+    });
+    expect(archivos.procesarArchivos).toHaveBeenCalled();
+    expect(configuracionService.obtenerConfiguracionEnvioLaboratorio).not.toHaveBeenCalled();
+  });
+
   it('propaga el error de validación de laboratorio.archivos.js (ej. video mezclado con otro archivo)', async () => {
     archivos.procesarArchivos.mockRejectedValue(
       Object.assign(new Error('Tipo no permitido'), { status: 400 }),
@@ -1018,7 +1056,7 @@ describe('laboratorio.service.enviarResultados', () => {
     });
 
     await expect(prepararConfirmacionEnvio('42', 7)).rejects.toThrow(
-      'El tutor no tiene correo ni teléfono registrados',
+      'El tutor no tiene datos de contacto para los canales de envío habilitados',
     );
   });
 
@@ -1074,6 +1112,81 @@ describe('laboratorio.service.enviarResultados', () => {
       correo: { intentado: true, enviado: true, error: undefined },
       whatsapp: { intentado: true, enviado: true, error: undefined },
     });
+  });
+
+  it('con WhatsApp deshabilitado, solo envía por correo aunque exista teléfono', async () => {
+    configuracionService.obtenerConfiguracionEnvioLaboratorio.mockResolvedValue({
+      whatsapp: false,
+      correo: true,
+      habilitado: true,
+    });
+
+    const confirmacion = await prepararConfirmacionEnvio('42', 7);
+    expect(confirmacion.destinatarios).toEqual({
+      correo: 'an***@c***.com',
+      whatsapp: null,
+    });
+    const resultado = await enviarResultados('42', 7, {
+      confirmacionToken: confirmacion.confirmacionToken,
+    });
+
+    expect(envios.enviarPorCorreo).toHaveBeenCalledTimes(1);
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+    expect(resultado.whatsapp.intentado).toBe(false);
+    expect(repository.registrarEnvio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canalIntentado: 'correo',
+        destinatarioTelefono: null,
+        whatsappExitoso: null,
+      }),
+    );
+  });
+
+  it('con correo deshabilitado, solo envía por WhatsApp aunque exista correo', async () => {
+    configuracionService.obtenerConfiguracionEnvioLaboratorio.mockResolvedValue({
+      whatsapp: true,
+      correo: false,
+      habilitado: true,
+    });
+
+    const resultado = await enviarConfirmado();
+
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+    expect(envios.enviarPorWhatsapp).toHaveBeenCalledTimes(1);
+    expect(resultado.correo.intentado).toBe(false);
+  });
+
+  it('con ambos canales deshabilitados no prepara ni ejecuta ningún envío', async () => {
+    configuracionService.obtenerConfiguracionEnvioLaboratorio.mockResolvedValue({
+      whatsapp: false,
+      correo: false,
+      habilitado: false,
+    });
+
+    await expect(prepararConfirmacionEnvio('42', 7)).rejects.toThrow(
+      'El envío de resultados está deshabilitado en Configuración General.',
+    );
+    await expect(enviarResultados('42', 7, { confirmacionToken: 'invalido' })).rejects.toThrow(
+      'El envío de resultados está deshabilitado en Configuración General.',
+    );
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
+    expect(repository.registrarEnvio).not.toHaveBeenCalled();
+  });
+
+  it('invalida la confirmación si cambia la configuración de canales antes de enviar', async () => {
+    const confirmacion = await prepararConfirmacionEnvio('42', 7);
+    configuracionService.obtenerConfiguracionEnvioLaboratorio.mockResolvedValue({
+      whatsapp: false,
+      correo: true,
+      habilitado: true,
+    });
+
+    await expect(
+      enviarResultados('42', 7, { confirmacionToken: confirmacion.confirmacionToken }),
+    ).rejects.toThrow('Los destinatarios o archivos cambiaron');
+    expect(envios.enviarPorCorreo).not.toHaveBeenCalled();
+    expect(envios.enviarPorWhatsapp).not.toHaveBeenCalled();
   });
 
   it('sin correo registrado, solo intenta WhatsApp y registra medio "whatsapp"', async () => {

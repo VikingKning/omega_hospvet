@@ -132,9 +132,10 @@
             </button>
           </div>
           <div class="lab-table-wrap">
-            <table class="lab-table">
+            <table class="lab-table tutor-pacientes-table">
               <thead>
                 <tr>
+                  <th>NHC</th>
                   <th>Especie</th>
                   <th>Nombre</th>
                   <th>Sexo</th>
@@ -300,11 +301,12 @@
 
           return `
             <tr>
+              <td><input type="text" class="paciente-input paciente-input-nhc" data-field="nhc" data-index="${index}" inputmode="numeric" maxlength="8" placeholder="Ej. 12345678" value="${paciente.nhc ?? ''}" ${disabledAttr}></td>
               <td>${tipoCell}</td>
-              <td><input type="text" class="paciente-input" data-field="nombre" data-index="${index}" maxlength="100" placeholder="Ej. Max" value="${escapeHtml(paciente.nombre)}" ${disabledAttr}></td>
+              <td><input type="text" class="paciente-input paciente-input-nombre" data-field="nombre" data-index="${index}" maxlength="100" placeholder="Ej. Max" value="${escapeHtml(paciente.nombre)}" ${disabledAttr}></td>
               <td>${sexoCell}</td>
               <td><input type="number" class="paciente-input paciente-input-edad" data-field="edad" data-index="${index}" min="0" max="40" placeholder="Años" value="${paciente.edad ?? ''}" ${disabledAttr}></td>
-              <td><input type="text" class="paciente-input" data-field="raza" data-index="${index}" maxlength="100" placeholder="Ej. Labrador Retriever" value="${escapeHtml(paciente.raza)}" ${disabledAttr}></td>
+              <td><input type="text" class="paciente-input paciente-input-raza" data-field="raza" data-index="${index}" maxlength="100" placeholder="Ej. Labrador" value="${escapeHtml(paciente.raza)}" ${disabledAttr}></td>
               <td>${estadoCell}</td>
             </tr>
           `;
@@ -322,6 +324,7 @@
       tutorCorreoInput.value = tutor.correo || '';
       pacientes = tutor.pacientes.map((p) => ({
         id: p.id,
+        nhc: p.nhc ?? '',
         nombre: p.nombre,
         tipo: p.tipo || '',
         raza: p.raza || '',
@@ -350,15 +353,18 @@
     }
 
     document.getElementById('agregarPacienteBtn').addEventListener('click', () => {
-      pacientes.push({ id: null, nombre: '', tipo: '', raza: '', sexo: '', edad: '', activo: true });
+      pacientes.push({ id: null, nhc: '', nombre: '', tipo: '', raza: '', sexo: '', edad: '', activo: true });
       renderPacientes();
-      pacientesTableBody.querySelector('tr:last-child input[data-field="nombre"]')?.focus();
+      pacientesTableBody.querySelector('tr:last-child input[data-field="nhc"]')?.focus();
     });
 
     pacientesTableBody.addEventListener('input', (event) => {
       const field = event.target.dataset.field;
       if (!field) return;
       const index = Number(event.target.dataset.index);
+      if (field === 'nhc') {
+        event.target.value = event.target.value.replace(/\D/g, '').slice(0, 8);
+      }
       pacientes[index][field] = event.target.value;
       if (field === 'nombre') event.target.classList.remove('invalid');
     });
@@ -547,6 +553,7 @@
         ...(tutorActivoInput ? { activo: tutorActivoInput.checked } : {}),
         pacientes: pacientes.map((p) => ({
           id: p.id,
+          nhc: p.nhc,
           nombre: p.nombre,
           tipo: p.tipo,
           raza: p.raza,

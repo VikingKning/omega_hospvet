@@ -1,14 +1,118 @@
-<div class="tutor-form-heading" style="margin-bottom: 18px;">
-  <span class="tutor-form-heading-icon">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-  </span>
-  <div class="tutor-form-heading-text">
-    <h2>Aviso de privacidad y tratamiento de datos personales</h2>
-    <p>Configura el aviso que WhatsApp envía a los tutores antes de continuar la conversación.</p>
-  </div>
-</div>
+<%
+const funcionesActivas = typeof funciones === 'object' && funciones ? funciones : {};
+const funcionHabilitada = (clave) => funcionesActivas[clave] === true;
+%>
+<div class="configuracion-page">
+  <details class="profile-card profile-section" open>
+    <summary class="profile-section-header">
+      <svg class="profile-section-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>
+      <span class="profile-section-title">Canales y automatizaciones</span>
+      <span class="profile-section-subtitle">Guardado automático</span>
+      <svg class="profile-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </summary>
+    <div class="profile-section-body configuracion-options-body">
+      <p class="configuracion-section-intro">
+        Define qué canales y funciones automáticas estarán disponibles para el equipo y los tutores.
+      </p>
+      <div id="configuracionFuncionesMensaje" hidden></div>
 
-<section class="profile-card profile-section">
+      <section class="configuracion-options-group" aria-labelledby="configuracionLaboratorioTitulo">
+        <div class="configuracion-options-heading">
+          <span class="configuracion-options-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3v5.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V3"/><path d="M9 3h6M8 14h8"/></svg>
+          </span>
+          <div>
+            <h3 id="configuracionLaboratorioTitulo">Laboratorio</h3>
+            <p>Selecciona los medios disponibles para compartir resultados.</p>
+          </div>
+        </div>
+        <div class="configuracion-options-list">
+          <div class="configuracion-option-row">
+            <span class="configuracion-option-copy">
+              <span class="configuracion-option-title">Envío de resultados por WhatsApp</span>
+              <span class="configuracion-option-description">Permite compartir los resultados directamente en la conversación del tutor.</span>
+            </span>
+            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Envío de resultados por WhatsApp" data-config-clave="laboratorio_envio_whatsapp">
+              <button type="button" class="toggle-btn<%= funcionHabilitada('laboratorio_envio_whatsapp') ? ' active' : '' %>" data-value="habilitado" aria-pressed="<%= funcionHabilitada('laboratorio_envio_whatsapp') %>">Habilitado</button>
+              <button type="button" class="toggle-btn<%= funcionHabilitada('laboratorio_envio_whatsapp') ? '' : ' active' %>" data-value="deshabilitado" aria-pressed="<%= !funcionHabilitada('laboratorio_envio_whatsapp') %>">Deshabilitado</button>
+            </span>
+          </div>
+          <div class="configuracion-option-row">
+            <span class="configuracion-option-copy">
+              <span class="configuracion-option-title">Envío de resultados por correo</span>
+              <span class="configuracion-option-description">Permite enviar los archivos al correo electrónico registrado del tutor.</span>
+            </span>
+            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Envío de resultados por correo" data-config-clave="laboratorio_envio_correo">
+              <button type="button" class="toggle-btn<%= funcionHabilitada('laboratorio_envio_correo') ? ' active' : '' %>" data-value="habilitado" aria-pressed="<%= funcionHabilitada('laboratorio_envio_correo') %>">Habilitado</button>
+              <button type="button" class="toggle-btn<%= funcionHabilitada('laboratorio_envio_correo') ? '' : ' active' %>" data-value="deshabilitado" aria-pressed="<%= !funcionHabilitada('laboratorio_envio_correo') %>">Deshabilitado</button>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="configuracion-options-group" aria-labelledby="configuracionWhatsappTitulo">
+        <div class="configuracion-options-heading">
+          <span class="configuracion-options-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          </span>
+          <div>
+            <h3 id="configuracionWhatsappTitulo">Opciones de WhatsApp</h3>
+            <p>Controla los flujos que el asistente puede ofrecer automáticamente.</p>
+          </div>
+        </div>
+        <div class="configuracion-options-list">
+          <div class="configuracion-option-row">
+            <span class="configuracion-option-copy">
+              <span class="configuracion-option-title">Respuestas automáticas</span>
+              <span class="configuracion-option-description">Permite que el asistente responda y guíe las conversaciones entrantes.</span>
+            </span>
+            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Respuestas automáticas" data-config-clave="whatsapp_respuestas_automaticas">
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_respuestas_automaticas') ? ' active' : '' %>" data-value="habilitado" aria-pressed="<%= funcionHabilitada('whatsapp_respuestas_automaticas') %>">Habilitado</button>
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_respuestas_automaticas') ? '' : ' active' %>" data-value="deshabilitado" aria-pressed="<%= !funcionHabilitada('whatsapp_respuestas_automaticas') %>">Deshabilitado</button>
+            </span>
+          </div>
+          <div class="configuracion-option-row">
+            <span class="configuracion-option-copy">
+              <span class="configuracion-option-title">Citas de Consultas</span>
+              <span class="configuracion-option-description">Muestra el flujo para solicitar una cita en el área de Consultas.</span>
+            </span>
+            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Citas de Consultas" data-config-clave="whatsapp_citas_consultas">
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_citas_consultas') ? ' active' : '' %>" data-value="habilitado" aria-pressed="<%= funcionHabilitada('whatsapp_citas_consultas') %>">Habilitado</button>
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_citas_consultas') ? '' : ' active' %>" data-value="deshabilitado" aria-pressed="<%= !funcionHabilitada('whatsapp_citas_consultas') %>">Deshabilitado</button>
+            </span>
+          </div>
+          <div class="configuracion-option-row">
+            <span class="configuracion-option-copy">
+              <span class="configuracion-option-title">Citas de Estética</span>
+              <span class="configuracion-option-description">Muestra el flujo para solicitar una cita en el área de Estética.</span>
+            </span>
+            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Citas de Estética" data-config-clave="whatsapp_citas_estetica">
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_citas_estetica') ? ' active' : '' %>" data-value="habilitado" aria-pressed="<%= funcionHabilitada('whatsapp_citas_estetica') %>">Habilitado</button>
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_citas_estetica') ? '' : ' active' %>" data-value="deshabilitado" aria-pressed="<%= !funcionHabilitada('whatsapp_citas_estetica') %>">Deshabilitado</button>
+            </span>
+          </div>
+          <div class="configuracion-option-row">
+            <span class="configuracion-option-copy">
+              <span class="configuracion-option-title">Aviso de privacidad</span>
+              <span class="configuracion-option-description">Incluye el consentimiento de privacidad dentro del flujo de WhatsApp.</span>
+            </span>
+            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Aviso de privacidad" data-config-clave="whatsapp_aviso_privacidad">
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_aviso_privacidad') ? ' active' : '' %>" data-value="habilitado" aria-pressed="<%= funcionHabilitada('whatsapp_aviso_privacidad') %>">Habilitado</button>
+              <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_aviso_privacidad') ? '' : ' active' %>" data-value="deshabilitado" aria-pressed="<%= !funcionHabilitada('whatsapp_aviso_privacidad') %>">Deshabilitado</button>
+            </span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </details>
+
+  <details class="profile-card profile-section" <%= mensaje || error ? 'open' : '' %>>
+    <summary class="profile-section-header">
+      <svg class="profile-section-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      <span class="profile-section-title">Aviso de privacidad y tratamiento de datos personales</span>
+      <span class="profile-section-subtitle">Documento y consentimiento</span>
+      <svg class="profile-section-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </summary>
   <div class="profile-section-body">
     <% if (mensaje) { %>
       <div class="form-success-banner">
@@ -124,4 +228,5 @@
       <p class="mini-table-empty" <%= versiones.length ? 'hidden' : '' %>>Todavía no se ha cargado ningún aviso.</p>
     </div>
   </div>
-</section>
+  </details>
+</div>

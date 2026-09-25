@@ -61,11 +61,13 @@ function construirOpcionesAnonimas(candidatosReales, slugPorCategoria, nombresCo
         : motivo || 'motivo general',
     };
   });
-  const genericas = CATEGORIAS.map((categoria, indice) => ({
-    etiqueta: `categoria_${indice + 1}`,
-    slug: slugPorCategoria[categoria],
-    descripcion: DESCRIPCION_CATEGORIA[categoria],
-  }));
+  const genericas = CATEGORIAS.filter((categoria) => Boolean(slugPorCategoria[categoria])).map(
+    (categoria, indice) => ({
+      etiqueta: `categoria_${indice + 1}`,
+      slug: slugPorCategoria[categoria],
+      descripcion: DESCRIPCION_CATEGORIA[categoria],
+    }),
+  );
   return { especificas, genericas };
 }
 

@@ -168,6 +168,8 @@ pnpm run seed:localhost
 
 Las migraciones construyen el esquema completo, incluidas conversaciones, grupos, outbox, atención humana y auditoría de alertas de WhatsApp. Los seeds registran permisos, áreas iniciales, catálogos de laboratorio y el usuario administrador.
 
+Los seeds son el bootstrap de una base nueva. Aunque son idempotentes para facilitar verificaciones, no forman parte de una actualización normal de producción: una base existente se actualiza exclusivamente mediante migraciones revisadas. Las únicas áreas iniciales son **Consultas** y **Estética**, cada una con su doctor técnico para reservas externas.
+
 ### 5. Levantar el servidor
 
 ```bash
@@ -600,7 +602,7 @@ El sistema reconoce únicamente la página de reservas de Consultas. Debe conser
 
 Las reservas reconocidas se importan en el área Consultas. Si teléfono y mascota coinciden con datos existentes, pueden quedar confirmadas; si no, se registran pendientes para que el personal complete la información.
 
-Las reservas importadas utilizan el doctor genérico `Consultas Omega Generico`, creado automáticamente si no existe. No debe renombrarse ni eliminarse: la sincronización lo localiza por ese nombre exacto.
+Las reservas importadas utilizan `Consultas Omega Generico` y `Estética Omega Generico`, creados como doctores técnicos predeterminados. No son usuarios de acceso y no deben renombrarse ni eliminarse: la sincronización los localiza por esos nombres exactos.
 
 ### Correo SMTP con Nodemailer
 
@@ -858,7 +860,7 @@ GitHub Actions ejecuta en cada push y pull request contra `main`:
 
 ## Deploy
 
-La configuración incluida usa una instancia de PM2 en modo `fork`, reinicio automático y límite de memoria de 300 MB:
+La configuración incluida usa una instancia de PM2 en modo `fork`, reinicio automático y límite de memoria de 300 MB. En una instalación nueva y vacía:
 
 ```bash
 pnpm install --prod --frozen-lockfile
@@ -866,6 +868,14 @@ pnpm run migrate
 pnpm run seed
 pm2 start ecosystem.config.js
 pm2 save
+```
+
+En una actualización de una base existente no se ejecutan los seeds:
+
+```bash
+pnpm install --prod --frozen-lockfile
+pnpm run migrate
+pm2 restart omega-vet-adminsite --update-env
 ```
 
 Los comandos anteriores asumen que PM2 está instalado en el servidor. El deploy es manual. `ecosystem.config.js` establece `NODE_ENV=production`; las variables sensibles deben proporcionarse en el entorno del servidor y no versionarse.

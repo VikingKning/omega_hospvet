@@ -123,23 +123,17 @@ afterAll(async () => {
   await Promise.all([db.destroy(), sessionStore.close()]);
 });
 
-// Este describe asume que `doctores` está completamente vacía en el
-// momento en que corre — sigue siendo cierto solo porque NINGÚN otro
-// archivo de test inserta filas en esta tabla (a diferencia de `areas` o
-// `usuarios`, que sí las comparten entre suites). Si algún test futuro
-// necesita un doctor real (p.ej. para probar una columna "Doctor
-// vinculado" en otro módulo), NO insertarlo aquí — verificar ese caso en
-// vivo en su lugar (ver la memoria de US-601, que se topó con esto).
-describe('GET /doctores.html sin catálogo (US-606 AC1/AC3)', () => {
-  it('muestra el estado vacío con CTA, sin la barra de herramientas', async () => {
+describe('GET /doctores.html con catálogo predeterminado', () => {
+  it('muestra los doctores técnicos de Consultas y Estética como protegidos', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await agent.get('/doctores.html');
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('Todavía no hay doctores registrados');
-    expect(res.text).toContain('Registrar primer doctor');
-    expect(res.text).not.toContain('lab-toolbar');
+    expect(res.text).toContain('Consultas Omega');
+    expect(res.text).toContain('Estética Omega');
+    expect(res.text).toContain('Predeterminado');
+    expect(res.text).not.toContain('Todavía no hay doctores registrados');
   });
 });
 

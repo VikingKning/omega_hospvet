@@ -94,7 +94,7 @@ function initials(nombre, apellidos) {
                 <div class="person-cell">
                   <span class="avatar-circle"><%= initials(doctor.nombre, doctor.apellidos) %></span>
                   <div>
-                    <div class="person-cell-name"><%= doctor.nombre %> <%= doctor.apellidos %><% if (doctor.es_predeterminado) { %> <span class="status-badge" data-tooltip="Doctor predeterminado del sistema (fallback de Consultas) — no se puede editar ni dar de baja">Predeterminado</span><% } %></div>
+                    <div class="person-cell-name"><%= doctor.nombre %> <%= doctor.apellidos %><% if (doctor.es_predeterminado) { %> <span class="status-badge" data-tooltip="Doctor predeterminado del sistema para reservas externas — no se puede editar ni dar de baja">Predeterminado</span><% } %></div>
                   </div>
                 </div>
               </td>

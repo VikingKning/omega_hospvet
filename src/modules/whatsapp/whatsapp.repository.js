@@ -15,6 +15,12 @@ const PIPELINE_ANTERIOR = 'flujo_anterior';
 
 const DEBOUNCE_ACUMULANDO_MS = env.whatsapp.agrupacionSegundos * 1000;
 const DEBOUNCE_EMERGENCIA_MS = env.whatsapp.agrupacionEmergenciaSegundos * 1000;
+const FUNCIONES_WHATSAPP_PREDETERMINADAS = Object.freeze({
+  respuestasAutomaticas: true,
+  citasConsultas: true,
+  citasEstetica: true,
+  avisoPrivacidad: true,
+});
 
 function proximoProcesamiento(conexion, debounceMs) {
   return conexion.raw("now() + (? * interval '1 millisecond')", [debounceMs]);
@@ -83,7 +89,11 @@ async function buscarOCrearConversacionAbierta(trx, { phoneNumberId, telefonoNor
   return { conversacion: ganadora, esNueva: false };
 }
 
-async function aplicarReglasDeInteraccion(trx, conversacion, { ahora, contenido, tipoMensaje }) {
+async function aplicarReglasDeInteraccion(
+  trx,
+  conversacion,
+  { ahora, contenido, tipoMensaje, funcionesWhatsapp },
+) {
   const cambios = { ultima_interaccion_en: ahora, updated_at: ahora };
 
   const esComandoMenu = Boolean(contenido) && menu.esComandoMenu(contenido);
@@ -105,7 +115,7 @@ async function aplicarReglasDeInteraccion(trx, conversacion, { ahora, contenido,
       procesar_despues_de: null,
     });
   } else if (esSeleccionInteractiva && conversacion.estado === 'esperando_menu') {
-    const ruta = menu.RUTA_POR_MENU_ID[contenido];
+    const ruta = menu.resolverRuta(contenido, funcionesWhatsapp);
     if (ruta) {
       rutaResuelta = ruta;
       if (
@@ -226,6 +236,7 @@ async function registrarMensajeYConversacion({
   tituloInteractivo,
   recibidoEn,
   pipelineAsignado = PIPELINE_NUEVO,
+  funcionesWhatsapp = FUNCIONES_WHATSAPP_PREDETERMINADAS,
 }) {
   const evento = {
     whatsappMessageId,
@@ -239,6 +250,7 @@ async function registrarMensajeYConversacion({
     tituloInteractivo,
     recibidoEn,
     pipelineAsignado,
+    funcionesWhatsapp,
   };
   return db.transaction(async (trx) => {
     const [mensajeExistente] = await trx('mensajes_whatsapp')
@@ -327,7 +339,7 @@ async function registrarMensajeYConversacion({
           ahora: recibidoEn,
         });
 
-    if (pipelineAsignado === PIPELINE_NUEVO) {
+    if (pipelineAsignado === PIPELINE_NUEVO && funcionesWhatsapp.avisoPrivacidad) {
       const resultadoConsentimiento = await procesarConsentimientoLfpdppp(trx, {
         conversacion,
         evento,
@@ -393,6 +405,7 @@ function construirEventoRetomado(mensajesRetenidos) {
 }
 
 async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
+  if (evento.funcionesWhatsapp?.avisoPrivacidad === false) return null;
   // Sin aviso de privacidad configurado, la funcionalidad completa queda
   // apagada — el flujo se comporta exactamente igual que antes de que
   // existiera este gate.
@@ -634,10 +647,12 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
       telefonoNormalizado: evento.telefonoNormalizado,
     });
     const conversacionActual = nueva ?? conversacion;
-    const resultadoConsentimiento = await procesarConsentimientoLfpdppp(trx, {
-      conversacion: conversacionActual,
-      evento,
-    });
+    const resultadoConsentimiento = evento.funcionesWhatsapp.avisoPrivacidad
+      ? await procesarConsentimientoLfpdppp(trx, {
+          conversacion: conversacionActual,
+          evento,
+        })
+      : null;
     if (resultadoConsentimiento) return resultadoConsentimiento;
     return procesarMensajeSobreConversacion(trx, {
       conversacion: conversacionActual,
@@ -693,7 +708,9 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
     // 2026-09-21: "menu" mostraba el menú en vez del aviso). Chequeo de solo
     // lectura, sin tocar nada todavía, para decidir cuál de los dos caminos
     // tomar abajo.
-    const avisoConfigurado = await configuracionService.obtenerVersionVigenteParaEnvio();
+    const avisoConfigurado = evento.funcionesWhatsapp.avisoPrivacidad
+      ? await configuracionService.obtenerVersionVigenteParaEnvio()
+      : null;
     const estadoConsentimiento = avisoConfigurado
       ? (await consentimiento.evaluarEstado(evento.telefonoNormalizado, avisoConfigurado, trx))
           .estado
@@ -819,6 +836,7 @@ async function procesarMensajeSobreConversacion(trx, { conversacion, esNueva, ev
       ahora: recibidoEn,
       contenido,
       tipoMensaje,
+      funcionesWhatsapp: evento.funcionesWhatsapp,
     }));
   }
   await trx('mensajes_whatsapp').where({ id }).update({ conversacion_id: conversacion.id });

@@ -3,16 +3,11 @@ const DOCTORES_PREDETERMINADOS = [
   { nombre: 'Estética Omega', apellidos: 'Generico', areaSlug: 'estetica' },
 ];
 
-exports.up = async function up(knex) {
-  await knex.schema.alterTable('doctores', (table) => {
-    table.boolean('es_predeterminado').notNullable().defaultTo(false);
-  });
-  await knex.raw(`
-    COMMENT ON COLUMN doctores.es_predeterminado IS
-      'Doctor protegido del sistema (fallback de Consultas/Estética): nunca se edita/renombra ni se da de baja — mismo criterio que areas.es_predeterminada.'
-  `);
-
+exports.seed = async function seed(knex) {
   for (const { nombre, apellidos, areaSlug } of DOCTORES_PREDETERMINADOS) {
+    const area = await knex('areas').where({ slug: areaSlug }).first('id');
+    if (!area) throw new Error(`No existe el área predeterminada: ${areaSlug}`);
+
     let doctor = await knex('doctores').where({ nombre, apellidos }).first('id');
     if (!doctor) {
       [doctor] = await knex('doctores')
@@ -21,6 +16,7 @@ exports.up = async function up(knex) {
           apellidos,
           activo: true,
           es_predeterminado: true,
+          creado_por: null,
           creado_en: knex.fn.now(),
         })
         .returning('id');
@@ -33,18 +29,11 @@ exports.up = async function up(knex) {
       });
     }
 
-    const area = await knex('areas').where({ slug: areaSlug }).first('id');
-    if (area) {
-      await knex('doctor_area')
-        .insert({ doctor_id: doctor.id, area_id: area.id })
-        .onConflict(['doctor_id', 'area_id'])
-        .ignore();
-    }
+    await knex('doctor_area')
+      .insert({ doctor_id: doctor.id, area_id: area.id })
+      .onConflict(['doctor_id', 'area_id'])
+      .ignore();
   }
 };
 
-exports.down = async function down(knex) {
-  await knex.schema.alterTable('doctores', (table) => {
-    table.dropColumn('es_predeterminado');
-  });
-};
+exports.DOCTORES_PREDETERMINADOS = DOCTORES_PREDETERMINADOS;

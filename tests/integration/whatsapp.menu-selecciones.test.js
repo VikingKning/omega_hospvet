@@ -204,6 +204,46 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
     },
   );
 
+  it.each([
+    [menu.MENU_AGENDAR_CONSULTA, { citasConsultas: false }],
+    [menu.MENU_AGENDAR_ESTETICA, { citasEstetica: false }],
+    [menu.MENU_AVISO_PRIVACIDAD, { avisoPrivacidad: false }],
+  ])(
+    '%s se trata como selección inválida si la opción fue deshabilitada después de mostrar el menú',
+    async (idMenu, funcionDeshabilitada) => {
+      const telefono = generarTelefono();
+      await crearConversacionEsperandoMenu(telefono);
+
+      const resultado = await repository.registrarMensajeYConversacion({
+        whatsappMessageId: `${WAMID_PREFIX}deshabilitada-${idMenu}-${telefono}`,
+        telefonoOrigen: `521${telefono.slice(2)}`,
+        phoneNumberId: PHONE_NUMBER_ID,
+        telefonoNormalizado: telefono,
+        tipoMensaje: 'interactive_list_reply',
+        contenido: idMenu,
+        mediaId: null,
+        mimeType: null,
+        tituloInteractivo: 'Opción anterior',
+        recibidoEn: new Date(),
+        funcionesWhatsapp: {
+          respuestasAutomaticas: true,
+          citasConsultas: true,
+          citasEstetica: true,
+          avisoPrivacidad: true,
+          ...funcionDeshabilitada,
+        },
+      });
+
+      expect(resultado.rutaResuelta).toBeNull();
+      expect(resultado.seleccionInvalida).toBe(true);
+      const mensaje = await db('mensajes_whatsapp')
+        .where({ whatsapp_message_id: `${WAMID_PREFIX}deshabilitada-${idMenu}-${telefono}` })
+        .first();
+      expect(mensaje.categoria_clasificacion).toBeNull();
+      expect(mensaje.resultado_decision).toBe('seleccion_invalida');
+    },
+  );
+
   it('MENU_RESULTADOS_LAB se resuelve a la ruta "resultados_laboratorio" Y arranca el flujo de consulta (US WA 007 AC1)', async () => {
     const spyClasificar = jest.spyOn(claude, 'clasificarMensaje');
     const telefono = generarTelefono();

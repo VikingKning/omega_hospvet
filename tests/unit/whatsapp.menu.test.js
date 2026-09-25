@@ -75,6 +75,37 @@ describe('whatsapp.menu.interactivePayload / textoRespaldo', () => {
     });
   });
 
+  it('oculta Consultas, Estética y Aviso de privacidad según la configuración', () => {
+    const funciones = {
+      citasConsultas: false,
+      citasEstetica: true,
+      avisoPrivacidad: false,
+    };
+    const filas = menu.interactivePayload(funciones).action.sections[0].rows;
+    const ids = filas.map((fila) => fila.id);
+    const respaldo = menu.textoRespaldo(funciones);
+
+    expect(ids).not.toContain(menu.MENU_AGENDAR_CONSULTA);
+    expect(ids).toContain(menu.MENU_AGENDAR_ESTETICA);
+    expect(ids).not.toContain(menu.MENU_AVISO_PRIVACIDAD);
+    expect(respaldo).not.toContain('Consulta Veterinaria');
+    expect(respaldo).toContain('Cita de Estética');
+    expect(respaldo).not.toContain('Aviso de privacidad');
+  });
+
+  it('no resuelve rutas de opciones deshabilitadas aunque llegue una respuesta de un menú anterior', () => {
+    const funciones = {
+      citasConsultas: false,
+      citasEstetica: false,
+      avisoPrivacidad: false,
+    };
+
+    expect(menu.resolverRuta(menu.MENU_AGENDAR_CONSULTA, funciones)).toBeNull();
+    expect(menu.resolverRuta(menu.MENU_AGENDAR_ESTETICA, funciones)).toBeNull();
+    expect(menu.resolverRuta(menu.MENU_AVISO_PRIVACIDAD, funciones)).toBeNull();
+    expect(menu.resolverRuta(menu.MENU_RECEPCION, funciones)).toBe('recepcion');
+  });
+
   // Regresión: Meta rechazó en producción (#131009 "Parameter value is not
   // valid") un footer de 61 caracteres y un row.title de 25 — los límites
   // duros de la Cloud API para interactive/list son 60/24 respectivamente.

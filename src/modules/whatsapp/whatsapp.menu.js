@@ -95,18 +95,49 @@ const MENU_FILAS = [
   },
 ];
 
-function interactivePayload() {
+const FUNCIONES_PREDETERMINADAS = Object.freeze({
+  citasConsultas: true,
+  citasEstetica: true,
+  avisoPrivacidad: true,
+});
+
+function normalizarFunciones(funciones = FUNCIONES_PREDETERMINADAS) {
+  return {
+    citasConsultas: funciones.citasConsultas !== false,
+    citasEstetica: funciones.citasEstetica !== false,
+    avisoPrivacidad: funciones.avisoPrivacidad !== false,
+  };
+}
+
+function filasDisponibles(funciones) {
+  const activas = normalizarFunciones(funciones);
+  return MENU_FILAS.filter((fila) => {
+    if (fila.id === MENU_AGENDAR_CONSULTA) return activas.citasConsultas;
+    if (fila.id === MENU_AGENDAR_ESTETICA) return activas.citasEstetica;
+    if (fila.id === MENU_AVISO_PRIVACIDAD) return activas.avisoPrivacidad;
+    return true;
+  });
+}
+
+function resolverRuta(id, funciones) {
+  const ruta = RUTA_POR_MENU_ID[id] ?? null;
+  if (!ruta) return null;
+  return filasDisponibles(funciones).some((fila) => fila.id === id) ? ruta : null;
+}
+
+function interactivePayload(funciones) {
+  const filas = filasDisponibles(funciones);
   return {
     type: 'list',
     header: { type: 'text', text: MENU_HEADER },
     body: { text: MENU_BODY },
     footer: { text: MENU_FOOTER },
-    action: { button: MENU_BOTON, sections: [{ title: MENU_SECCION_TITULO, rows: MENU_FILAS }] },
+    action: { button: MENU_BOTON, sections: [{ title: MENU_SECCION_TITULO, rows: filas }] },
   };
 }
 
-function textoRespaldo() {
-  const lineas = MENU_FILAS.map((fila, indice) => `${indice + 1}. ${fila.title}`);
+function textoRespaldo(funciones) {
+  const lineas = filasDisponibles(funciones).map((fila, indice) => `${indice + 1}. ${fila.title}`);
   return [MENU_HEADER, MENU_BODY, ...lineas, MENU_FOOTER].join('\n');
 }
 
@@ -191,4 +222,6 @@ module.exports = {
   MENU_AVISO_PRIVACIDAD,
   RUTA_POR_MENU_ID,
   esIdDeMenu,
+  filasDisponibles,
+  resolverRuta,
 };

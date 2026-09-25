@@ -1159,7 +1159,12 @@ describe('Plantillas predeterminadas del sistema (es_predeterminada) — inborra
   it('AC: el ícono de eliminar no aparece en la tabla para una plantilla predeterminada, aunque esté activa y haya permiso', async () => {
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
-    const res = await agent.get('/plantillas.html');
+    // Filtrar por la plantilla evita que el test dependa de que esa fila
+    // caiga en la primera página cuando crece el catálogo predeterminado.
+    const res = await filtrarPlantillas(agent, {
+      estado: 'activos',
+      q: predeterminada.intencion,
+    });
     const inicioFila = res.text.indexOf(`<td>${predeterminada.intencion} `);
     const fila = res.text.slice(inicioFila).split('</tr>')[0];
 

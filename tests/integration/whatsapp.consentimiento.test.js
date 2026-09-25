@@ -187,6 +187,35 @@ describe('LFPDPPP — gate de consentimiento (feature apagada)', () => {
     const registro = await ultimoRegistroConsentimiento('525500880001');
     expect(registro).toBeUndefined();
   });
+
+  it('con la opción deshabilitada no consulta, registra ni envía consentimiento aunque exista un aviso vigente', async () => {
+    const telefono = '5215500880002';
+    const obtenerAviso = jest
+      .spyOn(configuracionService, 'obtenerVersionVigenteParaEnvio')
+      .mockResolvedValue(AVISO_MOCK);
+    await db('configuracion_funciones')
+      .where({ clave: 'whatsapp_aviso_privacidad' })
+      .update({ habilitado: false });
+
+    try {
+      const res = await postTexto(
+        `${WAMID_PREFIX}opcion-privacidad-apagada`,
+        telefono,
+        'hola, tengo una duda',
+      );
+
+      expect(res.status).toBe(200);
+      const mensaje = await ultimoMensaje(`${WAMID_PREFIX}opcion-privacidad-apagada`);
+      expect(mensaje.estado_procesamiento).not.toMatch(/lfpdppp/);
+      expect(await ultimoRegistroConsentimiento('525500880002')).toBeUndefined();
+      expect(obtenerAviso).not.toHaveBeenCalled();
+      expect(global.fetch).not.toHaveBeenCalled();
+    } finally {
+      await db('configuracion_funciones')
+        .where({ clave: 'whatsapp_aviso_privacidad' })
+        .update({ habilitado: true });
+    }
+  });
 });
 
 describe('LFPDPPP — gate de consentimiento (feature activa)', () => {

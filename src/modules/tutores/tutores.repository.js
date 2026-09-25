@@ -36,6 +36,12 @@ function baseQuery({ q, qDigits, activoTutores, activoPacientes }) {
                 .whereRaw('m.nombre ILIKE ?', [`%${q}%`])
                 .orWhereRaw('m.tipo ILIKE ?', [`%${q}%`])
                 .orWhereRaw('m.raza ILIKE ?', [`%${q}%`]);
+              if (qDigits) {
+                const nhcBuscado = Number(qDigits);
+                if (Number.isInteger(nhcBuscado) && nhcBuscado <= 99999999) {
+                  mascotaWhere.orWhere('m.nhc', nhcBuscado);
+                }
+              }
             });
         });
       });
@@ -70,7 +76,7 @@ async function mascotasPorPropietarios(propietarioIds, { activoPacientes }) {
       if (activoPacientes) builder.where('activo', true);
     })
     .orderBy('nombre')
-    .select('id', 'propietario_id', 'nombre', 'tipo', 'raza', 'activo');
+    .select('id', 'propietario_id', 'nhc', 'nombre', 'tipo', 'raza', 'activo');
 }
 
 async function findById(id) {
@@ -104,7 +110,7 @@ async function findMascotasByPropietarioId(propietarioId) {
   return db('mascotas')
     .where({ propietario_id: propietarioId })
     .orderBy('nombre')
-    .select('id', 'nombre', 'tipo', 'raza', 'sexo', 'anio_nacimiento', 'activo');
+    .select('id', 'nhc', 'nombre', 'tipo', 'raza', 'sexo', 'anio_nacimiento', 'activo');
 }
 
 async function crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId }) {
@@ -125,6 +131,7 @@ async function crear({ nombre, apellidos, telefono, correo, pacientes, usuarioId
       await trx('mascotas').insert(
         pacientes.map((p) => ({
           propietario_id: row.id,
+          nhc: p.nhc,
           nombre: p.nombre,
           tipo: p.tipo || null,
           raza: p.raza || null,
@@ -173,6 +180,7 @@ async function editar({ id, nombre, apellidos, telefono, correo, activo, pacient
       if (paciente.id) {
         const actual = await trx('mascotas').where({ id: paciente.id }).first('activo');
         const update = {
+          nhc: paciente.nhc,
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
@@ -194,6 +202,7 @@ async function editar({ id, nombre, apellidos, telefono, correo, activo, pacient
       } else {
         await trx('mascotas').insert({
           propietario_id: id,
+          nhc: paciente.nhc,
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
@@ -226,6 +235,7 @@ async function reactivar({ id, nombre, apellidos, telefono, correo, pacientes, u
       if (paciente.id) {
         const actual = await trx('mascotas').where({ id: paciente.id }).first('activo');
         const update = {
+          nhc: paciente.nhc,
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
@@ -247,6 +257,7 @@ async function reactivar({ id, nombre, apellidos, telefono, correo, pacientes, u
       } else {
         await trx('mascotas').insert({
           propietario_id: id,
+          nhc: paciente.nhc,
           nombre: paciente.nombre,
           tipo: paciente.tipo || null,
           raza: paciente.raza || null,
@@ -282,11 +293,28 @@ async function findMascotaById(id) {
     .where('m.id', id)
     .first(
       'm.id',
+      'm.nhc',
       'm.nombre',
       'm.tipo',
       'p.id as propietario_id',
       'p.nombre as propietario_nombre',
       'p.apellidos as propietario_apellidos',
+    );
+}
+
+async function findMascotaActivaByNhc(nhc) {
+  return db('mascotas as m')
+    .join('propietarios as p', 'p.id', 'm.propietario_id')
+    .where({ 'm.nhc': nhc, 'm.activo': true, 'p.activo': true })
+    .first(
+      'm.id',
+      'm.nhc',
+      'm.nombre',
+      'm.tipo',
+      'm.raza',
+      'm.sexo',
+      'm.anio_nacimiento',
+      'p.id as propietario_id',
     );
 }
 
@@ -348,6 +376,7 @@ module.exports = {
   reactivar,
   searchByTelefono,
   findMascotaById,
+  findMascotaActivaByNhc,
   searchMascotas,
   desactivar,
 };

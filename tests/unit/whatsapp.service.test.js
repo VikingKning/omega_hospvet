@@ -4,6 +4,7 @@ jest.mock('../../src/modules/whatsapp/whatsapp.outbox');
 jest.mock('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 jest.mock('../../src/modules/whatsapp/whatsapp.emergenciasAlertas.service');
 jest.mock('../../src/modules/laboratorio/laboratorio.service');
+jest.mock('../../src/modules/configuracion/configuracion.service');
 jest.mock('../../src/config/database');
 
 const claude = require('../../src/config/claude');
@@ -15,8 +16,10 @@ const outbox = require('../../src/modules/whatsapp/whatsapp.outbox');
 const atencionHumanaService = require('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 const emergenciasAlertasService = require('../../src/modules/whatsapp/whatsapp.emergenciasAlertas.service');
 const laboratorioService = require('../../src/modules/laboratorio/laboratorio.service');
+const configuracionService = require('../../src/modules/configuracion/configuracion.service');
 const {
   registrarEventoEntrante,
+  procesarSiguienteMensajeFlujoAnterior,
   procesarSiguienteConversacionVencida,
   enviarMenuPrincipal,
   enviarEnlaceAgenda,
@@ -37,9 +40,42 @@ beforeEach(() => {
   env.whatsapp.conversationalRouterEnabled = true;
   db.transaction = jest.fn((cb) => cb('trx-fake'));
   repository.registrarMensajeYConversacion.mockResolvedValue({ id: MENSAJE_ID, esNuevo: true });
+  configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+    respuestasAutomaticas: true,
+    citasConsultas: true,
+    citasEstetica: true,
+    avisoPrivacidad: true,
+  });
 });
 
 describe('whatsapp.service.registrarEventoEntrante — solo persiste y asocia, nunca clasifica', () => {
+  it('no persiste el evento si el webhook lo marcó con respuestas automáticas deshabilitadas', async () => {
+    const spyClasificar = jest.spyOn(claude, 'clasificarMensaje');
+    const resultado = await registrarEventoEntrante({
+      whatsappMessageId: 'wamid.bot-off',
+      from: '5215500000000',
+      phoneNumberId: 'phone-1',
+      timestamp: '1700000000',
+      tipoMensaje: 'text',
+      contenido: 'hola',
+      mediaId: null,
+      funcionesWhatsapp: {
+        respuestasAutomaticas: false,
+        citasConsultas: true,
+        citasEstetica: true,
+        avisoPrivacidad: true,
+      },
+    });
+
+    expect(resultado).toEqual({
+      ignorado: true,
+      motivo: 'respuestas_automaticas_deshabilitadas',
+    });
+    expect(repository.registrarMensajeYConversacion).not.toHaveBeenCalled();
+    expect(spyClasificar).not.toHaveBeenCalled();
+    spyClasificar.mockRestore();
+  });
+
   it('delega en repository.registrarMensajeYConversacion con el teléfono normalizado, sin llamar a Claude', async () => {
     repository.registrarMensajeYConversacion.mockResolvedValue({ id: 7, esNuevo: true });
 
@@ -250,6 +286,31 @@ describe('whatsapp.service.clasificarYResponderGrupo (US WA 009)', () => {
         resultados_laboratorio: 'resultados-laboratorio-default',
         duda_medica: 'sin-coincidencia-default',
       }),
+      { nombresConocidos: undefined },
+    );
+  });
+
+  it('no ofrece la categoría genérica de citas al LLM si ambas agendas están deshabilitadas', async () => {
+    configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+      respuestasAutomaticas: true,
+      citasConsultas: false,
+      citasEstetica: false,
+      avisoPrivacidad: true,
+    });
+    mockClasificarMensaje(null);
+    plantillasRepository.findBySlug.mockResolvedValue(PLANTILLA_SIN_COINCIDENCIA);
+
+    await clasificarYResponderGrupo({
+      conversacionId: CONVERSACION_ID,
+      groupId: GROUP_ID,
+      textoConsolidado: 'quiero sacar una cita',
+      telefono: TELEFONO,
+    });
+
+    expect(claude.clasificarMensaje).toHaveBeenCalledWith(
+      'quiero sacar una cita',
+      [PLANTILLA_CATALOGO],
+      expect.objectContaining({ agendar_cita: null }),
       { nombresConocidos: undefined },
     );
   });
@@ -727,6 +788,32 @@ describe('whatsapp.service.enviarEnlaceAgenda (US WA 006)', () => {
       expect.objectContaining({ enviado: false, conversacionCerrada: false }),
     );
   });
+
+  it.each([
+    ['agendar_consulta', { citasConsultas: false, citasEstetica: true }],
+    ['agendar_estetica', { citasConsultas: true, citasEstetica: false }],
+  ])(
+    'rechaza una selección anterior de %s cuando esa agenda ya fue deshabilitada',
+    async (ruta, banderas) => {
+      configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+        respuestasAutomaticas: true,
+        avisoPrivacidad: true,
+        ...banderas,
+      });
+
+      const resultado = await enviarEnlaceAgenda({
+        conversacionId: CONVERSACION_ID,
+        telefono: '525500000000',
+        claveBase: 'mensaje:126',
+        ruta,
+      });
+
+      expect(resultado).toEqual({ enviado: false, motivo: 'funcion_deshabilitada' });
+      expect(outbox.registrarIntento).not.toHaveBeenCalled();
+      expect(repository.confirmarEnlaceAgendaEnviado).not.toHaveBeenCalled();
+      expect(atencionHumanaService.solicitarAtencionHumana).not.toHaveBeenCalled();
+    },
+  );
 });
 
 // US WA 004 — menú interactivo inicial. whatsapp.repository y
@@ -782,6 +869,44 @@ describe('whatsapp.service — menú interactivo inicial (US WA 004)', () => {
     expect(resultado).toEqual(
       expect.objectContaining({ groupId: GROUP_ID, resultado: 'menu_enviado' }),
     );
+  });
+
+  it('el menú enviado omite Consultas y Aviso de privacidad cuando están deshabilitados', async () => {
+    configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+      respuestasAutomaticas: true,
+      citasConsultas: false,
+      citasEstetica: true,
+      avisoPrivacidad: false,
+    });
+    outbox.ejecutarIntento.mockResolvedValue({ enviado: true, wamid: 'wamid.menu-filtrado' });
+
+    await enviarMenuPrincipal({
+      conversacionId: CONVERSACION_ID,
+      telefono: '525500000000',
+      claveBase: `grupo:${GROUP_ID}`,
+    });
+
+    const [intento] = outbox.registrarIntento.mock.calls[0];
+    const ids = intento.payloadFuncional.interactive.action.sections[0].rows.map((fila) => fila.id);
+    expect(ids).not.toContain('MENU_AGENDAR_CONSULTA');
+    expect(ids).toContain('MENU_AGENDAR_ESTETICA');
+    expect(ids).not.toContain('MENU_AVISO_PRIVACIDAD');
+  });
+
+  it('los trabajadores no reclaman pendientes ni llaman al LLM cuando el chatbot está deshabilitado', async () => {
+    configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+      respuestasAutomaticas: false,
+      citasConsultas: true,
+      citasEstetica: true,
+      avisoPrivacidad: true,
+    });
+
+    await expect(procesarSiguienteMensajeFlujoAnterior()).resolves.toBeNull();
+    await expect(procesarSiguienteConversacionVencida()).resolves.toBeNull();
+
+    expect(repository.reclamarMensajeFlujoAnterior).not.toHaveBeenCalled();
+    expect(repository.reclamarConversacionVencida).not.toHaveBeenCalled();
+    expect(claude.clasificarMensaje).not.toHaveBeenCalled();
   });
 
   it('un grupo con texto normal (ni saludo ni comando) se clasifica con Claude, ya no queda sin resolver (US WA 009, antes AC3/AC4 de WA004)', async () => {
@@ -1156,6 +1281,30 @@ describe('whatsapp.service — selección de menú inválida (US WA 005 AC9)', (
 describe('whatsapp.service.enviarPasoLaboratorio — adjuntar resultados (US WA 007, ampliación)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('no envía adjuntos ni texto si el chatbot se deshabilitó antes de responder', async () => {
+    configuracionService.obtenerConfiguracionWhatsapp.mockResolvedValue({
+      respuestasAutomaticas: false,
+      citasConsultas: true,
+      citasEstetica: true,
+      avisoPrivacidad: true,
+    });
+
+    const resultado = await enviarPasoLaboratorio({
+      conversacionId: CONVERSACION_ID,
+      telefono: '525512345678',
+      mensajeId: 320,
+      labAccion: 'exito',
+      labDatos: { folioId: 5, estadoOrden: 'cargado' },
+    });
+
+    expect(resultado).toEqual({
+      enviado: false,
+      motivo: 'respuestas_automaticas_deshabilitadas',
+    });
+    expect(laboratorioService.reenviarResultadosPorWhatsapp).not.toHaveBeenCalled();
+    expect(outbox.registrarIntento).not.toHaveBeenCalled();
   });
 
   it('niega el envío a otro teléfono y cierra únicamente después de enviar el aviso', async () => {

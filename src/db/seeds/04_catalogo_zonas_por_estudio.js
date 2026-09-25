@@ -90,8 +90,6 @@ const configuracion = [
 ];
 
 exports.seed = async function seed(knex) {
-  await knex('catalogo_estudio_zonas').del();
-
   const categorias = await knex('catalogo_categorias_estudio').select('id', 'nombre');
   const categoriaIdPorNombre = new Map(
     categorias.map((categoria) => [categoria.nombre, categoria.id]),
@@ -100,11 +98,13 @@ exports.seed = async function seed(knex) {
   const zonaIdPorCodigo = new Map(zonas.map((zona) => [zona.codigo, zona.id]));
 
   const filas = [];
+  const estudioIds = new Set();
   for (const [categoria, nombre, codigosZona] of configuracion) {
     const estudio = await knex('catalogo_estudios')
       .where({ categoria_id: categoriaIdPorNombre.get(categoria), nombre, activo: true })
       .first('id');
     if (!estudio) throw new Error(`No existe el estudio activo ${categoria} / ${nombre}`);
+    estudioIds.add(estudio.id);
     for (const codigo of codigosZona) {
       const zonaId = zonaIdPorCodigo.get(codigo);
       if (!zonaId) throw new Error(`No existe la zona anatómica ${codigo}`);
@@ -112,5 +112,11 @@ exports.seed = async function seed(knex) {
     }
   }
 
-  await knex('catalogo_estudio_zonas').insert(filas);
+  await knex('catalogo_estudio_zonas')
+    .whereIn('estudio_id', [...estudioIds])
+    .del();
+  if (filas.length) await knex('catalogo_estudio_zonas').insert(filas);
 };
+
+exports.TODAS_LAS_ZONAS = TODAS_LAS_ZONAS;
+exports.CONFIGURACION = configuracion;

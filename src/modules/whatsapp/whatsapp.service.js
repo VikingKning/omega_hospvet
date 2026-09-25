@@ -15,6 +15,7 @@ const laboratorioService = require('../laboratorio/laboratorio.service');
 const atencionHumanaService = require('./whatsapp.atencionHumana.service');
 const consentimientoService = require('./whatsapp.consentimiento.service');
 const emergenciasAlertasService = require('./whatsapp.emergenciasAlertas.service');
+const configuracionService = require('../configuracion/configuracion.service');
 
 const TELEFONO_CLINICA = '7711634578';
 
@@ -48,6 +49,9 @@ async function resolverPlantillaPorSlug(slug) {
 }
 
 async function registrarEventoEntrante(evento) {
+  if (evento.funcionesWhatsapp?.respuestasAutomaticas === false) {
+    return { ignorado: true, motivo: 'respuestas_automaticas_deshabilitadas' };
+  }
   const telefonoNormalizado = normalizarNumeroSalida(evento.from);
   const pipelineAsignado = env.whatsapp.conversationalRouterEnabled
     ? repository.PIPELINE_NUEVO
@@ -64,6 +68,7 @@ async function registrarEventoEntrante(evento) {
     tituloInteractivo: evento.tituloInteractivo ?? null,
     recibidoEn: new Date(Number(evento.timestamp) * 1000),
     pipelineAsignado,
+    ...(evento.funcionesWhatsapp ? { funcionesWhatsapp: evento.funcionesWhatsapp } : {}),
   });
   const pipelinePersistido = resultado.pipelineAsignado ?? pipelineAsignado;
   if (pipelinePersistido === repository.PIPELINE_NUEVO && resultado.rutaResuelta === 'recepcion') {
@@ -90,7 +95,7 @@ async function registrarEventoEntrante(evento) {
       telefono: telefonoNormalizado,
       claveIdempotenciaBase: `mensaje:${evento.whatsappMessageId}`,
     });
-    if (!enviado.enviado) {
+    if (!enviado.enviado && enviado.motivo !== 'funcion_deshabilitada') {
       await intentarEnvioMenu({
         claveIdempotencia: `mensaje:${evento.whatsappMessageId}:lfpdppp_aviso_info:respaldo`,
         tipoEnvio: 'conversacional',
@@ -112,7 +117,11 @@ async function registrarEventoEntrante(evento) {
       telefono: telefonoNormalizado,
       claveIdempotenciaBase: `mensaje:${evento.whatsappMessageId}`,
     });
-    if (!enviado.enviado && enviado.motivo !== 'sin_configurar') {
+    if (
+      !enviado.enviado &&
+      enviado.motivo !== 'sin_configurar' &&
+      enviado.motivo !== 'funcion_deshabilitada'
+    ) {
       await intentarEnvioMenu({
         claveIdempotencia: `mensaje:${evento.whatsappMessageId}:lfpdppp_aviso:respaldo`,
         tipoEnvio: 'conversacional',
@@ -174,6 +183,8 @@ async function registrarEventoEntrante(evento) {
 }
 
 async function procesarSiguienteMensajeFlujoAnterior() {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return null;
   const mensaje = await repository.reclamarMensajeFlujoAnterior();
   if (!mensaje) return null;
 
@@ -216,7 +227,9 @@ async function procesarSiguienteMensajeFlujoAnterior() {
       const clasificacion = await claude.clasificarMensaje(
         mensaje.mensaje_recibido,
         plantillas,
-        SLUG_POR_CATEGORIA_GENERICA,
+        funcionesWhatsapp.citasConsultas || funcionesWhatsapp.citasEstetica
+          ? SLUG_POR_CATEGORIA_GENERICA
+          : { ...SLUG_POR_CATEGORIA_GENERICA, agendar_cita: null },
         { nombresConocidos },
       );
       slug = clasificacion.etiqueta;
@@ -294,6 +307,10 @@ async function procesarSiguienteMensajeFlujoAnterior() {
 }
 
 async function intentarEnvioMenu(datosIntento) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) {
+    return { enviado: false, motivo: 'respuestas_automaticas_deshabilitadas' };
+  }
   const { intent } = await outbox.registrarIntento(datosIntento);
   try {
     return await outbox.ejecutarIntento(intent.clave_idempotencia);
@@ -335,6 +352,14 @@ async function enviarEnlaceAgenda({ conversacionId, telefono, claveBase, ruta })
   const configuracion = whatsappAgenda.obtenerConfiguracionRuta(ruta);
   if (!configuracion) {
     throw new Error(`Ruta de agenda no soportada: "${ruta}".`);
+  }
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  const rutaHabilitada =
+    funcionesWhatsapp.respuestasAutomaticas &&
+    ((ruta === 'agendar_consulta' && funcionesWhatsapp.citasConsultas) ||
+      (ruta === 'agendar_estetica' && funcionesWhatsapp.citasEstetica));
+  if (!rutaHabilitada) {
+    return { enviado: false, motivo: 'funcion_deshabilitada' };
   }
 
   if (!configuracion.url) {
@@ -403,6 +428,8 @@ async function enviarMenuPrincipal({
   groupId = null,
   rutaEnrutamiento = RUTAS_ENRUTAMIENTO.COMANDO_MENU,
 }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return false;
   const datosMenu = {
     claveIdempotencia: `${claveBase}:menu`,
     tipoEnvio: 'conversacional',
@@ -412,7 +439,7 @@ async function enviarMenuPrincipal({
     payloadFuncional: {
       tipo: 'interactive',
       destinatarioTelefono: telefono,
-      interactive: menu.interactivePayload(),
+      interactive: menu.interactivePayload(funcionesWhatsapp),
     },
     usaPlantilla: false,
   };
@@ -423,7 +450,7 @@ async function enviarMenuPrincipal({
       rutaEnrutamiento,
       intencionResuelta: 'mostrar_menu_principal',
       resultadoDecision: 'menu_principal',
-      respuestaDefinitiva: menu.textoRespaldo(),
+      respuestaDefinitiva: menu.textoRespaldo(funcionesWhatsapp),
       datosIntento: datosMenu,
     });
     resultadoMenu = await ejecutarIntentoSinPropagar(intent.clave_idempotencia);
@@ -448,7 +475,7 @@ async function enviarMenuPrincipal({
       payloadFuncional: {
         tipo: 'text',
         destinatarioTelefono: telefono,
-        texto: menu.textoRespaldo(),
+        texto: menu.textoRespaldo(funcionesWhatsapp),
       },
       usaPlantilla: false,
     });
@@ -495,6 +522,10 @@ async function enviarSeleccionInvalida({ conversacionId, telefono, mensajeId }) 
 }
 
 async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labAccion, labDatos }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) {
+    return { enviado: false, motivo: 'respuestas_automaticas_deshabilitadas' };
+  }
   const claveBase = `mensaje:${mensajeId}:lab`;
 
   if (labAccion === 'iniciar' || labAccion === 'confirmacion_ambigua') {
@@ -568,6 +599,10 @@ async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labA
 }
 
 async function enviarSeguimiento({ conversacionId, telefono, claveIdempotencia }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) {
+    return { enviado: false, motivo: 'respuestas_automaticas_deshabilitadas' };
+  }
   const { intent } = await outbox.registrarIntento({
     claveIdempotencia,
     tipoEnvio: 'conversacional',
@@ -590,6 +625,8 @@ async function enviarSeguimiento({ conversacionId, telefono, claveIdempotencia }
 }
 
 async function enviarSolicitudEmergencia({ conversacionId, telefono, claveBase }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return false;
   const { intent } = await outbox.registrarIntento({
     claveIdempotencia: `${claveBase}:emergencia_solicitud`,
     tipoEnvio: 'conversacional',
@@ -633,6 +670,8 @@ async function clasificarYResponderGrupo({
   telefono,
   rutaEnrutamiento = RUTAS_ENRUTAMIENTO.CONSULTA_LIBRE,
 }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return 'chatbot_deshabilitado';
   const claveEnvio = `grupo:${groupId}:respuesta`;
   let grupo = await repository.obtenerClasificacionGrupo(groupId);
 
@@ -656,7 +695,9 @@ async function clasificarYResponderGrupo({
           const clasificacion = await claude.clasificarMensaje(
             textoConsolidado,
             plantillasActivas,
-            SLUG_POR_CATEGORIA_GENERICA,
+            funcionesWhatsapp.citasConsultas || funcionesWhatsapp.citasEstetica
+              ? SLUG_POR_CATEGORIA_GENERICA
+              : { ...SLUG_POR_CATEGORIA_GENERICA, agendar_cita: null },
             { nombresConocidos },
           );
           slug = clasificacion.etiqueta;
@@ -839,6 +880,8 @@ async function clasificarYResponderGrupo({
 }
 
 async function enviarGuiaMedioNoInterpretable({ conversacionId, telefono, groupId }) {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return false;
   const texto = menu.textoMedioNoInterpretable();
   const datosIntento = {
     claveIdempotencia: `grupo:${groupId}:guia_medio`,
@@ -1018,6 +1061,8 @@ async function enrutarGrupo({ conversacionId, grupo, contexto, reintentos = 0 })
 }
 
 async function procesarSiguienteConversacionVencida() {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return null;
   const inicio = Date.now();
   const conversacionId = await repository.reclamarConversacionVencida({
     segundosRecuperacion: env.whatsapp.agrupacionReclamoHuerfanoMinutos * 60,
@@ -1044,6 +1089,8 @@ async function procesarSiguienteConversacionVencida() {
 }
 
 async function procesarSiguienteSeguimientoPendiente() {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return null;
   const candidato = await repository.reclamarConversacionParaSeguimiento();
   if (!candidato) return null;
 
@@ -1062,6 +1109,8 @@ async function procesarSiguienteSeguimientoPendiente() {
 }
 
 async function cerrarSiguienteConversacionInactiva() {
+  const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
+  if (!funcionesWhatsapp.respuestasAutomaticas) return null;
   return repository.cerrarConversacionPorInactividad();
 }
 

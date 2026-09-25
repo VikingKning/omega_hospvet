@@ -3,14 +3,16 @@ const { generateCsrfToken } = require('../../config/csrf');
 
 async function mostrarForm(req, res, next) {
   try {
-    const [aviso, versiones] = await Promise.all([
+    const [aviso, versiones, funciones] = await Promise.all([
       service.obtenerAvisoPrivacidad(),
       service.listarUltimasVersionesAviso(),
+      service.obtenerFunciones(),
     ]);
     const csrfToken = generateCsrfToken(req, res);
     res.render('configuracion-generales', {
       aviso,
       versiones,
+      funciones,
       mensaje: null,
       error: null,
       csrfToken,
@@ -51,23 +53,29 @@ async function guardarAviso(req, res, next) {
       reenviar: req.body.reenviar === 'true',
       usuarioId: req.session.user.id,
     });
-    const versiones = await service.listarUltimasVersionesAviso();
+    const [versiones, funciones] = await Promise.all([
+      service.listarUltimasVersionesAviso(),
+      service.obtenerFunciones(),
+    ]);
     return res.render('partials/configuracion-generales-form', {
       aviso,
       versiones,
+      funciones,
       mensaje: 'Aviso de privacidad actualizado correctamente.',
       error: null,
       csrfToken,
     });
   } catch (err) {
     if (err.status) {
-      const [aviso, versiones] = await Promise.all([
+      const [aviso, versiones, funciones] = await Promise.all([
         service.obtenerAvisoPrivacidad(),
         service.listarUltimasVersionesAviso(),
+        service.obtenerFunciones(),
       ]);
       return res.render('partials/configuracion-generales-form', {
         aviso,
         versiones,
+        funciones,
         mensaje: null,
         error: err.message,
         csrfToken,
@@ -77,4 +85,18 @@ async function guardarAviso(req, res, next) {
   }
 }
 
-module.exports = { mostrarForm, verificarArchivoExistente, guardarAviso };
+async function actualizarFuncion(req, res, next) {
+  try {
+    const funcion = await service.actualizarFuncion({
+      clave: req.params.clave,
+      habilitado: req.body.habilitado,
+      usuarioId: req.session.user.id,
+    });
+    res.json(funcion);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+}
+
+module.exports = { mostrarForm, verificarArchivoExistente, guardarAviso, actualizarFuncion };

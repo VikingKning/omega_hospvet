@@ -14,6 +14,12 @@ const { store: sessionStore } = require('../../src/config/session');
 const migracion = require('../../src/db/migrations/20260817000001_migrar_permisos_agenda_grooming_a_granulares');
 
 const USERNAME = 'migracion.agenda.test';
+const PERMISOS_FIXTURE = [
+  ['agenda', 'ver', 'agenda.ver'],
+  ['grooming', 'crear', 'grooming.crear'],
+  ['agenda_cirugias', 'ver', 'agenda.cirugias.ver'],
+  ['agenda_grooming', 'crear', 'agenda.grooming.crear'],
+];
 
 async function permisoId(modulo, accion) {
   const row = await db('permissions').where({ modulo, accion }).first('id');
@@ -33,12 +39,27 @@ async function cleanup() {
     await db('usuario_permisos').where({ usuario_id: usuario.id }).del();
     await db('usuarios').where({ id: usuario.id }).del();
   }
+
+  const codigos = PERMISOS_FIXTURE.map(([, , codigo]) => codigo);
+  const ids = await db('permissions').whereIn('codigo', codigos).pluck('id');
+  if (ids.length) {
+    await db('usuario_permisos').whereIn('permission_id', ids).del();
+    await db('permissions').whereIn('id', ids).del();
+  }
 }
 
 let usuarioId;
 
 beforeAll(async () => {
   await cleanup();
+  await db('permissions').insert(
+    PERMISOS_FIXTURE.map(([modulo, accion, codigo]) => ({
+      modulo,
+      accion,
+      codigo,
+      descripcion: 'Fixture de migración legacy',
+    })),
+  );
   [usuarioId] = await db('usuarios')
     .insert({
       nombre: 'Migración',

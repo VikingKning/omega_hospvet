@@ -87,11 +87,10 @@ describe('flujo de login (US-101)', () => {
 
     const mainRes = await agent.get('/main.html');
     expect(mainRes.text).toContain('Laboratorio');
-    // Reconstrucción del menú: "Agenda" ya no es un link fijo "Consultas y
-    // cirugías" — cada área activa (tabla `areas`) es su propia fila, ver
-    // sidebar.ejs.
+    // Cada área activa de la tabla `areas` aparece como una fila propia en
+    // sidebar.ejs. Una instalación limpia solo incluye las áreas base.
     expect(mainRes.text).toContain('Consultas');
-    expect(mainRes.text).toContain('Cirugías');
+    expect(mainRes.text).toContain('Estética');
   });
 
   it('AC4: contraseña incorrecta responde 401 con mensaje genérico', async () => {

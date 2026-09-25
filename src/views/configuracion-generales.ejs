@@ -42,7 +42,7 @@
     <%- include('partials/sidebar', { user, currentPage: 'configuracion' }) %>
 
     <main class="main-content" id="configuracion-panel">
-      <%- include('partials/configuracion-generales-form', { aviso, versiones, mensaje, error, csrfToken }) %>
+      <%- include('partials/configuracion-generales-form', { aviso, versiones, funciones, mensaje, error, csrfToken }) %>
     </main>
     </div>
   </div>
@@ -77,7 +77,82 @@
     }
   }
 
-  configuracionPanel.addEventListener('click', (event) => {
+  function aplicarEstadoFuncion(grupo, habilitado) {
+    grupo.querySelectorAll('.toggle-btn').forEach((boton) => {
+      const seleccionado = (boton.dataset.value === 'habilitado') === habilitado;
+      boton.classList.toggle('active', seleccionado);
+      boton.setAttribute('aria-pressed', String(seleccionado));
+    });
+  }
+
+  let temporizadorMensajeFuncion = null;
+
+  function ocultarMensajeFuncion(banner) {
+    if (temporizadorMensajeFuncion) clearTimeout(temporizadorMensajeFuncion);
+    temporizadorMensajeFuncion = null;
+    banner.hidden = true;
+    banner.replaceChildren();
+  }
+
+  function mostrarMensajeFuncion(mensaje, esError = false) {
+    const banner = document.getElementById('configuracionFuncionesMensaje');
+    if (!banner) return;
+    if (temporizadorMensajeFuncion) clearTimeout(temporizadorMensajeFuncion);
+
+    const texto = document.createElement('span');
+    texto.textContent = mensaje;
+    const cerrar = document.createElement('button');
+    cerrar.type = 'button';
+    cerrar.className = 'configuracion-mensaje-cerrar';
+    cerrar.setAttribute('aria-label', 'Cerrar mensaje');
+    cerrar.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    cerrar.addEventListener('click', () => ocultarMensajeFuncion(banner));
+
+    banner.replaceChildren(texto, cerrar);
+    banner.className = esError ? 'form-error-banner' : 'form-success-banner';
+    banner.setAttribute('role', esError ? 'alert' : 'status');
+    banner.hidden = false;
+    temporizadorMensajeFuncion = setTimeout(() => ocultarMensajeFuncion(banner), 5000);
+  }
+
+  configuracionPanel.addEventListener('click', async (event) => {
+    const botonConfiguracion = event.target.closest('.configuracion-option-toggle .toggle-btn');
+    if (botonConfiguracion) {
+      const grupo = botonConfiguracion.closest('.configuracion-option-toggle');
+      const habilitado = botonConfiguracion.dataset.value === 'habilitado';
+      const estadoAnterior = grupo.querySelector('[aria-pressed="true"]')?.dataset.value === 'habilitado';
+      if (habilitado === estadoAnterior || grupo.dataset.guardando === 'true') return;
+
+      aplicarEstadoFuncion(grupo, habilitado);
+      grupo.dataset.guardando = 'true';
+      grupo.querySelectorAll('button').forEach((boton) => { boton.disabled = true; });
+      try {
+        const respuesta = await fetch(
+          `configuracion/generales/funciones/${encodeURIComponent(grupo.dataset.configClave)}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-csrf-token': <%- JSON.stringify(csrfToken) %>,
+            },
+            body: JSON.stringify({ habilitado }),
+          },
+        );
+        const resultado = await respuesta.json().catch(() => ({}));
+        if (!respuesta.ok) throw new Error(resultado.error || 'No fue posible guardar el cambio.');
+        aplicarEstadoFuncion(grupo, resultado.habilitado);
+        mostrarMensajeFuncion('Configuración guardada automáticamente.');
+      } catch (error) {
+        aplicarEstadoFuncion(grupo, estadoAnterior);
+        mostrarMensajeFuncion(error.message, true);
+      } finally {
+        delete grupo.dataset.guardando;
+        grupo.querySelectorAll('button').forEach((boton) => { boton.disabled = false; });
+      }
+      return;
+    }
+
     if (event.target.closest('#configuracionFormErrorDismiss')) {
       event.target.closest('.form-error-banner')?.remove();
       return;

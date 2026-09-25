@@ -1416,7 +1416,7 @@ body:has(.app)::after {
 
 .badge-enviado {
   background: rgba(30, 142, 62, 0.15);
-  color: var(--success);
+  color: inherit;
 }
 
 /* Laboratorio: registros_laboratorio.estado tiene 3 valores reales
@@ -3008,6 +3008,181 @@ body:has(.app)::after {
 /* Configuración General — aviso de privacidad (LFPDPPP). Reusa el mismo
    lenguaje visual que el resto del sistema (.profile-card, .mini-table,
    .account-status-badge) en vez de inventar componentes nuevos. */
+.configuracion-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.configuracion-options-body {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.configuracion-section-intro {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.configuracion-options-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.configuracion-options-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.configuracion-options-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+.configuracion-options-heading h3 {
+  margin: 0 0 2px;
+  color: var(--text-dark);
+  font-size: 13px;
+}
+
+.configuracion-options-heading p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.configuracion-options-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.configuracion-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 68px;
+  padding: 13px 16px;
+  transition: background 0.15s ease;
+}
+
+.configuracion-option-row + .configuracion-option-row {
+  border-top: 1px solid var(--border);
+}
+
+.configuracion-option-row:hover {
+  background: var(--bg-base);
+}
+
+.configuracion-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.configuracion-option-title {
+  color: var(--text-dark);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.configuracion-option-description {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.configuracion-option-toggle {
+  flex-shrink: 0;
+}
+
+.configuracion-option-toggle .toggle-btn {
+  min-width: 96px;
+  padding: 9px 13px;
+  font-size: 12px;
+}
+
+.configuracion-option-toggle .toggle-btn[data-value='deshabilitado'].active {
+  background: rgba(242, 169, 0, 0.2);
+  color: var(--warning-text);
+}
+
+#configuracionFuncionesMensaje {
+  position: relative;
+  padding-right: 44px;
+}
+
+#configuracionFuncionesMensaje[hidden] {
+  display: none !important;
+}
+
+#configuracionFuncionesMensaje .configuracion-mensaje-cerrar {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--success);
+  cursor: pointer;
+  opacity: 0.72;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+#configuracionFuncionesMensaje .configuracion-mensaje-cerrar:hover {
+  background: rgba(30, 142, 62, 0.08);
+  opacity: 1;
+}
+
+#configuracionFuncionesMensaje.form-error-banner .configuracion-mensaje-cerrar:hover {
+  background: rgba(240, 15, 53, 0.08);
+}
+
+#configuracionFuncionesMensaje .configuracion-mensaje-cerrar:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+  opacity: 0.85;
+}
+
+#configuracionFuncionesMensaje .configuracion-mensaje-cerrar svg {
+  width: 11px;
+  height: 11px;
+}
+
+@media (max-width: 640px) {
+  .configuracion-option-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .configuracion-option-toggle {
+    align-self: flex-start;
+  }
+}
+
 .aviso-vigente-card {
   display: flex;
   align-items: flex-start;
@@ -4052,11 +4227,56 @@ body:has(.app)::after {
   background: var(--bg-base);
 }
 
+/* Los siete datos editables del paciente deben permanecer en una sola fila.
+   NHC/Edad reciben únicamente el ancho que necesitan y Nombre/Raza se
+   compactan para dejar espacio a los selectores gráficos y al estado. */
+.tutor-pacientes-table {
+  table-layout: fixed;
+  min-width: 860px;
+}
+
+.tutor-pacientes-table th:nth-child(1) {
+  width: 112px;
+}
+
+.tutor-pacientes-table th:nth-child(2),
+.tutor-pacientes-table th:nth-child(4) {
+  width: 96px;
+}
+
+.tutor-pacientes-table th:nth-child(3) {
+  width: 132px;
+}
+
+.tutor-pacientes-table th:nth-child(5) {
+  width: 72px;
+}
+
+.tutor-pacientes-table th:nth-child(6) {
+  width: 150px;
+}
+
+.tutor-pacientes-table th:nth-child(7) {
+  width: 140px;
+}
+
+.lab-table .paciente-input-nhc {
+  min-width: 88px;
+}
+
+.lab-table .paciente-input-nombre {
+  min-width: 88px;
+}
+
+.lab-table .paciente-input-raza {
+  min-width: 104px;
+}
+
 /* Edad: un número de 1-2 dígitos no necesita el mismo min-width que
    Nombre/Raza (texto libre) — se angosta para no desperdiciar el espacio
    que la columna Sexo (2 botones) ya necesita más. */
 .lab-table .paciente-input-edad {
-  min-width: 64px;
+  min-width: 56px;
 }
 
 .lab-table .paciente-input:focus {
@@ -4365,6 +4585,85 @@ body:has(.app)::after {
 
 .lab-form-grid-paciente > label {
   flex: 0 0 320px;
+}
+
+.lab-form-grid-paciente > .lab-nhc-field {
+  flex: 0 0 220px;
+}
+
+.lab-form-grid-paciente > .lab-paciente-selector-field {
+  flex-basis: 280px;
+}
+
+.lab-query-input-group {
+  display: flex;
+  width: 100%;
+}
+
+.lab-query-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lab-query-value {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-form .lab-query-value > input {
+  width: 100%;
+  padding-right: 34px;
+  border-radius: 8px 0 0 8px;
+}
+
+.lab-query-clear:disabled {
+  display: none;
+}
+
+.lab-query-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  min-width: 42px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-left: 0;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.lab-query-action:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.lab-query-action svg {
+  width: 17px;
+  height: 17px;
+}
+
+.lab-query-action:hover:not(:disabled) {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.lab-query-action:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.lab-query-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* :not([hidden]) a propósito, mismo motivo ya documentado para
@@ -4714,13 +5013,11 @@ body:has(.app)::after {
   min-width: 0;
 }
 
-/* Pedido explícito del usuario: confirmación "Guardando… -> Guardado" tras
-   subir un archivo (que se sube solo, sin botón "Guardar" que el usuario
-   pueda buscar) — flotante y se desvanece sola, primer toast del proyecto
-   (a diferencia de .form-success-banner, que empuja el layout y se queda
-   fijo hasta que el usuario lo cierra). Oculto por `opacity`/`translateY`
-   en vez de `display:none` para poder animar la transición; `pointer-events:
-   none` porque nunca es interactivo, no debe robarle clics a nada debajo. */
+/* Notificación general de Laboratorio. Nació para confirmar
+   "Guardando… -> Guardado" al subir archivos y ahora también presenta los
+   errores del formulario sin empujar o deformar su layout. Es flotante y
+   se desvanece sola; se oculta con `opacity`/`translateY` para conservar la
+   animación y usa `pointer-events:none` para no robar clics al contenido. */
 /* Ajuste posterior (pedido del usuario): más grande, arriba a la derecha
    (no abajo) y un color por estado en vez de un cuadro neutro único —
    mismas 3 variantes semánticas ya usadas en el resto del sistema
@@ -4792,6 +5089,13 @@ body:has(.app)::after {
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-dark);
+}
+
+/* Los estilos flex de los botones tienen mayor prioridad que el estilo
+   nativo de `[hidden]`. Esta regla acotada garantiza que cada estado del
+   modal muestre únicamente sus acciones correspondientes. */
+#labEnviarModalBackdrop .modal-actions > [hidden] {
+  display: none !important;
 }
 
 .lab-envio-resultado-lista {
@@ -4871,6 +5175,11 @@ body:has(.app)::after {
      con un ancho fijo (320px) en vez de un grid — sin este override se
      saldría del ancho disponible en mobile. */
   .lab-form-grid-paciente > label {
+    flex-basis: 100%;
+  }
+
+  .lab-form-grid-paciente > .lab-nhc-field,
+  .lab-form-grid-paciente > .lab-paciente-selector-field {
     flex-basis: 100%;
   }
 }

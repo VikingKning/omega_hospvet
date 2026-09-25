@@ -44,6 +44,15 @@ router.get(
   controller.verificarArchivoExistente,
 );
 
+router.patch(
+  '/configuracion/generales/funciones/:clave',
+  requireAuth,
+  requirePermission('configuracion.editar'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.actualizarFuncion,
+);
+
 router.post(
   '/configuracion/generales.html',
   requireAuth,

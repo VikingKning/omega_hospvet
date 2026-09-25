@@ -1,13 +1,10 @@
-// Agenda: calendario real por área — sobre el área sembrada `cirugias`
-// (06_areas_agenda.js), con sus 5 permisos granulares ya en el catálogo
-// (01_permissions.js). Requiere una base de datos real migrada y sembrada
-// (ver tests/integration/auth.test.js para el porqué).
+// Agenda: calendario real por área — usa un área `cirugias` exclusiva de
+// esta suite. Producción solo siembra Consultas y Estética; las demás áreas
+// deben demostrar que funcionan cuando un administrador las crea.
 //
-// A propósito, este archivo NUNCA inserta en `doctores` — regla ya
-// establecida en el proyecto (ver el comentario en doctores.test.js y la
-// memoria de US-601): `doctores.test.js` tiene un test que asume esa tabla
-// COMPLETAMENTE VACÍA, y Jest corre los archivos de test en paralelo. Todo
-// lo que dependería de una cita real completa (doctor válido + traslape +
+// A propósito, este archivo no inserta doctores adicionales: trabaja con
+// los dos doctores técnicos del bootstrap. Todo lo que dependería de una
+// cita real completa (doctor seleccionable + mascota + traslape +
 // edición + feed con datos) se cubre a nivel unitario en
 // agenda.service.test.js (repository mockeado) y se verificó en vivo
 // (Playwright, usuario QA desechable) en su lugar — no aquí.
@@ -21,6 +18,9 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 const SUFFIX = 'QAAGENDA';
+const AREA_SLUG = 'cirugias';
+const AREA_MODULO = `agenda_${AREA_SLUG}`;
+const AREA_ACCIONES = ['ver', 'crear', 'editar', 'cancelar', 'confirmar'];
 
 const SOLO_VER = { username: 'agenda.ver.test', password: 'AgendaVerTest123!' };
 const SOLO_CREAR = { username: 'agenda.crear.test', password: 'AgendaCrearTest123!' };
@@ -66,6 +66,50 @@ async function cleanup() {
     await db('usuario_permisos').whereIn('usuario_id', usuarioIds).del();
     await db('usuarios').whereIn('id', usuarioIds).del();
   }
+
+  const permisoIds = await db('permissions').where({ modulo: AREA_MODULO }).pluck('id');
+  if (permisoIds.length) {
+    await db('usuario_permisos').whereIn('permission_id', permisoIds).del();
+    await db('permissions').whereIn('id', permisoIds).del();
+  }
+  await db('doctor_area')
+    .whereIn('area_id', db('areas').where({ slug: AREA_SLUG }).select('id'))
+    .del();
+  await db('areas').where({ slug: AREA_SLUG }).del();
+}
+
+async function crearAreaDePrueba() {
+  const [area] = await db('areas')
+    .insert({
+      nombre: 'Cirugías QA',
+      slug: AREA_SLUG,
+      activo: true,
+      creado_en: db.fn.now(),
+    })
+    .returning('id');
+
+  const permisos = await db('permissions')
+    .insert(
+      AREA_ACCIONES.map((accion) => ({
+        modulo: AREA_MODULO,
+        accion,
+        codigo: `agenda.${AREA_SLUG}.${accion}`,
+        descripcion: `${accion} citas de Cirugías QA`,
+      })),
+    )
+    .returning('id');
+
+  const admin = await db('usuarios').where({ username: ADMIN_USERNAME }).first('id');
+  await db('usuario_permisos').insert(
+    permisos.map((permiso) => ({
+      usuario_id: admin.id,
+      permission_id: permiso.id,
+      otorgado_por: admin.id,
+      otorgado_en: db.fn.now(),
+    })),
+  );
+
+  return area.id;
 }
 
 async function createTestUser({ username, password }, permissionCodes) {
@@ -98,6 +142,7 @@ function fechaFutura(horasDesdeAhora = 24 * 30) {
 
 beforeAll(async () => {
   await cleanup();
+  await crearAreaDePrueba();
   await createTestUser(SOLO_VER, ['agenda.cirugias.ver']);
   await createTestUser(SOLO_CREAR, ['agenda.cirugias.ver', 'agenda.cirugias.crear']);
   await createTestUser(SOLO_EDITAR, ['agenda.cirugias.ver', 'agenda.cirugias.editar']);

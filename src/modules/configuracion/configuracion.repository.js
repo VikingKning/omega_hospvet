@@ -83,6 +83,40 @@ async function actualizarMediaId(id, mediaId) {
   await db('aviso_privacidad_versiones').where({ id }).update({ media_id: mediaId });
 }
 
+async function listarFunciones() {
+  return db('configuracion_funciones').orderBy(['grupo', 'clave']).select('*');
+}
+
+async function actualizarFuncion(clave, habilitado, usuarioId) {
+  return db.transaction(async (trx) => {
+    const actual = await trx('configuracion_funciones').where({ clave }).forUpdate().first();
+    if (!actual) return null;
+
+    if (actual.habilitado === habilitado) {
+      return { ...actual, cambioRegistrado: false };
+    }
+
+    const [actualizada] = await trx('configuracion_funciones')
+      .where({ clave })
+      .update({
+        habilitado,
+        actualizado_por: usuarioId,
+        actualizado_en: trx.fn.now(),
+      })
+      .returning('*');
+
+    await trx('configuracion_funciones_auditoria').insert({
+      clave,
+      valor_anterior: actual.habilitado,
+      valor_nuevo: habilitado,
+      cambiado_por: usuarioId,
+      cambiado_en: trx.fn.now(),
+    });
+
+    return { ...actualizada, cambioRegistrado: true };
+  });
+}
+
 module.exports = {
   obtenerValores,
   guardarValores,
@@ -92,4 +126,6 @@ module.exports = {
   obtenerVersionPorNombreYHash,
   reactivarVersion,
   actualizarMediaId,
+  listarFunciones,
+  actualizarFuncion,
 };

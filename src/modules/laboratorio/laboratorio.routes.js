@@ -97,6 +97,15 @@ router.post(
 );
 
 router.post(
+  '/laboratorio/buscar-paciente-nhc',
+  requireAuth,
+  requirePermission('laboratorio.crear'),
+  writeLimiter,
+  doubleCsrfProtection,
+  controller.buscarPacientePorNhc,
+);
+
+router.post(
   '/laboratorio/buscar-tutor-nombre',
   requireAuth,
   requirePermission('laboratorio.crear'),

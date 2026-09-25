@@ -61,6 +61,10 @@ const SOLO_CARDIOLOGIA = {
 const SOLO_GROOMING = { username: 'sidebar.grooming.test', password: 'SidebarGroomingTest123!' };
 const SOLO_TUTORES = { username: 'sidebar.tutores.test', password: 'SidebarTutoresTest123!' };
 const SIN_AGENDA = { username: 'sidebar.sinagenda.test', password: 'SidebarSinAgendaTest123!' };
+const AREAS_DE_PRUEBA = [
+  { nombre: 'Cardiología', slug: 'cardiologia' },
+  { nombre: 'Grooming', slug: 'grooming' },
+];
 
 async function cleanup() {
   const usernames = [
@@ -75,10 +79,40 @@ async function cleanup() {
     await db('usuario_permisos').whereIn('usuario_id', ids).del();
     await db('usuarios').whereIn('id', ids).del();
   }
+
+  const modulos = AREAS_DE_PRUEBA.map(({ slug }) => `agenda_${slug}`);
+  const permisoIds = await db('permissions').whereIn('modulo', modulos).pluck('id');
+  if (permisoIds.length) {
+    await db('usuario_permisos').whereIn('permission_id', permisoIds).del();
+    await db('permissions').whereIn('id', permisoIds).del();
+  }
+  const areaIds = await db('areas')
+    .whereIn(
+      'slug',
+      AREAS_DE_PRUEBA.map(({ slug }) => slug),
+    )
+    .pluck('id');
+  if (areaIds.length) {
+    await db('doctor_area').whereIn('area_id', areaIds).del();
+    await db('areas').whereIn('id', areaIds).del();
+  }
+}
+
+async function crearAreasDePrueba() {
+  for (const { nombre, slug } of AREAS_DE_PRUEBA) {
+    await db('areas').insert({ nombre, slug, activo: true, creado_en: db.fn.now() });
+    await db('permissions').insert({
+      modulo: `agenda_${slug}`,
+      accion: 'ver',
+      codigo: `agenda.${slug}.ver`,
+      descripcion: `Ver citas de ${nombre}`,
+    });
+  }
 }
 
 beforeAll(async () => {
   await cleanup();
+  await crearAreasDePrueba();
   await createTestUser(SOLO_CONSULTAS.username, SOLO_CONSULTAS.password, ['agenda.consultas.ver']);
   await createTestUser(SOLO_CARDIOLOGIA.username, SOLO_CARDIOLOGIA.password, [
     'agenda.cardiologia.ver',

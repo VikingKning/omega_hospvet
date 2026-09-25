@@ -20,6 +20,7 @@
     : 'Nuevo registro';
   const disabledAttr = soloLectura ? 'disabled' : '';
   const tutorPacienteDisabledAttr = (soloLectura || esEdicion) ? 'disabled' : '';
+  const envioLaboratorioHabilitado = configuracionEnvio?.habilitado === true;
   const puedeCargarArchivos = Boolean(modoCargarArchivos);
   %>
 
@@ -72,11 +73,11 @@
 
 
         <div class="lab-form-scroll">
-        <span class="form-error-banner" id="labFormError" style="display:none">
-          <span id="labFormErrorText"></span>
-          <button type="button" class="modal-close-btn" id="labFormErrorDismiss" aria-label="Cerrar mensaje">&times;</button>
-        </span>
-        <span class="form-success-banner" id="labFormSuccess" style="display:none"></span>
+        <% if (puedeCargarArchivos && !envioLaboratorioHabilitado) { %>
+          <div class="form-error-banner">
+            <span>Puedes cargar y administrar los archivos, pero el envío está deshabilitado en Configuración General.</span>
+          </div>
+        <% } %>
 
         <section class="profile-card">
           <div class="lab-tutor-card-header">
@@ -91,11 +92,20 @@
 
           <h4 class="lab-form-subtitle">Tutor</h4>
           <div class="modal-form lab-form-grid lab-form-grid-3">
-            <label>
-              Teléfono *
-              <input type="text" id="labTelefono" placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off" pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)" <%= tutorPacienteDisabledAttr %>>
-              <span class="error-msg" id="labTelefonoError">Escribe un teléfono para buscar al tutor.</span>
-            </label>
+            <div class="lab-query-field">
+              <label for="labTelefono">Teléfono *</label>
+              <span class="lab-query-input-group">
+                <span class="lab-query-value">
+                  <input type="text" id="labTelefono" placeholder="Ej. 5512345678" inputmode="numeric" autocomplete="off" pattern="(\d{2}-\d{4}-\d{4}|\d{3}-\d{3}-\d{4})" maxlength="12" title="Formato de teléfono en México: 10 dígitos (NN-NNNN-NNNN si inicia con 55/56, NNN-NNN-NNNN en otro caso)" <%= tutorPacienteDisabledAttr %>>
+                  <button type="button" class="combobox-clear lab-query-clear" id="labTelefonoLimpiarBtn" aria-label="Reiniciar formulario" title="Reiniciar formulario" <%= tutorPacienteDisabledAttr %>>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                  </button>
+                </span>
+                <button type="button" class="lab-query-action lab-query-search" id="labTelefonoBuscarBtn" aria-label="Buscar tutor por teléfono" title="Buscar tutor por teléfono" <%= tutorPacienteDisabledAttr %>>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                </button>
+              </span>
+            </div>
             <label>
               Tutor
               <div class="combobox" id="labTutorNombreCombobox">
@@ -111,7 +121,21 @@
 
           <h4 class="lab-form-subtitle">Paciente</h4>
           <div class="modal-form lab-form-grid lab-form-grid-paciente">
-            <label>
+            <div class="lab-query-field lab-nhc-field">
+              <label for="labPacienteNhc">NHC</label>
+              <span class="lab-query-input-group">
+                <span class="lab-query-value">
+                  <input type="text" id="labPacienteNhc" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="Ej. 12345678" <%= tutorPacienteDisabledAttr %>>
+                  <button type="button" class="combobox-clear lab-query-clear" id="labNhcLimpiarBtn" aria-label="Reiniciar formulario" title="Reiniciar formulario" <%= tutorPacienteDisabledAttr %>>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                  </button>
+                </span>
+                <button type="button" class="lab-query-action lab-query-search" id="labNhcBuscarBtn" aria-label="Buscar paciente por NHC" title="Buscar paciente por NHC" <%= tutorPacienteDisabledAttr %>>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                </button>
+              </span>
+            </div>
+            <label class="lab-paciente-selector-field">
               Paciente *
               <div class="combobox" id="labPacienteCombobox">
                 <input type="text" id="labPacienteTrigger" class="select-trigger-input" readonly autocomplete="off" placeholder="Primero busca al tutor por teléfono" disabled>
@@ -303,7 +327,7 @@
           <% } %>
           <% if (puedeCargarArchivos) { %>
 
-            <button type="button" class="btn-primary" id="labEnviarResultadosBtn" disabled>
+            <button type="button" class="btn-primary" id="labEnviarResultadosBtn" disabled title="<%= envioLaboratorioHabilitado ? '' : 'Los canales de envío están deshabilitados en Configuración General' %>">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
               Enviar resultados
             </button>
@@ -385,18 +409,16 @@
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="labEnviarModalCancelar" hidden>Cancelar</button>
           <button type="button" class="btn-primary" id="labEnviarModalConfirmar" hidden>Confirmar envío</button>
-          <button type="button" class="btn-primary" id="labEnviarModalCerrar">Cerrar</button>
+          <button type="button" class="btn-primary" id="labEnviarModalAceptar" hidden>Aceptar</button>
         </div>
       </div>
     </div>
 
 
-    <div class="toast" id="labArchivoToast" role="status" aria-live="polite"></div>
-
-
     <%- include('partials/global-loader') %>
   <% } %>
 
+  <div class="toast" id="labToast" role="status" aria-live="polite"></div>
 
   <div id="labFormData" hidden><%- JSON.stringify({
     catalogo,
@@ -404,6 +426,7 @@
     doctorIdPreseleccionado,
     soloLectura,
     puedeCargarArchivos,
+    envioLaboratorioHabilitado,
     csrfToken,
     registro: registro ? {
       id: registro.id,
@@ -441,6 +464,7 @@
     const DOCTORES = DATOS.doctores;
     const SOLO_LECTURA = DATOS.soloLectura;
     const PUEDE_CARGAR_ARCHIVOS = DATOS.puedeCargarArchivos;
+    const ENVIO_RESULTADOS_HABILITADO = DATOS.envioLaboratorioHabilitado;
     const ACCEPT_ARCHIVOS =
       'image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,video/mp4,video/quicktime,video/webm';
     const ES_EDICION = Boolean(DATOS.registro);
@@ -478,21 +502,12 @@
     });
 
     function showError(message) {
-      const banner = document.getElementById('labFormError');
-      document.getElementById('labFormSuccess').style.display = 'none';
-      document.getElementById('labFormErrorText').textContent = message;
-      banner.style.display = 'flex';
-      banner.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      mostrarToastTemporal(message, 'danger');
     }
 
     function hideBanners() {
-      document.getElementById('labFormError').style.display = 'none';
-      document.getElementById('labFormSuccess').style.display = 'none';
+      ocultarToast();
     }
-
-    document.getElementById('labFormErrorDismiss').addEventListener('click', () => {
-      document.getElementById('labFormError').style.display = 'none';
-    });
 
     let refrescarTutorNombreClear = () => {};
     let refrescarPacienteClear = () => {};
@@ -502,6 +517,9 @@
     let refrescarZonaClear = () => {};
 
     let tutorActual = null; // { id, nombre, apellidos, telefono, correo, pacientes }
+    let telefonoTimer = null;
+    let versionBusquedaTutorPaciente = 0;
+    const labPacienteNhcInput = document.getElementById('labPacienteNhc');
 
     function renderTutor() {
       document.getElementById('labTutorNombre').value = tutorActual ? `${tutorActual.nombre} ${tutorActual.apellidos}` : '';
@@ -516,16 +534,20 @@
       trigger.disabled = SOLO_LECTURA || ES_EDICION || pacientes.length === 0;
       trigger.placeholder = pacientes.length ? 'Selecciona un paciente...' : 'Este tutor no tiene pacientes activos';
       list.innerHTML = pacientes
-        .map((p) => `<li class="combobox-item" data-id="${p.id}">${escapeHtml(p.nombre)}</li>`)
+        .map(
+          (p) =>
+            `<li class="combobox-item" data-id="${p.id}">${p.nhc != null ? `<span class="lab-cart-observaciones">NHC ${p.nhc}</span> · ` : ''}${escapeHtml(p.nombre)}</li>`,
+        )
         .join('');
       refrescarPacienteClear();
     }
 
-    function limpiarPaciente() {
+    function limpiarPaciente({ conservarNhc = false } = {}) {
       const teniaPaciente = Boolean(document.getElementById('labPacienteId').value);
       document.getElementById('labPacienteId').value = '';
       document.getElementById('labPacienteTrigger').value = '';
       document.getElementById('labPacienteFicha').hidden = true;
+      if (!conservarNhc) labPacienteNhcInput.value = '';
       pacienteEspecieActual = null;
       if (teniaPaciente) limpiarEstudiosPorCambioPaciente();
       refrescarPacienteClear();
@@ -540,6 +562,7 @@
       }
       document.getElementById('labPacienteId').value = paciente.id;
       document.getElementById('labPacienteTrigger').value = paciente.nombre;
+      labPacienteNhcInput.value = paciente.nhc ?? '';
       if (paciente.tipo !== pacienteEspecieActual) {
         pacienteEspecieActual = paciente.tipo || null;
         if (!SOLO_LECTURA) {
@@ -567,54 +590,166 @@
     }
 
     async function buscarTutorPorTelefono(telefono) {
-      const res = await fetch('laboratorio/buscar-tutor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
-        body: JSON.stringify({ telefono }),
-      });
-      if (res.redirected) {
-        window.location.href = res.url;
+      const versionBusqueda = ++versionBusquedaTutorPaciente;
+      try {
+        const res = await fetch('laboratorio/buscar-tutor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ telefono }),
+        });
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (versionBusqueda !== versionBusquedaTutorPaciente) return;
+        if (!res.ok) {
+          showError(data.error || 'No se pudo buscar al tutor.');
+          return;
+        }
+        if (data.existe) {
+          tutorActual = data.tutor;
+          ocultarToast();
+        } else {
+          tutorActual = null;
+          showError('No se encontró ningún tutor activo con ese teléfono.');
+        }
+        renderTutor();
+        renderPacienteOptions();
+        limpiarPaciente();
+        document.getElementById('labTutorNombreList').hidden = true;
+      } catch {
+        if (versionBusqueda !== versionBusquedaTutorPaciente) return;
+        showError('No se pudo conectar con el servidor para buscar al tutor.');
+      }
+    }
+
+    async function buscarPacientePorNhc() {
+      const nhc = labPacienteNhcInput.value.replace(/\D/g, '').slice(0, 8);
+      labPacienteNhcInput.value = nhc;
+      if (!nhc) {
+        showError('Captura un NHC para buscar al paciente.');
+        labPacienteNhcInput.focus();
         return;
       }
-      if (!res.ok) return;
-      const data = await res.json();
-      const errorMsg = document.getElementById('labTelefonoError');
-      if (data.existe) {
+
+      const versionBusqueda = ++versionBusquedaTutorPaciente;
+      try {
+        const res = await fetch('laboratorio/buscar-paciente-nhc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken },
+          body: JSON.stringify({ nhc }),
+        });
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (versionBusqueda !== versionBusquedaTutorPaciente) return;
+        if (!res.ok) {
+          showError(data.error || 'No se pudo buscar el NHC.');
+          return;
+        }
+        if (!data.existe) {
+          tutorActual = null;
+          renderTutor();
+          renderPacienteOptions();
+          limpiarPaciente({ conservarNhc: true });
+          showError('No se encontró un paciente activo con ese NHC.');
+          return;
+        }
+
         tutorActual = data.tutor;
-        errorMsg.classList.remove('show');
-      } else {
-        tutorActual = null;
-        errorMsg.textContent = 'No se encontró ningún tutor activo con ese teléfono.';
-        errorMsg.classList.add('show');
+        ocultarToast();
+        document.getElementById('labTelefono').value = tutorActual.telefono;
+        renderTutor();
+        renderPacienteOptions();
+        seleccionarPaciente(data.pacienteId);
+        document.getElementById('labTutorNombreList').hidden = true;
+      } catch {
+        if (versionBusqueda !== versionBusquedaTutorPaciente) return;
+        showError('No se pudo conectar con el servidor para buscar el NHC.');
       }
-      renderTutor();
-      renderPacienteOptions();
-      limpiarPaciente();
-      document.getElementById('labTutorNombreList').hidden = true;
     }
 
     function limpiarTutorYPaciente() {
+      versionBusquedaTutorPaciente += 1;
+      if (telefonoTimer) clearTimeout(telefonoTimer);
+      telefonoTimer = null;
       tutorActual = null;
       document.getElementById('labTelefono').value = '';
-      document.getElementById('labTelefonoError').classList.remove('show');
       document.getElementById('labTutorNombreList').hidden = true;
       renderTutor();
       renderPacienteOptions();
       limpiarPaciente();
+    }
+
+    function reiniciarFormularioLaboratorio() {
+      limpiarTutorYPaciente();
+      document.getElementById('labDoctorId').value = '';
+      document.getElementById('labDoctorInput').value = '';
+      document.getElementById('labDoctorCedula').value = '';
+      document.getElementById('labDoctorList').hidden = true;
+      refrescarDoctorClear();
+      document.getElementById('labFecha').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('labObservacionesGenerales').value = '';
+      selectedStudies = [];
+      editIndex = null;
+      renderCart();
+      clearEstudioSelection();
+      actualizarModoBotonAgregar();
+      ocultarToast();
+    }
+
+    function ejecutarBusquedaTelefono() {
+      if (telefonoTimer) clearTimeout(telefonoTimer);
+      telefonoTimer = null;
+      const digitos = document.getElementById('labTelefono').value.replace(/\D/g, '').slice(0, 10);
+      if (digitos.length !== 10) {
+        showError('Captura los 10 dígitos del teléfono para buscar al tutor.');
+        document.getElementById('labTelefono').focus();
+        return;
+      }
+      buscarTutorPorTelefono(digitos);
+    }
+
+    if (labPacienteNhcInput && !SOLO_LECTURA && !ES_EDICION) {
+      labPacienteNhcInput.addEventListener('input', () => {
+        versionBusquedaTutorPaciente += 1;
+        labPacienteNhcInput.value = labPacienteNhcInput.value.replace(/\D/g, '').slice(0, 8);
+        ocultarToast();
+      });
+      labPacienteNhcInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        buscarPacientePorNhc();
+      });
+      labPacienteNhcInput.addEventListener('blur', (event) => {
+        const accionDestino = event.relatedTarget?.closest?.(
+          '#labNhcBuscarBtn, #labNhcLimpiarBtn',
+        );
+        if (accionDestino || !labPacienteNhcInput.value.trim()) return;
+        buscarPacientePorNhc();
+      });
+      document.getElementById('labNhcBuscarBtn').addEventListener('click', buscarPacientePorNhc);
+      document.getElementById('labNhcLimpiarBtn').addEventListener('click', () => {
+        reiniciarFormularioLaboratorio();
+        labPacienteNhcInput.focus();
+      });
     }
 
     const labLimpiarTutorBtn = document.getElementById('labLimpiarTutorBtn');
     if (labLimpiarTutorBtn) {
-      labLimpiarTutorBtn.addEventListener('click', limpiarTutorYPaciente);
+      labLimpiarTutorBtn.addEventListener('click', reiniciarFormularioLaboratorio);
     }
 
     const labTelefonoInput = document.getElementById('labTelefono');
     if (labTelefonoInput && !SOLO_LECTURA && !ES_EDICION) {
-      let telefonoTimer = null;
       labTelefonoInput.addEventListener('input', () => {
+        versionBusquedaTutorPaciente += 1;
         const digitos = labTelefonoInput.value.replace(/\D/g, '').slice(0, 10);
         labTelefonoInput.value = formatearTelefono(digitos);
-        document.getElementById('labTelefonoError').classList.remove('show');
+        ocultarToast();
 
         clearTimeout(telefonoTimer);
         if (digitos.length === 10) {
@@ -625,6 +760,18 @@
           renderPacienteOptions();
           limpiarPaciente();
         }
+      });
+      labTelefonoInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        ejecutarBusquedaTelefono();
+      });
+      document
+        .getElementById('labTelefonoBuscarBtn')
+        .addEventListener('click', ejecutarBusquedaTelefono);
+      document.getElementById('labTelefonoLimpiarBtn').addEventListener('click', () => {
+        reiniciarFormularioLaboratorio();
+        labTelefonoInput.focus();
       });
     }
 
@@ -674,7 +821,6 @@
         event.preventDefault(); // Evita que el label reenvíe el clic al input.
         labTutorNombreList.hidden = true;
         document.getElementById('labTelefono').value = item.dataset.telefono;
-        document.getElementById('labTelefonoError').classList.remove('show');
         buscarTutorPorTelefono(item.dataset.telefono.replace(/\D/g, ''));
       });
 
@@ -1120,32 +1266,46 @@
         n === 0 ? 'Sin archivos seleccionados' : n === 1 ? '1 archivo seleccionado' : `${n} archivos seleccionados`;
     }
 
-    const labArchivoToast = document.getElementById('labArchivoToast');
+    const labToast = document.getElementById('labToast');
     const TOAST_VARIANTES = ['toast--warning', 'toast--success', 'toast--danger'];
+    let toastOcultarTimer = null;
 
     function aplicarVarianteToast(variante) {
-      if (!labArchivoToast) return;
-      labArchivoToast.classList.remove(...TOAST_VARIANTES);
-      labArchivoToast.classList.add(`toast--${variante}`);
+      if (!labToast) return;
+      labToast.classList.remove(...TOAST_VARIANTES);
+      labToast.classList.add(`toast--${variante}`);
+      labToast.setAttribute('role', variante === 'danger' ? 'alert' : 'status');
+      labToast.setAttribute('aria-live', variante === 'danger' ? 'assertive' : 'polite');
     }
 
     function mostrarToast(texto, variante) {
-      if (!labArchivoToast) return;
-      labArchivoToast.textContent = texto;
+      if (!labToast) return;
+      if (toastOcultarTimer) clearTimeout(toastOcultarTimer);
+      toastOcultarTimer = null;
+      labToast.textContent = texto;
       aplicarVarianteToast(variante);
-      labArchivoToast.classList.remove('show');
-      void labArchivoToast.offsetWidth;
-      labArchivoToast.classList.add('show');
+      labToast.classList.remove('show');
+      void labToast.offsetWidth;
+      labToast.classList.add('show');
+    }
+
+    function mostrarToastTemporal(texto, variante, duracionMs = 5000) {
+      mostrarToast(texto, variante);
+      toastOcultarTimer = setTimeout(ocultarToast, duracionMs);
     }
 
     function actualizarToast(texto, variante) {
-      if (!labArchivoToast) return;
-      labArchivoToast.textContent = texto;
+      if (!labToast) return;
+      if (toastOcultarTimer) clearTimeout(toastOcultarTimer);
+      toastOcultarTimer = null;
+      labToast.textContent = texto;
       aplicarVarianteToast(variante);
     }
 
     function ocultarToast() {
-      labArchivoToast?.classList.remove('show');
+      if (toastOcultarTimer) clearTimeout(toastOcultarTimer);
+      toastOcultarTimer = null;
+      labToast?.classList.remove('show');
     }
 
     function marcarSubiendoArchivo(input) {
@@ -1211,7 +1371,7 @@
       const todosConArchivo = selectedStudies.length > 0 && selectedStudies.every((s) => s.archivoId);
 
       const enviarBtn = document.getElementById('labEnviarResultadosBtn');
-      if (enviarBtn) enviarBtn.disabled = !todosConArchivo;
+      if (enviarBtn) enviarBtn.disabled = !todosConArchivo || !ENVIO_RESULTADOS_HABILITADO;
 
       const quitarTodosIndividualesBtn = document.getElementById('labQuitarTodosIndividualesBtn');
       if (quitarTodosIndividualesBtn) quitarTodosIndividualesBtn.disabled = !modoIndividual;
@@ -1245,8 +1405,6 @@
         });
       } catch (err) {
         ocultarLoaderGlobal();
-        actualizarToast('Error al subir archivo', 'danger');
-        setTimeout(ocultarToast, 2000);
         showError('No se pudo conectar con el servidor.');
         return false;
       }
@@ -1258,8 +1416,6 @@
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        actualizarToast('Error al subir archivo', 'danger');
-        setTimeout(ocultarToast, 2000);
         showError(data.error || 'No se pudo subir el archivo.');
         return false;
       }
@@ -1274,10 +1430,16 @@
 
     async function quitarArchivo(url) {
       hideBanners();
-      const res = await fetch(url, {
-        method: 'DELETE',
-        headers: { 'x-csrf-token': csrfToken },
-      });
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': csrfToken },
+        });
+      } catch {
+        showError('No se pudo conectar con el servidor.');
+        return;
+      }
       if (res.redirected) {
         window.location.href = res.url;
         return;
@@ -1358,7 +1520,7 @@
       const enviarModalCanales = document.getElementById('labEnviarModalCanales');
       const enviarModalCancelar = document.getElementById('labEnviarModalCancelar');
       const enviarModalConfirmar = document.getElementById('labEnviarModalConfirmar');
-      const enviarModalCerrar = document.getElementById('labEnviarModalCerrar');
+      const enviarModalAceptar = document.getElementById('labEnviarModalAceptar');
       let confirmacionTokenActual = null;
 
       const ICONO_EXITO =
@@ -1412,7 +1574,7 @@
         confirmacionTokenActual = null;
         enviarModalCancelar.hidden = true;
         enviarModalConfirmar.hidden = true;
-        enviarModalCerrar.hidden = false;
+        enviarModalAceptar.hidden = false;
         enviarModalTitulo.textContent = titulo;
         enviarModalMensaje.textContent = mensaje;
         enviarModalCanales.innerHTML = '';
@@ -1423,7 +1585,7 @@
         confirmacionTokenActual = null;
         enviarModalCancelar.hidden = true;
         enviarModalConfirmar.hidden = true;
-        enviarModalCerrar.hidden = false;
+        enviarModalAceptar.hidden = false;
         enviarModalTitulo.textContent = titulo;
         enviarModalMensaje.textContent = '';
         renderCanalesEnvio(filas);
@@ -1455,7 +1617,7 @@
         enviarModalCancelar.hidden = false;
         enviarModalConfirmar.hidden = false;
         enviarModalConfirmar.textContent = data.esReenvio ? 'Confirmar reenvío' : 'Confirmar envío';
-        enviarModalCerrar.hidden = true;
+        enviarModalAceptar.hidden = true;
         enviarModal.classList.add('open');
       }
 
@@ -1544,7 +1706,7 @@
         confirmacionTokenActual = null;
         enviarModal.classList.remove('open');
       });
-      enviarModalCerrar.addEventListener('click', () => {
+      enviarModalAceptar.addEventListener('click', () => {
         confirmacionTokenActual = null;
         enviarModal.classList.remove('open');
       });

@@ -5,6 +5,7 @@ const tutoresService = require('../tutores/tutores.service');
 const doctoresRepository = require('../doctores/doctores.repository');
 const archivos = require('./laboratorio.archivos');
 const envios = require('./laboratorio.envios');
+const configuracionService = require('../configuracion/configuracion.service');
 const env = require('../../config/env');
 const { enmascararTelefono, enmascararCorreo } = require('../../config/privacidad');
 
@@ -340,6 +341,10 @@ async function resolverTutorPorTelefono(rawTelefono) {
   return tutoresService.resolverTutorActivoPorTelefono(rawTelefono);
 }
 
+async function resolverPacientePorNhc(rawNhc) {
+  return tutoresService.resolverPacienteActivoPorNhc(rawNhc);
+}
+
 async function buscarTutoresPorNombre(q) {
   return tutoresService.buscarActivosPorNombre(q);
 }
@@ -508,20 +513,32 @@ async function obtenerArchivoParaDescarga(rawArchivoId) {
   };
 }
 
-function validarRegistroListoParaEnvio(registro) {
+function validarEnvioLaboratorioHabilitado(configuracionEnvio) {
+  if (!configuracionEnvio.habilitado) {
+    throw new LaboratorioValidationError(
+      'El envío de resultados está deshabilitado en Configuración General.',
+    );
+  }
+}
+
+function validarRegistroListoParaEnvio(registro, configuracionEnvio) {
+  validarEnvioLaboratorioHabilitado(configuracionEnvio);
   if (registro.estudios.length === 0 || registro.estudios.some((estudio) => !estudio.archivo_id)) {
     throw new LaboratorioValidationError(
       'Todos los estudios deben tener un archivo cargado antes de enviar los resultados.',
     );
   }
-  if (!registro.propietario_correo && !registro.propietario_telefono) {
+  const tieneCanalDisponible =
+    (configuracionEnvio.correo && registro.propietario_correo) ||
+    (configuracionEnvio.whatsapp && registro.propietario_telefono);
+  if (!tieneCanalDisponible) {
     throw new LaboratorioValidationError(
-      'El tutor no tiene correo ni teléfono registrados para recibir los resultados.',
+      'El tutor no tiene datos de contacto para los canales de envío habilitados.',
     );
   }
 }
 
-function datosFirmadosDeEnvio(registro, usuarioId, emitidoEn) {
+function datosFirmadosDeEnvio(registro, usuarioId, emitidoEn, configuracionEnvio) {
   const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))]
     .sort((a, b) => a - b)
     .join(',');
@@ -533,19 +550,26 @@ function datosFirmadosDeEnvio(registro, usuarioId, emitidoEn) {
     registro.estado,
     registro.propietario_correo ?? '',
     stripTelefono(registro.propietario_telefono),
+    configuracionEnvio.correo ? 'correo:on' : 'correo:off',
+    configuracionEnvio.whatsapp ? 'whatsapp:on' : 'whatsapp:off',
     archivoIds,
   ].join('|');
 }
 
-function crearTokenConfirmacionEnvio(registro, usuarioId, emitidoEn = Date.now()) {
+function crearTokenConfirmacionEnvio(
+  registro,
+  usuarioId,
+  configuracionEnvio,
+  emitidoEn = Date.now(),
+) {
   const firma = crypto
     .createHmac('sha256', env.sessionSecret)
-    .update(datosFirmadosDeEnvio(registro, usuarioId, emitidoEn))
+    .update(datosFirmadosDeEnvio(registro, usuarioId, emitidoEn, configuracionEnvio))
     .digest('hex');
   return `${emitidoEn}.${firma}`;
 }
 
-function validarTokenConfirmacionEnvio(registro, usuarioId, token) {
+function validarTokenConfirmacionEnvio(registro, usuarioId, configuracionEnvio, token) {
   const [emitidoTexto, firmaRecibida, extra] = String(token ?? '').split('.');
   const emitidoEn = Number(emitidoTexto);
   const vigente =
@@ -559,7 +583,12 @@ function validarTokenConfirmacionEnvio(registro, usuarioId, token) {
     );
   }
 
-  const esperado = crearTokenConfirmacionEnvio(registro, usuarioId, emitidoEn).split('.')[1];
+  const esperado = crearTokenConfirmacionEnvio(
+    registro,
+    usuarioId,
+    configuracionEnvio,
+    emitidoEn,
+  ).split('.')[1];
   const firmaBuffer = Buffer.from(firmaRecibida, 'hex');
   const esperadoBuffer = Buffer.from(esperado, 'hex');
   if (!crypto.timingSafeEqual(firmaBuffer, esperadoBuffer)) {
@@ -575,14 +604,17 @@ async function prepararConfirmacionEnvio(rawRegistroId, usuarioId) {
   if (registroId === null) throw errorRegistroNoEncontrado();
   const registro = await repository.findById(registroId);
   if (!registro) throw errorRegistroNoEncontrado();
-  validarRegistroListoParaEnvio(registro);
+  const configuracionEnvio = await configuracionService.obtenerConfiguracionEnvioLaboratorio();
+  validarRegistroListoParaEnvio(registro, configuracionEnvio);
 
   return {
-    confirmacionToken: crearTokenConfirmacionEnvio(registro, usuarioId),
+    confirmacionToken: crearTokenConfirmacionEnvio(registro, usuarioId, configuracionEnvio),
     esReenvio: registro.estado === 'enviado',
     destinatarios: {
-      correo: enmascararCorreo(registro.propietario_correo),
-      whatsapp: enmascararTelefono(registro.propietario_telefono),
+      correo: configuracionEnvio.correo ? enmascararCorreo(registro.propietario_correo) : null,
+      whatsapp: configuracionEnvio.whatsapp
+        ? enmascararTelefono(registro.propietario_telefono)
+        : null,
     },
   };
 }
@@ -592,8 +624,14 @@ async function enviarResultados(rawRegistroId, usuarioId, { confirmacionToken } 
   if (registroId === null) throw errorRegistroNoEncontrado();
   const registro = await repository.findById(registroId);
   if (!registro) throw errorRegistroNoEncontrado();
-  validarRegistroListoParaEnvio(registro);
-  const confirmacion = validarTokenConfirmacionEnvio(registro, usuarioId, confirmacionToken);
+  const configuracionEnvio = await configuracionService.obtenerConfiguracionEnvioLaboratorio();
+  validarRegistroListoParaEnvio(registro, configuracionEnvio);
+  const confirmacion = validarTokenConfirmacionEnvio(
+    registro,
+    usuarioId,
+    configuracionEnvio,
+    confirmacionToken,
+  );
 
   const archivoIds = [...new Set(registro.estudios.map((estudio) => estudio.archivo_id))];
   const filas = await Promise.all(archivoIds.map((id) => repository.findArchivoById(id)));
@@ -606,8 +644,8 @@ async function enviarResultados(rawRegistroId, usuarioId, { confirmacionToken } 
 
   const nombreTutor = `${registro.propietario_nombre} ${registro.propietario_apellidos}`;
   const intentos = {
-    correo: Boolean(registro.propietario_correo),
-    whatsapp: Boolean(registro.propietario_telefono),
+    correo: configuracionEnvio.correo && Boolean(registro.propietario_correo),
+    whatsapp: configuracionEnvio.whatsapp && Boolean(registro.propietario_telefono),
   };
 
   const [correoResultado, whatsappResultado] = await Promise.allSettled([
@@ -684,6 +722,13 @@ async function reenviarResultadosPorWhatsapp(
   rawRegistroId,
   { telefono, claveIdempotenciaPrefijo },
 ) {
+  const configuracionEnvio = await configuracionService.obtenerConfiguracionEnvioLaboratorio();
+  if (!configuracionEnvio.whatsapp) {
+    return {
+      ok: false,
+      error: 'El envío de resultados por WhatsApp está deshabilitado en Configuración General.',
+    };
+  }
   const registroId = parseId(rawRegistroId);
   if (registroId === null) return { ok: false, error: 'Folio inválido.' };
   const registro = await repository.findById(registroId);
@@ -726,6 +771,10 @@ async function eliminar(rawId, usuarioId) {
   await repository.eliminar(id, usuarioId);
 }
 
+async function obtenerConfiguracionEnvioResultados() {
+  return configuracionService.obtenerConfiguracionEnvioLaboratorio();
+}
+
 module.exports = {
   catalogoParaFormulario,
   listCategorias,
@@ -735,6 +784,7 @@ module.exports = {
   editar,
   obtenerParaEditar,
   resolverTutorPorTelefono,
+  resolverPacientePorNhc,
   buscarTutoresPorNombre,
   subirArchivoParaTodos,
   subirArchivoParaEstudio,
@@ -744,5 +794,6 @@ module.exports = {
   prepararConfirmacionEnvio,
   enviarResultados,
   reenviarResultadosPorWhatsapp,
+  obtenerConfiguracionEnvioResultados,
   eliminar,
 };

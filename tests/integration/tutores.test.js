@@ -147,9 +147,17 @@ async function crearTutor({ nombre, apellidos, telefono, correo, activo }) {
   return id;
 }
 
-async function crearMascota(propietarioId, { nombre, tipo, raza, activo }) {
+async function crearMascota(propietarioId, { nhc = null, nombre, tipo, raza, activo }) {
   const [{ id }] = await db('mascotas')
-    .insert({ propietario_id: propietarioId, nombre, tipo, raza, activo, creado_en: db.fn.now() })
+    .insert({
+      propietario_id: propietarioId,
+      nhc,
+      nombre,
+      tipo,
+      raza,
+      activo,
+      creado_en: db.fn.now(),
+    })
     .returning('id');
   return id;
 }
@@ -175,6 +183,7 @@ beforeAll(async () => {
     activo: true,
   });
   await crearMascota(anaId, {
+    nhc: 9155101,
     nombre: `Firulais ${SUFFIX}`,
     tipo: 'Perro',
     raza: 'Labrador',
@@ -335,6 +344,17 @@ describe('POST /tutores.html — búsqueda (US-155 AC8-AC10)', () => {
     const porTipo = await filtrarTutores(agent, { q: 'Labrador' });
     expect(porTipo.text).toContain(`Ana García ${SUFFIX}`);
     expect(porTipo.text).toContain(`Firulais ${SUFFIX}`);
+  });
+
+  it('el NHC encuentra al paciente y acepta ceros iniciales en la búsqueda', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+
+    const res = await filtrarTutores(agent, { q: '09155101' });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(`Ana García ${SUFFIX}`);
+    expect(res.text).toContain(`Firulais ${SUFFIX}`);
+    expect(res.text).toContain('9155101');
   });
 
   it('una búsqueda sin coincidencias no truena y muestra el mensaje de "sin resultados"', async () => {
@@ -559,6 +579,7 @@ describe('GET /tutores/nuevo y GET /tutores/:id/editar (US-156 AC1/AC2 — formu
     expect(res.text).toContain('value="Ana"');
     expect(res.text).toContain(`value="García ${SUFFIX}"`);
     expect(res.text).toContain(`Firulais ${SUFFIX}`); // isla de datos con las mascotas precargadas
+    expect(res.text).toContain('"nhc":9155101');
   });
 
   it('sin tutores.editar, el formulario de edición se rechaza', async () => {
@@ -617,6 +638,7 @@ describe('GET /tutores/:id/ver (pedido explícito del usuario)', () => {
     expect(res.text).toContain('value="Ana"');
     expect(res.text).toContain(`value="García ${SUFFIX}"`);
     expect(res.text).toContain(`Firulais ${SUFFIX}`);
+    expect(res.text).toContain('"nhc":9155101');
     expect(res.text).toMatch(/id="tutorNombre"[^>]*readonly/);
     expect(res.text).toMatch(/id="guardarBtn"[^>]*disabled/);
     expect(res.text).toMatch(/id="agregarPacienteBtn"[^>]*disabled/);
@@ -718,6 +740,72 @@ describe('POST /tutores (US-156 AC3-AC13 — alta)', () => {
     expect(mascotas).toHaveLength(2);
     expect(mascotas.every((m) => m.activo === true)).toBe(true);
     expect(mascotas.every((m) => m.creado_por !== null)).toBe(true);
+  });
+
+  it('NHC es opcional y, si se captura con ceros iniciales, se guarda como entero', async () => {
+    const agent = await loginAs(SOLO_CREAR_USER);
+
+    const res = await postTutor(agent, {
+      nombre: 'Alta NHC',
+      apellidos: SUFFIX_156,
+      telefono: '55-1000-0031',
+      pacientes: [
+        { nhc: '09156101', nombre: 'Paciente NHC', tipo: 'Gato', edad: 40 },
+        { nhc: '', nombre: 'Paciente sin NHC', tipo: 'Perro' },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const mascotas = await db('mascotas').where({ propietario_id: res.body.id }).orderBy('nombre');
+    expect(mascotas.find((mascota) => mascota.nombre === 'Paciente NHC').nhc).toBe(9156101);
+    expect(mascotas.find((mascota) => mascota.nombre === 'Paciente sin NHC').nhc).toBeNull();
+  });
+
+  it('rechaza un NHC duplicado entre mascotas y no crea parcialmente al tutor', async () => {
+    const agent = await loginAs(SOLO_CREAR_USER);
+    const primera = await postTutor(agent, {
+      nombre: 'Primero NHC',
+      apellidos: SUFFIX_156,
+      telefono: '55-1000-0032',
+      pacientes: [{ nhc: '9156102', nombre: 'Paciente primero' }],
+    });
+    expect(primera.status).toBe(200);
+
+    const duplicada = await postTutor(agent, {
+      nombre: 'Segundo NHC',
+      apellidos: SUFFIX_156,
+      telefono: '55-1000-0033',
+      pacientes: [{ nhc: '9156102', nombre: 'Paciente segundo' }],
+    });
+
+    expect(duplicada.status).toBe(400);
+    expect(duplicada.body.error).toBe('El NHC ya está asignado a otro paciente.');
+    await expect(
+      db('propietarios').where({ nombre: 'Segundo NHC', apellidos: SUFFIX_156 }).first(),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rechaza NHC con más de 8 dígitos y edades mayores a 40', async () => {
+    const agent = await loginAs(SOLO_CREAR_USER);
+    const base = {
+      nombre: 'Validaciones NHC',
+      apellidos: SUFFIX_156,
+      telefono: '55-1000-0034',
+    };
+
+    const nhcInvalido = await postTutor(agent, {
+      ...base,
+      pacientes: [{ nhc: '123456789', nombre: 'Paciente' }],
+    });
+    expect(nhcInvalido.status).toBe(400);
+    expect(nhcInvalido.body.error).toMatch(/hasta 8 dígitos/);
+
+    const edadInvalida = await postTutor(agent, {
+      ...base,
+      pacientes: [{ nombre: 'Paciente', edad: 41 }],
+    });
+    expect(edadInvalida.status).toBe(400);
+    expect(edadInvalida.body.error).toMatch(/entre 0 y 40/);
   });
 
   it('AC5: un teléfono que ya pertenece a otro propietario ACTIVO se rechaza', async () => {
@@ -951,6 +1039,30 @@ describe('PUT /tutores/:id (US-156 AC14-AC21 — edición)', () => {
 
     const michi = await db('mascotas').where({ id: otraMascotaId }).first();
     expect(michi.nombre).toBe('Michi'); // intacta
+  });
+
+  it('permite asignar y editar el NHC de una mascota existente', async () => {
+    const agent = await loginAs(SOLO_EDITAR_USER);
+
+    const res = await putTutor(agent, tutorId, {
+      nombre: 'Editable',
+      apellidos: SUFFIX_156,
+      telefono: '55-1000-0010',
+      pacientes: [
+        {
+          id: mascotaId,
+          nhc: '09156201',
+          nombre: 'Rocky',
+          tipo: 'Perro',
+          raza: 'Poodle',
+          activo: true,
+        },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const row = await db('mascotas').where({ id: mascotaId }).first();
+    expect(row.nhc).toBe(9156201);
   });
 
   it('AC15: agregar una mascota nueva durante la edición la crea activa y asociada al mismo propietario', async () => {

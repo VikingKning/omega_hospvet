@@ -15,8 +15,10 @@ const zonas = [
 ];
 
 exports.seed = async function seed(knex) {
-  await knex('catalogo_zonas_anatomicas').del();
-  await knex('catalogo_zonas_anatomicas').insert(
-    zonas.map(([codigo, nombre]) => ({ codigo, nombre })),
-  );
+  await knex('catalogo_zonas_anatomicas')
+    .insert(zonas.map(([codigo, nombre]) => ({ codigo, nombre })))
+    .onConflict('codigo')
+    .merge(['nombre']);
 };
+
+exports.ZONAS = zonas;
