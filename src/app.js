@@ -6,6 +6,7 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const pinoHttp = require('pino-http');
 
+const env = require('./config/env');
 const logger = require('./config/logger');
 const { middleware: sessionMiddleware } = require('./config/session');
 const { generateCsrfToken } = require('./config/csrf');
@@ -29,6 +30,14 @@ const whatsappAlertasRoutes = require('./modules/whatsapp/whatsapp.alertas.route
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
+
+// En producción, Cloudflare Tunnel entrega HTTPS al navegador y reenvía la
+// petición por HTTP local. Confiar en ese único proxy permite que Express
+// reconozca el protocolo original y emita correctamente las cookies Secure
+// de sesión y CSRF.
+if (env.nodeEnv === 'production') {
+  app.set('trust proxy', 1);
+}
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
