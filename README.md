@@ -185,98 +185,151 @@ El administrador inicial usa `ADMIN_USERNAME` y `ADMIN_PASSWORD`. Después del l
 
 ## Variables de entorno
 
-El archivo base, con comentarios de configuración, está en `.env.example`.
+El inventario siguiente corresponde a todas las variables que consume el código de la
+aplicación, sus scripts y la configuración de pruebas. La plantilla base está en
+`.env.example`. Los ejemplos son ilustrativos: nunca se deben versionar contraseñas,
+tokens ni secretos reales.
 
-### Obligatorias para iniciar la aplicación
+Las siete variables marcadas como **Sí** en la tabla de infraestructura son necesarias
+incluso cuando no se utilicen integraciones externas. Una integración opcional solo se
+activa cuando está completo el conjunto de credenciales que se indica en su sección.
 
-| Variable                   | Descripción                                    |
-| -------------------------- | ---------------------------------------------- |
-| `DB_HOST`                  | Host de PostgreSQL                             |
-| `DB_PORT`                  | Puerto de PostgreSQL                           |
-| `DB_NAME`                  | Base de datos                                  |
-| `DB_USER`                  | Usuario de base de datos                       |
-| `DB_PASSWORD`              | Contraseña de base de datos                    |
-| `SESSION_SECRET`           | Firma de sesiones y tokens CSRF                |
-| `LABS_RESULT_FILE_STORAGE` | Carpeta privada para resultados de laboratorio |
+### Ejecución, base de datos y almacenamiento
 
-Las variables `ADMIN_*` son utilizadas por el seed del administrador. `ADMIN_PASSWORD` debe definirse antes de ejecutar el seed.
+| Variable                   | Requerida | Función                                                                                                                                             | Ejemplo                                     |
+| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `NODE_ENV`                 | No        | Selecciona el entorno. `production` activa cookies seguras y logging de producción; `test` silencia los logs durante Jest.                          | `production`                                |
+| `PORT`                     | No        | Puerto HTTP del servidor. El valor predeterminado es `3000`.                                                                                        | `3000`                                      |
+| `OMEGA_TIMEZONE`           | No        | Zona IANA utilizada para fechas, horas y filtros operativos. Predeterminada: `America/Mexico_City`.                                                 | `America/Mexico_City`                       |
+| `LOG_LEVEL`                | No        | Nivel mínimo de Pino: `trace`, `debug`, `info`, `warn`, `error`, `fatal` o `silent`. Predeterminado: `info` en producción y `debug` en desarrollo.  | `info`                                      |
+| `DB_HOST`                  | **Sí**    | Host o IP de PostgreSQL.                                                                                                                            | `127.0.0.1`                                 |
+| `DB_PORT`                  | **Sí**    | Puerto de PostgreSQL.                                                                                                                               | `5432`                                      |
+| `DB_NAME`                  | **Sí**    | Nombre de la base de datos de OmegaVet.                                                                                                             | `omega_vet`                                 |
+| `DB_USER`                  | **Sí**    | Rol de PostgreSQL utilizado por la aplicación.                                                                                                      | `omega_app`                                 |
+| `DB_PASSWORD`              | **Sí**    | Contraseña del rol de PostgreSQL.                                                                                                                   | `<contraseña-segura>`                       |
+| `SESSION_SECRET`           | **Sí**    | Secreto para firmar sesiones, apoyar la protección CSRF y generar referencias privadas en logs. Debe ser largo, aleatorio y exclusivo del ambiente. | `<cadena-aleatoria-de-64-o-más-caracteres>` |
+| `LABS_RESULT_FILE_STORAGE` | **Sí**    | Ruta absoluta, privada y escribible donde se almacenan resultados de laboratorio. No debe estar dentro de `public/`.                                | `C:\ProgramData\OmegaVet\resultados`        |
 
-### Google Calendar — opcionales
+> En producción debe escribirse exactamente `NODE_ENV=production`; `produccion` no es
+> equivalente y dejaría desactivada la cookie segura de sesión.
 
-```dotenv
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REFRESH_TOKEN=
-GOOGLE_CALENDAR_ID=
-GOOGLE_SYNC_INTERVAL_MINUTES=10
-```
+### Usuario administrador inicial
 
-Sin estas credenciales, la agenda interna sigue funcionando, pero el job de importación de reservas externas no inicia.
+Estas variables solamente son leídas por `src/db/seeds/05_admin_usuario.js`. Se usan al
+preparar una base nueva; no cambian posteriormente las credenciales de un administrador
+existente.
 
-### WhatsApp y Claude — opcionales
+| Variable          | Requerida             | Función                                                                                                | Ejemplo                       |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| `ADMIN_NOMBRE`    | No                    | Nombre del administrador inicial. Predeterminado: `Administrador`.                                     | `Administrador`               |
+| `ADMIN_APELLIDOS` | No                    | Apellidos del administrador inicial. Predeterminado: `Omega`.                                          | `Omega`                       |
+| `ADMIN_EMAIL`     | No                    | Correo del administrador inicial. Predeterminado: `admin@omegavet.local`.                              | `admin@vethv.org`             |
+| `ADMIN_USERNAME`  | No                    | Nombre de usuario inicial. Predeterminado: `admin`. También lo usan las pruebas de integración.        | `admin`                       |
+| `ADMIN_PASSWORD`  | **Al ejecutar seeds** | Contraseña inicial. El seed falla si no está definida y aplica la política de contraseñas del sistema. | `<contraseña-inicial-segura>` |
 
-```dotenv
-WHATSAPP_TOKEN=
-WHATSAPP_PHONE_NUMBER_ID=
-WHATSAPP_BUSINESS_ACCOUNT_ID=
-WHATSAPP_WEBHOOK_VERIFY_TOKEN=
-WHATSAPP_APP_SECRET=
-WHATSAPP_APP_ID=
-WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES=60
-WHATSAPP_AGRUPACION_SEGUNDOS=10
-WHATSAPP_AGRUPACION_EMERGENCIA_SEGUNDOS=10
-WHATSAPP_AGRUPACION_POLL_INTERVAL_SEGUNDOS=3
-WHATSAPP_AGRUPACION_RECLAMO_HUERFANO_MINUTOS=2
-WHATSAPP_FLUJO_RECORDATORIO_MINUTOS=10
-WHATSAPP_FLUJO_CIERRE_ADICIONAL_MINUTOS=20
-WHATSAPP_LAB_MAX_INTENTOS=3
-WHATSAPP_ATENCION_HUMANA_HORAS=5
-WHATSAPP_ATENCION_HUMANA_POLL_INTERVAL_SEGUNDOS=5
-WHATSAPP_WORKER_RECLAMO_HUERFANO_SEGUNDOS=120
-WHATSAPP_ATENCION_HUMANA_REINTENTO_SEGUNDOS=30
-WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED=true
-WHATSAPP_LEGACY_POLL_INTERVAL_SEGUNDOS=5
-OMEGA_TIMEZONE=America/Mexico_City
+### Google Calendar
 
-ANTHROPIC_API_KEY=
-ANTHROPIC_TIMEOUT_MS=10000
-```
+La sincronización inicia únicamente cuando están presentes
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` y
+`GOOGLE_CALENDAR_ID`. Sin ellas, la agenda interna continúa funcionando.
 
-Las variables de WhatsApp habilitan el webhook, las respuestas y el envío de resultados. Las alertas internas se presentan únicamente en el portal y, si el usuario lo autoriza, como notificaciones del navegador. `WHATSAPP_APP_ID` solo es necesario para registrar la plantilla de resultados con documento adjunto. Los intervalos controlan la agrupación, recuperación de workers interrumpidos, recordatorios y las cinco horas de atención humana; los valores mostrados son los predeterminados.
+| Variable                       | Requerida        | Función                                                                                                      | Ejemplo                                     |
+| ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| `GOOGLE_CLIENT_ID`             | Para sincronizar | ID del cliente OAuth 2.0 de Google Cloud.                                                                    | `1234567890-abc.apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET`         | Para sincronizar | Secreto del cliente OAuth 2.0.                                                                               | `GOCSPX-...`                                |
+| `GOOGLE_REFRESH_TOKEN`         | Para sincronizar | Token de actualización obtenido al autorizar la cuenta del calendario.                                       | `1//0...`                                   |
+| `GOOGLE_CALENDAR_ID`           | Para sincronizar | ID del calendario que recibe y proporciona eventos. Puede ser un correo o el ID de un calendario compartido. | `calendario@example.com`                    |
+| `GOOGLE_SYNC_INTERVAL_MINUTES` | No               | Frecuencia del job de sincronización. Predeterminada: `10` minutos.                                          | `10`                                        |
 
-`WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED` se evalúa únicamente al insertar un `whatsapp_message_id` nuevo. `true` asigna `conversacional_nuevo`; `false` asigna `flujo_anterior`, que clasifica cada mensaje de texto individualmente. La asignación queda persistida: reiniciar o cambiar la variable no mueve mensajes ni grupos existentes. `WHATSAPP_LEGACY_POLL_INTERVAL_SEGUNDOS` controla la recuperación del worker anterior. `OMEGA_TIMEZONE` define la fecha y hora local de todos los filtros del tablero; el valor operativo es `America/Mexico_City`.
+### Enlaces públicos
 
-`ANTHROPIC_API_KEY` habilita el clasificador de mensajes entrantes. `ANTHROPIC_TIMEOUT_MS` limita cada llamada; si falta la clave, vence el tiempo o la respuesta no pertenece al catálogo cerrado, el grupo utiliza `sin-coincidencia-default` y no vuelve a clasificarse. Claude no se usa para comandos de menú, opciones interactivas, enlaces de agenda, consulta guiada de resultados, transferencias ni alertas, y nunca genera contenido médico libre.
+| Variable                      | Requerida | Función                                                                                                        | Ejemplo                                 |
+| ----------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `GOOGLE_CALENDAR_MEETING_URL` | No        | Página pública HTTPS para reservar Consultas. También se incluye en resultados enviados por correo y WhatsApp. | `https://calendar.app.google/CONSULTAS` |
+| `GOOGLE_CALENDAR_GROOMING`    | No        | Página pública HTTPS para reservar Estética.                                                                   | `https://calendar.app.google/ESTETICA`  |
+| `GOOGLE_MAPS_URL`             | No        | Enlace público de Google Maps de la sucursal.                                                                  | `https://maps.app.goo.gl/ubicacion`     |
 
-Los destinatarios de alertas internas se obtienen exclusivamente de `usuarios`: deben estar activos y tener `notificaciones_alertas=true`. Los Doctores reciben emergencias, Recepción recibe sus solicitudes y los Administradores reciben ambos tipos en el portal. No se envían estas alertas al WhatsApp del personal ni se configuran listas de teléfonos internos.
+Si falta uno de los enlaces de agenda o no utiliza HTTPS, el flujo correspondiente de
+WhatsApp informa que no está disponible y transfiere la conversación a Recepción.
 
-### Correo — opcionales
+### Meta y WhatsApp Business
 
-```dotenv
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASSWORD=
-SMTP_FROM=Omega Hospital Veterinario <no-reply@example.com>
-```
+El envío de mensajes y medios requiere conjuntamente `WHATSAPP_TOKEN` y
+`WHATSAPP_PHONE_NUMBER_ID`. Las demás variables habilitan validación del webhook,
+plantillas y tareas específicas.
 
-Usa `SMTP_SECURE=true` para TLS implícito, normalmente en el puerto 465. Sin una configuración SMTP completa, el canal de correo se omite y el resto de la aplicación continúa disponible.
+| Variable                                          | Requerida                 | Función                                                                                                                                         | Ejemplo                             |
+| ------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `WHATSAPP_TOKEN`                                  | Para enviar               | Token de acceso de Meta utilizado como Bearer token en Graph API.                                                                               | `EAA...`                            |
+| `WHATSAPP_PHONE_NUMBER_ID`                        | Para enviar               | ID de Meta del número remitente; no es el número telefónico visible.                                                                            | `123456789012345`                   |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID`                    | Para plantillas           | ID de la cuenta de WhatsApp Business (WABA).                                                                                                    | `123456789012345`                   |
+| `WHATSAPP_APP_ID`                                 | Para registrar documentos | ID de la aplicación de Meta. Lo usa el script que registra la plantilla de resultados con PDF.                                                  | `123456789012345`                   |
+| `WHATSAPP_APP_SECRET`                             | Para recibir              | Secreto de la aplicación usado para validar la firma `X-Hub-Signature-256` del webhook.                                                         | `<secreto-de-la-app-meta>`          |
+| `WHATSAPP_WEBHOOK_VERIFY_TOKEN`                   | Para verificar            | Secreto elegido por el administrador y compartido con Meta durante la validación inicial del webhook.                                           | `<token-de-verificación-aleatorio>` |
+| `WHATSAPP_TEMPLATES_SYNC_INTERVAL_MINUTES`        | No                        | Frecuencia de consulta del estado de aprobación de plantillas. Predeterminada: `60` minutos.                                                    | `60`                                |
+| `WHATSAPP_AGRUPACION_SEGUNDOS`                    | No                        | Inactividad necesaria para agrupar mensajes normales consecutivos antes de procesarlos. Predeterminada: `10`.                                   | `10`                                |
+| `WHATSAPP_AGRUPACION_EMERGENCIA_SEGUNDOS`         | No                        | Ventana de agrupación para mensajes de emergencia. Si falta, hereda `WHATSAPP_AGRUPACION_SEGUNDOS`.                                             | `10`                                |
+| `WHATSAPP_AGRUPACION_POLL_INTERVAL_SEGUNDOS`      | No                        | Frecuencia con la que los workers buscan grupos, seguimientos y cierres pendientes. Predeterminada: `3`.                                        | `3`                                 |
+| `WHATSAPP_AGRUPACION_RECLAMO_HUERFANO_MINUTOS`    | No                        | Tiempo tras el cual puede recuperarse un grupo que quedó marcado como en procesamiento. Predeterminado: `2` minutos.                            | `2`                                 |
+| `WHATSAPP_FLUJO_RECORDATORIO_MINUTOS`             | No                        | Espera antes del recordatorio por inactividad de un flujo conversacional. Predeterminada: `10` minutos.                                         | `10`                                |
+| `WHATSAPP_FLUJO_CIERRE_ADICIONAL_MINUTOS`         | No                        | Tiempo adicional después del recordatorio para cerrar el flujo inactivo. Predeterminado: `20` minutos.                                          | `20`                                |
+| `WHATSAPP_LAB_MAX_INTENTOS`                       | No                        | Máximo de intentos fallidos en la consulta guiada de resultados de laboratorio. Predeterminado: `3`.                                            | `3`                                 |
+| `WHATSAPP_ATENCION_HUMANA_HORAS`                  | No                        | Duración de una transferencia a atención humana antes de vencer. Predeterminada: `5` horas.                                                     | `5`                                 |
+| `WHATSAPP_ATENCION_HUMANA_POLL_INTERVAL_SEGUNDOS` | No                        | Frecuencia para procesar transferencias y vencimientos de atención humana. Predeterminada: `5`.                                                 | `5`                                 |
+| `WHATSAPP_WORKER_RECLAMO_HUERFANO_SEGUNDOS`       | No                        | Antigüedad necesaria para recuperar trabajos abandonados por un worker interrumpido. Predeterminada: `120`.                                     | `120`                               |
+| `WHATSAPP_ATENCION_HUMANA_REINTENTO_SEGUNDOS`     | No                        | Espera antes de reintentar una transferencia humana que falló. Predeterminada: `30`.                                                            | `30`                                |
+| `WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED`          | No                        | `true` asigna mensajes nuevos al flujo conversacional actual; `false`, `0`, `no` u `off` los asignan al flujo anterior. Predeterminado: `true`. | `true`                              |
+| `WHATSAPP_LEGACY_POLL_INTERVAL_SEGUNDOS`          | No                        | Frecuencia del worker que recupera mensajes asignados al flujo anterior. Predeterminada: `5`.                                                   | `5`                                 |
 
-### Links públicos de agenda y resultados de laboratorio — opcionales
+`WHATSAPP_CONVERSATIONAL_ROUTER_ENABLED` se evalúa al insertar cada
+`whatsapp_message_id`. La asignación queda persistida; cambiar la variable o reiniciar el
+servidor no mueve mensajes ni grupos existentes entre flujos.
 
-```dotenv
-GOOGLE_CALENDAR_MEETING_URL=
-GOOGLE_CALENDAR_GROOMING=
-GOOGLE_MAPS_URL=
-```
+Los destinatarios de alertas internas se obtienen de la tabla `usuarios`: deben estar
+activos y tener `notificaciones_alertas=true`. No existe una variable de entorno con una
+lista de teléfonos del personal.
 
-`GOOGLE_CALENDAR_MEETING_URL` es el enlace público HTTPS de Consulta y
-`GOOGLE_CALENDAR_GROOMING` el de Estética. Las opciones correspondientes del
-menú de WhatsApp los envían sin llamar a Claude; si falta el enlace o no es
-HTTPS, el flujo avisa y transfiere la conversación a Recepción. El enlace de
-Consulta también se usa en el correo y WhatsApp de resultados de laboratorio.
-`GOOGLE_MAPS_URL` es el enlace de ubicación de la sucursal.
+### Claude API
+
+| Variable               | Requerida       | Función                                                                                                    | Ejemplo      |
+| ---------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- | ------------ |
+| `ANTHROPIC_API_KEY`    | Para clasificar | Clave de Anthropic que habilita la clasificación cerrada de mensajes no resueltos por rutas deterministas. | `sk-ant-...` |
+| `ANTHROPIC_TIMEOUT_MS` | No              | Límite de tiempo de cada petición a Claude. Predeterminado: `10000` ms.                                    | `10000`      |
+
+Si falta `ANTHROPIC_API_KEY`, vence el tiempo o la respuesta no pertenece al catálogo
+cerrado, el grupo utiliza `sin-coincidencia-default`. Claude no redacta respuestas médicas
+ni interviene en comandos de menú, selecciones interactivas, enlaces de agenda, consulta
+guiada de resultados, transferencias o alertas.
+
+### Correo SMTP
+
+El canal de correo se habilita cuando existen `SMTP_HOST`, `SMTP_USER` y
+`SMTP_PASSWORD`. Si la configuración está incompleta, se omite el correo sin impedir que
+el resto de la aplicación arranque.
+
+| Variable        | Requerida          | Función                                                                                   | Ejemplo                                           |
+| --------------- | ------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `SMTP_HOST`     | Para enviar correo | Servidor SMTP.                                                                            | `smtp.gmail.com`                                  |
+| `SMTP_PORT`     | No                 | Puerto SMTP. Predeterminado: `587`.                                                       | `587`                                             |
+| `SMTP_SECURE`   | No                 | Activa TLS implícito únicamente con `true` o `1`; normalmente se usa con el puerto `465`. | `false`                                           |
+| `SMTP_USER`     | Para enviar correo | Usuario utilizado para autenticar con el servidor SMTP.                                   | `correo@example.com`                              |
+| `SMTP_PASSWORD` | Para enviar correo | Contraseña o contraseña de aplicación del proveedor.                                      | `<contraseña-de-aplicación>`                      |
+| `SMTP_FROM`     | No                 | Remitente visible de los correos. Puede incluir nombre y dirección.                       | `Omega Hospital Veterinario <correo@example.com>` |
+
+### Variables exclusivas de pruebas
+
+`tests/setup-env.js` carga `.env.test` y después aplica estas anulaciones. Sirven para
+apuntar una ejecución puntual a un PostgreSQL efímero sin editar el archivo versionado;
+no tienen efecto al iniciar la aplicación normalmente.
+
+| Variable                          | Requerida | Función                               | Ejemplo                         |
+| --------------------------------- | --------- | ------------------------------------- | ------------------------------- |
+| `OMEGA_TEST_DB_HOST_OVERRIDE`     | No        | Sustituye `DB_HOST` durante Jest.     | `127.0.0.1`                     |
+| `OMEGA_TEST_DB_PORT_OVERRIDE`     | No        | Sustituye `DB_PORT` durante Jest.     | `55432`                         |
+| `OMEGA_TEST_DB_PASSWORD_OVERRIDE` | No        | Sustituye `DB_PASSWORD` durante Jest. | `<contraseña-de-la-bd-efímera>` |
+
+`OMEGA_WHATSAPPS` no forma parte de este inventario porque ninguna parte del código la
+lee. Era un remanente de configuración y fue retirada de `.env.example`.
 
 ## Arquitectura
 
