@@ -126,6 +126,24 @@ body::after {
   text-align: center;
 }
 
+.login-legal-links {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.login-legal-links a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.login-legal-links a:hover {
+  text-decoration: underline;
+}
+
 .field {
   position: relative;
   margin-bottom: 20px;

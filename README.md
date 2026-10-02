@@ -68,6 +68,7 @@ El sistema incluye:
 - Métricas de laboratorio con filtros de fecha y gráficas.
 - Flujo robusto de WhatsApp con persistencia idempotente, agrupación por inactividad, menú interactivo, atención prioritaria de emergencias, transferencia temporal a personal y alertas internas auditables.
 - Clasificación cerrada mediante Claude únicamente cuando las rutas deterministas no resuelven el mensaje; el modelo selecciona una etiqueta permitida y nunca redacta la respuesta clínica.
+- Sitio público con información de la aplicación, aviso de privacidad vigente en HTML/PDF, términos del asistente de WhatsApp e instrucciones para solicitar la eliminación de datos.
 
 ## Stack tecnológico
 
@@ -85,7 +86,7 @@ El sistema incluye:
 | Joi                                        | Validación de entradas                                  |
 | csrf-csrf                                  | Protección CSRF                                         |
 | Helmet, express-rate-limit y sanitize-html | Cabeceras, limitación de escritura y defensa contra XSS |
-| Multer y pdf-lib                           | Carga y procesamiento de resultados de laboratorio      |
+| Multer, pdf-lib y pdf-parse                | Carga, procesamiento y validación de documentos PDF     |
 | googleapis                                 | Sincronización con Google Calendar                      |
 | Nodemailer                                 | Envío de resultados por correo SMTP                     |
 | WhatsApp Cloud API                         | Webhook, menú, respuestas, alertas y resultados         |
@@ -196,19 +197,20 @@ activa cuando está completo el conjunto de credenciales que se indica en su sec
 
 ### Ejecución, base de datos y almacenamiento
 
-| Variable                   | Requerida | Función                                                                                                                                             | Ejemplo                                     |
-| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `NODE_ENV`                 | No        | Selecciona el entorno. `production` activa cookies seguras y logging de producción; `test` silencia los logs durante Jest.                          | `production`                                |
-| `PORT`                     | No        | Puerto HTTP del servidor. El valor predeterminado es `3000`.                                                                                        | `3000`                                      |
-| `OMEGA_TIMEZONE`           | No        | Zona IANA utilizada para fechas, horas y filtros operativos. Predeterminada: `America/Mexico_City`.                                                 | `America/Mexico_City`                       |
-| `LOG_LEVEL`                | No        | Nivel mínimo de Pino: `trace`, `debug`, `info`, `warn`, `error`, `fatal` o `silent`. Predeterminado: `info` en producción y `debug` en desarrollo.  | `info`                                      |
-| `DB_HOST`                  | **Sí**    | Host o IP de PostgreSQL.                                                                                                                            | `127.0.0.1`                                 |
-| `DB_PORT`                  | **Sí**    | Puerto de PostgreSQL.                                                                                                                               | `5432`                                      |
-| `DB_NAME`                  | **Sí**    | Nombre de la base de datos de OmegaVet.                                                                                                             | `omega_vet`                                 |
-| `DB_USER`                  | **Sí**    | Rol de PostgreSQL utilizado por la aplicación.                                                                                                      | `omega_app`                                 |
-| `DB_PASSWORD`              | **Sí**    | Contraseña del rol de PostgreSQL.                                                                                                                   | `<contraseña-segura>`                       |
-| `SESSION_SECRET`           | **Sí**    | Secreto para firmar sesiones, apoyar la protección CSRF y generar referencias privadas en logs. Debe ser largo, aleatorio y exclusivo del ambiente. | `<cadena-aleatoria-de-64-o-más-caracteres>` |
-| `LABS_RESULT_FILE_STORAGE` | **Sí**    | Ruta absoluta, privada y escribible donde se almacenan resultados de laboratorio. No debe estar dentro de `public/`.                                | `C:\ProgramData\OmegaVet\resultados`        |
+| Variable                   | Requerida | Función                                                                                                                                                     | Ejemplo                                     |
+| -------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `NODE_ENV`                 | No        | Selecciona el entorno. `production` activa cookies seguras y logging de producción; `test` silencia los logs durante Jest.                                  | `production`                                |
+| `PORT`                     | No        | Puerto HTTP del servidor. El valor predeterminado es `3000`.                                                                                                | `3000`                                      |
+| `OMEGA_TIMEZONE`           | No        | Zona IANA utilizada para fechas, horas y filtros operativos. Predeterminada: `America/Mexico_City`.                                                         | `America/Mexico_City`                       |
+| `LEGAL_PUBLIC_URL`         | No        | URL pública absoluta del portal legal. Su hostname habilita las rutas legales limpias; no depende de `NODE_ENV`. Predeterminada: `https://legal.vethv.org`. | `https://legal.vethv.org`                   |
+| `LOG_LEVEL`                | No        | Nivel mínimo de Pino: `trace`, `debug`, `info`, `warn`, `error`, `fatal` o `silent`. Predeterminado: `info` en producción y `debug` en desarrollo.          | `info`                                      |
+| `DB_HOST`                  | **Sí**    | Host o IP de PostgreSQL.                                                                                                                                    | `127.0.0.1`                                 |
+| `DB_PORT`                  | **Sí**    | Puerto de PostgreSQL.                                                                                                                                       | `5432`                                      |
+| `DB_NAME`                  | **Sí**    | Nombre de la base de datos de OmegaVet.                                                                                                                     | `omega_vet`                                 |
+| `DB_USER`                  | **Sí**    | Rol de PostgreSQL utilizado por la aplicación.                                                                                                              | `omega_app`                                 |
+| `DB_PASSWORD`              | **Sí**    | Contraseña del rol de PostgreSQL.                                                                                                                           | `<contraseña-segura>`                       |
+| `SESSION_SECRET`           | **Sí**    | Secreto para firmar sesiones, apoyar la protección CSRF y generar referencias privadas en logs. Debe ser largo, aleatorio y exclusivo del ambiente.         | `<cadena-aleatoria-de-64-o-más-caracteres>` |
+| `LABS_RESULT_FILE_STORAGE` | **Sí**    | Ruta absoluta, privada y escribible donde se almacenan resultados de laboratorio. No debe estar dentro de `public/`.                                        | `C:\ProgramData\OmegaVet\resultados`        |
 
 > En producción debe escribirse exactamente `NODE_ENV=production`; `produccion` no es
 > equivalente y dejaría desactivada la cookie segura de sesión.
@@ -388,25 +390,46 @@ OmegaVet_AdminSite/
 
 ## Módulos y rutas principales
 
-| Ruta                         | Permiso                     | Función                                          |
-| ---------------------------- | --------------------------- | ------------------------------------------------ |
-| `/` y `/index.html`          | Pública                     | Inicio de sesión                                 |
-| `/main.html`                 | Sesión                      | Dashboard principal                              |
-| `/cambiar-password`          | Sesión                      | Cambio obligatorio de contraseña                 |
-| `/mi-perfil.html`            | Sesión                      | Perfil y cambio voluntario de contraseña         |
-| `/agenda/:slug.html`         | `agenda.<slug>.ver`         | Calendario por área                              |
-| `/tutores.html`              | `tutores.ver`               | Tutores y pacientes                              |
-| `/laboratorio.html`          | `laboratorio.ver`           | Órdenes y resultados de laboratorio              |
-| `/metricas/laboratorio.html` | `metricas.laboratorios.ver` | Métricas de laboratorio                          |
-| `/doctores.html`             | `doctores.ver`              | Catálogo de doctores y especialidades            |
-| `/areas.html`                | `areas.ver`                 | Catálogo de áreas                                |
-| `/plantillas.html`           | `plantillas.ver`            | Plantillas de respuestas de WhatsApp             |
-| `/usuarios.html`             | `usuarios.ver`              | Usuarios, tipo, alertas, permisos y credenciales |
-| `/webhooks/whatsapp`         | Firma/token de Meta         | Handshake y recepción del webhook                |
-| `/api/whatsapp/alertas`      | Sesión + elegibilidad       | Alertas internas pendientes del usuario          |
-| `/health`                    | Pública                     | Estado del servidor                              |
+| Ruta                          | Permiso                     | Función                                           |
+| ----------------------------- | --------------------------- | ------------------------------------------------- |
+| `/` y `/index.html`           | Pública                     | Inicio de sesión                                  |
+| `/main.html`                  | Sesión                      | Dashboard principal                               |
+| `/cambiar-password`           | Sesión                      | Cambio obligatorio de contraseña                  |
+| `/mi-perfil.html`             | Sesión                      | Perfil y cambio voluntario de contraseña          |
+| `/agenda/:slug.html`          | `agenda.<slug>.ver`         | Calendario por área                               |
+| `/tutores.html`               | `tutores.ver`               | Tutores y pacientes                               |
+| `/laboratorio.html`           | `laboratorio.ver`           | Órdenes y resultados de laboratorio               |
+| `/metricas/laboratorio.html`  | `metricas.laboratorios.ver` | Métricas de laboratorio                           |
+| `/doctores.html`              | `doctores.ver`              | Catálogo de doctores y especialidades             |
+| `/areas.html`                 | `areas.ver`                 | Catálogo de áreas                                 |
+| `/plantillas.html`            | `plantillas.ver`            | Plantillas de respuestas de WhatsApp              |
+| `/usuarios.html`              | `usuarios.ver`              | Usuarios, tipo, alertas, permisos y credenciales  |
+| `/webhooks/whatsapp`          | Firma/token de Meta         | Handshake y recepción del webhook                 |
+| `/api/whatsapp/alertas`       | Sesión + elegibilidad       | Alertas internas pendientes del usuario           |
+| `/legal`                      | Pública                     | Información pública de OmegaVet                   |
+| `/legal/aviso-privacidad`     | Pública                     | Aviso vigente como HTML y descarga del PDF        |
+| `/legal/terminos`             | Pública                     | Términos del asistente de WhatsApp                |
+| `/legal/eliminacion-de-datos` | Pública                     | Procedimiento para solicitar cancelación de datos |
+| `/health`                     | Pública                     | Estado del servidor                               |
 
 Las operaciones de creación, edición, cancelación, carga, envío y baja exigen sus permisos específicos. Las bajas de los catálogos son lógicas para conservar auditoría y relaciones históricas.
+
+Las páginas bajo `/legal` no requieren sesión. El aviso mostrado en
+`/legal/aviso-privacidad` se obtiene de la versión vigente administrada desde
+Configuración General; no mantiene una segunda copia manual del texto. Las cargas continúan
+aceptando PDF, DOC y DOCX, y los documentos de Word se convierten con LibreOffice. Antes de
+activar cualquier versión, el sistema comprueba que el PDF final sea legible y contenga texto
+seleccionable suficiente. Un PDF dañado, protegido o compuesto únicamente por imágenes se
+rechaza sin reemplazar el aviso anterior. El archivo oficial se descarga mediante la URL estable
+`/legal/aviso-privacidad.pdf`.
+
+El mismo contenido se publica con rutas limpias cuando la petición llega al hostname de
+`LEGAL_PUBLIC_URL`. En producción, `https://legal.vethv.org/` sirve la portada y las rutas
+`/aviso-privacidad`, `/aviso-privacidad.pdf`, `/terminos` y `/eliminacion-de-datos`. Este
+comportamiento depende del hostname, no de `NODE_ENV`: para revisarlo localmente puede usarse
+`LEGAL_PUBLIC_URL=http://legal.localhost:3000` y abrir `http://legal.localhost:3000/`. Las rutas
+tradicionales bajo `http://localhost:3000/legal` permanecen disponibles. En el hostname legal,
+cualquier ruta del portal administrativo responde `404`.
 
 ## API y endpoints
 
@@ -414,7 +437,7 @@ La aplicación no expone una API pública separada: sus endpoints sirven página
 
 ### Convenciones HTTP
 
-- Las rutas públicas son el login, el health check y el webhook de Meta.
+- Las rutas públicas son el login, las páginas legales, el health check y el webhook de Meta.
 - El resto requiere una sesión válida mediante `requireAuth`.
 - Cada módulo aplica permisos como `usuarios.ver`, `laboratorio.cargar` o `agenda.<slug>.editar`.
 - Los `POST`, `PUT` y `DELETE` del panel usan protección CSRF y, salvo el login, el limitador general de 100 solicitudes por minuto por usuario.

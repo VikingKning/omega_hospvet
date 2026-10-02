@@ -1,0 +1,1 @@
+<% (runs || []).forEach((run) => { %><% if (run.negrita && run.cursiva) { %><strong><em><%= run.texto %></em></strong><% } else if (run.negrita) { %><strong><%= run.texto %></strong><% } else if (run.cursiva) { %><em><%= run.texto %></em><% } else { %><%= run.texto %><% } %><% }) %>

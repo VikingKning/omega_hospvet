@@ -1,5 +1,13 @@
 require('dotenv').config({ quiet: true });
 
+const legalPublicUrl = process.env.LEGAL_PUBLIC_URL || 'https://legal.vethv.org';
+let legalHostname;
+try {
+  legalHostname = new URL(legalPublicUrl).hostname.toLowerCase();
+} catch {
+  throw new Error('LEGAL_PUBLIC_URL debe ser una URL absoluta válida.');
+}
+
 const required = [
   'DB_HOST',
   'DB_PORT',
@@ -20,6 +28,8 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 3000,
   operationalTimezone: process.env.OMEGA_TIMEZONE || 'America/Mexico_City',
+  legalPublicUrl,
+  legalHostname,
   sessionSecret: process.env.SESSION_SECRET,
   labsResultFileStorage: process.env.LABS_RESULT_FILE_STORAGE,
   db: {

@@ -1,0 +1,87 @@
+<%- include('../partials/legal-header', {
+  titulo: 'Términos de uso',
+  descripcion: 'Términos de uso del asistente de WhatsApp de Omega Hospital Veterinario.',
+  rutaActual
+}) %>
+
+<section class="legal-page-heading">
+  <div class="legal-shell legal-heading-row">
+    <div>
+      <span class="legal-eyebrow">Canal de atención</span>
+      <h1>Términos de uso del asistente de WhatsApp</h1>
+      <p>Última actualización: 1 de octubre de 2026.</p>
+    </div>
+  </div>
+</section>
+
+<section class="legal-section legal-document-section">
+  <div class="legal-shell legal-document-shell">
+    <article class="legal-document legal-terms">
+      <h2>1. Alcance</h2>
+      <p>
+        Estos términos regulan el uso del asistente de WhatsApp de Omega Hospital Veterinario. El asistente
+        apoya la atención inicial y ciertas gestiones administrativas. El portal OmegaVet es una herramienta
+        interna separada, accesible únicamente para personal autorizado de la clínica.
+      </p>
+
+      <h2>2. Funciones disponibles</h2>
+      <p>
+        Dependiendo de la configuración vigente, el asistente puede responder consultas generales, mostrar
+        opciones relacionadas con citas de consulta o estética, presentar el aviso de privacidad, ayudar a
+        identificar tutores y pacientes, y facilitar la entrega de resultados de laboratorio. Omega puede
+        habilitar, deshabilitar o modificar estas funciones por razones operativas.
+      </p>
+
+      <h2>3. Citas y solicitudes</h2>
+      <p>
+        El envío de datos o la selección de una opción no garantiza por sí sola una cita. La disponibilidad,
+        confirmación, modificación o cancelación depende de la agenda y de la validación de Omega Hospital
+        Veterinario. El tutor debe revisar los datos proporcionados y las confirmaciones recibidas.
+      </p>
+
+      <h2>4. No sustituye atención veterinaria</h2>
+      <p>
+        El asistente no realiza diagnósticos, no prescribe tratamientos y no sustituye una consulta con un
+        médico veterinario. No debe utilizarse como único canal ante una emergencia. Si una mascota presenta
+        signos de urgencia, el tutor debe contactar directamente a la clínica o acudir a un servicio veterinario.
+      </p>
+
+      <h2>5. Información enviada por el usuario</h2>
+      <p>
+        El usuario es responsable de proporcionar información correcta y de no enviar contenido ilícito,
+        engañoso o ajeno a la atención solicitada. Los mensajes y archivos se tratan conforme al aviso de
+        privacidad vigente y pueden ser revisados por personal autorizado cuando sea necesario para atender la
+        conversación.
+      </p>
+
+      <h2>6. Disponibilidad y atención humana</h2>
+      <p>
+        El servicio puede presentar pausas, retrasos o interrupciones por mantenimiento, conectividad o
+        dependencia de servicios de terceros. Cuando el flujo lo permita, una conversación puede transferirse
+        al personal de Omega; los tiempos de respuesta dependen del horario y la carga operativa de la clínica.
+      </p>
+
+      <h2>7. Uso adecuado del canal</h2>
+      <p>
+        No está permitido intentar vulnerar el servicio, automatizar envíos abusivos, suplantar identidades o
+        utilizar el canal para fines distintos de la atención ofrecida. Omega puede limitar la interacción ante
+        uso indebido, sin afectar los medios disponibles para ejercer derechos sobre datos personales.
+      </p>
+
+      <h2>8. Privacidad y solicitudes sobre datos</h2>
+      <p>
+        El tratamiento de datos personales se explica en el <a href="<%= legalBasePath %>/aviso-privacidad">aviso de
+        privacidad vigente</a>. Para solicitar la cancelación o eliminación de datos, consulta el
+        <a href="<%= legalBasePath %>/eliminacion-de-datos">procedimiento informativo</a>.
+      </p>
+
+      <h2>9. Contacto</h2>
+      <p>
+        Para dudas relacionadas con privacidad o con estos términos, escribe a
+        <a href="mailto:<%= correoPrivacidad %>"><%= correoPrivacidad %></a>.
+      </p>
+    </article>
+  </div>
+</section>
+
+<%- include('../partials/legal-footer') %>

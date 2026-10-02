@@ -11,7 +11,9 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const request = require('supertest');
+const { PDFDocument, StandardFonts } = require('pdf-lib');
 const app = require('../../src/app');
+const env = require('../../src/config/env');
 const db = require('../../src/config/database');
 const { store: sessionStore } = require('../../src/config/session');
 const configuracionRepository = require('../../src/modules/configuracion/configuracion.repository');
@@ -28,6 +30,28 @@ const SIN_PERMISOS_USER = { username: 'sin.permisos.config.test', password: 'Sin
 const SUFFIX = 'QACONFIG';
 
 const DIRECTORIO_LEGAL = path.join(__dirname, '../../public/legal');
+const PDFS_DE_PRUEBA = new Map();
+
+async function crearPdfConTexto(etiqueta) {
+  if (PDFS_DE_PRUEBA.has(etiqueta)) return PDFS_DE_PRUEBA.get(etiqueta);
+  const documento = await PDFDocument.create();
+  const pagina = documento.addPage([612, 792]);
+  const fuente = await documento.embedFont(StandardFonts.Helvetica);
+  pagina.drawText(
+    `Aviso de privacidad Omega Hospital Veterinario. ${etiqueta}. Este documento contiene texto seleccionable suficiente para validar su publicación pública.`,
+    { x: 48, y: 720, size: 11, font: fuente, maxWidth: 510, lineHeight: 16 },
+  );
+  const buffer = Buffer.from(await documento.save());
+  PDFS_DE_PRUEBA.set(etiqueta, buffer);
+  return buffer;
+}
+
+async function crearPdfSinTexto() {
+  const documento = await PDFDocument.create();
+  const pagina = documento.addPage([612, 792]);
+  pagina.drawRectangle({ x: 60, y: 600, width: 300, height: 100 });
+  return Buffer.from(await documento.save());
+}
 
 async function getCsrfToken(agent) {
   const res = await agent.get('/');
@@ -58,7 +82,11 @@ async function subirAviso(
     .set('x-csrf-token', csrfToken)
     .field('version', version ?? '');
   if (reenviar) req.field('reenviar', 'true');
-  return req.attach('archivo', Buffer.from(contenido), { filename, contentType });
+  const contenidoFinal =
+    contentType === 'application/pdf' && typeof contenido === 'string'
+      ? await crearPdfConTexto(contenido)
+      : Buffer.from(contenido);
+  return req.attach('archivo', contenidoFinal, { filename, contentType });
 }
 
 async function archivoVigente() {
@@ -248,7 +276,10 @@ describe('PATCH /configuracion/generales/funciones/:clave', () => {
 });
 
 function sha256(contenido) {
-  return crypto.createHash('sha256').update(contenido).digest('hex');
+  return crypto
+    .createHash('sha256')
+    .update(PDFS_DE_PRUEBA.get(contenido) || contenido)
+    .digest('hex');
 }
 
 describe('GET /configuracion/generales/archivo-existente', () => {
@@ -328,17 +359,18 @@ describe('POST /configuracion/generales.html', () => {
     expect(res.text).toContain('Aviso de Privacidad Omega.pdf');
 
     const archivo = await archivoVigente();
-    const contenidoEnDisco = await fs.readFile(path.join(DIRECTORIO_LEGAL, archivo), 'utf8');
-    expect(contenidoEnDisco).toBe('%PDF-1.4 contenido de prueba');
+    const contenidoEnDisco = await fs.readFile(path.join(DIRECTORIO_LEGAL, archivo));
+    expect(contenidoEnDisco).toEqual(PDFS_DE_PRUEBA.get('%PDF-1.4 contenido de prueba'));
 
     const [version] = await configuracionRepository.obtenerValores(['aviso_privacidad_version']);
     expect(version.valor).toBe(`v.${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`);
   });
 
   it('un .docx se convierte a PDF con LibreOffice (mismo conversor de laboratorio) antes de guardarse', async () => {
+    const pdfConvertido = await crearPdfConTexto('convertido desde Word');
     const conversion = jest
       .spyOn(laboratorioArchivos, 'convertirWordAPdf')
-      .mockResolvedValue(Buffer.from('%PDF-1.4 convertido desde word'));
+      .mockResolvedValue(pdfConvertido);
     const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
 
     const res = await subirAviso(agent, {
@@ -354,8 +386,8 @@ describe('POST /configuracion/generales.html', () => {
 
     const archivo = await archivoVigente();
     expect(archivo).toMatch(/\.pdf$/); // se guarda como .pdf aunque se subió un .docx
-    const contenidoEnDisco = await fs.readFile(path.join(DIRECTORIO_LEGAL, archivo), 'utf8');
-    expect(contenidoEnDisco).toBe('%PDF-1.4 convertido desde word');
+    const contenidoEnDisco = await fs.readFile(path.join(DIRECTORIO_LEGAL, archivo));
+    expect(contenidoEnDisco).toEqual(pdfConvertido);
 
     conversion.mockRestore();
   });
@@ -391,11 +423,11 @@ describe('POST /configuracion/generales.html', () => {
     const archivoV2 = await archivoVigente();
 
     expect(archivoV2).not.toBe(archivoV1);
-    expect(await fs.readFile(path.join(DIRECTORIO_LEGAL, archivoV1), 'utf8')).toBe(
-      '%PDF-1.4 version uno',
+    expect(await fs.readFile(path.join(DIRECTORIO_LEGAL, archivoV1))).toEqual(
+      PDFS_DE_PRUEBA.get('%PDF-1.4 version uno'),
     );
-    expect(await fs.readFile(path.join(DIRECTORIO_LEGAL, archivoV2), 'utf8')).toBe(
-      '%PDF-1.4 version dos',
+    expect(await fs.readFile(path.join(DIRECTORIO_LEGAL, archivoV2))).toEqual(
+      PDFS_DE_PRUEBA.get('%PDF-1.4 version dos'),
     );
 
     // La vigente (v2.0) se marca como tal en su propia columna "Estado".
@@ -572,5 +604,97 @@ describe('POST /configuracion/generales.html', () => {
 
     expect(vigente.version).toBe('v2.0');
     expect(vigente.requiereReconsentimiento).toBe(true);
+  });
+
+  it('mantiene la carga existente aunque el PDF no tenga texto extraíble', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    const res = await subirAviso(agent, {
+      version: 'v1.0',
+      filename: 'escaneado.pdf',
+      contenido: await crearPdfSinTexto(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Aviso de privacidad actualizado correctamente');
+    expect(await archivoVigente()).toMatch(/\.pdf$/);
+    expect(await db('aviso_privacidad_versiones').select('id')).toHaveLength(1);
+  });
+});
+
+describe('páginas legales públicas', () => {
+  it('publica rutas limpias en el hostname legal sin depender de NODE_ENV y bloquea el portal', async () => {
+    const hostLegal = env.legalHostname;
+    const [inicio, terminos, css, portal] = await Promise.all([
+      request(app).get('/').set('Host', hostLegal),
+      request(app).get('/terminos').set('Host', hostLegal),
+      request(app).get('/css/legal.css').set('Host', hostLegal),
+      request(app).get('/main.html').set('Host', hostLegal),
+    ]);
+
+    expect(inicio.status).toBe(200);
+    expect(inicio.text).toContain('Información pública de la aplicación');
+    expect(inicio.text).toContain('href="/aviso-privacidad"');
+    expect(inicio.text).not.toContain('href="/legal/aviso-privacidad"');
+    expect(terminos.status).toBe(200);
+    expect(terminos.text).toContain('Términos de uso del asistente de WhatsApp');
+    expect(css.status).toBe(200);
+    expect(css.headers['content-type']).toMatch(/text\/css/);
+    expect(portal.status).toBe(404);
+    expect(portal.text).toContain('Página no encontrada');
+  });
+
+  it('muestra información, términos y eliminación de datos sin iniciar sesión', async () => {
+    const [inicio, terminos, eliminacion] = await Promise.all([
+      request(app).get('/legal'),
+      request(app).get('/legal/terminos'),
+      request(app).get('/legal/eliminacion-de-datos'),
+    ]);
+
+    expect(inicio.status).toBe(200);
+    expect(inicio.text).toContain('Portal administrativo interno');
+    expect(inicio.text).toContain('Google Calendar de uso interno');
+    expect(terminos.status).toBe(200);
+    expect(terminos.text).toContain('Términos de uso del asistente de WhatsApp');
+    expect(eliminacion.status).toBe(200);
+    expect(eliminacion.text).toContain('Solicitud de cancelación o eliminación de datos');
+  });
+
+  it('publica como HTML el texto del PDF vigente y permite descargar el PDF real', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await subirAviso(agent, {
+      version: 'v.publica',
+      filename: 'Aviso Omega.pdf',
+      contenido: '%PDF-1.4 contenido visible en pagina publica',
+    });
+
+    const pagina = await request(app).get('/legal/aviso-privacidad');
+    const descarga = await request(app).get('/legal/aviso-privacidad.pdf');
+
+    expect(pagina.status).toBe(200);
+    expect(pagina.text).toContain('v.publica');
+    expect(pagina.text).toContain('Aviso de privacidad Omega Hospital Veterinario');
+    expect(descarga.status).toBe(200);
+    expect(descarga.headers['content-type']).toMatch(/application\/pdf/);
+    expect(descarga.headers['content-disposition']).toContain('attachment');
+    expect(descarga.body).toEqual(
+      PDFS_DE_PRUEBA.get('%PDF-1.4 contenido visible en pagina publica'),
+    );
+  });
+
+  it('si el PDF vigente no tiene texto, conserva la descarga y muestra el error solo en la página pública', async () => {
+    const agent = await loginAs({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    await subirAviso(agent, {
+      version: 'v.sin-texto',
+      filename: 'Aviso escaneado.pdf',
+      contenido: await crearPdfSinTexto(),
+    });
+
+    const pagina = await request(app).get('/legal/aviso-privacidad');
+    const descarga = await request(app).get('/legal/aviso-privacidad.pdf');
+
+    expect(pagina.status).toBe(200);
+    expect(pagina.text).toContain('El aviso vigente no puede mostrarse como texto');
+    expect(descarga.status).toBe(200);
+    expect(descarga.headers['content-type']).toMatch(/application\/pdf/);
   });
 });

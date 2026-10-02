@@ -1,0 +1,78 @@
+<%- include('../partials/legal-header', {
+  titulo: 'Eliminación de datos',
+  descripcion: 'Procedimiento para solicitar la cancelación o eliminación de datos personales en OmegaVet.',
+  rutaActual
+}) %>
+
+<section class="legal-page-heading">
+  <div class="legal-shell legal-heading-row">
+    <div>
+      <span class="legal-eyebrow">Derechos sobre datos personales</span>
+      <h1>Solicitud de cancelación o eliminación de datos</h1>
+      <p>Esta página es informativa. La solicitud se recibe por correo y es atendida internamente por Omega.</p>
+    </div>
+  </div>
+</section>
+
+<section class="legal-section legal-document-section">
+  <div class="legal-shell legal-document-shell">
+    <article class="legal-document legal-terms">
+      <h2>Cómo presentar una solicitud</h2>
+      <p>
+        Envía un correo a <a href="mailto:<%= correoPrivacidad %>?subject=Solicitud%20de%20eliminaci%C3%B3n%20de%20datos%20-%20OmegaVet"><%= correoPrivacidad %></a>
+        con el asunto <strong>“Solicitud de eliminación de datos - OmegaVet”</strong>.
+      </p>
+      <p>Incluye únicamente la información necesaria para localizar tu registro:</p>
+      <ul>
+        <li>nombre completo del tutor;</li>
+        <li>número telefónico utilizado para comunicarse por WhatsApp;</li>
+        <li>nombre de la mascota o mascotas relacionadas;</li>
+        <li>descripción clara de la solicitud; y</li>
+        <li>un medio de contacto para recibir seguimiento.</li>
+      </ul>
+
+      <div class="legal-notice">
+        <strong>Protege tus documentos.</strong>
+        <p>
+          No envíes identificaciones oficiales ni documentos sensibles en el primer correo. Omega te indicará
+          el mecanismo de verificación adecuado si necesita información adicional.
+        </p>
+      </div>
+
+      <h2>Verificación de identidad</h2>
+      <p>
+        Antes de modificar o cancelar información, Omega debe confirmar que la solicitud proviene de la persona
+        titular o de su representante autorizado. Si la información disponible no permite verificar la identidad
+        de manera suficiente, la clínica podrá solicitar que el trámite continúe presencialmente en sucursal.
+      </p>
+
+      <h2>Qué sucede con la información</h2>
+      <p>
+        Cuando la cancelación sea procedente, Omega dejará de utilizar los datos identificativos y aplicará el
+        bloqueo o supresión que corresponda. Los archivos y documentos personales asociados se eliminarán cuando
+        legal y técnicamente proceda. Algunos datos podrán conservarse durante los plazos exigidos por obligaciones
+        legales, fiscales, sanitarias, contractuales o para la atención de responsabilidades.
+      </p>
+      <p>
+        Para preservar la integridad de registros clínicos y estadísticos, ciertos datos no identificativos de la
+        mascota, como especie, raza, sexo o edad, podrán conservarse de forma disociada, sin datos que permitan
+        relacionarlos razonablemente con el tutor o identificar al paciente.
+      </p>
+
+      <h2>Plazos de atención</h2>
+      <p>
+        Omega comunicará si la solicitud resulta procedente dentro del plazo legal aplicable. Cuando proceda, la
+        medida se hará efectiva dentro del periodo previsto por la legislación, considerando cualquier plazo de
+        bloqueo o conservación obligatoria.
+      </p>
+
+      <h2>Seguimiento</h2>
+      <p>
+        Conserva el correo enviado y la respuesta de recepción. Si necesitas aportar información adicional,
+        utiliza el mismo hilo para que Omega pueda dar continuidad al caso.
+      </p>
+    </article>
+  </div>
+</section>
+
+<%- include('../partials/legal-footer') %>

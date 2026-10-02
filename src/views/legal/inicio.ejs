@@ -1,0 +1,125 @@
+<%- include('../partials/legal-header', {
+  titulo: 'Información pública',
+  descripcion: 'Información pública de OmegaVet, plataforma interna y asistente de atención por WhatsApp.',
+  rutaActual
+}) %>
+
+<section class="legal-hero">
+  <div class="legal-shell legal-hero-grid">
+    <div>
+      <span class="legal-eyebrow">Información pública de la aplicación</span>
+      <h1>OmegaVet apoya la operación interna y la atención por WhatsApp de Omega Hospital Veterinario</h1>
+      <p class="legal-lead">
+        La plataforma reúne herramientas administrativas de uso restringido para el personal de Omega y un
+        asistente de WhatsApp que facilita la atención inicial de tutores de mascotas.
+      </p>
+      <div class="legal-actions">
+        <a class="legal-button" href="<%= legalBasePath %>/aviso-privacidad">Consultar aviso de privacidad</a>
+        <a class="legal-button legal-button-secondary" href="<%= legalBasePath %>/terminos">Ver términos del asistente</a>
+      </div>
+    </div>
+    <aside class="legal-hero-card" aria-label="Resumen de acceso">
+      <strong>Acceso diferenciado</strong>
+      <p>El portal administrativo es exclusivo para personal autorizado.</p>
+      <p>Los tutores interactúan únicamente con los canales de atención habilitados por Omega.</p>
+    </aside>
+  </div>
+</section>
+
+<section class="legal-section">
+  <div class="legal-shell">
+    <h2>¿Qué hace OmegaVet?</h2>
+    <div class="legal-card-grid">
+      <article class="legal-card">
+        <span class="legal-card-number">01</span>
+        <h3>Portal administrativo interno</h3>
+        <p>
+          Permite al personal autorizado administrar tutores, pacientes, agenda, solicitudes y resultados de
+          laboratorio, usuarios, permisos y configuraciones operativas. No es un portal de autoservicio para
+          clientes o pacientes.
+        </p>
+      </article>
+      <article class="legal-card">
+        <span class="legal-card-number">02</span>
+        <h3>Asistente de WhatsApp</h3>
+        <p>
+          Cuando Omega lo mantiene habilitado, el asistente puede responder mensajes, mostrar opciones para
+          citas de consulta o estética, proporcionar el aviso de privacidad y apoyar la entrega de resultados.
+          Algunas conversaciones pueden transferirse al equipo para atención humana.
+        </p>
+      </article>
+      <article class="legal-card">
+        <span class="legal-card-number">03</span>
+        <h3>Google Calendar de uso interno</h3>
+        <p>
+          OmegaVet usa la autorización de una cuenta de Google controlada por la clínica únicamente para
+          gestionar eventos de su agenda operativa interna. Los clientes no conectan cuentas de Google, no
+          acceden al calendario y no reciben acceso a información de esa cuenta.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="legal-section legal-section-tinted">
+  <div class="legal-shell legal-split">
+    <div>
+      <span class="legal-eyebrow">Cuenta autorizada de la clínica</span>
+      <h2>Uso interno de datos de Google</h2>
+    </div>
+    <div class="legal-prose">
+      <p>
+        OmegaVet accede únicamente al calendario que Omega autoriza para su operación. El sistema lee eventos
+        futuros y puede crear, actualizar o cancelar eventos para mantener la agenda interna, identificar
+        reservaciones y evitar conflictos de horario. En la base de OmegaVet se conservan los datos operativos de
+        la cita, el identificador del evento y la fecha de la última actualización necesaria para esa gestión.
+      </p>
+      <p>
+        Esta información no se vende, no se utiliza para publicidad y no se expone a los clientes. El acceso está
+        limitado al sistema y al personal autorizado de Omega Hospital Veterinario. La autorización puede
+        revocarse desde la configuración de seguridad de la cuenta de Google de la clínica.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="legal-section">
+  <div class="legal-shell legal-split">
+    <div>
+      <span class="legal-eyebrow">Uso responsable</span>
+      <h2>Atención veterinaria y emergencias</h2>
+    </div>
+    <div class="legal-prose">
+      <p>
+        El asistente de WhatsApp es una herramienta de apoyo administrativo. No sustituye una valoración
+        veterinaria, no emite diagnósticos y no debe utilizarse como canal único ante una urgencia. En una
+        emergencia, el tutor debe comunicarse directamente con la clínica o acudir a atención veterinaria.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="legal-section">
+  <div class="legal-shell">
+    <div class="legal-section-heading">
+      <span class="legal-eyebrow">Transparencia</span>
+      <h2>Información legal y de datos personales</h2>
+    </div>
+    <div class="legal-link-list">
+      <a href="<%= legalBasePath %>/aviso-privacidad">
+        <span><strong>Aviso de privacidad</strong><small>Consulta el documento vigente y descarga su PDF oficial.</small></span>
+        <span aria-hidden="true">→</span>
+      </a>
+      <a href="<%= legalBasePath %>/terminos">
+        <span><strong>Términos de uso</strong><small>Conoce el alcance y las condiciones del asistente de WhatsApp.</small></span>
+        <span aria-hidden="true">→</span>
+      </a>
+      <a href="<%= legalBasePath %>/eliminacion-de-datos">
+        <span><strong>Solicitud de eliminación de datos</strong><small>Revisa cómo ejercer el derecho de cancelación.</small></span>
+        <span aria-hidden="true">→</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<%- include('../partials/legal-footer') %>

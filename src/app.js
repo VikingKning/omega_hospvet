@@ -27,6 +27,7 @@ const metricasRoutes = require('./modules/metricas/metricas.routes');
 const configuracionRoutes = require('./modules/configuracion/configuracion.routes');
 const whatsappRoutes = require('./modules/whatsapp/whatsapp.routes');
 const whatsappAlertasRoutes = require('./modules/whatsapp/whatsapp.alertas.routes');
+const legalRoutes = require('./modules/legal/legal.routes');
 
 const rootDir = path.join(__dirname, '..');
 const app = express();
@@ -103,6 +104,10 @@ app.use(
 );
 app.use(express.urlencoded({ extended: false }));
 app.use(sanitizeBody);
+// Las páginas legales deben resolver antes del directorio estático porque
+// public/legal existe físicamente y express.static redirigiría /legal a
+// /legal/ antes de que la ruta pública pudiera responder.
+app.use('/', legalRoutes);
 app.use(express.static(path.join(rootDir, 'public')));
 app.use(cookieParser());
 app.use(sessionMiddleware);

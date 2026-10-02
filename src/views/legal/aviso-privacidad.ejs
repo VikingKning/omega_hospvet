@@ -1,0 +1,70 @@
+<%- include('../partials/legal-header', {
+  titulo: 'Aviso de privacidad',
+  descripcion: 'Aviso de privacidad vigente de Omega Hospital Veterinario.',
+  rutaActual
+}) %>
+
+<section class="legal-page-heading">
+  <div class="legal-shell legal-heading-row">
+    <div>
+      <span class="legal-eyebrow">Protección de datos personales</span>
+      <h1>Aviso de privacidad</h1>
+      <p>Consulta en esta página el contenido del aviso vigente publicado por Omega Hospital Veterinario.</p>
+    </div>
+    <% if (aviso.archivo) { %>
+      <a class="legal-button legal-download" href="<%= legalBasePath %>/aviso-privacidad.pdf">Descargar PDF oficial</a>
+    <% } %>
+  </div>
+</section>
+
+<section class="legal-section legal-document-section">
+  <div class="legal-shell legal-document-shell">
+    <% if (disponible) { %>
+      <div class="legal-document-meta">
+        <span><strong>Versión:</strong> <%= aviso.version || 'vigente' %></span>
+        <% if (aviso.actualizadoEn) { %>
+          <span><strong>Publicado:</strong> <%= new Intl.DateTimeFormat('es-MX', { dateStyle: 'long', timeZone: 'America/Mexico_City' }).format(new Date(aviso.actualizadoEn)) %></span>
+        <% } %>
+      </div>
+      <article class="legal-document" aria-label="Contenido del aviso de privacidad vigente">
+        <% bloques.forEach((bloque) => { %>
+          <% if (bloque.tipo === 'titulo') { %>
+            <h2 class="legal-document-title"><%- include('../partials/legal-runs', { runs: bloque.runs }) %></h2>
+          <% } else if (bloque.tipo === 'subtitulo') { %>
+            <p class="legal-document-subtitle"><%- include('../partials/legal-runs', { runs: bloque.runs }) %></p>
+          <% } else if (bloque.tipo === 'seccion') { %>
+            <h2 class="legal-document-section-title"><%- include('../partials/legal-runs', { runs: bloque.runs }) %></h2>
+          <% } else if (bloque.tipo === 'subseccion') { %>
+            <h3 class="legal-document-subsection-title"><%- include('../partials/legal-runs', { runs: bloque.runs }) %></h3>
+          <% } else if (bloque.tipo === 'encabezado') { %>
+            <h4 class="legal-document-minor-title"><%- include('../partials/legal-runs', { runs: bloque.runs }) %></h4>
+          <% } else if (bloque.tipo === 'lista') { %>
+            <% const etiquetaLista = bloque.ordenada ? 'ol' : 'ul'; %>
+            <<%= etiquetaLista %> class="legal-document-list">
+              <% bloque.elementos.forEach((elemento) => { %>
+                <li><%- include('../partials/legal-runs', { runs: elemento.runs }) %></li>
+              <% }) %>
+            </<%= etiquetaLista %>>
+          <% } else { %>
+            <p class="legal-document-paragraph<%= bloque.tipo === 'nota' ? ' is-note' : '' %>"><%- include('../partials/legal-runs', { runs: bloque.runs }) %></p>
+          <% } %>
+        <% }) %>
+      </article>
+    <% } else { %>
+      <div class="legal-empty-state" role="status">
+        <h2><%= errorLectura ? 'El aviso vigente no puede mostrarse como texto' : 'Aviso en proceso de publicación' %></h2>
+        <p>
+          <%= errorLectura
+            ? 'El archivo vigente está disponible para descarga, pero requiere ser reemplazado por un PDF con texto seleccionable.'
+            : 'Todavía no se ha publicado un aviso de privacidad vigente en OmegaVet.' %>
+        </p>
+        <p>Para información sobre datos personales, escribe a <a href="mailto:<%= correoPrivacidad %>"><%= correoPrivacidad %></a>.</p>
+        <% if (aviso.archivo) { %>
+          <a class="legal-button" href="<%= legalBasePath %>/aviso-privacidad.pdf">Descargar archivo vigente</a>
+        <% } %>
+      </div>
+    <% } %>
+  </div>
+</section>
+
+<%- include('../partials/legal-footer') %>
