@@ -264,7 +264,7 @@
                   </div>
                 </div>
 
-                <label>Observaciones del estudio <span class="lab-opcional">(opcional)</span>
+                <label><span id="labEstudioObservacionesLabel">Observaciones del estudio</span> <span class="lab-opcional" id="labEstudioObservacionesOpcional">(opcional)</span>
                   <textarea id="labEstudioObservaciones" rows="2" placeholder="Ej. Proyección lateral derecha, ayuno de 8 horas, lesión en miembro posterior..."></textarea>
                 </label>
 
@@ -1037,12 +1037,22 @@
       const estudioId = document.getElementById('labEstudioId').value;
       const estudio = findEstudioPorId(estudioId);
       const campo = estudio ? estudio.campoAdicional : null;
+      const requiereDescripcion = estudio?.codigo === 'OMEGA_OTRO';
+      const observacionesInput = document.getElementById('labEstudioObservaciones');
 
       document.getElementById('labZonaWrap').hidden = campo !== 'zona';
       document.getElementById('labTipoMuestraWrap').hidden = campo !== 'tipo_muestra';
       document.getElementById('labAntibiogramaWrap').hidden = !estudio?.permiteAntibiograma;
       document.getElementById('labTejidoWrap').hidden = campo !== 'tejido_lateralidad';
       document.getElementById('labComponentesWrap').hidden = campo !== 'componentes_liquido';
+      document.getElementById('labEstudioObservacionesLabel').textContent = requiereDescripcion
+        ? 'Descripción del estudio'
+        : 'Observaciones del estudio';
+      document.getElementById('labEstudioObservacionesOpcional').hidden = requiereDescripcion;
+      observacionesInput.required = requiereDescripcion;
+      observacionesInput.placeholder = requiereDescripcion
+        ? 'Describe el estudio requerido.'
+        : 'Ej. Proyección lateral derecha, ayuno de 8 horas, lesión en miembro posterior...';
 
       if (campo !== 'zona') {
         document.getElementById('labZonaId').value = '';
@@ -1817,6 +1827,11 @@
         }
 
         const observaciones = document.getElementById('labEstudioObservaciones').value.trim();
+        if (estudio.codigo === 'OMEGA_OTRO' && !observaciones) {
+          showError('El estudio "Otro" requiere una descripción.');
+          document.getElementById('labEstudioObservaciones').focus();
+          return;
+        }
         if (observaciones) fila.observaciones = observaciones;
 
         if (editIndex !== null) {

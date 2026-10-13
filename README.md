@@ -171,6 +171,29 @@ Las migraciones construyen el esquema completo, incluidas conversaciones, grupos
 
 Los seeds son el bootstrap de una base nueva. Aunque son idempotentes para facilitar verificaciones, no forman parte de una actualización normal de producción: una base existente se actualiza exclusivamente mediante migraciones revisadas. Las únicas áreas iniciales son **Consultas** y **Estética**, cada una con su doctor técnico para reservas externas.
 
+La excepción es `09_catalogo_perfil_cliente.js`, un seed de configuración idempotente que
+puede aplicarse de forma aislada sobre una base existente. Lee
+`CATALOGO_ESTUDIOS_PERFIL` y únicamente inserta las opciones estables del perfil Omega y
+cambia el estado `activo` del catálogo; no elimina estudios ni requisiciones históricas.
+Para aplicar el perfil definido en `.env.localhost`:
+
+```bash
+pnpm run catalogo:perfil:localhost
+```
+
+El valor `omega` deja disponibles los 13 estudios acordados para Omega. El valor
+`completo` reactiva los 747 estudios del catálogo canónico y desactiva las opciones
+específicas de Omega. Después de cambiar el valor se debe volver a ejecutar el comando;
+reiniciar el servidor por sí solo no modifica la base de datos.
+
+En la instalación Windows de Omega, después de agregar
+`CATALOGO_ESTUDIOS_PERFIL=omega` a `C:\ProgramData\OmegaVet\.env.production`, se
+aplica únicamente este seed desde la carpeta del proyecto:
+
+```powershell
+node --env-file="C:\ProgramData\OmegaVet\.env.production" .\node_modules\knex\bin\cli.js seed:run --specific=09_catalogo_perfil_cliente.js
+```
+
 ### 5. Levantar el servidor
 
 ```bash
@@ -197,20 +220,21 @@ activa cuando está completo el conjunto de credenciales que se indica en su sec
 
 ### Ejecución, base de datos y almacenamiento
 
-| Variable                   | Requerida | Función                                                                                                                                                     | Ejemplo                                     |
-| -------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `NODE_ENV`                 | No        | Selecciona el entorno. `production` activa cookies seguras y logging de producción; `test` silencia los logs durante Jest.                                  | `production`                                |
-| `PORT`                     | No        | Puerto HTTP del servidor. El valor predeterminado es `3000`.                                                                                                | `3000`                                      |
-| `OMEGA_TIMEZONE`           | No        | Zona IANA utilizada para fechas, horas y filtros operativos. Predeterminada: `America/Mexico_City`.                                                         | `America/Mexico_City`                       |
-| `LEGAL_PUBLIC_URL`         | No        | URL pública absoluta del portal legal. Su hostname habilita las rutas legales limpias; no depende de `NODE_ENV`. Predeterminada: `https://legal.vethv.org`. | `https://legal.vethv.org`                   |
-| `LOG_LEVEL`                | No        | Nivel mínimo de Pino: `trace`, `debug`, `info`, `warn`, `error`, `fatal` o `silent`. Predeterminado: `info` en producción y `debug` en desarrollo.          | `info`                                      |
-| `DB_HOST`                  | **Sí**    | Host o IP de PostgreSQL.                                                                                                                                    | `127.0.0.1`                                 |
-| `DB_PORT`                  | **Sí**    | Puerto de PostgreSQL.                                                                                                                                       | `5432`                                      |
-| `DB_NAME`                  | **Sí**    | Nombre de la base de datos de OmegaVet.                                                                                                                     | `omega_vet`                                 |
-| `DB_USER`                  | **Sí**    | Rol de PostgreSQL utilizado por la aplicación.                                                                                                              | `omega_app`                                 |
-| `DB_PASSWORD`              | **Sí**    | Contraseña del rol de PostgreSQL.                                                                                                                           | `<contraseña-segura>`                       |
-| `SESSION_SECRET`           | **Sí**    | Secreto para firmar sesiones, apoyar la protección CSRF y generar referencias privadas en logs. Debe ser largo, aleatorio y exclusivo del ambiente.         | `<cadena-aleatoria-de-64-o-más-caracteres>` |
-| `LABS_RESULT_FILE_STORAGE` | **Sí**    | Ruta absoluta, privada y escribible donde se almacenan resultados de laboratorio. No debe estar dentro de `public/`.                                        | `C:\ProgramData\OmegaVet\resultados`        |
+| Variable                   | Requerida | Función                                                                                                                                                                                                 | Ejemplo                                     |
+| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `NODE_ENV`                 | No        | Selecciona el entorno. `production` activa cookies seguras y logging de producción; `test` silencia los logs durante Jest.                                                                              | `production`                                |
+| `PORT`                     | No        | Puerto HTTP del servidor. El valor predeterminado es `3000`.                                                                                                                                            | `3000`                                      |
+| `OMEGA_TIMEZONE`           | No        | Zona IANA utilizada para fechas, horas y filtros operativos. Predeterminada: `America/Mexico_City`.                                                                                                     | `America/Mexico_City`                       |
+| `CATALOGO_ESTUDIOS_PERFIL` | No        | Perfil que activa el seed del catálogo de laboratorio: `completo` conserva el catálogo general y `omega` deja disponibles únicamente los 13 estudios contratados por Omega. Predeterminado: `completo`. | `omega`                                     |
+| `LEGAL_PUBLIC_URL`         | No        | URL pública absoluta del portal legal. Su hostname habilita las rutas legales limpias; no depende de `NODE_ENV`. Predeterminada: `https://legal.vethv.org`.                                             | `https://legal.vethv.org`                   |
+| `LOG_LEVEL`                | No        | Nivel mínimo de Pino: `trace`, `debug`, `info`, `warn`, `error`, `fatal` o `silent`. Predeterminado: `info` en producción y `debug` en desarrollo.                                                      | `info`                                      |
+| `DB_HOST`                  | **Sí**    | Host o IP de PostgreSQL.                                                                                                                                                                                | `127.0.0.1`                                 |
+| `DB_PORT`                  | **Sí**    | Puerto de PostgreSQL.                                                                                                                                                                                   | `5432`                                      |
+| `DB_NAME`                  | **Sí**    | Nombre de la base de datos de OmegaVet.                                                                                                                                                                 | `omega_vet`                                 |
+| `DB_USER`                  | **Sí**    | Rol de PostgreSQL utilizado por la aplicación.                                                                                                                                                          | `omega_app`                                 |
+| `DB_PASSWORD`              | **Sí**    | Contraseña del rol de PostgreSQL.                                                                                                                                                                       | `<contraseña-segura>`                       |
+| `SESSION_SECRET`           | **Sí**    | Secreto para firmar sesiones, apoyar la protección CSRF y generar referencias privadas en logs. Debe ser largo, aleatorio y exclusivo del ambiente.                                                     | `<cadena-aleatoria-de-64-o-más-caracteres>` |
+| `LABS_RESULT_FILE_STORAGE` | **Sí**    | Ruta absoluta, privada y escribible donde se almacenan resultados de laboratorio. No debe estar dentro de `public/`.                                                                                    | `C:\ProgramData\OmegaVet\resultados`        |
 
 > En producción debe escribirse exactamente `NODE_ENV=production`; `produccion` no es
 > equivalente y dejaría desactivada la cookie segura de sesión.
@@ -888,7 +912,9 @@ Después de agregar o rotar `ANTHROPIC_API_KEY`, reinicia el proceso. Para una p
 | `pnpm run migrate:localhost`                       | Aplica migraciones con `.env.localhost`                     |
 | `pnpm run migrate:test`                            | Aplica migraciones con `.env.test`                          |
 | `pnpm run seed`                                    | Ejecuta seeds usando `.env`                                 |
+| `pnpm run catalogo:perfil`                         | Aplica solo el perfil de catálogo definido en el entorno    |
 | `pnpm run seed:localhost`                          | Ejecuta seeds con `.env.localhost`                          |
+| `pnpm run catalogo:perfil:localhost`               | Aplica solo el perfil definido en `.env.localhost`          |
 | `pnpm run seed:test`                               | Ejecuta seeds con `.env.test`                               |
 | `pnpm run google:renovar-token`                    | Renueva el refresh token de Google Calendar                 |
 | `pnpm run whatsapp:registrar-plantillas`           | Registra en Meta las plantillas activas de texto            |

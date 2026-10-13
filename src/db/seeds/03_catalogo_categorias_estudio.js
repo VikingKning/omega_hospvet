@@ -32,6 +32,7 @@ const categorias = [
   'Odontología',
   'Perfiles clínicos / Paneles',
   'Procedimientos diagnósticos',
+  'Otros',
 ];
 
 exports.seed = async function seed(knex) {

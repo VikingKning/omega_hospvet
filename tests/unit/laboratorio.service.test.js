@@ -275,6 +275,36 @@ describe('laboratorio.service.crear', () => {
     ).rejects.toThrow('"Estudio 4" requiere seleccionar al menos un componente.');
   });
 
+  it('requiere describir el estudio Otro del perfil Omega', async () => {
+    repository.findEstudiosByIds.mockResolvedValue([
+      estudio(13, null, { codigo: 'OMEGA_OTRO', nombre: 'Otro' }),
+    ]);
+
+    await expect(
+      crear({
+        mascotaId: 11,
+        doctorId: 1,
+        fechaSolicitud: FECHA_VALIDA,
+        estudios: [{ estudioId: 13 }],
+        usuarioId: 1,
+      }),
+    ).rejects.toThrow('El estudio "Otro" requiere una descripción.');
+
+    await crear({
+      mascotaId: 11,
+      doctorId: 1,
+      fechaSolicitud: FECHA_VALIDA,
+      estudios: [{ estudioId: 13, observaciones: '  Prueba especial solicitada  ' }],
+      usuarioId: 1,
+    });
+
+    expect(repository.crearRegistro).toHaveBeenCalledWith(
+      expect.objectContaining({
+        estudios: [{ estudioId: 13, observaciones: 'Prueba especial solicitada' }],
+      }),
+    );
+  });
+
   it('arma correctamente los 4 tipos de campo adicional + observaciones y llama a crearRegistro', async () => {
     repository.findEstudiosByIds.mockResolvedValue([
       estudio(1, 'zona'),

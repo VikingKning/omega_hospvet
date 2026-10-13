@@ -260,6 +260,9 @@ async function validarEstudios(
       entrada.observaciones,
       `Observaciones de "${estudio.nombre}"`,
     );
+    if (estudio.codigo === 'OMEGA_OTRO' && !observaciones) {
+      throw new LaboratorioValidationError('El estudio "Otro" requiere una descripción.');
+    }
     if (observaciones) fila.observaciones = observaciones;
 
     return fila;

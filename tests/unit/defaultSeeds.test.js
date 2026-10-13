@@ -9,6 +9,11 @@ const { CONFIGURACION } = require('../../src/db/seeds/04_catalogo_zonas_por_estu
 const { AREAS_AGENDA } = require('../../src/db/seeds/06_areas_agenda');
 const { DOCTORES_PREDETERMINADOS } = require('../../src/db/seeds/07_doctores_predeterminados');
 const { FUNCIONES_SISTEMA } = require('../../src/db/seeds/08_configuracion_funciones');
+const {
+  ESTUDIOS_OMEGA,
+  construirFilasOmega,
+  resolverPerfil,
+} = require('../../src/db/seeds/09_catalogo_perfil_cliente');
 
 describe('datos predeterminados para una instalación limpia', () => {
   it('solo define Consultas y Estética como áreas iniciales', () => {
@@ -43,7 +48,7 @@ describe('datos predeterminados para una instalación limpia', () => {
   });
 
   it('mantiene categorías y zonas sin nombres o códigos duplicados', () => {
-    expect(CATEGORIAS).toHaveLength(33);
+    expect(CATEGORIAS).toHaveLength(34);
     expect(new Set(CATEGORIAS).size).toBe(CATEGORIAS.length);
 
     const codigosZona = ZONAS.map(([codigo]) => codigo);
@@ -51,6 +56,47 @@ describe('datos predeterminados para una instalación limpia', () => {
     expect(ZONAS).toHaveLength(13);
     expect(new Set(codigosZona).size).toBe(ZONAS.length);
     expect(new Set(nombresZona).size).toBe(ZONAS.length);
+  });
+
+  it('define el perfil Omega con los 13 estudios acordados y restricciones de especie', () => {
+    expect(ESTUDIOS_OMEGA.map(({ nombre }) => nombre)).toEqual([
+      'Hemograma',
+      'Química sanguínea',
+      'Urianálisis',
+      'Perfil tiroideo',
+      'Perfil de Cushing',
+      'Kit sida/leucemia',
+      'Kit Distemper',
+      'Kit triple digestivo',
+      'SDMA',
+      'Informe de estudio radiográfico',
+      'Informe de ultrasonido',
+      'Coproparasitoscópico',
+      'Otro',
+    ]);
+    expect(new Set(ESTUDIOS_OMEGA.map(({ codigo }) => codigo)).size).toBe(13);
+    expect(ESTUDIOS_OMEGA.find(({ codigo }) => codigo === 'OMEGA_KIT_SIDA_LEUCEMIA')?.especie).toBe(
+      'Gato',
+    );
+    expect(ESTUDIOS_OMEGA.find(({ codigo }) => codigo === 'OMEGA_KIT_DISTEMPER')?.especie).toBe(
+      'Perro',
+    );
+    expect(
+      ESTUDIOS_OMEGA.find(({ codigo }) => codigo === 'OMEGA_KIT_TRIPLE_DIGESTIVO')?.especie,
+    ).toBeUndefined();
+
+    const categoriaIdPorNombre = Object.fromEntries(
+      CATEGORIAS.map((categoria, index) => [categoria, index + 1]),
+    );
+    const filas = construirFilasOmega(categoriaIdPorNombre);
+    expect(filas).toHaveLength(13);
+    expect(filas.every(({ activo }) => activo === false)).toBe(true);
+    expect(filas.every(({ permite_antibiograma: permite }) => permite === false)).toBe(true);
+    expect(resolverPerfil(undefined)).toBe('completo');
+    expect(resolverPerfil(' OMEGA ')).toBe('omega');
+    expect(() => resolverPerfil('cliente-inexistente')).toThrow(
+      'CATALOGO_ESTUDIOS_PERFIL debe ser "completo" u "omega"',
+    );
   });
 
   it('construye el catálogo canónico de estudios con códigos estables y válidos', () => {

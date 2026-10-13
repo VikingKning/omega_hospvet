@@ -37,27 +37,29 @@ async function findCatalogo(estudiosHistoricosIds = []) {
     ids.push(relacion.zona_anatomica_id);
     zonasIdsPorEstudio.set(relacion.estudio_id, ids);
   }
-  return categorias.map((categoria) => ({
-    id: categoria.id,
-    nombre: categoria.nombre,
-    estudios: estudios
-      .filter((estudio) => estudio.categoria_id === categoria.id)
-      .map((estudio) => ({
-        id: estudio.id,
-        codigo: estudio.codigo,
-        nombre: estudio.nombre,
-        campoAdicional: estudio.campo_adicional,
-        especie: estudio.especie,
-        permiteAntibiograma: Boolean(
-          estudio.permite_antibiograma ||
-          (!estudio.activo &&
-            /^(cultivo|urocultivo|hemocultivo)/i.test(estudio.nombre) &&
-            !/(micológico|hongos)/i.test(estudio.nombre)),
-        ),
-        zonasPermitidasIds: zonasIdsPorEstudio.get(estudio.id) ?? [],
-        activo: estudio.activo,
-      })),
-  }));
+  return categorias
+    .map((categoria) => ({
+      id: categoria.id,
+      nombre: categoria.nombre,
+      estudios: estudios
+        .filter((estudio) => estudio.categoria_id === categoria.id)
+        .map((estudio) => ({
+          id: estudio.id,
+          codigo: estudio.codigo,
+          nombre: estudio.nombre,
+          campoAdicional: estudio.campo_adicional,
+          especie: estudio.especie,
+          permiteAntibiograma: Boolean(
+            estudio.permite_antibiograma ||
+            (!estudio.activo &&
+              /^(cultivo|urocultivo|hemocultivo)/i.test(estudio.nombre) &&
+              !/(micológico|hongos)/i.test(estudio.nombre)),
+          ),
+          zonasPermitidasIds: zonasIdsPorEstudio.get(estudio.id) ?? [],
+          activo: estudio.activo,
+        })),
+    }))
+    .filter((categoria) => categoria.estudios.length > 0);
 }
 
 async function findZonasAnatomicas() {
@@ -67,6 +69,12 @@ async function findZonasAnatomicas() {
 async function findCategorias() {
   return db('catalogo_categorias_estudio')
     .where('activo', true)
+    .whereExists(
+      db('catalogo_estudios')
+        .select(db.raw('1'))
+        .whereRaw('catalogo_estudios.categoria_id = catalogo_categorias_estudio.id')
+        .andWhere('catalogo_estudios.activo', true),
+    )
     .orderBy('nombre')
     .select('id', 'nombre');
 }
@@ -79,6 +87,7 @@ async function findEstudiosByIds(ids) {
     .groupBy('e.id')
     .select(
       'e.id',
+      'e.codigo',
       'e.nombre',
       'e.campo_adicional',
       'e.especie',
