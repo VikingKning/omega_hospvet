@@ -463,6 +463,153 @@ describe('US WA 005 — selección válida del menú (AC2-AC7, AC13)', () => {
 });
 
 describe('US WA 005 — selección inválida (AC9)', () => {
+  it.each([
+    ['interactive_list_reply', 'seleccion vencida'],
+    ['interactive_button_reply', 'seleccion vencida'],
+    ['interactive_list_reply', 'comando menu'],
+    ['interactive_button_reply', 'comando menu'],
+  ])(
+    'un %s pendiente antiguo no invalida el menú recuperado con %s',
+    async (tipoMensaje, recuperacion) => {
+      const telefono = generarTelefono();
+      const conversacion = await crearConversacionEsperandoMenu(telefono, {
+        estado: 'flujo_activo',
+        flujo_actual: 'explicacion_medio',
+        paso_actual: 'esperando_descripcion',
+      });
+      await db('mensajes_whatsapp').insert({
+        whatsapp_message_id: `${WAMID_PREFIX}interactivo-huerfano-${telefono}`,
+        conversacion_id: conversacion.id,
+        telefono_origen: `521${telefono.slice(2)}`,
+        tipo_mensaje: tipoMensaje,
+        mensaje_recibido: 'volver_menu',
+        direccion: 'entrante',
+        estado_procesamiento: 'pendiente',
+        pipeline_asignado: 'conversacional_nuevo',
+        recibido_en: new Date(),
+      });
+
+      const seleccionar = (sufijo) =>
+        repository.registrarMensajeYConversacion({
+          whatsappMessageId: `${WAMID_PREFIX}${sufijo}-${telefono}`,
+          telefonoOrigen: `521${telefono.slice(2)}`,
+          phoneNumberId: PHONE_NUMBER_ID,
+          telefonoNormalizado: telefono,
+          tipoMensaje: 'interactive_list_reply',
+          contenido: menu.MENU_AGENDAR_CONSULTA,
+          recibidoEn: new Date(),
+        });
+      if (recuperacion === 'comando menu') {
+        const comando = await repository.registrarMensajeYConversacion({
+          whatsappMessageId: `${WAMID_PREFIX}comando-menu-huerfano-${telefono}`,
+          telefonoOrigen: `521${telefono.slice(2)}`,
+          phoneNumberId: PHONE_NUMBER_ID,
+          telefonoNormalizado: telefono,
+          tipoMensaje: 'text',
+          contenido: 'menú',
+          recibidoEn: new Date(),
+        });
+        expect(comando.disparaMenuInmediato).toBe(true);
+        expect(comando.seleccionInvalida).toBe(false);
+        await service.enviarMenuPrincipal({
+          conversacionId: conversacion.id,
+          telefono,
+          claveBase: `mensaje:${comando.id}`,
+        });
+        expect(
+          await db('outbox_whatsapp')
+            .where({ clave_idempotencia: `mensaje:${comando.id}:opcion_invalida` })
+            .first(),
+        ).toBeUndefined();
+      } else {
+        const vencida = await seleccionar('menu-vencido-huerfano');
+        expect(vencida.seleccionInvalida).toBe(true);
+        await service.enviarSeleccionInvalida({
+          conversacionId: conversacion.id,
+          telefono,
+          mensajeId: vencida.id,
+        });
+      }
+
+      expect((await recargarConversacion(conversacion.id)).estado).toBe('esperando_menu');
+      const nueva = await seleccionar('menu-nuevo-huerfano');
+      expect(nueva.seleccionInvalida).toBe(false);
+      expect(nueva.rutaResuelta).toBe('agendar_consulta');
+    },
+  );
+
+  it.each([false, true])(
+    'al enviar el menú rearma el texto pendiente sin descartarlo (interactivo huérfano: %s)',
+    async (conInteractivo) => {
+      const telefono = generarTelefono();
+      const conversacion = await crearConversacionEsperandoMenu(telefono, {
+        estado: 'acumulando',
+        procesar_despues_de: null,
+      });
+      if (conInteractivo) {
+        await db('mensajes_whatsapp').insert({
+          whatsapp_message_id: `${WAMID_PREFIX}interactivo-y-texto-pendientes-${telefono}`,
+          conversacion_id: conversacion.id,
+          telefono_origen: `521${telefono.slice(2)}`,
+          tipo_mensaje: 'interactive_list_reply',
+          mensaje_recibido: menu.MENU_AGENDAR_ESTETICA,
+          direccion: 'entrante',
+          estado_procesamiento: 'pendiente',
+          pipeline_asignado: 'conversacional_nuevo',
+          recibido_en: new Date(),
+        });
+      }
+      const [mensaje] = await db('mensajes_whatsapp')
+        .insert({
+          whatsapp_message_id: `${WAMID_PREFIX}texto-pendiente-menu-${telefono}`,
+          conversacion_id: conversacion.id,
+          telefono_origen: `521${telefono.slice(2)}`,
+          tipo_mensaje: 'text',
+          mensaje_recibido: 'Necesito ayuda con mi mascota',
+          direccion: 'entrante',
+          estado_procesamiento: 'pendiente',
+          pipeline_asignado: 'conversacional_nuevo',
+          recibido_en: new Date(),
+        })
+        .returning('id');
+
+      await service.enviarMenuPrincipal({
+        conversacionId: conversacion.id,
+        telefono,
+        claveBase: `mensaje:${mensaje.id}:recuperacion`,
+      });
+
+      const actualizada = await recargarConversacion(conversacion.id);
+      expect(actualizada.estado).toBe('acumulando');
+      expect(actualizada.procesar_despues_de).not.toBeNull();
+      expect(actualizada.procesar_despues_de.getTime()).toBeGreaterThan(Date.now() - 1000);
+      const grupo = await repository.formarGrupoParaConversacion(conversacion.id);
+      expect(grupo.texto_consolidado).toBe('Necesito ayuda con mi mascota');
+      expect(grupo.tieneRespuestaInteractiva).toBe(false);
+      expect((await db('mensajes_whatsapp').where({ id: mensaje.id }).first()).group_id).toBe(
+        grupo.groupId,
+      );
+      await repository.marcarGrupoProcesado(grupo.groupId);
+      await service.enviarMenuPrincipal({
+        conversacionId: conversacion.id,
+        telefono,
+        claveBase: `mensaje:${mensaje.id}:menu-tras-procesar`,
+      });
+      expect((await recargarConversacion(conversacion.id)).estado).toBe('esperando_menu');
+      const seleccion = await repository.registrarMensajeYConversacion({
+        whatsappMessageId: `${WAMID_PREFIX}seleccion-tras-recuperar-${telefono}`,
+        telefonoOrigen: `521${telefono.slice(2)}`,
+        phoneNumberId: PHONE_NUMBER_ID,
+        telefonoNormalizado: telefono,
+        tipoMensaje: 'interactive_list_reply',
+        contenido: menu.MENU_RESULTADOS_LAB,
+        recibidoEn: new Date(),
+      });
+      expect(seleccion.seleccionInvalida).toBe(false);
+      expect(seleccion.labAccion).toBe('iniciar');
+    },
+  );
+
   it('un id desconocido o manipulado avisa y muestra un menú nuevo, sin resolver ninguna ruta (prueba mínima)', async () => {
     const telefono = generarTelefono();
     const conversacion = await crearConversacionEsperandoMenu(telefono);

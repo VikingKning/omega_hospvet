@@ -1091,10 +1091,15 @@ async function confirmarMenuEnviado(conversacionId, groupId = null) {
     const siguiente = await trx('mensajes_whatsapp')
       .where({ conversacion_id: conversacionId, estado_procesamiento: 'pendiente' })
       .whereNull('group_id')
+      // Los interactivos huérfanos no se agrupan como texto y no deben
+      // impedir que se acepten las opciones del menú que acaba de enviarse.
+      .whereNotIn('tipo_mensaje', ['interactive_list_reply', 'interactive_button_reply'])
       .first('id');
     const cambios = siguiente
       ? {
           estado: 'acumulando',
+          // Un comando de menú puede haber borrado el temporizador anterior.
+          procesar_despues_de: proximoProcesamiento(trx, DEBOUNCE_ACUMULANDO_MS),
           procesamiento_iniciado_en: null,
           flujo_actual: null,
           paso_actual: null,
