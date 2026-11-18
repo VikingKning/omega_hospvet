@@ -120,6 +120,15 @@ describe('agenda.reservasExternas.esReservaDeConsultas / extraerDatosReserva', (
     expect(esReservaDeConsultas(TITULO, DESCRIPCION_HTML_REAL)).toBe(true);
   });
 
+  it('extrae la misma reserva con el nuevo título Consultas Domicilio y conserva la validación de origen', () => {
+    const titulo = 'Consultas Domicilio (Omega)';
+    expect(extraerDatosReserva(titulo, DESCRIPCION_HTML_REAL)).toEqual(
+      extraerDatosReserva(TITULO, DESCRIPCION_HTML_REAL),
+    );
+    expect(esReservaDeConsultas('consultas domicilio', DESCRIPCION_HTML_REAL)).toBe(true);
+    expect(extraerDatosReserva(titulo, 'Un evento ajeno al formulario')).toBeNull();
+  });
+
   it('el título se compara sin distinguir mayúsculas/minúsculas y admite texto alrededor (ej. "Cita: Consultas Veterinarias con Juan")', () => {
     expect(esReservaDeConsultas('consultas veterinarias', DESCRIPCION_HTML_REAL)).toBe(true);
     expect(
@@ -356,6 +365,21 @@ describe('agenda.reservasExternas.importarReserva', () => {
 
     expect(id).toBeNull();
     expect(repository.findByGoogleEventId).not.toHaveBeenCalled();
+  });
+
+  it('importa Consultas Domicilio en el área consultas existente y mantiene el doctor técnico', async () => {
+    const id = await importarReserva({ ...EVENTO, summary: 'Consultas Domicilio (Omega)' });
+
+    expect(id).toBe(999);
+    expect(areasRepository.findBySlug).toHaveBeenCalledWith('consultas');
+    expect(repository.obtenerOCrearDoctorPredeterminado).toHaveBeenCalledWith({
+      nombre: 'Consultas Omega',
+      apellidos: 'Generico',
+      areaSlug: 'consultas',
+    });
+    expect(repository.crearDesdeReservaExterna).toHaveBeenCalledWith(
+      expect.objectContaining({ areaId: 22, doctorId: 87, googleEventId: EVENTO.id }),
+    );
   });
 
   it('un evento ya importado antes (mismo google_event_id) se ignora', async () => {

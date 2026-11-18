@@ -65,8 +65,8 @@ const MENU_SECCION_TITULO = 'Opciones disponibles';
 const MENU_FILAS = [
   {
     id: MENU_AGENDAR_CONSULTA,
-    title: 'Consulta Veterinaria',
-    description: 'Agendar, mover o cancelar una cita veterinaria',
+    title: 'Consultas Domicilio',
+    description: 'Agendar, mover o cancelar una consulta a domicilio',
   },
   {
     id: MENU_AGENDAR_ESTETICA,

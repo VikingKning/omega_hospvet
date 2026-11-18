@@ -73,10 +73,10 @@ const funcionHabilitada = (clave) => funcionesActivas[clave] === true;
           </div>
           <div class="configuracion-option-row">
             <span class="configuracion-option-copy">
-              <span class="configuracion-option-title">Citas de Consultas</span>
-              <span class="configuracion-option-description">Muestra el flujo para solicitar una cita en el área de Consultas.</span>
+              <span class="configuracion-option-title">Citas de Consultas Domicilio</span>
+              <span class="configuracion-option-description">Muestra el flujo para solicitar una cita en el área de Consultas Domicilio.</span>
             </span>
-            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Citas de Consultas" data-config-clave="whatsapp_citas_consultas">
+            <span class="toggle-group configuracion-option-toggle" role="group" aria-label="Citas de Consultas Domicilio" data-config-clave="whatsapp_citas_consultas">
               <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_citas_consultas') ? ' active' : '' %>" data-value="habilitado" aria-pressed="<%= funcionHabilitada('whatsapp_citas_consultas') %>">Habilitado</button>
               <button type="button" class="toggle-btn<%= funcionHabilitada('whatsapp_citas_consultas') ? '' : ' active' %>" data-value="deshabilitado" aria-pressed="<%= !funcionHabilitada('whatsapp_citas_consultas') %>">Deshabilitado</button>
             </span>

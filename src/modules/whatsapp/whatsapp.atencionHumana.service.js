@@ -11,7 +11,7 @@ const TEXTO_TRANSFERENCIA =
 const TEXTO_TRANSFERENCIA_POR_TIPO = {
   generico: TEXTO_TRANSFERENCIA,
   agenda_consulta_sin_enlace:
-    'En este momento no podemos mostrar el enlace de reservación para Consulta. ' +
+    'En este momento no podemos mostrar el enlace de reservación para Consultas Domicilio. ' +
     'Recepción continuará con tu atención.',
   agenda_estetica_sin_enlace:
     'En este momento no podemos mostrar el enlace de reservación para Estética. ' +

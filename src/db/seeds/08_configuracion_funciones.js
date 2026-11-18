@@ -20,8 +20,8 @@ const FUNCIONES_SISTEMA = [
   {
     clave: 'whatsapp_citas_consultas',
     grupo: 'whatsapp',
-    nombre: 'Citas de Consultas',
-    descripcion: 'Permite ofrecer el flujo de citas para Consultas por WhatsApp.',
+    nombre: 'Citas de Consultas Domicilio',
+    descripcion: 'Permite ofrecer el flujo de citas para Consultas Domicilio por WhatsApp.',
   },
   {
     clave: 'whatsapp_citas_estetica',

@@ -696,7 +696,7 @@ describe('whatsapp.service.enviarEnlaceAgenda (US WA 006)', () => {
   });
 
   it.each([
-    ['agendar_consulta', 'Consulta', 'https://calendar.example/consulta'],
+    ['agendar_consulta', 'Consultas Domicilio', 'https://calendar.example/consulta'],
     ['agendar_estetica', 'Estética', 'https://calendar.example/estetica'],
   ])(
     'envía el enlace HTTPS de %s y cierra solo tras confirmación de Meta',

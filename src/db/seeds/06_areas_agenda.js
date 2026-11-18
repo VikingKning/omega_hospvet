@@ -1,5 +1,5 @@
 const AREAS_AGENDA = [
-  ['Consultas', 'consultas'],
+  ['Consultas Domicilio', 'consultas'],
   ['Estética', 'estetica'],
 ];
 

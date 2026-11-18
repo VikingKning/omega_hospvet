@@ -6,7 +6,8 @@ const tutoresRepository = require('../tutores/tutores.repository');
 const AREA_SLUG_CONSULTAS = 'consultas';
 const AREA_SLUG_ESTETICA = 'estetica';
 
-const SENAL_TITULO_CONSULTAS = 'Consultas Veterinarias';
+// Conserva el reconocimiento de reservas anteriores al cambio de nombre.
+const SENALES_TITULO_CONSULTAS = ['Consultas Veterinarias', 'Consultas Domicilio'];
 const SENAL_DESCRIPCION_CONSULTAS =
   'Agenda aquí la cita de tu compañero de cuatro patas de forma rápida y sencilla.';
 
@@ -40,7 +41,9 @@ function coincideSenal(summary, description, senalTitulo, senalDescripcion) {
 }
 
 function esReservaDeConsultas(summary, description) {
-  return coincideSenal(summary, description, SENAL_TITULO_CONSULTAS, SENAL_DESCRIPCION_CONSULTAS);
+  return SENALES_TITULO_CONSULTAS.some((titulo) =>
+    coincideSenal(summary, description, titulo, SENAL_DESCRIPCION_CONSULTAS),
+  );
 }
 
 function esReservaDeEstetica(summary, description) {
