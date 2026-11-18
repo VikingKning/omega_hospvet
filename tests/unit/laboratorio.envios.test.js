@@ -118,10 +118,10 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
     jest.clearAllMocks();
     fs.readFile.mockResolvedValue(Buffer.from('contenido'));
     whatsappEnvios.subirMedia.mockResolvedValue('media-id-1');
-    whatsappEnvios.enviarPlantillaResultados.mockResolvedValue();
+    whatsappEnvios.enviarResultadoLaboratorio.mockResolvedValue();
   });
 
-  it('sube el archivo y manda la plantilla, regresa ok:true', async () => {
+  it('sube el archivo y selecciona el envío de resultados, regresa ok:true', async () => {
     const resultado = await enviarPorWhatsapp({
       telefono: '5512345678',
       nombreTutor: 'Ana Ruiz',
@@ -138,7 +138,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       'application/pdf',
       'Resultado_Omega_01.pdf',
     );
-    expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledWith(
+    expect(whatsappEnvios.enviarResultadoLaboratorio).toHaveBeenCalledWith(
       expect.objectContaining({
         telefono: '5512345678',
         nombreTutor: 'Ana Ruiz',
@@ -153,7 +153,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
     );
   });
 
-  it('con varios archivos distintos, manda una plantilla por cada uno', async () => {
+  it('con varios archivos distintos, manda un resultado por cada uno', async () => {
     const otro = { ...ARCHIVO, id: 11, nombreOriginal: 'otro.jpg', rutaAbsoluta: '/x/otro.jpg' };
     await enviarPorWhatsapp({
       telefono: '5512345678',
@@ -163,7 +163,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
     });
 
     expect(whatsappEnvios.subirMedia).toHaveBeenCalledTimes(2);
-    expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledTimes(2);
+    expect(whatsappEnvios.enviarResultadoLaboratorio).toHaveBeenCalledTimes(2);
   });
 
   it('si falla la subida del archivo, regresa ok:false — nunca lanza', async () => {
@@ -180,11 +180,13 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       ok: false,
       error: 'No se pudo completar el envío por WhatsApp.',
     });
-    expect(whatsappEnvios.enviarPlantillaResultados).not.toHaveBeenCalled();
+    expect(whatsappEnvios.enviarResultadoLaboratorio).not.toHaveBeenCalled();
   });
 
   it('si falla el envío de la plantilla, regresa ok:false — nunca lanza', async () => {
-    whatsappEnvios.enviarPlantillaResultados.mockRejectedValue(new Error('Meta rechazó el envío.'));
+    whatsappEnvios.enviarResultadoLaboratorio.mockRejectedValue(
+      new Error('Meta rechazó el envío.'),
+    );
 
     const resultado = await enviarPorWhatsapp({
       telefono: '5512345678',
@@ -212,7 +214,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       archivos: [ARCHIVO],
     });
 
-    expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledWith(
+    expect(whatsappEnvios.enviarResultadoLaboratorio).toHaveBeenCalledWith(
       expect.objectContaining({ claveIdempotencia: 'laboratorio:5:10' }),
     );
   });
@@ -227,7 +229,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       claveIdempotenciaPrefijo: 'mensaje:99:lab:exito',
     });
 
-    expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledWith(
+    expect(whatsappEnvios.enviarResultadoLaboratorio).toHaveBeenCalledWith(
       expect.objectContaining({ claveIdempotencia: 'mensaje:99:lab:exito:10' }),
     );
   });
@@ -235,7 +237,7 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
   it('con 2 archivos, si el segundo falla, no sigue intentando más (corta ahí)', async () => {
     const otro = { ...ARCHIVO, id: 11, nombreOriginal: 'otro.jpg' };
     const tercero = { ...ARCHIVO, id: 12, nombreOriginal: 'tercero.jpg' };
-    whatsappEnvios.enviarPlantillaResultados
+    whatsappEnvios.enviarResultadoLaboratorio
       .mockResolvedValueOnce()
       .mockRejectedValueOnce(new Error('Falló en el segundo.'));
 
@@ -250,6 +252,31 @@ describe('laboratorio.envios.enviarPorWhatsapp', () => {
       ok: false,
       error: 'No se pudo completar el envío por WhatsApp.',
     });
-    expect(whatsappEnvios.enviarPlantillaResultados).toHaveBeenCalledTimes(2);
+    expect(whatsappEnvios.enviarResultadoLaboratorio).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('laboratorio: errores accionables de WhatsApp', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.readFile.mockResolvedValue(Buffer.from('pdf'));
+    whatsappEnvios.subirMedia.mockResolvedValue('media-lab');
+  });
+  it.each([
+    ['132001', /plantilla resultados_laboratorio_listos_v2 en es_MX/],
+    ['ventana_servicio_expirada', /ventana de atención.*venció/],
+    ['131047', /ventana de atención.*venció/],
+  ])('explica %s sin marcar el canal como exitoso', async (errorCodigo, texto) => {
+    whatsappEnvios.enviarResultadoLaboratorio.mockRejectedValue(
+      Object.assign(new Error('Meta'), { errorCodigo }),
+    );
+    const resultado = await enviarPorWhatsapp({
+      telefono: '5512345678',
+      folioId: 5,
+      archivos: [ARCHIVO],
+    });
+    expect(resultado.ok).toBe(false);
+    expect(resultado.error).toMatch(texto);
+    expect(resultado.error).toMatch(/correo/);
   });
 });

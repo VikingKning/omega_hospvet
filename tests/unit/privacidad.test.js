@@ -44,4 +44,22 @@ describe('controles de privacidad', () => {
     expect(serializado).not.toContain('secreto-123');
     expect(limpio.err).toEqual(expect.objectContaining({ type: 'Error', code: 'META_ERROR' }));
   });
+
+  it('conserva el diagnostico de Meta sin exponer datos de contacto ni credenciales', () => {
+    const limpio = sanitizarParaLog({
+      diagnosticoMeta: {
+        codigo: 100,
+        subcodigo: 33,
+        httpStatus: 400,
+        referenciaMeta: 'trace-de-prueba',
+        detalle: 'Media invalido para ana@example.com y +52 55 1234 5678. Bearer secreto-123',
+      },
+    });
+    expect(limpio.diagnosticoMeta).toMatchObject({ codigo: 100, subcodigo: 33, httpStatus: 400 });
+    expect(limpio.diagnosticoMeta.detalle).toContain('Media invalido');
+    const texto = JSON.stringify(limpio);
+    expect(texto).not.toContain('ana@example.com');
+    expect(texto).not.toContain('1234 5678');
+    expect(texto).not.toContain('secreto-123');
+  });
 });

@@ -8,6 +8,7 @@ const pinoHttp = require('pino-http');
 
 const env = require('./config/env');
 const logger = require('./config/logger');
+const { resolverAvatar } = require('./config/avatares');
 const { middleware: sessionMiddleware } = require('./config/session');
 const { generateCsrfToken } = require('./config/csrf');
 const requireAuth = require('./middlewares/requireAuth');
@@ -111,6 +112,14 @@ app.use('/', legalRoutes);
 app.use(express.static(path.join(rootDir, 'public')));
 app.use(cookieParser());
 app.use(sessionMiddleware);
+app.use((req, res, next) => {
+  // Repara también las sesiones abiertas con el código anterior, incluida
+  // la página 404, que no pasa por requireAuth.
+  if (req.session.user) {
+    req.session.user.avatar = resolverAvatar(req.session.user.avatar);
+  }
+  next();
+});
 
 const EXPIRED_MESSAGES = {
   inactividad: 'La sesión expiró por inactividad. Favor de iniciar sesión nuevamente.',

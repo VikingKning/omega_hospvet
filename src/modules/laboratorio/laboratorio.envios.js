@@ -103,7 +103,7 @@ async function enviarPorWhatsapp({
       const nombreGenerico = nombreArchivoGenerico(archivo, indice);
       const buffer = await fs.readFile(archivo.rutaAbsoluta);
       const mediaId = await whatsappEnvios.subirMedia(buffer, archivo.mimetype, nombreGenerico);
-      await whatsappEnvios.enviarPlantillaResultados({
+      await whatsappEnvios.enviarResultadoLaboratorio({
         telefono,
         nombreTutor,
         nombreMascota,
@@ -112,14 +112,30 @@ async function enviarPorWhatsapp({
         mapsUrl: googleMapsUrl,
         saludo,
         mediaId,
+        mimetype: archivo.mimetype,
         nombreArchivo: nombreGenerico,
         claveIdempotencia: `${claveIdempotenciaPrefijo}:${archivo.id}`,
       });
     }
     return { ok: true };
   } catch (err) {
-    logger.error({ err }, 'No se pudo enviar el WhatsApp de resultados de laboratorio.');
-    return { ok: false, error: 'No se pudo completar el envío por WhatsApp.' };
+    const codigo = String(err.errorCodigo ?? err.diagnosticoMeta?.codigo ?? '');
+    logger.error(
+      { err, folioId, errorCodigo: codigo || null, diagnosticoMeta: err.diagnosticoMeta },
+      'No se pudo enviar el WhatsApp de resultados de laboratorio.',
+    );
+    let error = 'No se pudo completar el envío por WhatsApp.';
+    if (codigo === '132001') {
+      error =
+        'Meta no tiene disponible la plantilla resultados_laboratorio_listos_v2 en es_MX (132001). ' +
+        'Verifica su aprobación en la cuenta de producción. Puedes usar correo o pedir al tutor ' +
+        'que escriba al WhatsApp de la clínica y reintentar dentro de las siguientes 24 horas.';
+    } else if (codigo === 'ventana_servicio_expirada' || codigo === '131047') {
+      error =
+        'La ventana de atención de WhatsApp venció antes del envío. Pide al tutor que escriba ' +
+        'nuevamente al WhatsApp de la clínica y reintenta, o usa correo.';
+    }
+    return { ok: false, error };
   }
 }
 

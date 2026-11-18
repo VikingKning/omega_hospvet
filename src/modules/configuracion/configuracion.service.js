@@ -2,6 +2,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const db = require('../../config/database');
+const logger = require('../../config/logger');
 const repository = require('./configuracion.repository');
 // Mismo conversor Word→PDF que laboratorio (LibreOffice headless) — pedido
 // explícito del usuario en vez de duplicar la lógica de conversión aquí.
@@ -220,6 +221,33 @@ async function actualizarMediaIdVersion(versionId, mediaId) {
   await repository.actualizarMediaId(versionId, mediaId);
 }
 
+// Renueva antes de los 30 dias de Meta. El bloqueo de la version impide
+// subidas simultaneas del mismo PDF, incluso con varios procesos Node.
+async function asegurarMediaIdAviso(version, subirArchivo, mediaIdInvalido = null) {
+  return db.transaction(async (trx) => {
+    const fila = await trx('aviso_privacidad_versiones')
+      .where({ version: version.version })
+      .forUpdate()
+      .first();
+    if (!fila) throw new Error('No existe la version del aviso de privacidad para enviar.');
+    const vigente =
+      fila.media_subido_en &&
+      Date.now() - new Date(fila.media_subido_en).getTime() < 29 * 24 * 60 * 60 * 1000;
+    if (fila.media_id && vigente && fila.media_id !== mediaIdInvalido) return fila.media_id;
+
+    const mediaId = await subirArchivo();
+    await trx('aviso_privacidad_versiones').where({ id: fila.id }).update({
+      media_id: mediaId,
+      media_subido_en: trx.fn.now(),
+    });
+    logger.info(
+      { versionAviso: version.version, renovacionPorRechazoMeta: Boolean(mediaIdInvalido) },
+      'Archivo del aviso de privacidad subido a Meta con vigencia renovada.',
+    );
+    return mediaId;
+  });
+}
+
 async function leerArchivoAviso(nombreArchivo) {
   return fs.readFile(path.join(DIRECTORIO_LEGAL, nombreArchivo));
 }
@@ -268,6 +296,7 @@ module.exports = {
   guardarAvisoPrivacidad,
   obtenerVersionVigenteParaEnvio,
   actualizarMediaIdVersion,
+  asegurarMediaIdAviso,
   leerArchivoAviso,
   listarUltimasVersionesAviso,
   obtenerFunciones,

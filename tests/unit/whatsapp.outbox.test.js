@@ -225,6 +225,13 @@ describe('whatsapp.outbox.ejecutarIntento', () => {
       enviado: false,
       error: 'Teléfono inválido.',
       errorCodigo: '131030',
+      diagnosticoMeta: {
+        codigo: 131030,
+        subcodigo: null,
+        httpStatus: 400,
+        referenciaMeta: null,
+        detalle: 'Teléfono inválido.',
+      },
     });
     expect(repository.marcarResultadoEnvio).toHaveBeenCalledWith(1, {
       estado: 'fallido',

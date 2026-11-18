@@ -52,7 +52,10 @@ async function pushCita(citaId) {
     const evento = eventoDesdeCita(cita);
     if (cita.google_event_id) {
       try {
-        await calendar.events.update({
+        // PUT reemplaza el evento y elimina los invitados omitidos: al
+        // completar una reserva externa, el tutor recibía una cancelación.
+        // PATCH conserva asistentes y los demás datos que Omega no modifica.
+        await calendar.events.patch({
           calendarId,
           eventId: cita.google_event_id,
           requestBody: evento,

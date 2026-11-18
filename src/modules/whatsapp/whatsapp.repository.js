@@ -106,6 +106,13 @@ async function aplicarReglasDeInteraccion(
   let labAccion = null;
   let labDatos = null;
   let disparaSolicitudEmergencia = false;
+  const esRecepcionDuranteProcesamiento =
+    esSeleccionInteractiva &&
+    contenido === menu.MENU_RECEPCION &&
+    ['acumulando', 'procesando'].includes(conversacion.estado) &&
+    Boolean(conversacion.menu_principal_vigente_en) &&
+    !conversacion.flujo_actual &&
+    !conversacion.paso_actual;
 
   if (disparaMenu) {
     Object.assign(cambios, {
@@ -114,10 +121,26 @@ async function aplicarReglasDeInteraccion(
       paso_actual: null,
       procesar_despues_de: null,
     });
-  } else if (esSeleccionInteractiva && conversacion.estado === 'esperando_menu') {
+  } else if (
+    esSeleccionInteractiva &&
+    (conversacion.estado === 'esperando_menu' || esRecepcionDuranteProcesamiento)
+  ) {
     const ruta = menu.resolverRuta(contenido, funcionesWhatsapp);
     if (ruta) {
       rutaResuelta = ruta;
+      if (ruta !== 'ver_aviso_privacidad') cambios.menu_principal_vigente_en = null;
+      if (ruta === 'recepcion') {
+        await interrumpirTrabajoPorRecepcion(trx, conversacion.id);
+        Object.assign(cambios, {
+          recepcion_prioritaria_en: trx.fn.now(),
+          procesar_despues_de: null,
+          procesamiento_iniciado_en: null,
+          recordatorio_programado_en: null,
+          recordatorio_enviado_en: null,
+          recordatorio_reclamado_en: null,
+          flujo_expira_en: null,
+        });
+      }
       if (
         ruta === 'resultados_laboratorio' &&
         validarTransicion(conversacion.estado, 'flujo_activo')
@@ -199,7 +222,7 @@ async function aplicarReglasDeInteraccion(
     cambios.procesar_despues_de = proximoProcesamiento(trx, debounceMs);
   }
 
-  if (ESTADOS_CON_SEGUIMIENTO.includes(estadoResultante)) {
+  if (ESTADOS_CON_SEGUIMIENTO.includes(estadoResultante) && rutaResuelta !== 'recepcion') {
     cambios.recordatorio_programado_en = new Date(
       ahora.getTime() + env.whatsapp.flujoRecordatorioMinutos * 60000,
     );
@@ -222,6 +245,46 @@ async function aplicarReglasDeInteraccion(
     pasoActualResultante,
     grupoMedioPendienteId: conversacion.grupo_medio_pendiente_id ?? null,
   };
+}
+
+async function interrumpirTrabajoPorRecepcion(trx, conversacionId) {
+  await trx('grupos_whatsapp')
+    .where({ conversacion_id: conversacionId, estado: 'pendiente_enrutamiento' })
+    .update({
+      estado: 'procesado',
+      resultado_decision: 'interrumpido_por_recepcion',
+      procesado_en: trx.fn.now(),
+      clasificacion_reclamo_id: null,
+      clasificacion_reclamada_en: null,
+    });
+  await trx('mensajes_whatsapp')
+    .where({ conversacion_id: conversacionId, estado_procesamiento: 'pendiente' })
+    .update({ estado_procesamiento: 'ignorado_atencion_humana', procesado_en: trx.fn.now() });
+  await trx('outbox_whatsapp')
+    .where({
+      conversacion_id: conversacionId,
+      origen_funcional: 'respuesta_automatica',
+      tipo_envio: 'conversacional',
+    })
+    .whereIn('estado', ['pendiente', 'fallido'])
+    .whereNull('wamid')
+    .update({
+      estado: 'cancelado',
+      ultimo_error: 'Interrumpido por selección de Recepción.',
+      actualizado_en: trx.fn.now(),
+    });
+}
+
+async function tieneRecepcionPrioritaria(conversacionId, trx = null) {
+  if (!trx)
+    return db.transaction((transaccion) => tieneRecepcionPrioritaria(conversacionId, transaccion));
+  // Comparte el bloqueo del registro entrante: si se está confirmando una
+  // selección de Recepción, espera esa transacción y lee su estado final.
+  const conversacion = await trx('conversaciones_whatsapp')
+    .where({ id: conversacionId })
+    .forUpdate()
+    .first('recepcion_prioritaria_en');
+  return Boolean(conversacion?.recepcion_prioritaria_en);
 }
 
 async function registrarMensajeYConversacion({
@@ -308,10 +371,12 @@ async function registrarMensajeYConversacion({
     }
 
     if (existente) {
-      const transferenciaPendiente = await trx('solicitudes_atencion_humana')
-        .where({ conversacion_id: existente.id })
-        .whereIn('estado', ['pendiente', 'enviando', 'fallida_reintentable'])
-        .first('id');
+      const transferenciaPendiente =
+        existente.recepcion_prioritaria_en ||
+        (await trx('solicitudes_atencion_humana')
+          .where({ conversacion_id: existente.id })
+          .whereIn('estado', ['pendiente', 'enviando', 'fallida_reintentable'])
+          .first('id'));
       if (transferenciaPendiente) {
         const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
           whatsappMessageId,
@@ -425,6 +490,15 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
     avisoConfigurado,
     trx,
   );
+
+  if (estado !== consentimiento.ESTADOS.ACEPTADO) {
+    // Los mensajes retenidos por consentimiento no forman grupos. Evita
+    // que el worker cierre la conversacion mientras se sube el PDF o se
+    // prepara la transferencia a recepcion, aunque Meta tarde en responder.
+    await trx('conversaciones_whatsapp')
+      .where({ id: conversacion.id })
+      .update({ procesar_despues_de: null });
+  }
 
   if (estado === consentimiento.ESTADOS.ACEPTADO) {
     // Tap "suelto" de Estoy de acuerdo/No estoy de acuerdo sobre una copia
@@ -570,12 +644,10 @@ async function procesarConsentimientoLfpdppp(trx, { conversacion, evento }) {
   // PENDIENTE_VIGENTE (mensaje que no es el botón): puede ser que el tutor
   // simplemente no ha contestado, o que borró/ignoró el aviso, o que el
   // envío original ni siquiera llegó (falla de Media API/token de Meta, ya
-  // vista en producción). No hay forma barata de distinguir esos casos, así
-  // que se reenvía el aviso completo en cada mensaje de espera (pedido
-  // explícito del usuario, 2026-09-21: mejor insistir que dejarlo varado en
-  // silencio) — con una clave de idempotencia propia por mensaje entrante,
-  // para que sí sea un envío nuevo aunque el intento original ya haya
-  // quedado "enviado" en outbox_whatsapp.
+  // vista en producción). Se solicita reenviar el aviso completo con una
+  // clave propia por mensaje entrante. El servicio espacia esos intentos
+  // por telefono/version para evitar multiples avisos o textos de error
+  // ante mensajes consecutivos, incluso en conversaciones distintas.
   //
   // También se retiene el contenido real (bug real visto en vivo
   // 2026-09-21: si el tutor escribe por partes mientras sigue pendiente,
@@ -717,6 +789,34 @@ async function procesarMensajeEnAtencionHumana(trx, conversacion, evento) {
       : null;
     const gateIntercepta =
       Boolean(avisoConfigurado) && estadoConsentimiento !== consentimiento.ESTADOS.ACEPTADO;
+
+    if (
+      gateIntercepta &&
+      (await atencionHumana.tieneSolicitudPorFalloAviso(conversacion.id, trx)) &&
+      (await consentimiento.envioAvisoEnEspera(
+        evento.telefonoNormalizado,
+        avisoConfigurado.version,
+        trx,
+      ))
+    ) {
+      // Un "menu" temprano no debe sacar al cliente de recepcion para
+      // dejarlo esperando un envio que el limite aun no permite intentar.
+      const { id, esNuevo } = await atencionHumana.crearMensajeIgnorado(trx, {
+        whatsappMessageId: evento.whatsappMessageId,
+        telefonoOrigen: evento.telefonoOrigen,
+        tipoMensaje: evento.tipoMensaje,
+        conversacionId: conversacion.id,
+        recibidoEn: evento.recibidoEn,
+        estadoProcesamiento: 'ignorado_atencion_humana',
+      });
+      return {
+        ...RESULTADO_ATENCION_HUMANA_BASE,
+        id,
+        esNuevo,
+        conversacionId: conversacion.id,
+        estadoResultante: conversacion.estado,
+      };
+    }
 
     if (gateIntercepta) {
       // Se sale de atención humana igual que en la reactivación normal
@@ -964,6 +1064,7 @@ const ESTADOS_QUE_PERMITEN_CIERRE = Object.keys(TRANSICIONES).filter((estado) =>
 async function cerrarConversacion(conversacionId, ahora) {
   const filasAfectadas = await db('conversaciones_whatsapp')
     .where({ id: conversacionId })
+    .whereNull('recepcion_prioritaria_en')
     .whereIn('estado', ESTADOS_QUE_PERMITEN_CIERRE)
     .update({ estado: 'cerrada', cerrado_en: ahora, updated_at: ahora });
   if (filasAfectadas === 0) {
@@ -980,8 +1081,9 @@ async function confirmarEnlaceAgendaEnviado(conversacionId, ahora) {
     const conversacion = await trx('conversaciones_whatsapp')
       .where({ id: conversacionId })
       .forUpdate()
-      .first('estado');
+      .first('estado', 'recepcion_prioritaria_en');
     if (!conversacion) return false;
+    if (conversacion.recepcion_prioritaria_en) return false;
     if (conversacion.estado === 'cerrada') return true;
     if (!ESTADOS_QUE_PERMITEN_CIERRE.includes(conversacion.estado)) return false;
 
@@ -1046,7 +1148,8 @@ async function finalizarConversacionTrasGrupo(conversacionId, ahora) {
     const conversacion = await trx('conversaciones_whatsapp')
       .where({ id: conversacionId })
       .forUpdate()
-      .first('estado');
+      .first('estado', 'recepcion_prioritaria_en');
+    if (conversacion?.recepcion_prioritaria_en) return false;
     if (!conversacion || !ESTADOS_QUE_PERMITEN_CIERRE.includes(conversacion.estado)) return false;
     const siguiente = await trx('mensajes_whatsapp')
       .where({ conversacion_id: conversacionId, estado_procesamiento: 'pendiente' })
@@ -1079,7 +1182,8 @@ async function confirmarMenuEnviado(conversacionId, groupId = null) {
     const conversacion = await trx('conversaciones_whatsapp')
       .where({ id: conversacionId })
       .forUpdate()
-      .first('estado');
+      .first('estado', 'recepcion_prioritaria_en');
+    if (conversacion?.recepcion_prioritaria_en) return false;
     if (!conversacion || !ESTADOS_QUE_PERMITEN_ESPERANDO_MENU.includes(conversacion.estado)) {
       return false;
     }
@@ -1122,7 +1226,12 @@ async function confirmarMenuEnviado(conversacionId, groupId = null) {
           flujo_expira_en: null,
           updated_at: ahora,
         };
-    await trx('conversaciones_whatsapp').where({ id: conversacionId }).update(cambios);
+    await trx('conversaciones_whatsapp')
+      .where({ id: conversacionId })
+      .update({
+        ...cambios,
+        menu_principal_vigente_en: ahora,
+      });
     return true;
   });
 }
@@ -1136,9 +1245,11 @@ async function confirmarGuiaMedioEnviada(conversacionId, groupId) {
   return db.transaction(async (trx) => {
     const filasAfectadas = await trx('conversaciones_whatsapp')
       .where({ id: conversacionId })
+      .whereNull('recepcion_prioritaria_en')
       .whereIn('estado', ESTADOS_QUE_PERMITEN_FLUJO_ACTIVO)
       .update({
         estado: 'flujo_activo',
+        menu_principal_vigente_en: null,
         flujo_actual: 'explicacion_medio',
         paso_actual: 'esperando_descripcion',
         grupo_medio_pendiente_id: groupId,
@@ -1164,9 +1275,11 @@ async function confirmarEmergenciaSolicitada(conversacionId) {
   const ahora = new Date();
   const filasAfectadas = await db('conversaciones_whatsapp')
     .where({ id: conversacionId })
+    .whereNull('recepcion_prioritaria_en')
     .whereIn('estado', ESTADOS_QUE_PERMITEN_FLUJO_ACTIVO)
     .update({
       estado: 'flujo_activo',
+      menu_principal_vigente_en: null,
       flujo_actual: 'emergencia',
       paso_actual: 'esperando_descripcion',
       procesar_despues_de: null,
@@ -1208,6 +1321,7 @@ async function reclamarClasificacionGrupo(groupId, reclamoId) {
   return db.transaction(async (trx) => {
     const [grupo] = await trx('grupos_whatsapp')
       .where({ group_id: groupId })
+      .where({ estado: 'pendiente_enrutamiento' })
       .whereNull('clasificado_en')
       .andWhere((builder) => {
         builder
@@ -1409,6 +1523,7 @@ async function obtenerContextoDeConversacion(conversacionId) {
 async function reclamarConversacionVencida({ segundosRecuperacion }) {
   return db.transaction(async (trx) => {
     const conversacion = await trx('conversaciones_whatsapp')
+      .whereNull('recepcion_prioritaria_en')
       .where((b) => {
         b.where((estado) => {
           estado.where('estado', 'acumulando').andWhere('procesar_despues_de', '<=', trx.fn.now());
@@ -1461,6 +1576,7 @@ async function reclamarConversacionVencida({ segundosRecuperacion }) {
 async function reclamarConversacionParaSeguimiento() {
   return db.transaction(async (trx) => {
     const conversacion = await trx('conversaciones_whatsapp')
+      .whereNull('recepcion_prioritaria_en')
       .whereIn('estado', ESTADOS_CON_SEGUIMIENTO)
       .whereNull('recordatorio_enviado_en')
       .andWhere((builder) => {
@@ -1499,6 +1615,7 @@ async function reclamarConversacionParaSeguimiento() {
 async function confirmarSeguimientoEnviado(conversacionId) {
   const filas = await db('conversaciones_whatsapp')
     .where({ id: conversacionId })
+    .whereNull('recepcion_prioritaria_en')
     .whereIn('estado', ESTADOS_CON_SEGUIMIENTO)
     .whereNull('recordatorio_enviado_en')
     .update({
@@ -1525,6 +1642,7 @@ async function liberarSeguimiento(conversacionId) {
 async function cerrarConversacionPorInactividad() {
   return db.transaction(async (trx) => {
     const conversacion = await trx('conversaciones_whatsapp')
+      .whereNull('recepcion_prioritaria_en')
       .whereIn('estado', ESTADOS_CON_SEGUIMIENTO)
       .whereNotNull('recordatorio_enviado_en')
       .andWhere('flujo_expira_en', '<=', trx.fn.now())
@@ -2003,6 +2121,25 @@ async function estaVentanaServicioVencida(conversacionId) {
   return Boolean(fila?.vencida);
 }
 
+// La actividad interna, los ecos de recepción y las continuaciones sintéticas
+// del consentimiento no abren la ventana de atención de Meta.
+async function buscarVentanaServicioCliente(telefono, conversacionId = null) {
+  if (!env.whatsapp.phoneNumberId) return null;
+  return db('mensajes_whatsapp as m')
+    .join('conversaciones_whatsapp as c', 'c.id', 'm.conversacion_id')
+    .where('c.telefono_normalizado', telefono)
+    .where('c.phone_number_id', env.whatsapp.phoneNumberId)
+    .where('m.direccion', 'entrante')
+    .whereNot('m.whatsapp_message_id', 'like', '%:lfpdppp_continuacion')
+    .where('m.recibido_en', '>', db.raw("now() - interval '24 hours'"))
+    .where('m.recibido_en', '<=', db.fn.now())
+    .modify((query) => {
+      if (conversacionId != null) query.where('c.id', conversacionId);
+    })
+    .orderBy('m.recibido_en', 'desc')
+    .first('c.id as conversacionId', 'm.recibido_en as ultimoMensajeEn');
+}
+
 async function obtenerNombresConocidosPorTelefono(telefono) {
   const ultimosDiez = String(telefono ?? '')
     .replace(/\D/g, '')
@@ -2062,6 +2199,8 @@ module.exports = {
   marcarResultadoEnvio,
   aplicarEstadoMeta,
   estaVentanaServicioVencida,
+  tieneRecepcionPrioritaria,
+  buscarVentanaServicioCliente,
   reclamarMensajeFlujoAnterior,
   finalizarMensajeFlujoAnterior,
   guardarDecisionMensajeFlujoAnterior,

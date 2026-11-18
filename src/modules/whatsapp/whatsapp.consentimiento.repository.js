@@ -110,6 +110,32 @@ async function insertarPendiente({ telefono, propietarioId, avisoEnviadoEn, vers
   return fila;
 }
 
+// Reserva atomica por telefono/version, independiente de la conversacion.
+// Persiste entre reinicios y solo permite un intento cada dos minutos.
+async function reclamarEnvioAviso(telefono, version) {
+  const filas = await db('control_envios_aviso_privacidad')
+    .insert({ telefono, version_aviso: version, ultimo_intento_en: db.fn.now() })
+    .onConflict(['telefono', 'version_aviso'])
+    .merge({ ultimo_intento_en: db.fn.now() })
+    .where(
+      'control_envios_aviso_privacidad.ultimo_intento_en',
+      '<=',
+      db.raw("now() - interval '2 minutes'"),
+    )
+    .returning('telefono');
+  return filas.length > 0;
+}
+
+async function envioAvisoEnEspera(telefono, version, trx) {
+  const conexion = trx ?? db;
+  return Boolean(
+    await conexion('control_envios_aviso_privacidad')
+      .where({ telefono, version_aviso: version })
+      .where('ultimo_intento_en', '>', conexion.raw("now() - interval '2 minutes'"))
+      .first('telefono'),
+  );
+}
+
 async function resolverPendiente({ id, acepto, wamid }, trx) {
   const conexion = trx ?? db;
   const [fila] = await conexion('consentimiento_lfpdppp')
@@ -136,6 +162,8 @@ module.exports = {
   esRespuestaBoton,
   evaluarEstado,
   insertarPendiente,
+  reclamarEnvioAviso,
+  envioAvisoEnEspera,
   resolverPendiente,
   insertarConsentimientoPanel,
 };

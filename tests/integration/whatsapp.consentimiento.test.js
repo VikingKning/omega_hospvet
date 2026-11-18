@@ -15,6 +15,7 @@ const whatsappConfig = require('../../src/config/whatsapp');
 const configuracionService = require('../../src/modules/configuracion/configuracion.service');
 const tutoresRepository = require('../../src/modules/tutores/tutores.repository');
 const menu = require('../../src/modules/whatsapp/whatsapp.menu');
+const atencionHumanaService = require('../../src/modules/whatsapp/whatsapp.atencionHumana.service');
 
 const APP_SECRET_ORIGINAL = env.whatsapp.appSecret;
 const VERIFY_TOKEN_ORIGINAL = env.whatsapp.webhookVerifyToken;
@@ -37,7 +38,11 @@ beforeAll(() => {
 
 let contadorWamidFake = 0;
 let contadorMediaFake = 0;
-beforeEach(() => {
+beforeEach(async () => {
+  await db('control_envios_aviso_privacidad').where('telefono', 'like', '52550088%').del();
+  await db('aviso_privacidad_versiones')
+    .whereIn('version', [AVISO_MOCK.version, 'lfpdppp-switch-v1.0', 'lfpdppp-switch-v2.0'])
+    .update({ media_id: null, media_subido_en: null });
   global.fetch = jest.fn().mockImplementation(async (url) => {
     if (String(url).includes('/fake/media')) {
       contadorMediaFake += 1;
@@ -61,7 +66,18 @@ beforeEach(() => {
     .mockResolvedValue({ etiqueta: null, tokensEntrada: 0, tokensSalida: 0 });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  const conversaciones = await db('conversaciones_whatsapp')
+    .where('phone_number_id', PHONE_NUMBER_ID)
+    .pluck('id');
+  await db('solicitudes_atencion_humana')
+    .whereIn('conversacion_id', conversaciones)
+    .whereIn('estado', ['pendiente', 'enviando', 'fallida_reintentable'])
+    .del();
+  await db('conversaciones_whatsapp')
+    .whereIn('id', conversaciones)
+    .whereNot('estado', 'cerrada')
+    .update({ estado: 'cerrada', cerrado_en: db.fn.now() });
   jest.restoreAllMocks();
 });
 
@@ -87,6 +103,7 @@ afterAll(async () => {
   await db('grupos_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('outbox_whatsapp').whereIn('conversacion_id', conversacionIds).del();
   await db('consentimiento_lfpdppp').where('telefono', 'like', '5255008800%').del();
+  await db('control_envios_aviso_privacidad').where('telefono', 'like', '52550088%').del();
   await db('conversaciones_whatsapp').where('phone_number_id', PHONE_NUMBER_ID).del();
   await db.destroy();
 });
@@ -275,7 +292,7 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
     });
   });
 
-  it('un segundo mensaje mientras está pendiente reenvía el aviso completo de nuevo (el tutor pudo haberlo borrado o ignorado)', async () => {
+  it('espacia los reenvios pendientes y vuelve a enviar al pasar dos minutos', async () => {
     const telefono = '5215500880011';
     await postTexto(`${WAMID_PREFIX}pendiente-1`, telefono, 'hola');
     expect(global.fetch).toHaveBeenCalledTimes(2);
@@ -283,20 +300,21 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
     const res = await postTexto(`${WAMID_PREFIX}pendiente-2`, telefono, 'sigo esperando');
 
     expect(res.status).toBe(200);
-    // Se reenvía completo con una clave propia (ligada al mensaje de espera
-    // actual, no al original) — pedido explícito del usuario, 2026-09-21:
-    // mejor insistir que dejarlo varado en silencio si borró o ignoró el
-    // aviso anterior.
-    expect(global.fetch).toHaveBeenCalledTimes(4);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    await db('control_envios_aviso_privacidad')
+      .where({ telefono: '525500880011' })
+      .update({ ultimo_intento_en: db.raw("now() - interval '2 minutes'") });
+    await postTexto(`${WAMID_PREFIX}pendiente-3`, telefono, 'sigo esperando');
+    expect(global.fetch).toHaveBeenCalledTimes(3); // reutiliza el PDF vigente
     const intentoReenviado = await db('outbox_whatsapp')
-      .where({ clave_idempotencia: `mensaje:${WAMID_PREFIX}pendiente-2:lfpdppp_aviso` })
+      .where({ clave_idempotencia: `mensaje:${WAMID_PREFIX}pendiente-3:lfpdppp_aviso` })
       .first();
     expect(intentoReenviado).toMatchObject({ estado: 'enviado' });
     const mensaje = await ultimoMensaje(`${WAMID_PREFIX}pendiente-2`);
     expect(mensaje.estado_procesamiento).toBe('ignorado_lfpdppp_pendiente');
   });
 
-  it('si el envío original nunca llegó a Meta (falla al subir el PDF), el siguiente mensaje reenvía y sí llega', async () => {
+  it('si falla la subida, pasa a recepcion y un retorno explicito al bot puede recuperar el envio', async () => {
     const telefono = '5215500880099';
     let primeraSubidaFalla = true;
     global.fetch = jest.fn().mockImplementation(async (url) => {
@@ -331,13 +349,42 @@ describe('LFPDPPP — gate de consentimiento (feature activa)', () => {
       .first();
     expect(sinRastro).toBeUndefined();
 
-    const res2 = await postTexto(`${WAMID_PREFIX}reintento-2`, telefono, 'sigo esperando');
+    const [conversacion] = await buscarConversacion('525500880099');
+    const solicitud = await db('solicitudes_atencion_humana')
+      .where({ conversacion_id: conversacion.id })
+      .first();
+    expect(solicitud).toMatchObject({ origen: 'recepcion', estado: 'pendiente' });
+    expect(conversacion.procesar_despues_de).toBeNull();
+    expect(await atencionHumanaService.procesarSiguienteSolicitudPendiente()).toMatchObject({
+      id: solicitud.id,
+      resultado: 'enviada',
+    });
+    const llamadasAntes = global.fetch.mock.calls.length;
+    await postTexto(`${WAMID_PREFIX}reintento-espera`, telefono, 'sigo esperando');
+    await postTexto(`${WAMID_PREFIX}reintento-menu-temprano`, telefono, 'menú');
+    expect(global.fetch).toHaveBeenCalledTimes(llamadasAntes);
+    expect(
+      await db('conversaciones_whatsapp').where({ id: conversacion.id }).first(),
+    ).toMatchObject({ estado: 'atencion_humana' });
+    expect(await ultimoRegistroConsentimiento('525500880099')).toMatchObject({ acepto: null });
+
+    await db('control_envios_aviso_privacidad')
+      .where({ telefono: '525500880099' })
+      .update({ ultimo_intento_en: db.raw("now() - interval '2 minutes'") });
+    const res2 = await postTexto(`${WAMID_PREFIX}reintento-2`, telefono, 'menú');
     expect(res2.status).toBe(200);
 
     const intentoReintentado = await db('outbox_whatsapp')
       .where({ clave_idempotencia: `mensaje:${WAMID_PREFIX}reintento-2:lfpdppp_aviso` })
       .first();
     expect(intentoReintentado).toMatchObject({ estado: 'enviado' });
+    await postBoton(
+      `${WAMID_PREFIX}reintento-acepto`,
+      telefono,
+      'lfpdppp_acepto',
+      'Estoy de acuerdo',
+    );
+    expect(await ultimoRegistroConsentimiento('525500880099')).toMatchObject({ acepto: true });
   });
 
   it('al aceptar el aviso, se resuelve la fila y los mensajes posteriores fluyen normal', async () => {
@@ -825,8 +872,10 @@ describe('LFPDPPP — el media_id se cachea y no se resube en cada solicitud', (
   });
 
   it('dos teléfonos nuevos distintos disparan una sola subida a Meta, no dos', async () => {
-    await postTexto(`${WAMID_PREFIX}cache-tel1`, '5215500880030', 'hola');
-    await postTexto(`${WAMID_PREFIX}cache-tel2`, '5215500880031', 'hola');
+    await Promise.all([
+      postTexto(`${WAMID_PREFIX}cache-tel1`, '5215500880030', 'hola'),
+      postTexto(`${WAMID_PREFIX}cache-tel2`, '5215500880031', 'hola'),
+    ]);
 
     const llamadasAMedia = global.fetch.mock.calls.filter(([url]) =>
       String(url).includes('/fake/media'),
@@ -837,6 +886,249 @@ describe('LFPDPPP — el media_id se cachea y no se resube en cada solicitud', (
       .where({ nombre_archivo: NOMBRE_ARCHIVO })
       .first();
     expect(fila.media_id).toMatch(/^media-fake-\d+$/);
+    expect(fila.media_subido_en).toBeTruthy();
+  });
+
+  async function guardarMedia(mediaId, fecha = new Date()) {
+    await db('aviso_privacidad_versiones').where({ version: 'v-cache-test' }).update({
+      media_id: mediaId,
+      media_subido_en: fecha,
+    });
+  }
+
+  function llamadasMedia() {
+    return global.fetch.mock.calls.filter(([url]) => String(url).includes('/fake/media'));
+  }
+
+  it('renueva el identificador heredado sin fecha, sin cambiar la version ni el consentimiento', async () => {
+    await guardarMedia('1041675918893389', null);
+    await db('consentimiento_lfpdppp').insert({
+      telefono: '525500880039',
+      acepto: true,
+      canal: 'whatsapp',
+      version_aviso: 'v-cache-test',
+    });
+    const antes = await db('aviso_privacidad_versiones').where({ version: 'v-cache-test' }).first();
+    await postTexto(`${WAMID_PREFIX}legacy-media`, '5215500880032', 'hola');
+    expect(llamadasMedia()).toHaveLength(1);
+    const despues = await db('aviso_privacidad_versiones').where({ id: antes.id }).first();
+    expect(despues.media_id).not.toBe(antes.media_id);
+    expect(despues).toMatchObject({
+      version: antes.version,
+      nombre_archivo: antes.nombre_archivo,
+      requiere_reconsentimiento: antes.requiere_reconsentimiento,
+      creado_en: antes.creado_en,
+    });
+    expect(await ultimoRegistroConsentimiento('525500880039')).toMatchObject({ acepto: true });
+  });
+
+  it('renueva un medio antiguo una sola vez ante solicitudes concurrentes', async () => {
+    await guardarMedia('media-antiguo', new Date(Date.now() - 30 * 86400_000));
+    const respuestas = await Promise.all([
+      postTexto(`${WAMID_PREFIX}expired-1`, '5215500880032', 'hola'),
+      postTexto(`${WAMID_PREFIX}expired-2`, '5215500880033', 'hola'),
+    ]);
+    expect(respuestas.every((r) => r.status === 200)).toBe(true);
+    expect(llamadasMedia()).toHaveLength(1);
+  });
+
+  it('un identificador vigente se reutiliza sin subirlo de nuevo', async () => {
+    await guardarMedia('media-vigente');
+    await postTexto(`${WAMID_PREFIX}fresh-media`, '5215500880032', 'hola');
+    expect(llamadasMedia()).toHaveLength(0);
+    const cuerpo = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(cuerpo.interactive.header.document.id).toBe('media-vigente');
+  });
+
+  function rechazarInteractivos(mensaje, soloAntiguo = false) {
+    const fetchExitoso = global.fetch;
+    global.fetch = jest.fn(async (url, options) => {
+      if (!String(url).includes('/fake/media')) {
+        const body = JSON.parse(options.body);
+        if (
+          body.type === 'interactive' &&
+          (!soloAntiguo || body.interactive.header.document.id === 'media-invalido')
+        ) {
+          return {
+            ok: false,
+            status: 400,
+            json: async () => ({
+              error: {
+                code: 100,
+                error_subcode: 33,
+                fbtrace_id: 'trace-de-prueba',
+                message: mensaje,
+              },
+            }),
+          };
+        }
+      }
+      return fetchExitoso(url, options);
+    });
+  }
+
+  const ERROR_MEDIA =
+    'Param interactive.header.document.id is not a valid whatsapp business account media attachment ID';
+
+  it('recupera un rechazo explicito con una subida y un nuevo intento, sin texto de error', async () => {
+    await guardarMedia('media-invalido');
+    rechazarInteractivos(ERROR_MEDIA, true);
+    const res = await postTexto(`${WAMID_PREFIX}repair-media`, '5215500880032', 'hola');
+    expect(res.status).toBe(200);
+    expect(llamadasMedia()).toHaveLength(1);
+    const intentos = await db('outbox_whatsapp')
+      .where('clave_idempotencia', 'like', `mensaje:${WAMID_PREFIX}repair-media:%`)
+      .orderBy('intent_id');
+    expect(intentos).toHaveLength(2);
+    expect(intentos[0]).toMatchObject({ estado: 'fallido', ultimo_error: ERROR_MEDIA });
+    expect(intentos[0].payload_funcional.interactive.header.document.id).toBe('media-invalido');
+    expect(intentos[1]).toMatchObject({
+      estado: 'enviado',
+      clave_idempotencia: `mensaje:${WAMID_PREFIX}repair-media:lfpdppp_aviso:media_renovado`,
+    });
+    expect(intentos[1].payload_funcional.interactive.header.document.id).not.toBe('media-invalido');
+  });
+
+  it('limita la recuperacion a un intento si el nuevo medio tambien es rechazado', async () => {
+    await guardarMedia('media-invalido');
+    rechazarInteractivos(ERROR_MEDIA);
+    await postTexto(`${WAMID_PREFIX}repair-fails`, '5215500880032', 'hola');
+    expect(await atencionHumanaService.procesarSiguienteSolicitudPendiente()).toMatchObject({
+      resultado: 'enviada',
+    });
+    expect(llamadasMedia()).toHaveLength(1);
+    const bodies = global.fetch.mock.calls
+      .filter(([u]) => !String(u).includes('/fake/media'))
+      .map(([, o]) => JSON.parse(o.body));
+    expect(bodies.map((b) => b.type)).toEqual(['interactive', 'interactive', 'text']);
+  });
+
+  it('dos rechazos concurrentes del mismo medio solo producen una subida de recuperacion', async () => {
+    await guardarMedia('media-invalido');
+    rechazarInteractivos(ERROR_MEDIA, true);
+    const fetchConRechazo = global.fetch;
+    let rechazos = 0;
+    const ambos = Promise.withResolvers();
+    global.fetch = jest.fn(async (url, options) => {
+      if (
+        !String(url).includes('/fake/media') &&
+        JSON.parse(options.body).interactive?.header?.document?.id === 'media-invalido'
+      ) {
+        rechazos += 1;
+        if (rechazos === 2) ambos.resolve();
+        await ambos.promise;
+      }
+      return fetchConRechazo(url, options);
+    });
+    const respuestas = await Promise.all([
+      postTexto(`${WAMID_PREFIX}repair-concurrent-1`, '5215500880032', 'hola'),
+      postTexto(`${WAMID_PREFIX}repair-concurrent-2`, '5215500880033', 'hola'),
+    ]);
+    expect(respuestas.every((r) => r.status === 200)).toBe(true);
+    expect(llamadasMedia()).toHaveLength(1);
+    const reparados = await db('outbox_whatsapp').where(
+      'clave_idempotencia',
+      'like',
+      `mensaje:${WAMID_PREFIX}repair-concurrent-%:media_renovado`,
+    );
+    expect(reparados).toHaveLength(2);
+    expect(reparados.every((i) => i.estado === 'enviado')).toBe(true);
+  });
+
+  it('tambien recupera el documento informativo sin pedir un consentimiento nuevo', async () => {
+    await postTexto(`${WAMID_PREFIX}info-repair-base`, '5215500880032', 'hola');
+    const [conversacion] = await buscarConversacion('525500880032');
+    const consentimientoAntes = await ultimoRegistroConsentimiento('525500880032');
+    await guardarMedia('media-invalido');
+    const fetchExitoso = global.fetch;
+    global.fetch = jest.fn(async (url, options) => {
+      if (!String(url).includes('/fake/media')) {
+        const body = JSON.parse(options.body);
+        if (body.document?.id === 'media-invalido') {
+          return {
+            ok: false,
+            status: 400,
+            json: async () => ({ error: { code: 100, message: ERROR_MEDIA } }),
+          };
+        }
+      }
+      return fetchExitoso(url, options);
+    });
+    const service = require('../../src/modules/whatsapp/whatsapp.consentimiento.service');
+    const resultado = await service.enviarAvisoInformativo({
+      conversacionId: conversacion.id,
+      telefono: '525500880032',
+      claveIdempotenciaBase: `mensaje:${WAMID_PREFIX}info-repair`,
+    });
+    expect(resultado.enviado).toBe(true);
+    expect(llamadasMedia()).toHaveLength(1);
+    expect(await ultimoRegistroConsentimiento('525500880032')).toEqual(consentimientoAntes);
+  });
+
+  it('un error generico pasa a recepcion una sola vez y mantiene la atencion ante mas mensajes', async () => {
+    await guardarMedia('media-vigente');
+    rechazarInteractivos('(#131000) Something went wrong');
+    await postTexto(`${WAMID_PREFIX}burst-0`, '5215500880032', 'hola');
+    const [conversacion] = await buscarConversacion('525500880032');
+    await db('control_envios_aviso_privacidad')
+      .where({ telefono: '525500880032' })
+      .update({ ultimo_intento_en: db.raw("now() - interval '3 minutes'") });
+    await postTexto(`${WAMID_PREFIX}burst-1`, '5215500880032', 'necesito ayuda');
+    await Promise.all([
+      postTexto(`${WAMID_PREFIX}burst-2`, '5215500880032', 'por favor'),
+      postTexto(`${WAMID_PREFIX}burst-3`, '5215500880032', 'sigo esperando'),
+    ]);
+    expect(llamadasMedia()).toHaveLength(0);
+    expect(global.fetch).toHaveBeenCalledTimes(1); // PDF fallido; transferencia en cola
+    const solicitudes = await db('solicitudes_atencion_humana').where({
+      conversacion_id: conversacion.id,
+    });
+    expect(solicitudes).toHaveLength(1);
+    expect(solicitudes[0]).toMatchObject({ origen: 'recepcion', estado: 'pendiente' });
+    const alertas = await db('alertas_atencion_whatsapp').where({
+      conversacion_id: conversacion.id,
+    });
+    expect(alertas).toHaveLength(1);
+    expect(alertas[0]).toMatchObject({
+      tipo_alerta: 'recepcion',
+      origen: 'aviso_privacidad_envio_fallido',
+    });
+    expect(await atencionHumanaService.procesarSiguienteSolicitudPendiente()).toMatchObject({
+      id: solicitudes[0].id,
+      resultado: 'enviada',
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const aviso = JSON.parse(global.fetch.mock.calls[1][1].body);
+    expect(aviso.text.body).toContain('Recepción continuará con tu atención');
+    expect(aviso.text.body).not.toContain('Vuelve a escribirnos');
+    const actualizada = await db('conversaciones_whatsapp').where({ id: conversacion.id }).first();
+    expect(actualizada.estado).toBe('atencion_humana');
+    await postTexto(`${WAMID_PREFIX}burst-4`, '5215500880032', 'necesito hablar con alguien');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(await ultimoRegistroConsentimiento('525500880032')).toMatchObject({ acepto: null });
+    expect(claude.clasificarMensaje).not.toHaveBeenCalled();
+    const mensajes = await db('mensajes_whatsapp').where(
+      'whatsapp_message_id',
+      'like',
+      `${WAMID_PREFIX}burst-%`,
+    );
+    expect(mensajes).toHaveLength(5);
+    expect(
+      mensajes.filter((m) => m.estado_procesamiento === 'ignorado_lfpdppp_pendiente'),
+    ).toHaveLength(1);
+    expect(
+      mensajes.filter((m) => m.estado_procesamiento === 'ignorado_atencion_humana'),
+    ).toHaveLength(4);
+  });
+
+  it('la reserva atomica solo permite un ganador para mensajes simultaneos', async () => {
+    const consentimiento = require('../../src/modules/whatsapp/whatsapp.consentimiento.repository');
+    const resultados = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        consentimiento.reclamarEnvioAviso('525500880032', 'v-cache-test'),
+      ),
+    );
+    expect(resultados.filter(Boolean)).toHaveLength(1);
   });
 });
 
@@ -934,11 +1226,9 @@ describe('LFPDPPP — "Ver aviso de privacidad" en el menú principal', () => {
       );
 
       expect(res.status).toBe(200);
-      // 1 llamada para subir el PDF a Meta + 1 para mandar el documento.
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-      const [urlMedia] = global.fetch.mock.calls[0];
-      expect(urlMedia).toContain('/fake/media');
-      const [, opcionesDocumento] = global.fetch.mock.calls[1];
+      // La consulta informativa reutiliza el medio subido al pedir consentimiento.
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      const [, opcionesDocumento] = global.fetch.mock.calls[0];
       const cuerpoEnviado = JSON.parse(opcionesDocumento.body);
       expect(cuerpoEnviado.type).toBe('document');
       expect(cuerpoEnviado.document).toMatchObject({

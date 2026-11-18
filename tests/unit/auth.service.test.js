@@ -33,6 +33,8 @@ describe('auth.service.login', () => {
       bloqueado_en: null,
       nombre: 'Jane',
       apellidos: 'Doe',
+      doctor_id: null,
+      avatar: 'icon_hospvet',
       ...overrides,
     };
   }
@@ -53,6 +55,8 @@ describe('auth.service.login', () => {
       username: 'jdoe',
       nombre: 'Jane',
       apellidos: 'Doe',
+      doctorId: null,
+      avatar: 'icon_hospvet',
       permissions: ['agenda.ver', 'laboratorio.ver'],
     });
     expect(repository.resetIntentosYLogin).toHaveBeenCalledWith(1);
@@ -181,7 +185,9 @@ describe('auth.service.login', () => {
 
   describe('US-605: estatus=cambio_pwd (login con contraseña temporal)', () => {
     it('temporal correcta -> sesión restringida (mustChangePassword:true, permissions:[]), sin llamar getPermissionCodes ni resetIntentosYLogin', async () => {
-      repository.findByUsername.mockResolvedValue(makeUser({ estatus: 'cambio_pwd' }));
+      repository.findByUsername.mockResolvedValue(
+        makeUser({ estatus: 'cambio_pwd', avatar: 'icon_cat', doctor_id: 42 }),
+      );
       repository.resetIntentosCambioPwd.mockResolvedValue();
 
       const result = await login('jdoe', PASSWORD);
@@ -191,6 +197,8 @@ describe('auth.service.login', () => {
         username: 'jdoe',
         nombre: 'Jane',
         apellidos: 'Doe',
+        doctorId: 42,
+        avatar: 'icon_cat',
         permissions: [],
         mustChangePassword: true,
       });

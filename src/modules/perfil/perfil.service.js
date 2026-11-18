@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const repository = require('./perfil.repository');
 const { assertPasswordValida } = require('../../config/passwordPolicy');
+const { AVATARES_VALIDOS, resolverAvatar } = require('../../config/avatares');
 
 class PerfilValidationError extends Error {
   constructor(message) {
@@ -67,8 +68,6 @@ function validateTelefono(rawTelefono) {
   }
   return stripTelefono(telefono);
 }
-
-const AVATARES_VALIDOS = ['icon_hospvet', 'icon_cat', 'icon_dog', 'img_doctor', 'img_doctora'];
 
 function validateAvatar(rawAvatar) {
   const avatar = (rawAvatar ?? '').trim();
@@ -219,6 +218,7 @@ async function obtener(usuarioId) {
 
   return {
     ...perfil,
+    avatar: resolverAvatar(perfil.avatar),
     telefono: formatTelefono(perfil.telefono),
     doctor,
     areasDoctor,

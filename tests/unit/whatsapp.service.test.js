@@ -1394,28 +1394,34 @@ describe('whatsapp.service.enviarPasoLaboratorio — adjuntar resultados (US WA 
     expect(laboratorioService.reenviarResultadosPorWhatsapp).toHaveBeenCalled();
   });
 
-  it('si el adjunto falla, cae al texto genérico de estado (el tutor nunca se queda sin respuesta)', async () => {
-    laboratorioService.reenviarResultadosPorWhatsapp.mockResolvedValue({
-      ok: false,
-      error: 'Meta rechazó el envío.',
-    });
-    outbox.registrarIntento.mockImplementation((datos) =>
-      Promise.resolve({ intent: { clave_idempotencia: datos.claveIdempotencia }, esNuevo: true }),
-    );
-    outbox.ejecutarIntento.mockResolvedValue({ enviado: true, wamid: 'wamid.x' });
+  it.each(['cargado', 'enviado'])(
+    'si falla el adjunto con estado %s, informa el fallo sin afirmar un envío anterior',
+    async (estadoOrden) => {
+      laboratorioService.reenviarResultadosPorWhatsapp.mockResolvedValue({
+        ok: false,
+        error: 'Meta rechazó el envío.',
+      });
+      outbox.registrarIntento.mockImplementation((datos) =>
+        Promise.resolve({ intent: { clave_idempotencia: datos.claveIdempotencia }, esNuevo: true }),
+      );
+      outbox.ejecutarIntento.mockResolvedValue({ enviado: true, wamid: 'wamid.x' });
 
-    const resultado = await enviarPasoLaboratorio({
-      conversacionId: CONVERSACION_ID,
-      telefono: '525512345678',
-      mensajeId: 321,
-      labAccion: 'exito',
-      labDatos: { folioId: 5, estadoOrden: 'cargado' },
-    });
+      const resultado = await enviarPasoLaboratorio({
+        conversacionId: CONVERSACION_ID,
+        telefono: '525512345678',
+        mensajeId: 321,
+        labAccion: 'exito',
+        labDatos: { folioId: 5, estadoOrden },
+      });
 
-    expect(resultado).toEqual({ enviado: true, wamid: 'wamid.x' });
-    const [datosTexto] = outbox.registrarIntento.mock.calls[0];
-    expect(datosTexto.payloadFuncional.tipo).toBe('text');
-  });
+      expect(resultado).toEqual({ enviado: true, wamid: 'wamid.x' });
+      const [datosTexto] = outbox.registrarIntento.mock.calls[0];
+      expect(datosTexto.payloadFuncional.tipo).toBe('text');
+      expect(datosTexto.payloadFuncional.texto).toContain('No pudimos adjuntar');
+      expect(datosTexto.payloadFuncional.texto).toContain('recepción');
+      expect(datosTexto.payloadFuncional.texto).not.toContain('ya fueron enviados');
+    },
+  );
 
   it('con estadoOrden "pendiente" nunca intenta adjuntar (no hay archivos que enviar)', async () => {
     outbox.registrarIntento.mockImplementation((datos) =>

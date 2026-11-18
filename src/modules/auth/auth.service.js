@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const repository = require('./auth.repository');
 const { assertPasswordValida } = require('../../config/passwordPolicy');
+const { resolverAvatar } = require('../../config/avatares');
 
 class InvalidCredentialsError extends Error {
   constructor() {
@@ -76,6 +77,8 @@ async function login(username, password) {
       username: user.username,
       nombre: user.nombre,
       apellidos: user.apellidos,
+      doctorId: user.doctor_id,
+      avatar: resolverAvatar(user.avatar),
       permissions: [],
       mustChangePassword: true,
     };
@@ -97,7 +100,7 @@ async function login(username, password) {
     nombre: user.nombre,
     apellidos: user.apellidos,
     doctorId: user.doctor_id,
-    avatar: user.avatar,
+    avatar: resolverAvatar(user.avatar),
     permissions,
   };
 }

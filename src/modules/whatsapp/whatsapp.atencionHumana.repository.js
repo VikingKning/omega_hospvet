@@ -399,6 +399,16 @@ async function tieneSolicitudPorConsentimiento(conversacionId, trx) {
   return Boolean(fila);
 }
 
+async function tieneSolicitudPorFalloAviso(conversacionId, trx) {
+  const conexion = trx ?? db;
+  return Boolean(
+    await conexion('solicitudes_atencion_humana')
+      .where({ conversacion_id: conversacionId, origen: 'recepcion' })
+      .whereRaw("referencias_funcionales->>'motivo' = ?", ['aviso_privacidad_envio_fallido'])
+      .first('id'),
+  );
+}
+
 module.exports = {
   solicitarAtencionHumana,
   reclamarSolicitudPendiente,
@@ -412,5 +422,6 @@ module.exports = {
   cerrarPorVencimientoYCrearNueva,
   registrarEchoManual,
   tieneSolicitudPorConsentimiento,
+  tieneSolicitudPorFalloAviso,
   ESTADOS_QUE_PERMITEN_ATENCION_HUMANA,
 };

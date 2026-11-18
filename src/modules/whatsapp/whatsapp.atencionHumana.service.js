@@ -16,6 +16,9 @@ const TEXTO_TRANSFERENCIA_POR_TIPO = {
   agenda_estetica_sin_enlace:
     'En este momento no podemos mostrar el enlace de reservación para Estética. ' +
     'Recepción continuará con tu atención.',
+  aviso_privacidad_envio_fallido:
+    'En este momento no pudimos enviarte el aviso de privacidad. ' +
+    'Recepción continuará con tu atención mientras resolvemos el envío del documento.',
 };
 
 const ORIGENES_VALIDOS = ['emergencia', 'recepcion', 'consentimiento'];

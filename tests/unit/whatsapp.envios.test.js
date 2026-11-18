@@ -1,15 +1,13 @@
-// whatsapp.envios.js: envío PROACTIVO de WhatsApp (resultados de
-// laboratorio) — subir el archivo real (subirMedia) y mandar la plantilla
-// 'resultados_laboratorio_listos' referenciándolo (enviarPlantillaResultados).
-// A diferencia de whatsapp.service.js (mensajes ENTRANTES), acá SÍ debe
-// lanzar cuando Meta responde con un error — laboratorio.envios.js es
-// quien decide "nunca lanzar hacia arriba" (ver ese test file).
+// Envíos de laboratorio: subida de archivos, plantilla fuera de ventana y
+// documentos/imágenes dentro de la ventana de atención. Meta se simula;
+// los rechazos llegan al servicio de laboratorio como errores con diagnóstico.
 const whatsappConfig = require('../../src/config/whatsapp');
 jest.mock('../../src/modules/whatsapp/whatsapp.repository');
 const repository = require('../../src/modules/whatsapp/whatsapp.repository');
 const {
   subirMedia,
   enviarPlantillaResultados,
+  enviarResultadoLaboratorio,
 } = require('../../src/modules/whatsapp/whatsapp.envios');
 
 const originalFetch = global.fetch;
@@ -32,13 +30,18 @@ beforeEach(() => {
   jest.spyOn(whatsappConfig, 'authHeaders').mockReturnValue({ Authorization: 'Bearer fake' });
 
   intents = new Map();
+  repository.buscarVentanaServicioCliente.mockResolvedValue(null);
   repository.registrarIntentoEnvio.mockImplementation(async (datos) => {
+    if (intents.has(datos.claveIdempotencia)) {
+      return { intent: intents.get(datos.claveIdempotencia), esNuevo: false };
+    }
     // Shape en snake_case, igual que una fila real de outbox_whatsapp —
     // whatsapp.outbox.js lee intent.payload_funcional/intent.tipo_envio/etc.
     const intent = {
       intent_id: intents.size + 1,
       clave_idempotencia: datos.claveIdempotencia,
       tipo_envio: datos.tipoEnvio,
+      origen_funcional: datos.origenFuncional,
       conversacion_id: datos.conversacionId ?? null,
       destinatario_telefono: datos.destinatarioTelefono,
       payload_funcional: datos.payloadFuncional,
@@ -99,6 +102,33 @@ describe('whatsapp.envios.subirMedia', () => {
     await expect(subirMedia(Buffer.from('x'), 'application/pdf', 'resultados.pdf')).rejects.toThrow(
       /HTTP 200/,
     );
+  });
+
+  it('conserva codigo, subcodigo y estado HTTP cuando falla la subida', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          code: 100,
+          error_subcode: 33,
+          fbtrace_id: 'trace-de-prueba',
+          message: 'Archivo invalido',
+          error_data: { details: 'No se pudo procesar el archivo' },
+        },
+      }),
+    });
+    await expect(
+      subirMedia(Buffer.from('x'), 'application/pdf', 'aviso.pdf'),
+    ).rejects.toMatchObject({
+      diagnosticoMeta: {
+        codigo: 100,
+        subcodigo: 33,
+        httpStatus: 400,
+        referenciaMeta: 'trace-de-prueba',
+        detalle: 'No se pudo procesar el archivo',
+      },
+    });
   });
 });
 
@@ -186,5 +216,133 @@ describe('whatsapp.envios.enviarPlantillaResultados', () => {
         errorMensaje: 'La plantilla no está aprobada todavía.',
       }),
     );
+  });
+});
+
+describe('enviarResultadoLaboratorio: ventana real del cliente', () => {
+  const datos = {
+    telefono: '5512345678',
+    nombreTutor: 'Ana',
+    nombreMascota: 'Firulais',
+    folio: '005',
+    calendarUrl: 'https://example.com/citas',
+    mapsUrl: 'https://example.com/mapa',
+    saludo: 'tarde',
+    mediaId: 'media-123',
+    nombreArchivo: 'Resultado_Omega_01.pdf',
+    claveIdempotencia: 'laboratorio:ventana:1',
+  };
+  beforeEach(() => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [{ id: 'wamid.lab' }] }),
+    });
+  });
+
+  it.each(['5512345678', '+52 55 1234 5678', '5215512345678'])(
+    'envía documento sin plantilla dentro de 24 horas y normaliza %s',
+    async (telefono) => {
+      repository.buscarVentanaServicioCliente.mockResolvedValue({ conversacionId: 9 });
+      await enviarResultadoLaboratorio({ ...datos, telefono });
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body).toEqual({
+        messaging_product: 'whatsapp',
+        to: '525512345678',
+        type: 'document',
+        document: {
+          id: datos.mediaId,
+          filename: datos.nombreArchivo,
+          caption: 'Resultados de laboratorio de Firulais. Folio 005.',
+        },
+      });
+      expect(repository.buscarVentanaServicioCliente).toHaveBeenLastCalledWith('525512345678', 9);
+      expect(repository.estaVentanaServicioVencida).not.toHaveBeenCalled();
+      expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          plantilla: 'documento_resultados_laboratorio',
+          exitoso: true,
+        }),
+      );
+    },
+  );
+
+  it('sin mensaje entrante reciente conserva la plantilla v2 y es_MX', async () => {
+    await enviarResultadoLaboratorio(datos);
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body.type).toBe('template');
+    expect(body.template.name).toBe('resultados_laboratorio_listos_v2');
+    expect(body.template.language.code).toBe('es_MX');
+  });
+
+  it.each(['image/jpeg', 'image/png'])(
+    'envía %s como imagen, sin campos de documento',
+    async (mimetype) => {
+      repository.buscarVentanaServicioCliente.mockResolvedValue({ conversacionId: 9 });
+      await enviarResultadoLaboratorio({ ...datos, mimetype });
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
+        messaging_product: 'whatsapp',
+        to: '525512345678',
+        type: 'image',
+        image: { id: 'media-123', caption: 'Resultados de laboratorio de Firulais. Folio 005.' },
+      });
+      expect(repository.buscarVentanaServicioCliente).toHaveBeenLastCalledWith('525512345678', 9);
+      expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          plantilla: 'imagen_resultados_laboratorio',
+          exitoso: true,
+        }),
+      );
+    },
+  );
+
+  it('no cambia automáticamente de medio tras un fallo de red con resultado incierto', async () => {
+    repository.buscarVentanaServicioCliente.mockResolvedValue({ conversacionId: 9 });
+    global.fetch.mockRejectedValue(new Error('Timeout'));
+    await expect(enviarResultadoLaboratorio(datos)).rejects.toThrow('Timeout');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(intents.size).toBe(1);
+    expect(repository.registrarEnvioWhatsapp).toHaveBeenCalledWith(
+      expect.objectContaining({ exitoso: false }),
+    );
+  });
+
+  it('si vence mientras se prepara no envía documentos ni cambia a plantilla automáticamente', async () => {
+    repository.buscarVentanaServicioCliente
+      .mockResolvedValueOnce({ conversacionId: 9 })
+      .mockResolvedValueOnce(null);
+    await expect(enviarResultadoLaboratorio(datos)).rejects.toMatchObject({
+      errorCodigo: 'ventana_servicio_expirada',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(repository.marcarResultadoEnvio).toHaveBeenCalledWith(1, {
+      estado: 'ventana_servicio_expirada',
+    });
+  });
+
+  it('repetir la misma intención no duplica el documento, aunque después venza la ventana', async () => {
+    repository.buscarVentanaServicioCliente.mockResolvedValue({ conversacionId: 9 });
+    await enviarResultadoLaboratorio(datos);
+    repository.buscarVentanaServicioCliente.mockResolvedValue(null);
+    await enviarResultadoLaboratorio(datos);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(intents.size).toBe(1);
+  });
+
+  it('conserva el código y la referencia de Meta en el rechazo 132001', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          code: 132001,
+          fbtrace_id: 'trace-lab',
+          message: 'Template name does not exist in the translation',
+        },
+      }),
+    });
+    await expect(enviarResultadoLaboratorio(datos)).rejects.toMatchObject({
+      errorCodigo: '132001',
+      diagnosticoMeta: { codigo: 132001, httpStatus: 400, referenciaMeta: 'trace-lab' },
+    });
   });
 });

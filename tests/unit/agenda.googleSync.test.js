@@ -3,6 +3,7 @@
 // criterio que el resto de los tests unitarios del proyecto).
 jest.mock('../../src/modules/agenda/agenda.repository');
 jest.mock('../../src/modules/agenda/agenda.reservasExternas');
+jest.mock('../../src/modules/doctores/doctores.repository');
 jest.mock('../../src/config/googleCalendar');
 jest.mock('../../src/config/env', () => ({
   ...jest.requireActual('../../src/config/env'),
@@ -13,6 +14,8 @@ const repository = require('../../src/modules/agenda/agenda.repository');
 const { importarReserva } = require('../../src/modules/agenda/agenda.reservasExternas');
 const { getCalendarClient, isGoogleSyncConfigured } = require('../../src/config/googleCalendar');
 const { pushCita, sincronizar } = require('../../src/modules/agenda/agenda.googleSync');
+const agendaService = require('../../src/modules/agenda/agenda.service');
+const doctoresRepository = require('../../src/modules/doctores/doctores.repository');
 
 const CITA_NUEVA = {
   id: 1,
@@ -32,6 +35,7 @@ function fakeCalendar() {
     events: {
       insert: jest.fn().mockResolvedValue({ data: { id: 'google-evt-1' } }),
       update: jest.fn().mockResolvedValue({}),
+      patch: jest.fn().mockResolvedValue({}),
       delete: jest.fn().mockResolvedValue({}),
       list: jest.fn().mockResolvedValue({ data: { items: [] } }),
     },
@@ -40,6 +44,138 @@ function fakeCalendar() {
     },
   };
 }
+
+// Simula el contrato de Google: PUT sustituye el recurso completo y PATCH
+// conserva los campos omitidos. No se envían invitaciones ni correos reales.
+function fakeCalendarConReserva(reservaOriginal) {
+  const calendar = fakeCalendar();
+  let reserva = structuredClone(reservaOriginal);
+  calendar.events.update.mockImplementation(async ({ requestBody }) => {
+    reserva = { id: reserva.id, ...structuredClone(requestBody) };
+    return { data: structuredClone(reserva) };
+  });
+  calendar.events.patch.mockImplementation(async ({ requestBody }) => {
+    reserva = {
+      ...reserva,
+      ...structuredClone(requestBody),
+      extendedProperties: {
+        ...reserva.extendedProperties,
+        ...requestBody.extendedProperties,
+        private: {
+          ...reserva.extendedProperties?.private,
+          ...requestBody.extendedProperties?.private,
+        },
+      },
+    };
+    return { data: structuredClone(reserva) };
+  });
+  return { calendar, leerReserva: () => structuredClone(reserva) };
+}
+
+describe('reservas de Google al completar tutor y mascota', () => {
+  const reservaOriginal = {
+    id: 'reserva-del-tutor',
+    status: 'confirmed',
+    summary: 'Citas Estetica Omega',
+    attendees: [{ email: 'tutor@example.test', responseStatus: 'accepted' }],
+    organizer: { email: 'clinica@example.test' },
+    location: 'Estética Omega',
+    reminders: { useDefault: false, overrides: [{ method: 'email', minutes: 60 }] },
+    attachments: [{ fileUrl: 'https://example.test/indicaciones.pdf' }],
+    conferenceData: { conferenceId: 'conferencia-existente' },
+    extendedProperties: {
+      private: { reservaOriginal: 'identificador-de-reserva' },
+      shared: { origen: 'pagina-de-reservas' },
+    },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    isGoogleSyncConfigured.mockReturnValue(true);
+  });
+
+  it('al actualizar o reagendar conserva al tutor y los datos ajenos a Omega en el mismo evento', async () => {
+    const { calendar, leerReserva } = fakeCalendarConReserva(reservaOriginal);
+    getCalendarClient.mockReturnValue(calendar);
+    repository.findByIdParaSync.mockResolvedValue({
+      ...CITA_NUEVA,
+      google_event_id: reservaOriginal.id,
+    });
+
+    await pushCita(1);
+
+    expect(leerReserva()).toEqual({
+      ...reservaOriginal,
+      summary: 'Nissa — LoAng, Jimmy',
+      description: CITA_NUEVA.motivo,
+      start: { dateTime: CITA_NUEVA.fecha_hora_inicio },
+      end: { dateTime: '2026-09-01T15:30:00.000Z' },
+      colorId: '7',
+      extendedProperties: {
+        ...reservaOriginal.extendedProperties,
+        private: { ...reservaOriginal.extendedProperties.private, citaId: '1' },
+      },
+    });
+    expect(calendar.events.update).not.toHaveBeenCalled();
+    expect(calendar.events.delete).not.toHaveBeenCalled();
+    expect(calendar.events.insert).not.toHaveBeenCalled();
+    expect(repository.marcarSincronizado).toHaveBeenCalledWith(1, reservaOriginal.id);
+  });
+
+  it('una pendiente sin tutor vinculado conserva la invitacion al asignar mascota y confirmar desde Recepcion', async () => {
+    const fechaFutura = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const cita = {
+      ...CITA_NUEVA,
+      fecha_hora_inicio: fechaFutura,
+      estado: 'registrada',
+      propietario_id: null,
+      mascota_id: null,
+      google_event_id: reservaOriginal.id,
+    };
+    const { calendar, leerReserva } = fakeCalendarConReserva(reservaOriginal);
+    getCalendarClient.mockReturnValue(calendar);
+    repository.findByIdParaSync.mockImplementation(async () =>
+      cita.mascota_id === null ? undefined : { ...cita },
+    );
+    repository.findById.mockImplementation(async () => ({ ...cita }));
+    doctoresRepository.findActivosByAreaId.mockResolvedValue([{ id: 10 }]);
+    repository.existeTraslape.mockResolvedValue(false);
+    repository.update.mockImplementation(async (_id, datos) => {
+      cita.mascota_id = datos.mascotaId;
+    });
+    repository.confirmar.mockImplementation(async () => {
+      cita.estado = 'confirmada';
+    });
+
+    await pushCita(cita.id);
+    expect(calendar.events.patch).not.toHaveBeenCalled();
+    expect(calendar.events.update).not.toHaveBeenCalled();
+
+    await agendaService.editar({
+      id: cita.id,
+      areaId: 2,
+      doctorId: 10,
+      mascotaId: 20,
+      fechaHoraInicio: fechaFutura,
+      duracionMinutos: 30,
+      motivo: cita.motivo,
+      usuarioId: 42,
+    });
+    await agendaService.confirmar(cita.id, 42);
+    // editar dispara el push en segundo plano; esperamos a que termine.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(cita.estado).toBe('confirmada');
+    expect(leerReserva().id).toBe(reservaOriginal.id);
+    expect(leerReserva().attendees).toEqual(reservaOriginal.attendees);
+    expect(leerReserva().status).toBe('confirmed');
+    expect(leerReserva().start.dateTime).toBe(fechaFutura);
+    expect(calendar.events.update).not.toHaveBeenCalled();
+    expect(calendar.events.delete).not.toHaveBeenCalled();
+    expect(calendar.events.insert).not.toHaveBeenCalled();
+    expect(repository.marcarSincronizado).toHaveBeenCalledWith(cita.id, reservaOriginal.id);
+  });
+});
 
 describe('agenda.googleSync.pushCita', () => {
   beforeEach(() => {
@@ -72,7 +208,7 @@ describe('agenda.googleSync.pushCita', () => {
     expect(repository.marcarSincronizado).toHaveBeenCalledWith(1, 'google-evt-1');
   });
 
-  it('una cita con google_event_id existente actualiza el evento (update)', async () => {
+  it('una cita con google_event_id existente actualiza el evento parcialmente (patch)', async () => {
     repository.findByIdParaSync.mockResolvedValue({
       ...CITA_NUEVA,
       google_event_id: 'evt-existente',
@@ -82,7 +218,7 @@ describe('agenda.googleSync.pushCita', () => {
 
     await pushCita(1);
 
-    expect(calendar.events.update).toHaveBeenCalledWith(
+    expect(calendar.events.patch).toHaveBeenCalledWith(
       expect.objectContaining({ calendarId: 'test-calendar-id', eventId: 'evt-existente' }),
     );
     expect(calendar.events.insert).not.toHaveBeenCalled();
@@ -100,12 +236,12 @@ describe('agenda.googleSync.pushCita', () => {
       google_event_id: 'evt-de-otro-calendario',
     });
     const calendar = fakeCalendar();
-    calendar.events.update.mockRejectedValue({ code: 404 });
+    calendar.events.patch.mockRejectedValue({ code: 404 });
     getCalendarClient.mockReturnValue(calendar);
 
     await pushCita(1);
 
-    expect(calendar.events.update).toHaveBeenCalledWith(
+    expect(calendar.events.patch).toHaveBeenCalledWith(
       expect.objectContaining({
         calendarId: 'test-calendar-id',
         eventId: 'evt-de-otro-calendario',
@@ -124,7 +260,7 @@ describe('agenda.googleSync.pushCita', () => {
       google_event_id: 'evt-existente',
     });
     const calendar = fakeCalendar();
-    calendar.events.update.mockRejectedValue(new Error('network down'));
+    calendar.events.patch.mockRejectedValue(new Error('network down'));
     getCalendarClient.mockReturnValue(calendar);
 
     await expect(pushCita(1)).resolves.toBeUndefined();

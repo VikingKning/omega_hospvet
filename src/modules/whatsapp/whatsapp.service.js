@@ -120,20 +120,23 @@ async function registrarEventoEntrante(evento) {
     if (
       !enviado.enviado &&
       enviado.motivo !== 'sin_configurar' &&
-      enviado.motivo !== 'funcion_deshabilitada'
+      enviado.motivo !== 'funcion_deshabilitada' &&
+      enviado.motivo !== 'aviso_en_espera' &&
+      enviado.motivo !== 'envio_en_progreso'
     ) {
-      await intentarEnvioMenu({
-        claveIdempotencia: `mensaje:${evento.whatsappMessageId}:lfpdppp_aviso:respaldo`,
-        tipoEnvio: 'conversacional',
-        origenFuncional: 'respuesta_automatica',
+      await atencionHumanaService.solicitarAtencionHumana({
+        claveIdempotencia: `aviso_privacidad_fallido:conversacion:${resultado.conversacionId}`,
+        origen: 'recepcion',
+        prioridad: 'normal',
+        origenAlerta: 'aviso_privacidad_envio_fallido',
+        tipoAviso: 'aviso_privacidad_envio_fallido',
         conversacionId: resultado.conversacionId,
         destinatarioTelefono: telefonoNormalizado,
-        payloadFuncional: {
-          tipo: 'text',
-          destinatarioTelefono: telefonoNormalizado,
-          texto: menu.textoAvisoPrivacidadEnvioFallido(TELEFONO_CLINICA),
+        referenciasFuncionales: {
+          motivo: 'aviso_privacidad_envio_fallido',
+          mensajeOrigenId: resultado.id,
+          whatsappMessageId: evento.whatsappMessageId,
         },
-        usaPlantilla: false,
       });
     }
   }
@@ -460,6 +463,8 @@ async function enviarMenuPrincipal({
 
   let enviado = resultadoMenu.enviado;
 
+  if (['cancelado', 'recepcion_prioritaria'].includes(resultadoMenu.motivo)) return false;
+
   if (!enviado) {
     logger.error(
       { conversacionId, errorCodigo: resultadoMenu.errorCodigo, error: resultadoMenu.error },
@@ -527,6 +532,7 @@ async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labA
     return { enviado: false, motivo: 'respuestas_automaticas_deshabilitadas' };
   }
   const claveBase = `mensaje:${mensajeId}:lab`;
+  let falloAdjuntarResultados = false;
 
   if (labAccion === 'iniciar' || labAccion === 'confirmacion_ambigua') {
     return intentarEnvioMenu({
@@ -552,6 +558,7 @@ async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labA
         claveIdempotenciaPrefijo: `${claveBase}:exito`,
       });
       if (resultado.ok) return resultado;
+      falloAdjuntarResultados = true;
       logger.warn(
         { conversacionId, mensajeId, folioId, error: resultado.error },
         'No se pudieron adjuntar los archivos de resultados de laboratorio por WhatsApp; se envía el texto de respaldo.',
@@ -564,9 +571,11 @@ async function enviarPasoLaboratorio({ conversacionId, telefono, mensajeId, labA
     telefono_no_coincide: laboratorioConsulta.textoTelefonoNoRegistrado(),
     rechazo: laboratorioConsulta.textoRechazoGenerico(),
     limite_intentos: laboratorioConsulta.textoLimiteIntentos(),
-    exito: labDatos
-      ? laboratorioConsulta.textoEstadoOrden(labDatos.folioId, labDatos.estadoOrden)
-      : null,
+    exito: falloAdjuntarResultados
+      ? 'No pudimos adjuntar tus resultados en este momento. Por favor, solicita apoyo de recepción.'
+      : labDatos
+        ? laboratorioConsulta.textoEstadoOrden(labDatos.folioId, labDatos.estadoOrden)
+        : null,
   };
   const texto = textosPorAccion[labAccion];
   if (!texto) return null;
@@ -672,6 +681,8 @@ async function clasificarYResponderGrupo({
 }) {
   const funcionesWhatsapp = await configuracionService.obtenerConfiguracionWhatsapp();
   if (!funcionesWhatsapp.respuestasAutomaticas) return 'chatbot_deshabilitado';
+  if (await repository.tieneRecepcionPrioritaria(conversacionId))
+    return 'interrumpido_por_recepcion';
   const claveEnvio = `grupo:${groupId}:respuesta`;
   let grupo = await repository.obtenerClasificacionGrupo(groupId);
 
@@ -679,6 +690,8 @@ async function clasificarYResponderGrupo({
     const reclamoId = randomUUID();
     const reclamada = await repository.reclamarClasificacionGrupo(groupId, reclamoId);
     if (!reclamada) {
+      if (await repository.tieneRecepcionPrioritaria(conversacionId))
+        return 'interrumpido_por_recepcion';
       grupo = await repository.obtenerClasificacionGrupo(groupId);
       if (!grupo?.clasificado_en) return 'clasificacion_en_progreso';
     } else {
@@ -748,7 +761,13 @@ async function clasificarYResponderGrupo({
 
         let intentoEnvioId;
         let grupoReprogramado = false;
+        let interrumpidoPorRecepcion = false;
         await db.transaction(async (trx) => {
+          interrumpidoPorRecepcion = await repository.tieneRecepcionPrioritaria(
+            conversacionId,
+            trx,
+          );
+          if (interrumpidoPorRecepcion) return;
           grupoReprogramado = await repository.incorporarFragmentosTardiosAlGrupo(trx, {
             conversacionId,
             groupId,
@@ -834,6 +853,7 @@ async function clasificarYResponderGrupo({
           }
         });
 
+        if (interrumpidoPorRecepcion) return 'interrumpido_por_recepcion';
         if (grupoReprogramado) return 'grupo_reprogramado';
 
         grupo = {
@@ -868,10 +888,15 @@ async function clasificarYResponderGrupo({
   }
 
   if (!resultadoEnvio.enviado) {
+    if (await repository.tieneRecepcionPrioritaria(conversacionId))
+      return 'interrumpido_por_recepcion';
     return grupo.es_emergencia_resuelta ? 'emergencia_fallo_envio' : 'clasificado_fallo_envio';
   }
 
   await repository.marcarGrupoProcesado(groupId);
+  if (await repository.tieneRecepcionPrioritaria(conversacionId)) {
+    return 'respuesta_en_vuelo_recepcion_prioritaria';
+  }
   if (!grupo.es_emergencia_resuelta) {
     await repository.finalizarConversacionTrasGrupo(conversacionId, new Date());
     return 'clasificado_normal';
@@ -925,6 +950,8 @@ async function enviarGuiaMedioNoInterpretable({ conversacionId, telefono, groupI
 }
 
 async function enrutarGrupo({ conversacionId, grupo, contexto, reintentos = 0 }) {
+  if (await repository.tieneRecepcionPrioritaria(conversacionId))
+    return 'interrumpido_por_recepcion';
   const ruta = seleccionarRutaGrupo({ contexto, grupo });
 
   if (ruta === RUTAS_ENRUTAMIENTO.ATENCION_HUMANA) {

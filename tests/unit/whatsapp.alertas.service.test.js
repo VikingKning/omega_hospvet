@@ -9,6 +9,7 @@ const {
   registrarSolicitudAlerta,
   solicitarAlerta,
   procesarSiguienteAlertaPendiente,
+  listarPendientes,
   AlertaValidationError,
 } = require('../../src/modules/whatsapp/whatsapp.alertas.service');
 
@@ -18,6 +19,22 @@ beforeEach(() => {
 });
 
 describe('whatsapp.alertas.service — reglas deterministas WA018', () => {
+  it('explica a recepcion el fallo del PDF sin presentarlo como un rechazo del usuario', async () => {
+    repository.listarPendientesParaUsuario.mockResolvedValue([
+      {
+        id: 1,
+        tipo_alerta: 'recepcion',
+        origen: 'aviso_privacidad_envio_fallido',
+        conversacion_id: 5,
+        telefono_externo: '525500001111',
+        creado_en: new Date(),
+      },
+    ]);
+    const [alerta] = await listarPendientes(7);
+    expect(alerta.titulo).toBe('Problema con el aviso de privacidad');
+    expect(alerta.mensaje).toContain('No se pudo enviar el aviso');
+    expect(alerta.mensaje).not.toContain('no aceptó');
+  });
   it('WA019 persiste primero sin consultar usuarios ni preparar canales', async () => {
     repository.crearAlerta.mockResolvedValue({
       alerta: { id: 9, tipo_alerta: 'recepcion', resolucion_destinatarios: 'pendiente' },

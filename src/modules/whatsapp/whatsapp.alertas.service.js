@@ -180,8 +180,14 @@ async function listarPendientes(usuarioId) {
   return alertas.map((alerta) => ({
     id: alerta.id,
     tipo: alerta.tipo_alerta,
-    titulo: CONTENIDO_POR_TIPO[alerta.tipo_alerta].titulo,
-    mensaje: CONTENIDO_POR_TIPO[alerta.tipo_alerta].mensaje,
+    titulo:
+      alerta.origen === 'aviso_privacidad_envio_fallido'
+        ? 'Problema con el aviso de privacidad'
+        : CONTENIDO_POR_TIPO[alerta.tipo_alerta].titulo,
+    mensaje:
+      alerta.origen === 'aviso_privacidad_envio_fallido'
+        ? 'No se pudo enviar el aviso de privacidad. Recepción debe continuar con la atención.'
+        : CONTENIDO_POR_TIPO[alerta.tipo_alerta].mensaje,
     telefonoExterno: alerta.telefono_externo,
     conversacionId: alerta.conversacion_id,
     creadaEn: alerta.creado_en,
