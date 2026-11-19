@@ -7,9 +7,16 @@ const AREA_SLUG_CONSULTAS = 'consultas';
 const AREA_SLUG_ESTETICA = 'estetica';
 
 // Conserva el reconocimiento de reservas anteriores al cambio de nombre.
-const SENALES_TITULO_CONSULTAS = ['Consultas Veterinarias', 'Consultas Domicilio'];
-const SENAL_DESCRIPCION_CONSULTAS =
-  'Agenda aquí la cita de tu compañero de cuatro patas de forma rápida y sencilla.';
+const SENALES_TITULO_CONSULTAS = [
+  'Consultas Veterinarias',
+  'Consultas Domicilio',
+  'Consultas a Domicilio',
+  'Servicios a Domicilio',
+];
+const SENALES_DESCRIPCION_CONSULTAS = [
+  'Agenda aquí la cita de tu compañero de cuatro patas de forma rápida y sencilla.',
+  'En Omega llevamos el cuidado de tu mascota hasta la puerta de tu hogar',
+];
 
 // Página de reservas de Estética/Grooming — mismo formulario de Google que
 // Consultas, otro título/descripción propios y otros campos opcionales
@@ -37,12 +44,22 @@ function coincideSenal(summary, description, senalTitulo, senalDescripcion) {
   const tituloCoincide =
     typeof summary === 'string' && summary.toLowerCase().includes(senalTitulo.toLowerCase());
   if (!tituloCoincide) return false;
-  return typeof description === 'string' && description.includes(senalDescripcion);
+  if (typeof description !== 'string') return false;
+  // Google devuelve HTML: negritas, saltos y espacios no separables no
+  // deben impedir reconocer el texto propio de la pagina de reservas.
+  const textoDescripcion = description
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;|&#x0*a0;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return textoDescripcion.includes(senalDescripcion);
 }
 
 function esReservaDeConsultas(summary, description) {
   return SENALES_TITULO_CONSULTAS.some((titulo) =>
-    coincideSenal(summary, description, titulo, SENAL_DESCRIPCION_CONSULTAS),
+    SENALES_DESCRIPCION_CONSULTAS.some((senalDescripcion) =>
+      coincideSenal(summary, description, titulo, senalDescripcion),
+    ),
   );
 }
 

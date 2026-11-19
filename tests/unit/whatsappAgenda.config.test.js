@@ -37,7 +37,7 @@ describe('config/whatsappAgenda (US WA 006)', () => {
     env.enlaces.calendarioEstetica = 'https://calendar.example/estetica';
 
     expect(obtenerConfiguracionRuta('agendar_consulta')).toMatchObject({
-      tipoCita: 'Consultas Domicilio',
+      tipoCita: 'Servicios a Domicilio',
       variable: 'GOOGLE_CALENDAR_MEETING_URL',
       url: 'https://calendar.example/consulta',
     });
@@ -46,8 +46,11 @@ describe('config/whatsappAgenda (US WA 006)', () => {
       variable: 'GOOGLE_CALENDAR_GROOMING',
       url: 'https://calendar.example/estetica',
     });
-    const texto = construirTextoEnlace('Consultas Domicilio', 'https://calendar.example/consulta');
-    expect(texto).toContain('Consultas Domicilio');
+    const texto = construirTextoEnlace(
+      'Servicios a Domicilio',
+      'https://calendar.example/consulta',
+    );
+    expect(texto).toContain('Servicios a Domicilio');
     expect(texto).toContain('\nhttps://calendar.example/consulta');
   });
 

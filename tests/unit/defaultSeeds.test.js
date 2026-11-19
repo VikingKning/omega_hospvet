@@ -16,13 +16,13 @@ const {
 } = require('../../src/db/seeds/09_catalogo_perfil_cliente');
 
 describe('datos predeterminados para una instalación limpia', () => {
-  it('define Consultas Domicilio y Estética conservando los identificadores existentes', () => {
+  it('define Servicios a Domicilio y Estética conservando los identificadores existentes', () => {
     expect(AREAS_AGENDA).toEqual([
-      ['Consultas Domicilio', 'consultas'],
+      ['Servicios a Domicilio', 'consultas'],
       ['Estética', 'estetica'],
     ]);
     expect(AGENDA_CATEGORIAS).toEqual([
-      ['agenda_consultas', 'consultas', 'Consultas Domicilio'],
+      ['agenda_consultas', 'consultas', 'Servicios a Domicilio'],
       ['agenda_estetica', 'estetica', 'Estética'],
     ]);
     expect(PERMISSIONS.some(([modulo]) => ['agenda', 'grooming'].includes(modulo))).toBe(false);

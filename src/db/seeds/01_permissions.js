@@ -41,7 +41,7 @@ const permissions = [
 ];
 
 const AGENDA_CATEGORIAS = [
-  ['agenda_consultas', 'consultas', 'Consultas Domicilio'],
+  ['agenda_consultas', 'consultas', 'Servicios a Domicilio'],
   ['agenda_estetica', 'estetica', 'Estética'],
 ];
 const AGENDA_ACCIONES = [

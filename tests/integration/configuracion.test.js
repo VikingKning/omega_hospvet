@@ -172,7 +172,7 @@ describe('GET /configuracion/generales.html', () => {
     expect(res.text).toContain('Envío de resultados por WhatsApp');
     expect(res.text).toContain('Envío de resultados por correo');
     expect(res.text).toContain('Respuestas automáticas');
-    expect(res.text).toContain('Citas de Consultas Domicilio');
+    expect(res.text).toContain('Citas de Servicios a Domicilio');
     expect(res.text).toContain('Citas de Estética');
     expect(res.text).toContain('Aviso de privacidad y tratamiento de datos personales');
     expect(res.text.match(/class="toggle-group configuracion-option-toggle"/g)).toHaveLength(6);

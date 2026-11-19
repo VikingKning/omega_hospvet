@@ -108,6 +108,34 @@ Hospital Veterinario & Estetica`;
 // Consultas.
 const TITULO = 'Consultas Veterinarias';
 
+const TITULO_DOMICILIO = 'Omega HV - Cita Servicios a Domicilio';
+const DESCRIPCION_DOMICILIO = `🐾 ¡En Omega llevamos el cuidado de tu mascota hasta la puerta de tu hogar!
+
+Selecciona el día y horario que mejor te funcione y nosotros nos encargamos del resto.
+
+🏠 Nuestros servicios a domicilio:
+
+- 🩺 Consulta veterinaria a domicilio: Brindamos atención médica a tu mascota sin que tengas que salir de casa.
+- 🛁 Estética canina con recolección a domicilio: Pasamos por tu mascota, la llevamos a nuestras instalaciones para consentirla con su servicio de estética y la regresamos a la comodidad de tu hogar.
+- 🦴 Alimento o Medicamento a domicilio: También podemos llevártelo hasta la puerta de tu casa.
+
+💙 Considera lo siguiente:
+
+- Selecciona el día y horario de tu preferencia.
+- Nuestro equipo se pondrá en contacto contigo para coordinar los detalles.
+- Para consultas veterinarias, ten a la mano cualquier estudio, receta o antecedente médico relevante.
+- Para recolección de mascotas, te pedimos tenerlas listas y en un lugar seguro al momento de nuestra llegada.
+- Si necesitas cancelar o reprogramar, te agradeceremos avisarnos con anticipación.
+
+🐶🐱 ¡Su bienestar es nuestra prioridad y tu comodidad también!`;
+const DESCRIPCION_DOMICILIO_HTML =
+  '<b>Programada por</b>\nTutor Prueba\ntutor@example.test\n5529000090\n' +
+  '<br><b>Nombre de la Mascota</b>\nSparky\n' +
+  '<p>🐾 <strong>¡En Omega llevamos el cuidado de tu mascota hasta la puerta de tu hogar!</strong></p>' +
+  '<p>Selecciona el día y horario que mejor te funcione y nosotros nos encargamos del resto.</p>' +
+  '<p>🏠 <b>Nuestros servicios a domicilio:</b></p><ul><li>Consulta veterinaria a domicilio</li>' +
+  '<li>Estética canina con recolección a domicilio</li><li>Alimento o Medicamento a domicilio</li></ul>';
+
 // Mismo literal que agenda.reservasExternas.js#SENAL_DESCRIPCION (no
 // exportado) — se repite aquí solo para armar descripciones mínimas
 // válidas en los tests de abajo, no para probar esa constante en sí.
@@ -115,17 +143,54 @@ const SENAL_DESCRIPCION_TEXTO =
   'Agenda aquí la cita de tu compañero de cuatro patas de forma rápida y sencilla.';
 
 describe('agenda.reservasExternas.esReservaDeConsultas / extraerDatosReserva', () => {
+  it.each([
+    ['texto completo indicado por la clínica', DESCRIPCION_DOMICILIO],
+    ['HTML con los datos del tutor', DESCRIPCION_DOMICILIO_HTML],
+    [
+      'HTML que separa la frase con formato y espacios',
+      '<p>🐾 <b>¡En Omega llevamos el cuidado</b>&nbsp;de tu mascota\n hasta la puerta de tu hogar!</p>',
+    ],
+  ])(
+    'reconoce el nuevo título y descripción de Servicios a Domicilio: %s',
+    (_caso, descripcion) => {
+      expect(esReservaDeConsultas(TITULO_DOMICILIO, descripcion)).toBe(true);
+      expect(extraerDatosReserva(TITULO_DOMICILIO, descripcion)).not.toBeNull();
+    },
+  );
+
+  it('extrae tutor y mascota del HTML de Servicios a Domicilio', () => {
+    expect(extraerDatosReserva(TITULO_DOMICILIO, DESCRIPCION_DOMICILIO_HTML)).toEqual({
+      telefono: '5529000090',
+      nombreMascota: 'Sparky',
+      nombreTutor: 'Tutor Prueba',
+      correo: 'tutor@example.test',
+      motivoConsulta: null,
+    });
+  });
+
+  it('exige tanto título como descripción propios para Servicios a Domicilio', () => {
+    expect(extraerDatosReserva('Citas Estetica Omega', DESCRIPCION_DOMICILIO)).toBeNull();
+    expect(extraerDatosReserva('Un evento ajeno', DESCRIPCION_DOMICILIO)).toBeNull();
+    expect(extraerDatosReserva(TITULO_DOMICILIO, 'Un evento ajeno')).toBeNull();
+  });
+
   it('reconoce un evento real (título "Consultas Veterinarias" + descripción de la página)', () => {
     expect(esReservaDeConsultas(TITULO, DESCRIPCION_TEXTO_PLANO)).toBe(true);
     expect(esReservaDeConsultas(TITULO, DESCRIPCION_HTML_REAL)).toBe(true);
   });
 
-  it('extrae la misma reserva con el nuevo título Consultas Domicilio y conserva la validación de origen', () => {
-    const titulo = 'Consultas Domicilio (Omega)';
+  it('extrae la misma reserva con el nuevo título Servicios a Domicilio y conserva la validación de origen', () => {
+    const titulo = 'Servicios a Domicilio (Omega)';
     expect(extraerDatosReserva(titulo, DESCRIPCION_HTML_REAL)).toEqual(
       extraerDatosReserva(TITULO, DESCRIPCION_HTML_REAL),
     );
-    expect(esReservaDeConsultas('consultas domicilio', DESCRIPCION_HTML_REAL)).toBe(true);
+    for (const anterior of ['consultas domicilio', 'consultas a domicilio']) {
+      expect(esReservaDeConsultas(anterior, DESCRIPCION_HTML_REAL)).toBe(true);
+      expect(extraerDatosReserva(anterior, DESCRIPCION_HTML_REAL)).toEqual(
+        extraerDatosReserva(TITULO, DESCRIPCION_HTML_REAL),
+      );
+    }
+    expect(esReservaDeConsultas('servicios a domicilio', DESCRIPCION_HTML_REAL)).toBe(true);
     expect(extraerDatosReserva(titulo, 'Un evento ajeno al formulario')).toBeNull();
   });
 
@@ -367,8 +432,8 @@ describe('agenda.reservasExternas.importarReserva', () => {
     expect(repository.findByGoogleEventId).not.toHaveBeenCalled();
   });
 
-  it('importa Consultas Domicilio en el área consultas existente y mantiene el doctor técnico', async () => {
-    const id = await importarReserva({ ...EVENTO, summary: 'Consultas Domicilio (Omega)' });
+  it('importa Servicios a Domicilio en el área consultas existente y mantiene el doctor técnico', async () => {
+    const id = await importarReserva({ ...EVENTO, summary: 'Servicios a Domicilio (Omega)' });
 
     expect(id).toBe(999);
     expect(areasRepository.findBySlug).toHaveBeenCalledWith('consultas');
@@ -377,6 +442,19 @@ describe('agenda.reservasExternas.importarReserva', () => {
       apellidos: 'Generico',
       areaSlug: 'consultas',
     });
+    expect(repository.crearDesdeReservaExterna).toHaveBeenCalledWith(
+      expect.objectContaining({ areaId: 22, doctorId: 87, googleEventId: EVENTO.id }),
+    );
+  });
+
+  it('importa el título y cuerpo nuevos en Servicios a Domicilio, sin confundirlo con Estética', async () => {
+    const id = await importarReserva({
+      ...EVENTO,
+      summary: TITULO_DOMICILIO,
+      description: DESCRIPCION_DOMICILIO_HTML,
+    });
+    expect(id).toBe(999);
+    expect(areasRepository.findBySlug).toHaveBeenCalledWith('consultas');
     expect(repository.crearDesdeReservaExterna).toHaveBeenCalledWith(
       expect.objectContaining({ areaId: 22, doctorId: 87, googleEventId: EVENTO.id }),
     );

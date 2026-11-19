@@ -785,7 +785,7 @@ describe('US: áreas predeterminadas del sistema (Consultas/Estética)', () => {
     const estetica = await db('areas').where({ slug: 'estetica' }).first();
 
     expect(consultas).toBeDefined();
-    expect(consultas.nombre).toBe('Consultas Domicilio');
+    expect(consultas.nombre).toBe('Servicios a Domicilio');
     expect(consultas.es_predeterminada).toBe(true);
     expect(estetica).toBeDefined();
     expect(estetica.nombre).toBe('Estética');

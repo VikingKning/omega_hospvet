@@ -88,7 +88,7 @@ describe('whatsapp.menu.interactivePayload / textoRespaldo', () => {
     expect(ids).not.toContain(menu.MENU_AGENDAR_CONSULTA);
     expect(ids).toContain(menu.MENU_AGENDAR_ESTETICA);
     expect(ids).not.toContain(menu.MENU_AVISO_PRIVACIDAD);
-    expect(respaldo).not.toContain('Consultas Domicilio');
+    expect(respaldo).not.toContain('Servicios a Domicilio');
     expect(respaldo).toContain('Cita de Estética');
     expect(respaldo).not.toContain('Aviso de privacidad');
   });
@@ -149,7 +149,7 @@ describe('whatsapp.menu — opciones del menú y resolución de ruta (US WA 005)
   it('el menú tiene exactamente los 6 títulos de AC1, en orden', () => {
     const filas = menu.interactivePayload().action.sections[0].rows;
     expect(filas.map((f) => f.title)).toEqual([
-      'Consultas Domicilio',
+      'Servicios a Domicilio',
       'Cita de Estética',
       'Resultado de laboratorio',
       'Emergencia',

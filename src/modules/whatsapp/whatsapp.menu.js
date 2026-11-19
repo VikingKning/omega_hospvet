@@ -65,8 +65,8 @@ const MENU_SECCION_TITULO = 'Opciones disponibles';
 const MENU_FILAS = [
   {
     id: MENU_AGENDAR_CONSULTA,
-    title: 'Consultas Domicilio',
-    description: 'Agendar, mover o cancelar una consulta a domicilio',
+    title: 'Servicios a Domicilio',
+    description: 'Agendar, mover o cancelar un servicio a domicilio',
   },
   {
     id: MENU_AGENDAR_ESTETICA,

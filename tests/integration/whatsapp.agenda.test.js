@@ -88,7 +88,7 @@ async function crearConversacion() {
 
 describe('US WA 006 — enlaces de Consulta y Estética', () => {
   it.each([
-    ['agendar_consulta', 'Consultas Domicilio', 'https://calendar.example/consulta'],
+    ['agendar_consulta', 'Servicios a Domicilio', 'https://calendar.example/consulta'],
     ['agendar_estetica', 'Estética', 'https://calendar.example/estetica'],
   ])('envía %s sin Claude y cierra después de que Meta acepta', async (ruta, tipo, url) => {
     const { conversacion, telefono } = await crearConversacion();
@@ -159,7 +159,7 @@ describe('US WA 006 — enlaces de Consulta y Estética', () => {
   });
 
   it.each([
-    ['agendar_consulta', undefined, 'Consultas Domicilio'],
+    ['agendar_consulta', undefined, 'Servicios a Domicilio'],
     ['agendar_estetica', 'http://calendar.example/estetica', 'Estética'],
   ])(
     'sin HTTPS válido en %s avisa y solo entonces transfiere a Recepción',

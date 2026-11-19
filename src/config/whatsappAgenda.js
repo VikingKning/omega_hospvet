@@ -2,7 +2,7 @@ const env = require('./env');
 
 const CONFIGURACION_POR_RUTA = {
   agendar_consulta: {
-    tipoCita: 'Consultas Domicilio',
+    tipoCita: 'Servicios a Domicilio',
     variable: 'GOOGLE_CALENDAR_MEETING_URL',
     obtenerValor: () => env.enlaces.calendarioCitas,
   },
